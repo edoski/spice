@@ -4,7 +4,7 @@ import unittest
 from dataclasses import asdict
 from pathlib import Path
 
-from spice_temporal.io import load_block_records
+from spice_temporal.io import load_block_records, load_rows, write_rows
 from spice_temporal.records import BlockRecord
 
 
@@ -20,6 +20,25 @@ def make_block(index: int, *, chain_id: int = 1) -> BlockRecord:
 
 
 class BlockIoTestCase(unittest.TestCase):
+    def test_load_rows_validates_supported_formats(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_dir = Path(tmp_dir)
+            rows = [
+                {
+                    "block_number": 1,
+                    "timestamp": 1_700_000_012,
+                    "base_fee_per_gas": 100,
+                    "gas_used": 15_000_001,
+                    "chain_id": 1,
+                }
+            ]
+            for suffix in (".json", ".csv", ".parquet"):
+                path = dataset_dir / f"blocks{suffix}"
+                write_rows(path, rows)
+                loaded = load_rows(path)
+                self.assertEqual(str(loaded[0]["block_number"]), "1")
+                self.assertNotIn("gas_limit", loaded[0])
+
     def test_load_block_records_from_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "blocks.json"
@@ -76,6 +95,33 @@ class BlockIoTestCase(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "exactly one chain_id"):
                 load_block_records(dataset_dir)
+
+    def test_load_block_records_requires_gas_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "blocks.json"
+            path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "block_number": 1,
+                            "timestamp": 1_700_000_012,
+                            "base_fee_per_gas": 100,
+                            "gas_used": 15_000_001,
+                            "chain_id": 1,
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "must contain gas_limit"):
+                load_block_records(path)
+
+    def test_load_rows_rejects_invalid_row_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "blocks.json"
+            path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+            with self.assertRaisesRegex(TypeError, "Block rows must be JSON-like mappings"):
+                load_rows(path)
 
 
 if __name__ == "__main__":

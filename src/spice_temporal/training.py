@@ -13,7 +13,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from spice_temporal.config import TrainingConfig
-from spice_temporal.contracts import ModelOutputs, SequenceBatch
+from spice_temporal.contracts import ModelOutputs, SequenceBatch, TemporalModel
 from spice_temporal.evaluation import BatchMetrics, compute_batch_metrics
 from spice_temporal.records import SupervisedExample
 from spice_temporal.torch_datasets import SequenceDataset, build_class_weights
@@ -77,7 +77,7 @@ def _mean_metrics(metrics: list[BatchMetrics]) -> EpochMetrics:
 
 
 def _run_epoch(
-    model: nn.Module,
+    model: TemporalModel,
     loader: DataLoader[SequenceBatch],
     *,
     optimizer: torch.optim.Optimizer | None,
@@ -137,7 +137,7 @@ def _run_epoch(
 
 
 def train_model(
-    model: nn.Module,
+    model: TemporalModel,
     *,
     train_examples: Sequence[SupervisedExample],
     validation_examples: Sequence[SupervisedExample],
@@ -221,7 +221,7 @@ def train_model(
 
 
 def evaluate_model(
-    model: nn.Module,
+    model: TemporalModel,
     *,
     examples: Sequence[SupervisedExample],
     training_config: TrainingConfig,

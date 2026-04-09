@@ -1,14 +1,20 @@
-"""Block-file enrichment utilities."""
+"""Utilities for filling missing gas_limit values in block files."""
 
 from __future__ import annotations
 
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
 
 from spice_temporal.contracts import EnrichedBlockRow, RawBlockRow
-from spice_temporal.io import iter_block_files, load_rows, write_rows
+from spice_temporal.io import (
+    build_enriched_block_row,
+    has_missing_gas_limit,
+    iter_block_files,
+    load_rows,
+    parse_enriched_block_row,
+    write_rows,
+)
 
 FetchGasLimits = Callable[[list[int]], dict[int, int]]
 
@@ -25,14 +31,13 @@ def enrich_rows_with_gas_limit(
     if max_methods_per_second <= 0:
         raise ValueError("max_methods_per_second must be positive")
 
-    enriched = [cast(RawBlockRow, dict(row)) for row in rows]
     missing_block_numbers = [
         int(row["block_number"])
-        for row in enriched
-        if row.get("gas_limit") in (None, "", 0, "0")
+        for row in rows
+        if has_missing_gas_limit(row)
     ]
     if not missing_block_numbers:
-        return [cast(EnrichedBlockRow, row) for row in enriched]
+        return [parse_enriched_block_row(row) for row in rows]
 
     lookup: dict[int, int] = {}
     for offset in range(0, len(missing_block_numbers), batch_size):
@@ -44,11 +49,15 @@ def enrich_rows_with_gas_limit(
         if elapsed < target_elapsed:
             time.sleep(target_elapsed - elapsed)
 
-    for row in enriched:
-        if row.get("gas_limit") not in (None, "", 0, "0"):
-            continue
-        row["gas_limit"] = lookup[int(row["block_number"])]
-    return [cast(EnrichedBlockRow, row) for row in enriched]
+    enriched_rows: list[EnrichedBlockRow] = []
+    for row in rows:
+        block_number = int(row["block_number"])
+        if has_missing_gas_limit(row):
+            gas_limit = lookup[block_number]
+        else:
+            gas_limit = parse_enriched_block_row(row)["gas_limit"]
+        enriched_rows.append(build_enriched_block_row(row, gas_limit=gas_limit))
+    return enriched_rows
 
 
 def enrich_file(

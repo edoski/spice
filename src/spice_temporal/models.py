@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import math
-from typing import cast
 
 import torch
 from torch import nn
 
 from spice_temporal.config import ModelConfig
-from spice_temporal.contracts import ModelOutputs
+from spice_temporal.contracts import ModelOutputs, TemporalModel
 
 
 class MLPHead(nn.Module):
@@ -35,11 +34,11 @@ class SinusoidalPositionalEncoding(nn.Module):
         pe = torch.zeros(max_length, d_model, dtype=torch.float32)
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
+        self.pe: torch.Tensor
         self.register_buffer("pe", pe.unsqueeze(0), persistent=False)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        pe = cast(torch.Tensor, self.pe)
-        return inputs + pe[:, : inputs.size(1)]
+        return inputs + self.pe[:, : inputs.size(1)]
 
 
 class LSTMBaseline(nn.Module):
@@ -128,7 +127,7 @@ class TransformerLSTMBaseline(nn.Module):
         )
 
 
-def build_model(n_features: int, n_classes: int, config: ModelConfig) -> nn.Module:
+def build_model(n_features: int, n_classes: int, config: ModelConfig) -> TemporalModel:
     family = config.family
     if family == "lstm":
         return LSTMBaseline(n_features, n_classes, config)

@@ -5,10 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from torch import nn
-
 from spice_temporal.config import ChainConfig, ModelConfig, SplitConfig, TrainingConfig
 from spice_temporal.constants import EVALUATION_END_TS, EVALUATION_START_TS
+from spice_temporal.contracts import TemporalModel
 from spice_temporal.datasets import (
     DatasetGeometry,
     build_supervised_examples,
@@ -53,7 +52,7 @@ class PreparedInferenceDataset:
 
 @dataclass(slots=True)
 class TrainingRunResult:
-    model: nn.Module
+    model: TemporalModel
     prepared: PreparedTrainingDataset
     training_result: TrainingResult
     test_metrics: EpochMetrics

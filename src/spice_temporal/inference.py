@@ -5,16 +5,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import torch
-from torch import nn
 from torch.utils.data import DataLoader
 
+from spice_temporal.contracts import TemporalModel
 from spice_temporal.records import SupervisedExample
 from spice_temporal.torch_datasets import SequenceDataset
 from spice_temporal.training import choose_microbatch_size, resolve_device
 
 
 def predict_class_offsets(
-    model: nn.Module,
+    model: TemporalModel,
     *,
     examples: Sequence[SupervisedExample],
     effective_batch_size: int,

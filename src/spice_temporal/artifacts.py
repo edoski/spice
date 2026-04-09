@@ -9,6 +9,7 @@ from pathlib import Path
 import torch
 
 from spice_temporal.config import ChainConfig, ModelConfig
+from spice_temporal.contracts import TemporalModel
 from spice_temporal.features import feature_names
 from spice_temporal.models import build_model
 from spice_temporal.normalization import StandardScaler
@@ -39,7 +40,7 @@ class TrainingArtifactManifest:
 @dataclass(slots=True)
 class LoadedTrainingArtifact:
     manifest: TrainingArtifactManifest
-    model: torch.nn.Module
+    model: TemporalModel
 
 
 def build_training_artifact_manifest(
@@ -71,7 +72,7 @@ def write_training_artifact(
     artifact_dir: Path,
     *,
     manifest: TrainingArtifactManifest,
-    model: torch.nn.Module,
+    model: TemporalModel,
 ) -> None:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     with (artifact_dir / ARTIFACT_MANIFEST_FILENAME).open("w", encoding="utf-8") as handle:

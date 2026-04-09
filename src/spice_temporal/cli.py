@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
 
 import typer
 
@@ -40,6 +39,16 @@ def require_chain(config: ExperimentConfig, chain_name: str) -> ChainConfig:
     if chain is None:
         raise typer.BadParameter(f"Unknown chain: {chain_name}")
     return chain
+
+
+def parse_model_family(family: str) -> ModelFamily:
+    if family == "lstm":
+        return "lstm"
+    if family == "transformer":
+        return "transformer"
+    if family == "transformer_lstm":
+        return "transformer_lstm"
+    raise typer.BadParameter(f"Unknown model family: {family}")
 
 
 @app.command("show-config")
@@ -152,10 +161,7 @@ def train(
     """Train one temporal model and write a canonical artifact directory."""
     config = ExperimentConfig.from_yaml(config_path)
     chain = require_chain(config, chain_name)
-    if family not in {"lstm", "transformer", "transformer_lstm"}:
-        raise typer.BadParameter(f"Unknown model family: {family}")
-    family_name = cast(ModelFamily, family)
-    model_config = ModelConfig(family=family_name)
+    model_config = ModelConfig(family=parse_model_family(family))
 
     result = run_training(
         history_block_path=history_block_path,

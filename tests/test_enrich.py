@@ -44,6 +44,7 @@ class EnrichTestCase(unittest.TestCase):
             max_methods_per_second=1000.0,
         )
         self.assertEqual(calls, [[1, 3]])
+        self.assertEqual(len(enriched), len(rows))
         self.assertEqual(enriched[0]["gas_limit"], 30_000_001)
         self.assertEqual(enriched[1]["gas_limit"], 123)
         self.assertEqual(enriched[2]["gas_limit"], 30_000_003)
