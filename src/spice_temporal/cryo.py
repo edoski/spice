@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import os
 import shlex
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from spice_temporal.config import ChainConfig, ExperimentConfig
 from spice_temporal.constants import EVALUATION_END_TS, EVALUATION_START_TS
+from spice_temporal.env import resolve_rpc_url
 
 
 @dataclass(slots=True)
@@ -39,8 +40,33 @@ def evaluation_range() -> TimestampRange:
     return TimestampRange(start=EVALUATION_START_TS, end=EVALUATION_END_TS)
 
 
-def rpc_env_is_set(env_var: str) -> bool:
-    return bool(os.environ.get(env_var))
+def build_cryo_args(
+    chain: ChainConfig,
+    output_dir: Path,
+    timestamps: TimestampRange,
+    *,
+    overwrite: bool = False,
+) -> list[str]:
+    rpc_url = resolve_rpc_url(chain.rpc_env_var)
+    if not rpc_url:
+        raise ValueError(f"Missing RPC URL for {chain.name} ({chain.rpc_env_var})")
+    args = [
+        "cryo",
+        "blocks",
+        "--timestamps",
+        timestamps.as_cryo_arg(),
+        "--rpc",
+        rpc_url,
+        "--network-name",
+        chain.name,
+        "--include-columns",
+        "all",
+        "--output-dir",
+        str(output_dir),
+    ]
+    if overwrite:
+        args.append("--overwrite")
+    return args
 
 
 def build_cryo_command(
@@ -67,6 +93,25 @@ def build_cryo_command(
     if overwrite:
         parts.append("--overwrite")
     return " ".join(parts)
+
+
+def run_cryo(
+    chain: ChainConfig,
+    output_dir: Path,
+    timestamps: TimestampRange,
+    *,
+    overwrite: bool = False,
+    dry_run: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    args = build_cryo_args(
+        chain,
+        output_dir,
+        timestamps,
+        overwrite=overwrite,
+    )
+    if dry_run:
+        args.append("--dry")
+    return subprocess.run(args, check=True, text=True, capture_output=True)
 
 
 def build_pull_plan(config: ExperimentConfig) -> list[CryoCommandPlan]:

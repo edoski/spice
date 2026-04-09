@@ -7,10 +7,12 @@ from pathlib import Path
 import typer
 
 from spice_temporal.config import ExperimentConfig, ModelConfig
-from spice_temporal.cryo import build_pull_plan, rpc_env_is_set
+from spice_temporal.cryo import build_pull_plan, evaluation_range, history_range_for_chain, run_cryo
+from spice_temporal.env import env_file_path, load_project_env, resolve_rpc_url
 from spice_temporal.pipeline import run_single_training
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
+load_project_env()
 
 
 @app.command("show-config")
@@ -46,13 +48,46 @@ def verify_env(config_path: Path) -> None:
     """Check whether the expected RPC environment variables are configured."""
     config = ExperimentConfig.from_yaml(config_path)
     missing: list[str] = []
+    typer.echo(f"env_file={env_file_path()}")
     for chain in config.chains:
-        status = "set" if rpc_env_is_set(chain.rpc_env_var) else "missing"
+        rpc_url = resolve_rpc_url(chain.rpc_env_var)
+        status = "set" if rpc_url else "missing"
         typer.echo(f"{chain.name}: {chain.rpc_env_var}={status}")
         if status == "missing":
             missing.append(chain.rpc_env_var)
     if missing:
         raise typer.Exit(code=1)
+
+
+@app.command("pull-blocks")
+def pull_blocks(
+    config_path: Path,
+    chain_name: str,
+    segment: str,
+    dry_run: bool = True,
+    overwrite: bool = False,
+) -> None:
+    """Run cryo for one chain and one dataset segment."""
+    config = ExperimentConfig.from_yaml(config_path)
+    chain = next((item for item in config.chains if item.name == chain_name), None)
+    if chain is None:
+        raise typer.BadParameter(f"Unknown chain: {chain_name}")
+    if segment not in {"history", "evaluation"}:
+        raise typer.BadParameter("segment must be 'history' or 'evaluation'")
+
+    output_dir = config.output_root / "raw" / chain.name / segment
+    timestamps = history_range_for_chain(chain) if segment == "history" else evaluation_range()
+    result = run_cryo(
+        chain,
+        output_dir,
+        timestamps,
+        overwrite=overwrite,
+        dry_run=dry_run,
+    )
+    if result.stdout:
+        typer.echo(result.stdout.rstrip())
+    if result.stderr:
+        typer.echo(result.stderr.rstrip())
 
 
 @app.command("train-single")

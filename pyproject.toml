@@ -20,6 +20,7 @@ dependencies = [
   "typer>=0.12",
   "torch>=2.5",
   "optuna>=4.0",
+  "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
