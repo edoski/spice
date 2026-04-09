@@ -1,4 +1,4 @@
-"""Structured report artifacts for training runs."""
+"""Structured report artifacts for training and simulation runs."""
 
 from __future__ import annotations
 
@@ -6,8 +6,13 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from spice_temporal.config import ChainConfig, ModelFamily
-from spice_temporal.pipeline import TrainingRunResult
+from spice_temporal.artifacts import LoadedTrainingArtifact, TrainingArtifactManifest
+from spice_temporal.pipeline import (
+    PreparedInferenceDataset,
+    PreparedTrainingDataset,
+    TrainingRunResult,
+)
+from spice_temporal.simulation import SimulationSummary
 
 
 @dataclass(slots=True)
@@ -27,16 +32,20 @@ class TestMetricsReport:
 
 @dataclass(slots=True)
 class TrainingRunReport:
-    input_path: str
+    history_block_path: str
+    artifact_dir: str
     chain: str
-    family: ModelFamily
+    family: str
     max_delay_seconds: int
     device_requested: str
     lookback_seconds: int
     block_time_seconds: float
-    max_extra_wait_steps: int
-    n_blocks: int
+    target_anchor_count: int
+    n_blocks_available: int
+    n_blocks_used: int
+    n_examples_total: int
     lookback_steps: int
+    max_extra_wait_steps: int
     candidate_block_count: int
     n_features: int
     n_classes: int
@@ -45,32 +54,77 @@ class TrainingRunReport:
     test_metrics: TestMetricsReport
 
 
+@dataclass(slots=True)
+class SimulationAggregateReport:
+    mean: float
+    std: float
+
+
+@dataclass(slots=True)
+class SimulationRunReport:
+    window_start_timestamp: float
+    window_end_timestamp: float
+    n_arrivals: int
+    n_events: int
+    mean_profit_over_baseline: float
+    mean_cost_over_optimum: float
+    baseline_mean_cost_over_optimum: float
+
+
+@dataclass(slots=True)
+class SimulationReport:
+    artifact_dir: str
+    history_block_path: str
+    evaluation_block_path: str
+    chain: str
+    family: str
+    max_delay_seconds: int
+    lookback_seconds: int
+    block_time_seconds: float
+    lookback_steps: int
+    max_extra_wait_steps: int
+    candidate_block_count: int
+    simulation_window_seconds: int
+    arrival_rate_per_second: float
+    repetitions: int
+    n_history_context_blocks: int
+    n_evaluation_blocks: int
+    n_examples_total: int
+    profit_over_baseline: SimulationAggregateReport
+    cost_over_optimum: SimulationAggregateReport
+    baseline_cost_over_optimum: SimulationAggregateReport
+    total_events: int
+    runs: list[SimulationRunReport]
+
+
 def build_training_run_report(
     result: TrainingRunResult,
     *,
-    block_path: Path,
-    chain: ChainConfig,
-    family: ModelFamily,
-    max_delay_seconds: int,
+    manifest: TrainingArtifactManifest,
+    prepared: PreparedTrainingDataset,
+    artifact_dir: Path,
+    history_block_path: Path,
     device_requested: str,
-    lookback_seconds: int,
 ) -> TrainingRunReport:
-    prepared = result.prepared
     metrics = result.test_metrics
     return TrainingRunReport(
-        input_path=str(block_path),
-        chain=chain.name,
-        family=family,
-        max_delay_seconds=max_delay_seconds,
+        history_block_path=str(history_block_path),
+        artifact_dir=str(artifact_dir),
+        chain=manifest.chain.name,
+        family=manifest.model_config.family,
+        max_delay_seconds=manifest.max_delay_seconds,
         device_requested=device_requested,
-        lookback_seconds=lookback_seconds,
-        block_time_seconds=chain.block_time_seconds,
-        max_extra_wait_steps=prepared.max_extra_wait_steps,
-        n_blocks=prepared.n_blocks,
-        lookback_steps=prepared.lookback_steps,
-        candidate_block_count=prepared.candidate_block_count,
-        n_features=prepared.n_features,
-        n_classes=prepared.n_classes,
+        lookback_seconds=manifest.lookback_seconds,
+        block_time_seconds=manifest.chain.block_time_seconds,
+        target_anchor_count=manifest.target_anchor_count,
+        n_blocks_available=prepared.n_blocks_available,
+        n_blocks_used=prepared.n_blocks_used,
+        n_examples_total=prepared.n_examples_total,
+        lookback_steps=manifest.lookback_steps,
+        max_extra_wait_steps=manifest.max_extra_wait_steps,
+        candidate_block_count=manifest.candidate_block_count,
+        n_features=manifest.n_features,
+        n_classes=manifest.n_classes,
         split_sizes=SplitSizes(
             train_examples=len(prepared.train_examples),
             validation_examples=len(prepared.validation_examples),
@@ -86,7 +140,66 @@ def build_training_run_report(
     )
 
 
-def write_training_run_report(path: Path, report: TrainingRunReport) -> None:
+def build_simulation_report(
+    loaded_artifact: LoadedTrainingArtifact,
+    *,
+    artifact_dir: Path,
+    history_block_path: Path,
+    evaluation_block_path: Path,
+    prepared: PreparedInferenceDataset,
+    simulation: SimulationSummary,
+    simulation_window_seconds: int,
+    arrival_rate_per_second: float,
+    repetitions: int,
+) -> SimulationReport:
+    manifest = loaded_artifact.manifest
+    return SimulationReport(
+        artifact_dir=str(artifact_dir),
+        history_block_path=str(history_block_path),
+        evaluation_block_path=str(evaluation_block_path),
+        chain=manifest.chain.name,
+        family=manifest.model_config.family,
+        max_delay_seconds=manifest.max_delay_seconds,
+        lookback_seconds=manifest.lookback_seconds,
+        block_time_seconds=manifest.chain.block_time_seconds,
+        lookback_steps=manifest.lookback_steps,
+        max_extra_wait_steps=manifest.max_extra_wait_steps,
+        candidate_block_count=manifest.candidate_block_count,
+        simulation_window_seconds=simulation_window_seconds,
+        arrival_rate_per_second=arrival_rate_per_second,
+        repetitions=repetitions,
+        n_history_context_blocks=prepared.n_history_context_blocks,
+        n_evaluation_blocks=prepared.n_evaluation_blocks,
+        n_examples_total=prepared.n_examples_total,
+        profit_over_baseline=SimulationAggregateReport(
+            mean=simulation.mean_profit_over_baseline,
+            std=simulation.std_profit_over_baseline,
+        ),
+        cost_over_optimum=SimulationAggregateReport(
+            mean=simulation.mean_cost_over_optimum,
+            std=simulation.std_cost_over_optimum,
+        ),
+        baseline_cost_over_optimum=SimulationAggregateReport(
+            mean=simulation.mean_baseline_cost_over_optimum,
+            std=simulation.std_baseline_cost_over_optimum,
+        ),
+        total_events=simulation.total_events,
+        runs=[
+            SimulationRunReport(
+                window_start_timestamp=run.window_start_timestamp,
+                window_end_timestamp=run.window_end_timestamp,
+                n_arrivals=run.n_arrivals,
+                n_events=run.n_events,
+                mean_profit_over_baseline=run.mean_profit_over_baseline,
+                mean_cost_over_optimum=run.mean_cost_over_optimum,
+                baseline_mean_cost_over_optimum=run.baseline_mean_cost_over_optimum,
+            )
+            for run in simulation.runs
+        ],
+    )
+
+
+def write_json_report(path: Path, report: TrainingRunReport | SimulationReport) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(asdict(report), handle, ensure_ascii=True, indent=2)

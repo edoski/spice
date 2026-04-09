@@ -9,6 +9,10 @@ from spice_temporal.records import BlockRecord, FeatureRow
 ROLLING_WINDOWS = (10, 50, 200)
 
 
+def feature_warmup_blocks() -> int:
+    return max(ROLLING_WINDOWS) - 1
+
+
 def cyclical_encode(value: int, period: int) -> tuple[float, float]:
     angle = 2.0 * math.pi * (value % period) / period
     return math.sin(angle), math.cos(angle)
@@ -77,7 +81,7 @@ def build_feature_rows(blocks: list[BlockRecord]) -> list[FeatureRow]:
     blocks = sorted(blocks, key=lambda item: item.block_number)
     log_base_fees = [safe_log(block.base_fee_per_gas) for block in blocks]
     gas_utilizations = [block.gas_utilization for block in blocks]
-    min_index = max(ROLLING_WINDOWS) - 1
+    min_index = feature_warmup_blocks()
     rows: list[FeatureRow] = []
 
     for index in range(min_index, len(blocks)):

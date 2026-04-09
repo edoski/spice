@@ -6,7 +6,22 @@ import math
 from dataclasses import dataclass
 
 from spice_temporal.config import SplitConfig
-from spice_temporal.records import FeatureRow, SupervisedExample
+from spice_temporal.features import feature_warmup_blocks
+from spice_temporal.records import BlockRecord, FeatureRow, SupervisedExample
+
+
+@dataclass(slots=True)
+class DatasetGeometry:
+    lookback_steps: int
+    max_extra_wait_steps: int
+    candidate_block_count: int
+    feature_warmup_blocks: int
+    context_block_count: int
+
+    def required_training_block_count(self, target_anchor_count: int) -> int:
+        if target_anchor_count <= 0:
+            raise ValueError("target_anchor_count must be positive")
+        return self.context_block_count + target_anchor_count + self.candidate_block_count
 
 
 @dataclass(slots=True)
@@ -30,6 +45,53 @@ def max_extra_wait_steps_for_delay(max_delay_seconds: int, block_time_seconds: f
 
 def candidate_block_count_for_delay(max_delay_seconds: int, block_time_seconds: float) -> int:
     return max_extra_wait_steps_for_delay(max_delay_seconds, block_time_seconds) + 1
+
+
+def derive_dataset_geometry(
+    *,
+    lookback_seconds: int,
+    max_delay_seconds: int,
+    block_time_seconds: float,
+) -> DatasetGeometry:
+    lookback_steps = lookback_steps_for_seconds(lookback_seconds, block_time_seconds)
+    max_extra_wait_steps = max_extra_wait_steps_for_delay(max_delay_seconds, block_time_seconds)
+    candidate_block_count = candidate_block_count_for_delay(max_delay_seconds, block_time_seconds)
+    warmup_blocks = feature_warmup_blocks()
+    return DatasetGeometry(
+        lookback_steps=lookback_steps,
+        max_extra_wait_steps=max_extra_wait_steps,
+        candidate_block_count=candidate_block_count,
+        feature_warmup_blocks=warmup_blocks,
+        context_block_count=warmup_blocks + lookback_steps - 1,
+    )
+
+
+def trim_history_blocks_for_target(
+    blocks: list[BlockRecord],
+    *,
+    target_anchor_count: int,
+    geometry: DatasetGeometry,
+) -> list[BlockRecord]:
+    required_blocks = geometry.required_training_block_count(target_anchor_count)
+    if len(blocks) < required_blocks:
+        raise ValueError(
+            "History dataset is too short for the requested target_anchor_count; "
+            f"need at least {required_blocks} blocks, got {len(blocks)}"
+        )
+    return blocks[-required_blocks:]
+
+
+def history_context_blocks(
+    blocks: list[BlockRecord],
+    *,
+    geometry: DatasetGeometry,
+) -> list[BlockRecord]:
+    if len(blocks) < geometry.context_block_count:
+        raise ValueError(
+            "History dataset is too short to provide evaluation context; "
+            f"need at least {geometry.context_block_count} blocks, got {len(blocks)}"
+        )
+    return blocks[-geometry.context_block_count :]
 
 
 def earliest_min_offset(values: list[float]) -> int:
@@ -74,6 +136,19 @@ def build_supervised_examples(
             )
         )
     return examples
+
+
+def filter_examples_by_anchor_window(
+    examples: list[SupervisedExample],
+    *,
+    start_timestamp: int,
+    end_timestamp: int,
+) -> list[SupervisedExample]:
+    return [
+        example
+        for example in examples
+        if start_timestamp <= example.anchor_timestamp < end_timestamp
+    ]
 
 
 def chronological_split(

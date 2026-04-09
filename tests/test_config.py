@@ -11,18 +11,24 @@ class ConfigTestCase(unittest.TestCase):
         self.assertEqual(config.max_delay_seconds, [12, 24, 36])
         self.assertEqual(len(config.chains), 3)
         self.assertEqual(config.chains[2].block_time_seconds, 1.6)
+        self.assertEqual(config.chains[2].history_days, 10)
+        self.assertEqual(config.target_anchor_count, 400_000)
         self.assertEqual(config.pull.requests_per_second, 10)
         self.assertEqual(config.pull.max_concurrent_requests, 2)
         self.assertEqual(config.pull.max_concurrent_chunks, 1)
+        self.assertEqual(config.simulation.window_seconds, 7_200)
+        self.assertEqual(config.simulation.arrival_rate_per_second, 0.05)
+        self.assertEqual(config.simulation.repetitions, 50)
 
     def test_pilot_config_loads(self) -> None:
         config = ExperimentConfig.from_yaml(Path("configs/pilots/ethereum-36s.yaml"))
         self.assertEqual(config.output_root, Path("./artifacts/pilots/ethereum-36s"))
         self.assertEqual(config.max_delay_seconds, [36])
+        self.assertEqual(config.target_anchor_count, 5_000)
         self.assertEqual(len(config.chains), 1)
         self.assertEqual(config.chains[0].name, "ethereum")
         self.assertEqual(config.chains[0].block_time_seconds, 12.0)
-        self.assertEqual(config.chains[0].history_days_hint, 1)
+        self.assertEqual(config.chains[0].history_days, 1)
 
 
 if __name__ == "__main__":

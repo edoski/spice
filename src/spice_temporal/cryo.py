@@ -32,7 +32,7 @@ class CryoCommandPlan:
 
 
 def history_range_for_chain(chain: ChainConfig) -> TimestampRange:
-    span = chain.history_days_hint * 24 * 60 * 60
+    span = chain.history_days * 24 * 60 * 60
     return TimestampRange(start=EVALUATION_START_TS - span, end=EVALUATION_START_TS)
 
 
