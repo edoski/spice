@@ -8,7 +8,6 @@ from typing import Literal
 
 import yaml
 
-
 ModelFamily = Literal["lstm", "transformer", "transformer_lstm"]
 ChainName = Literal["ethereum", "polygon", "avalanche"]
 
@@ -94,13 +93,14 @@ class ExperimentConfig:
     )
 
     @classmethod
-    def from_yaml(cls, path: Path) -> "ExperimentConfig":
+    def from_yaml(cls, path: Path) -> ExperimentConfig:
         with path.open("r", encoding="utf-8") as handle:
             raw = yaml.safe_load(handle)
 
         split = SplitConfig(**raw.get("split", {}))
         training = TrainingConfig(**raw.get("training", {}))
-        chains = [ChainConfig(**item) for item in raw.get("chains", [])] or cls(output_root=Path(".")).chains
+        default_chains = cls(output_root=Path(".")).chains
+        chains = [ChainConfig(**item) for item in raw.get("chains", [])] or default_chains
         return cls(
             output_root=Path(raw["output_root"]),
             window_seconds=list(raw.get("window_seconds", [12, 24, 36])),

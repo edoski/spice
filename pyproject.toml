@@ -17,6 +17,7 @@ dependencies = [
   "polars>=1.5",
   "pyarrow>=17.0",
   "PyYAML>=6.0",
+  "typer>=0.12",
   "torch>=2.5",
   "optuna>=4.0",
 ]
