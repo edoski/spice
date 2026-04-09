@@ -71,6 +71,7 @@ flowchart LR
 - [config.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice-temporal-baseline/src/spice_temporal/config.py)
 - [env.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice-temporal-baseline/src/spice_temporal/env.py)
 - [cryo.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice-temporal-baseline/src/spice_temporal/cryo.py)
+- [raw_validation.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice-temporal-baseline/src/spice_temporal/raw_validation.py)
 - [rpc.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice-temporal-baseline/src/spice_temporal/rpc.py)
 - [io.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice-temporal-baseline/src/spice_temporal/io.py)
 - [enrich.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice-temporal-baseline/src/spice_temporal/enrich.py)
@@ -129,6 +130,15 @@ This module does one thing only:
 - plan and execute raw block downloads
 
 It does **not** modify the pulled schema and does **not** hide extra RPC hydration.
+
+[raw_validation.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice-temporal-baseline/src/spice_temporal/raw_validation.py) is the adjacent audit layer for completed raw pulls.
+
+This module is intentionally separate from `cryo.py`:
+
+- raw downloads remain side-effectful acquisition only
+- validation stays read-only and rerunnable
+- pull integrity checks can be invoked explicitly or via an optional post-pull hook
+- raw files are never rewritten by the validator
 
 ### Why Enrichment Exists
 
@@ -514,9 +524,12 @@ Commands:
 - `show-config`
 - `plan-pull`
 - `pull-blocks`
+- `validate-pull`
 - `enrich-blocks`
 - `train`
 - `simulate`
+
+`pull-blocks` also supports an optional `--validate-on-success` hook that runs the raw validator once after a successful completed segment pull.
 
 There is no alternative legacy CLI path. `train` is the one canonical training command and `simulate` is the one canonical paper-comparison command.
 
@@ -526,6 +539,7 @@ The test suite in [tests/](/Users/edo/Documents/Obsidian/the-vault/university/Th
 
 - config loading
 - raw/enriched IO
+- raw pull validation
 - dataset geometry
 - exact weighted-scaler math
 - lazy sequence slicing

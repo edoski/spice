@@ -1,8 +1,10 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from dataclasses import asdict
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 from typer.testing import CliRunner
@@ -10,6 +12,8 @@ from typer.testing import CliRunner
 from spice_temporal.artifacts import SIMULATION_REPORT_FILENAME, TRAIN_REPORT_FILENAME
 from spice_temporal.cli import app
 from spice_temporal.constants import EVALUATION_START_TS
+from spice_temporal.io import write_rows
+from spice_temporal.raw_validation import RawPullValidationReport
 from spice_temporal.records import BlockRecord
 
 
@@ -35,9 +39,9 @@ def make_evaluation_block(index: int) -> BlockRecord:
     )
 
 
-def write_config(path: Path) -> None:
+def write_config(path: Path, *, output_root: Path | None = None) -> None:
     config = {
-        "output_root": "./artifacts/test",
+        "output_root": str(output_root or Path("./artifacts/test")),
         "max_delay_seconds": [36],
         "lookback_seconds": 600,
         "target_anchor_count": 64,
@@ -154,6 +158,125 @@ class CliTrainingTestCase(unittest.TestCase):
         self.assertEqual(simulation_report["action_count"], 4)
         self.assertGreater(simulation_report["n_examples_total"], 0)
         self.assertGreater(simulation_report["total_events"], 0)
+
+    def test_validate_pull_succeeds_on_clean_raw_dataset(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            output_root = tmp_path / "artifacts"
+            config_path = tmp_path / "config.yaml"
+            write_config(config_path, output_root=output_root)
+
+            raw_dir = output_root / "raw" / "ethereum" / "history"
+            raw_dir.mkdir(parents=True)
+            history_start = EVALUATION_START_TS - 24 * 60 * 60
+            write_rows(
+                raw_dir / "ethereum__blocks__1_to_3.parquet",
+                [
+                    {
+                        "block_number": 1,
+                        "timestamp": history_start + 1,
+                        "base_fee_per_gas": 100,
+                        "gas_used": 15_000_001,
+                        "chain_id": 1,
+                    },
+                    {
+                        "block_number": 2,
+                        "timestamp": history_start + 13,
+                        "base_fee_per_gas": 101,
+                        "gas_used": 15_000_002,
+                        "chain_id": 1,
+                    },
+                    {
+                        "block_number": 3,
+                        "timestamp": history_start + 25,
+                        "base_fee_per_gas": 102,
+                        "gas_used": 15_000_003,
+                        "chain_id": 1,
+                    },
+                ],
+            )
+
+            result = runner.invoke(app, ["validate-pull", str(config_path), "ethereum", "history"])
+
+        self.assertEqual(result.exit_code, 0, msg=result.stdout)
+        self.assertIn("status=clean", result.stdout)
+
+    def test_pull_blocks_validate_on_success_invokes_validation_once(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = tmp_path / "config.yaml"
+            write_config(config_path, output_root=tmp_path / "artifacts")
+            report = RawPullValidationReport(
+                dataset_path=tmp_path / "artifacts" / "raw" / "ethereum" / "history",
+                expected_start_timestamp=1,
+                expected_end_timestamp=2,
+            )
+
+            with (
+                patch("spice_temporal.cli.run_cryo") as run_cryo_mock,
+                patch("spice_temporal.cli.validate_raw_pull", return_value=report) as validate_mock,
+            ):
+                run_cryo_mock.return_value = subprocess.CompletedProcess(
+                    args=["cryo"],
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+                result = runner.invoke(
+                    app,
+                    [
+                        "pull-blocks",
+                        str(config_path),
+                        "ethereum",
+                        "history",
+                        "--no-dry-run",
+                        "--validate-on-success",
+                    ],
+                )
+
+        self.assertEqual(result.exit_code, 0, msg=result.stdout)
+        validate_mock.assert_called_once()
+
+    def test_pull_blocks_validate_on_success_returns_non_zero_on_validation_error(self) -> None:
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = tmp_path / "config.yaml"
+            write_config(config_path, output_root=tmp_path / "artifacts")
+            report = RawPullValidationReport(
+                dataset_path=tmp_path / "artifacts" / "raw" / "ethereum" / "history",
+                expected_start_timestamp=1,
+                expected_end_timestamp=2,
+                status="error",
+                errors=["gap"],
+            )
+
+            with (
+                patch("spice_temporal.cli.run_cryo") as run_cryo_mock,
+                patch("spice_temporal.cli.validate_raw_pull", return_value=report),
+            ):
+                run_cryo_mock.return_value = subprocess.CompletedProcess(
+                    args=["cryo"],
+                    returncode=0,
+                    stdout="",
+                    stderr="",
+                )
+                result = runner.invoke(
+                    app,
+                    [
+                        "pull-blocks",
+                        str(config_path),
+                        "ethereum",
+                        "history",
+                        "--no-dry-run",
+                        "--validate-on-success",
+                    ],
+                )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("status=error", result.stdout)
 
 
 if __name__ == "__main__":
