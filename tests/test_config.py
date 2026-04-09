@@ -13,7 +13,7 @@ class ConfigTestCase(unittest.TestCase):
         self.assertEqual(config.chains[2].block_time_seconds, 1.6)
         self.assertEqual(config.chains[2].history_days, 10)
         self.assertEqual(config.target_anchor_count, 400_000)
-        self.assertEqual(config.pull.requests_per_second, 10)
+        self.assertEqual(config.pull.requests_per_second, 25)
         self.assertEqual(config.pull.max_concurrent_requests, 2)
         self.assertEqual(config.pull.max_concurrent_chunks, 1)
         self.assertEqual(config.simulation.window_seconds, 7_200)
