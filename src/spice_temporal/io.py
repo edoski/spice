@@ -11,6 +11,7 @@ from typing import cast
 from spice_temporal.contracts import BlockRow, EnrichedBlockRow, RawBlockRow
 from spice_temporal.records import BlockRecord
 
+SUPPORTED_BLOCK_FILE_SUFFIXES = {".json", ".csv", ".parquet"}
 REQUIRED_BLOCK_COLUMNS = {
     "block_number",
     "timestamp",
@@ -19,6 +20,30 @@ REQUIRED_BLOCK_COLUMNS = {
     "gas_limit",
     "chain_id",
 }
+
+
+def _is_hidden_relative_path(path: Path) -> bool:
+    return any(part.startswith(".") for part in path.parts)
+
+
+def iter_block_files(path: Path) -> list[Path]:
+    if path.is_file():
+        if path.suffix.lower() not in SUPPORTED_BLOCK_FILE_SUFFIXES:
+            raise ValueError(f"Unsupported block file format: {path.suffix}")
+        return [path]
+    if not path.is_dir():
+        raise ValueError(f"Block dataset path does not exist: {path}")
+
+    files = [
+        candidate
+        for candidate in path.rglob("*")
+        if candidate.is_file()
+        and candidate.suffix.lower() in SUPPORTED_BLOCK_FILE_SUFFIXES
+        and not _is_hidden_relative_path(candidate.relative_to(path))
+    ]
+    if not files:
+        raise ValueError(f"No supported block files found under {path}")
+    return sorted(files)
 
 
 def load_rows(path: Path) -> list[RawBlockRow]:
@@ -90,6 +115,24 @@ def _coerce_block_row(row: EnrichedBlockRow) -> BlockRecord:
     )
 
 
+def _validate_block_records(blocks: list[BlockRecord]) -> list[BlockRecord]:
+    if not blocks:
+        raise ValueError("Block dataset is empty")
+    blocks = sorted(blocks, key=lambda block: block.block_number)
+    chain_ids = {block.chain_id for block in blocks}
+    if len(chain_ids) != 1:
+        raise ValueError(
+            f"Block dataset must contain exactly one chain_id, got {sorted(chain_ids)}"
+        )
+    for left, right in zip(blocks, blocks[1:], strict=False):
+        if left.block_number == right.block_number:
+            raise ValueError(f"Duplicate block_number detected: {left.block_number}")
+    return blocks
+
+
 def load_block_records(path: Path) -> list[BlockRecord]:
-    rows = load_rows(path)
-    return [_coerce_block_row(cast(EnrichedBlockRow, row)) for row in rows]
+    rows: list[RawBlockRow] = []
+    for file_path in iter_block_files(path):
+        rows.extend(load_rows(file_path))
+    blocks = [_coerce_block_row(cast(EnrichedBlockRow, row)) for row in rows]
+    return _validate_block_records(blocks)

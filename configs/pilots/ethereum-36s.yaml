@@ -1,5 +1,5 @@
-output_root: ./artifacts/baseline
-window_seconds: [12, 24, 36]
+output_root: ./artifacts/pilots/ethereum-36s
+window_seconds: [36]
 lookback_seconds: 600
 target_anchor_count: 400000
 anchor_buffer: 20000
@@ -26,3 +26,9 @@ training:
   beta: 0.25
   device: auto
   seed: 2026
+
+chains:
+  - name: ethereum
+    chain_id: 1
+    nominal_block_time_seconds: 12.0
+    history_days_hint: 1

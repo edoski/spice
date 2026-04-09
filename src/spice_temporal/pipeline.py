@@ -23,6 +23,7 @@ from spice_temporal.training import EpochMetrics, TrainingResult, evaluate_model
 
 @dataclass(slots=True)
 class PreparedDataset:
+    n_blocks: int
     train_examples: list[SupervisedExample]
     validation_examples: list[SupervisedExample]
     test_examples: list[SupervisedExample]
@@ -73,6 +74,7 @@ def prepare_dataset(
     validation_examples = transform_examples(split.validation, scaler)
     test_examples = transform_examples(split.test, scaler)
     return PreparedDataset(
+        n_blocks=len(blocks),
         train_examples=train_examples,
         validation_examples=validation_examples,
         test_examples=test_examples,
@@ -85,7 +87,7 @@ def prepare_dataset(
 
 
 def run_single_training(
-    block_file: Path,
+    block_path: Path,
     *,
     chain: ChainConfig,
     window_seconds: int,
@@ -94,7 +96,7 @@ def run_single_training(
     training_config: TrainingConfig,
     split_config: SplitConfig,
 ) -> SingleRunResult:
-    blocks = load_block_records(block_file)
+    blocks = load_block_records(block_path)
     prepared = prepare_dataset(
         blocks,
         chain=chain,

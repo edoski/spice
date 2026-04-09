@@ -13,6 +13,7 @@ from spice_temporal.cryo import build_pull_plan, evaluation_range, history_range
 from spice_temporal.enrich import enrich_path
 from spice_temporal.env import load_project_env, redact_sensitive_text, resolve_rpc_url
 from spice_temporal.pipeline import run_single_training
+from spice_temporal.reporting import build_training_run_report, write_training_run_report
 from spice_temporal.rpc import RpcClient
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -33,6 +34,12 @@ def show_config(config_path: Path) -> None:
     typer.echo(f"Output root: {config.output_root}")
     typer.echo(f"Windows: {config.window_seconds}")
     typer.echo(f"Lookback: {config.lookback_seconds}s")
+    typer.echo(
+        "Pull: "
+        f"requests_per_second={config.pull.requests_per_second}, "
+        f"max_concurrent_requests={config.pull.max_concurrent_requests}, "
+        f"max_concurrent_chunks={config.pull.max_concurrent_chunks}"
+    )
     typer.echo("Chains:")
     for chain in config.chains:
         typer.echo(
@@ -96,6 +103,7 @@ def pull_blocks(
     timestamps = history_range_for_chain(chain) if segment == "history" else evaluation_range()
     result = run_cryo(
         chain,
+        config.pull,
         output_dir,
         timestamps,
         overwrite=overwrite,
@@ -110,13 +118,14 @@ def pull_blocks(
 @app.command("train-single")
 def train_single(
     config_path: Path,
-    block_file: Path,
+    block_path: Path,
     chain_name: str,
     family: str,
     window_seconds: int,
     device: str = "auto",
+    report_path: Path | None = None,
 ) -> None:
-    """Run one local training job from a single raw block file."""
+    """Run one local training job from an enriched block dataset."""
     config = ExperimentConfig.from_yaml(config_path)
     chain = require_chain(config, chain_name)
     if family not in {"lstm", "transformer", "transformer_lstm"}:
@@ -124,7 +133,7 @@ def train_single(
     family_name = cast(ModelFamily, family)
 
     result = run_single_training(
-        block_file=block_file,
+        block_path=block_path,
         chain=chain,
         window_seconds=window_seconds,
         lookback_seconds=config.lookback_seconds,
@@ -132,14 +141,32 @@ def train_single(
         training_config=replace(config.training, device=device),
         split_config=config.split,
     )
+    typer.echo(f"n_blocks={result.prepared.n_blocks}")
     typer.echo(f"lookback_steps={result.prepared.lookback_steps}")
     typer.echo(f"horizon_blocks={result.prepared.horizon_blocks}")
+    typer.echo(f"n_features={result.prepared.n_features}")
+    typer.echo(f"n_classes={result.prepared.n_classes}")
+    typer.echo(f"train_examples={len(result.prepared.train_examples)}")
+    typer.echo(f"validation_examples={len(result.prepared.validation_examples)}")
+    typer.echo(f"test_examples={len(result.prepared.test_examples)}")
     typer.echo(f"best_epoch={result.training_result.best_epoch}")
     typer.echo(f"test_loss={result.test_metrics.total_loss:.6f}")
     typer.echo(f"test_accuracy={result.test_metrics.accuracy:.4f}")
     typer.echo(
         f"test_profit_over_baseline={result.test_metrics.mean_profit_over_baseline:.6f}"
     )
+    if report_path is not None:
+        report = build_training_run_report(
+            result,
+            block_path=block_path,
+            chain_name=chain.name,
+            family=family_name,
+            window_seconds=window_seconds,
+            device_requested=device,
+            lookback_seconds=config.lookback_seconds,
+        )
+        write_training_run_report(report_path, report)
+        typer.echo(f"report_path={report_path}")
 
 
 if __name__ == "__main__":

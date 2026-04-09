@@ -47,7 +47,7 @@ class PipelineTestCase(unittest.TestCase):
         fixture.write_text(__import__("json").dumps(blocks), encoding="utf-8")
         try:
             result = run_single_training(
-                block_file=fixture,
+                block_path=fixture,
                 chain=ChainConfig(
                     name="ethereum",
                     chain_id=1,
@@ -62,6 +62,7 @@ class PipelineTestCase(unittest.TestCase):
             )
         finally:
             fixture.unlink(missing_ok=True)
+        self.assertEqual(result.prepared.n_blocks, 420)
         self.assertGreaterEqual(result.training_result.best_epoch, 0)
         self.assertGreaterEqual(result.test_metrics.accuracy, 0.0)
 

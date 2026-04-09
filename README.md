@@ -15,10 +15,11 @@ Practical reproduction scaffold for the temporal module described in `ICDCS_2026
 - `contracts.py`: typed boundary contracts for raw rows, tensor batches, and model outputs.
 - `env.py`: local `.env` loading and Alchemy URL resolution.
 - `cryo.py`: cryo pull planning and execution.
-- `io.py` and `enrich.py`: block-file loading plus `gas_limit` enrichment for cryo output.
+- `io.py` and `enrich.py`: block-dataset loading plus `gas_limit` enrichment for cryo output.
 - `features.py`, `datasets.py`, and `normalization.py`: feature engineering, supervised example construction, chronological splits, and train-only scaling.
 - `models.py`, `torch_datasets.py`, `training.py`, and `evaluation.py`: PyTorch models, tensor adapters, training loop, and metrics.
 - `pipeline.py`: one-file orchestration for a single training run.
+- `reporting.py`: structured JSON report artifacts for training runs.
 - `simulation.py`: temporal economic simulation helpers for the evaluation phase.
 - `cli.py`: Typer entrypoints for pull, enrich, and train commands.
 
@@ -39,13 +40,13 @@ Practical reproduction scaffold for the temporal module described in `ICDCS_2026
 
 ## First pilot
 
-Use a small Ethereum history slice to validate the full raw-data-to-training path before larger pulls:
+Use the dedicated pilot config to validate the full raw-data-to-training path before larger pulls:
 
-1. `python -m spice_temporal.cli pull-blocks configs/baseline.yaml ethereum history --dry-run false`
-2. `python -m spice_temporal.cli enrich-blocks configs/baseline.yaml ethereum <raw-path> <enriched-path>`
-3. `python -m spice_temporal.cli train-single configs/baseline.yaml <enriched-file> ethereum lstm 12`
+1. `python -m spice_temporal.cli pull-blocks configs/pilots/ethereum-36s.yaml ethereum history --dry-run false`
+2. `python -m spice_temporal.cli enrich-blocks configs/pilots/ethereum-36s.yaml ethereum artifacts/pilots/ethereum-36s/raw/ethereum/history artifacts/pilots/ethereum-36s/enriched/ethereum/history`
+3. `python -m spice_temporal.cli train-single configs/pilots/ethereum-36s.yaml artifacts/pilots/ethereum-36s/enriched/ethereum/history ethereum lstm 36 --report-path artifacts/pilots/ethereum-36s/train-report.json`
 
-The first pilot target is `Ethereum + 12s + LSTM`, because it is the simplest and most stable baseline cell.
+The first pilot target is `Ethereum + 36s + LSTM`, because it is the smallest real-data run that should still produce a non-trivial classification task.
 
 ## Verification
 
@@ -58,7 +59,9 @@ Typing is intentionally boundary-focused for now rather than repo-wide strict.
 ## Useful commands
 
 - `python -m spice_temporal.cli show-config configs/baseline.yaml`
+- `python -m spice_temporal.cli show-config configs/pilots/ethereum-36s.yaml`
 - `python -m spice_temporal.cli plan-pull configs/baseline.yaml`
-- `python -m spice_temporal.cli pull-blocks configs/baseline.yaml ethereum history`
-- `python -m spice_temporal.cli enrich-blocks configs/baseline.yaml ethereum <input> <output>`
-- `python -m spice_temporal.cli train-single configs/baseline.yaml <enriched-file> ethereum lstm 12`
+- `python -m spice_temporal.cli plan-pull configs/pilots/ethereum-36s.yaml`
+- `python -m spice_temporal.cli pull-blocks configs/pilots/ethereum-36s.yaml ethereum history --dry-run false`
+- `python -m spice_temporal.cli enrich-blocks configs/pilots/ethereum-36s.yaml ethereum <input-dir> <output-dir>`
+- `python -m spice_temporal.cli train-single configs/pilots/ethereum-36s.yaml <dataset-path> ethereum lstm 36 --report-path <report.json>`

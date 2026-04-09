@@ -8,19 +8,9 @@ from pathlib import Path
 from typing import cast
 
 from spice_temporal.contracts import EnrichedBlockRow, RawBlockRow
-from spice_temporal.io import load_rows, write_rows
+from spice_temporal.io import iter_block_files, load_rows, write_rows
 
 FetchGasLimits = Callable[[list[int]], dict[int, int]]
-
-
-def iter_block_files(path: Path) -> list[Path]:
-    if path.is_file():
-        return [path]
-    return sorted(
-        candidate
-        for candidate in path.rglob("*")
-        if candidate.is_file() and candidate.suffix.lower() in {".json", ".csv", ".parquet"}
-    )
 
 
 def enrich_rows_with_gas_limit(

@@ -43,6 +43,13 @@ class TrainingConfig:
 
 
 @dataclass(slots=True)
+class PullConfig:
+    requests_per_second: float
+    max_concurrent_requests: int
+    max_concurrent_chunks: int
+
+
+@dataclass(slots=True)
 class ModelConfig:
     family: ModelFamily
     input_projection_dim: int = 128
@@ -63,6 +70,13 @@ class ExperimentConfig:
     lookback_seconds: int = 600
     target_anchor_count: int = 400_000
     anchor_buffer: int = 20_000
+    pull: PullConfig = field(
+        default_factory=lambda: PullConfig(
+            requests_per_second=10.0,
+            max_concurrent_requests=2,
+            max_concurrent_chunks=1,
+        )
+    )
     split: SplitConfig = field(default_factory=SplitConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     chains: list[ChainConfig] = field(
@@ -93,6 +107,10 @@ class ExperimentConfig:
         with path.open("r", encoding="utf-8") as handle:
             raw = yaml.safe_load(handle)
 
+        if "pull" not in raw:
+            raise ValueError(f"Config at {path} must define a pull section")
+
+        pull = PullConfig(**raw["pull"])
         split = SplitConfig(**raw.get("split", {}))
         training = TrainingConfig(**raw.get("training", {}))
         default_chains = cls(output_root=Path(".")).chains
@@ -103,6 +121,7 @@ class ExperimentConfig:
             lookback_seconds=raw.get("lookback_seconds", 600),
             target_anchor_count=raw.get("target_anchor_count", 400_000),
             anchor_buffer=raw.get("anchor_buffer", 20_000),
+            pull=pull,
             split=split,
             training=training,
             chains=chains,

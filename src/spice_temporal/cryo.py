@@ -7,7 +7,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from spice_temporal.config import ChainConfig, ExperimentConfig
+from spice_temporal.config import ChainConfig, ExperimentConfig, PullConfig
 from spice_temporal.constants import EVALUATION_END_TS, EVALUATION_START_TS
 from spice_temporal.env import ALCHEMY_RPC_TEMPLATE, resolve_rpc_url
 
@@ -42,6 +42,7 @@ def evaluation_range() -> TimestampRange:
 
 def build_cryo_args(
     chain: ChainConfig,
+    pull: PullConfig,
     output_dir: Path,
     timestamps: TimestampRange,
     *,
@@ -60,6 +61,12 @@ def build_cryo_args(
         "all",
         "--output-dir",
         str(output_dir),
+        "--requests-per-second",
+        str(pull.requests_per_second),
+        "--max-concurrent-requests",
+        str(pull.max_concurrent_requests),
+        "--max-concurrent-chunks",
+        str(pull.max_concurrent_chunks),
     ]
     if overwrite:
         args.append("--overwrite")
@@ -68,6 +75,7 @@ def build_cryo_args(
 
 def build_cryo_command(
     chain: ChainConfig,
+    pull: PullConfig,
     output_dir: Path,
     timestamps: TimestampRange,
     *,
@@ -87,6 +95,12 @@ def build_cryo_command(
         "all",
         "--output-dir",
         shlex.quote(str(output_dir)),
+        "--requests-per-second",
+        str(pull.requests_per_second),
+        "--max-concurrent-requests",
+        str(pull.max_concurrent_requests),
+        "--max-concurrent-chunks",
+        str(pull.max_concurrent_chunks),
     ]
     if overwrite:
         parts.append("--overwrite")
@@ -95,6 +109,7 @@ def build_cryo_command(
 
 def run_cryo(
     chain: ChainConfig,
+    pull: PullConfig,
     output_dir: Path,
     timestamps: TimestampRange,
     *,
@@ -103,6 +118,7 @@ def run_cryo(
 ) -> subprocess.CompletedProcess[str]:
     args = build_cryo_args(
         chain,
+        pull,
         output_dir,
         timestamps,
         overwrite=overwrite,
@@ -121,8 +137,8 @@ def build_pull_plan(config: ExperimentConfig) -> list[CryoCommandPlan]:
         evaluation = evaluation_range()
         command = "\n".join(
             [
-                build_cryo_command(chain, history_output_dir, history),
-                build_cryo_command(chain, evaluation_output_dir, evaluation),
+                build_cryo_command(chain, config.pull, history_output_dir, history),
+                build_cryo_command(chain, config.pull, evaluation_output_dir, evaluation),
             ]
         )
         plans.append(
