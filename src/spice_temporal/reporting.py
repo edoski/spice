@@ -46,9 +46,8 @@ class TrainingRunReport:
     n_examples_total: int
     lookback_steps: int
     max_extra_wait_steps: int
-    candidate_block_count: int
+    action_count: int
     n_features: int
-    n_classes: int
     split_sizes: SplitSizes
     best_epoch: int
     test_metrics: TestMetricsReport
@@ -66,9 +65,9 @@ class SimulationRunReport:
     window_end_timestamp: float
     n_arrivals: int
     n_events: int
-    mean_profit_over_baseline: float
-    mean_cost_over_optimum: float
-    baseline_mean_cost_over_optimum: float
+    profit_over_baseline: float
+    cost_over_optimum: float
+    baseline_cost_over_optimum: float
 
 
 @dataclass(slots=True)
@@ -83,7 +82,7 @@ class SimulationReport:
     block_time_seconds: float
     lookback_steps: int
     max_extra_wait_steps: int
-    candidate_block_count: int
+    action_count: int
     simulation_window_seconds: int
     arrival_rate_per_second: float
     repetitions: int
@@ -122,13 +121,12 @@ def build_training_run_report(
         n_examples_total=prepared.n_examples_total,
         lookback_steps=manifest.lookback_steps,
         max_extra_wait_steps=manifest.max_extra_wait_steps,
-        candidate_block_count=manifest.candidate_block_count,
+        action_count=manifest.action_count,
         n_features=manifest.n_features,
-        n_classes=manifest.n_classes,
         split_sizes=SplitSizes(
-            train_examples=len(prepared.train_examples),
-            validation_examples=len(prepared.validation_examples),
-            test_examples=len(prepared.test_examples),
+            train_examples=int(prepared.split_indices.train.shape[0]),
+            validation_examples=int(prepared.split_indices.validation.shape[0]),
+            test_examples=int(prepared.split_indices.test.shape[0]),
         ),
         best_epoch=result.training_result.best_epoch,
         test_metrics=TestMetricsReport(
@@ -164,7 +162,7 @@ def build_simulation_report(
         block_time_seconds=manifest.chain.block_time_seconds,
         lookback_steps=manifest.lookback_steps,
         max_extra_wait_steps=manifest.max_extra_wait_steps,
-        candidate_block_count=manifest.candidate_block_count,
+        action_count=manifest.action_count,
         simulation_window_seconds=simulation_window_seconds,
         arrival_rate_per_second=arrival_rate_per_second,
         repetitions=repetitions,
@@ -190,9 +188,9 @@ def build_simulation_report(
                 window_end_timestamp=run.window_end_timestamp,
                 n_arrivals=run.n_arrivals,
                 n_events=run.n_events,
-                mean_profit_over_baseline=run.mean_profit_over_baseline,
-                mean_cost_over_optimum=run.mean_cost_over_optimum,
-                baseline_mean_cost_over_optimum=run.baseline_mean_cost_over_optimum,
+                profit_over_baseline=run.profit_over_baseline,
+                cost_over_optimum=run.cost_over_optimum,
+                baseline_cost_over_optimum=run.baseline_cost_over_optimum,
             )
             for run in simulation.runs
         ],

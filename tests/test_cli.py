@@ -128,6 +128,7 @@ class CliTrainingTestCase(unittest.TestCase):
             self.assertEqual(train_report["family"], "lstm")
             self.assertEqual(train_report["target_anchor_count"], 64)
             self.assertEqual(train_report["n_examples_total"], 64)
+            self.assertEqual(train_report["action_count"], 4)
 
             simulate_result = runner.invoke(
                 app,
@@ -150,6 +151,7 @@ class CliTrainingTestCase(unittest.TestCase):
         self.assertEqual(simulation_report["family"], "lstm")
         self.assertEqual(simulation_report["max_delay_seconds"], 36)
         self.assertEqual(simulation_report["repetitions"], 3)
+        self.assertEqual(simulation_report["action_count"], 4)
         self.assertGreater(simulation_report["n_examples_total"], 0)
         self.assertGreater(simulation_report["total_events"], 0)
 

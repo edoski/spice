@@ -59,9 +59,9 @@ class PipelineTestCase(unittest.TestCase):
         self.assertEqual(prepared.n_examples_total, 64)
         self.assertEqual(prepared.geometry.lookback_steps, 50)
         self.assertEqual(prepared.geometry.max_extra_wait_steps, 1)
-        self.assertEqual(prepared.geometry.candidate_block_count, 2)
-        self.assertGreater(len(prepared.train_examples), 0)
-        self.assertEqual(prepared.n_features, len(prepared.train_examples[0].inputs[0]))
+        self.assertEqual(prepared.geometry.action_count, 2)
+        self.assertGreater(prepared.split_indices.train.shape[0], 0)
+        self.assertEqual(prepared.n_features, prepared.store.feature_matrix.shape[1])
 
     def test_prepare_inference_dataset_uses_history_context(self) -> None:
         history_blocks = [make_history_block(index) for index in range(420)]
@@ -93,7 +93,10 @@ class PipelineTestCase(unittest.TestCase):
         self.assertEqual(prepared.n_history_context_blocks, geometry.context_block_count)
         self.assertEqual(prepared.n_evaluation_blocks, 720)
         self.assertGreater(prepared.n_examples_total, 0)
-        self.assertGreaterEqual(prepared.examples[0].anchor_timestamp, EVALUATION_START_TS)
+        anchor_timestamps = prepared.store.timestamps[
+            prepared.store.anchor_row_indices[prepared.sample_indices]
+        ]
+        self.assertGreaterEqual(int(anchor_timestamps[0]), EVALUATION_START_TS)
 
     def test_run_training_on_json(self) -> None:
         blocks = [asdict(make_history_block(index)) for index in range(420)]

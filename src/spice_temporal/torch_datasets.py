@@ -2,52 +2,73 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Sequence
-
+import numpy as np
 import torch
+from numpy.typing import NDArray
 from torch.utils.data import Dataset
 
 from spice_temporal.contracts import SequenceBatch
-from spice_temporal.records import SupervisedExample
+from spice_temporal.datasets import TemporalDatasetStore
+
+IntVector = NDArray[np.int64]
 
 
 class SequenceDataset(Dataset[SequenceBatch]):
-    """Simple tensor adapter for sequence examples."""
+    """Lazy tensor adapter over an array-backed temporal dataset store."""
 
-    def __init__(self, examples: Sequence[SupervisedExample]) -> None:
-        if not examples:
-            raise ValueError("SequenceDataset requires at least one example")
-        self.examples = examples
+    def __init__(
+        self,
+        store: TemporalDatasetStore,
+        sample_indices: IntVector,
+        *,
+        lookback_steps: int,
+    ) -> None:
+        if sample_indices.size == 0:
+            raise ValueError("SequenceDataset requires at least one sample")
+        self.store = store
+        self.sample_indices = sample_indices
+        self.lookback_steps = lookback_steps
 
     def __len__(self) -> int:
-        return len(self.examples)
+        return int(self.sample_indices.shape[0])
 
     def __getitem__(self, index: int) -> SequenceBatch:
-        example = self.examples[index]
+        sample_index = int(self.sample_indices[index])
+        anchor_row_index = int(self.store.anchor_row_indices[sample_index])
+        sequence_start = anchor_row_index - self.lookback_steps + 1
         return {
-            "inputs": torch.tensor(example.inputs, dtype=torch.float32),
-            "class_label": torch.tensor(example.class_label, dtype=torch.long),
-            "target_log_fee": torch.tensor(example.target_log_fee, dtype=torch.float32),
-            "candidate_log_fees": torch.tensor(example.candidate_log_fees, dtype=torch.float32),
-            "next_block_log_fee": torch.tensor(example.next_block_log_fee, dtype=torch.float32),
-            "optimal_log_fee": torch.tensor(example.optimal_log_fee, dtype=torch.float32),
+            "inputs": torch.from_numpy(
+                self.store.feature_matrix[sequence_start : anchor_row_index + 1]
+            ),
+            "class_label": torch.tensor(self.store.class_labels[sample_index], dtype=torch.long),
+            "target_log_fee": torch.tensor(
+                self.store.target_log_fee[sample_index], dtype=torch.float32
+            ),
+            "action_log_fees": torch.from_numpy(self.store.action_log_fees[sample_index]),
+            "next_block_log_fee": torch.tensor(
+                self.store.next_block_log_fee[sample_index], dtype=torch.float32
+            ),
+            "optimal_log_fee": torch.tensor(
+                self.store.optimal_log_fee[sample_index], dtype=torch.float32
+            ),
         }
 
 
-def build_class_weights(examples: Sequence[SupervisedExample], n_classes: int) -> torch.Tensor:
-    counts = Counter(example.class_label for example in examples)
-    if not counts:
-        raise ValueError("Cannot build class weights for an empty example list")
-    total = sum(counts.values())
-    weights: list[float] = []
-    for class_index in range(n_classes):
-        class_count = counts.get(class_index, 0)
-        if class_count == 0:
-            weights.append(4.0)
-            continue
-        raw = total / (n_classes * class_count)
-        weights.append(min(raw, 4.0))
-    mean_weight = sum(weights) / len(weights)
-    normalized = [weight / mean_weight for weight in weights]
-    return torch.tensor(normalized, dtype=torch.float32)
+def build_class_weights(
+    class_labels: IntVector,
+    sample_indices: IntVector,
+    action_count: int,
+) -> torch.Tensor:
+    if sample_indices.size == 0:
+        raise ValueError("Cannot build class weights for an empty sample selection")
+    selected_labels = class_labels[sample_indices]
+    counts = np.bincount(selected_labels, minlength=action_count)
+    if counts.shape[0] != action_count:
+        raise ValueError("class label space does not match action_count")
+    if np.any(counts == 0):
+        missing = [str(index) for index, count in enumerate(counts) if count == 0]
+        raise ValueError(
+            "Training split is missing at least one action class: " + ", ".join(missing)
+        )
+    weights = 1.0 / counts.astype(np.float32)
+    return torch.from_numpy(weights.copy())

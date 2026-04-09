@@ -19,23 +19,3 @@ class BlockRecord:
         if self.gas_limit <= 0:
             raise ValueError("gas_limit must be positive to compute gas utilization")
         return self.gas_used / self.gas_limit
-
-
-@dataclass(slots=True)
-class FeatureRow:
-    block_number: int
-    timestamp: int
-    features: list[float]
-    log_base_fee: float
-
-
-@dataclass(slots=True)
-class SupervisedExample:
-    anchor_block_number: int
-    anchor_timestamp: int
-    inputs: list[list[float]]
-    class_label: int
-    target_log_fee: float
-    candidate_log_fees: list[float]
-    next_block_log_fee: float
-    optimal_log_fee: float

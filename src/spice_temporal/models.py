@@ -42,7 +42,7 @@ class SinusoidalPositionalEncoding(nn.Module):
 
 
 class LSTMBaseline(nn.Module):
-    def __init__(self, n_features: int, n_classes: int, config: ModelConfig) -> None:
+    def __init__(self, n_features: int, action_count: int, config: ModelConfig) -> None:
         super().__init__()
         self.input_projection = nn.Linear(n_features, config.input_projection_dim)
         self.backbone = nn.LSTM(
@@ -52,7 +52,7 @@ class LSTMBaseline(nn.Module):
             dropout=config.dropout if config.num_layers > 1 else 0.0,
             batch_first=True,
         )
-        self.classifier = MLPHead(config.hidden_size, config.head_hidden_dim, n_classes)
+        self.classifier = MLPHead(config.hidden_size, config.head_hidden_dim, action_count)
         self.regressor = MLPHead(config.hidden_size, config.head_hidden_dim, 1)
 
     def forward(self, inputs: torch.Tensor) -> ModelOutputs:
@@ -66,7 +66,7 @@ class LSTMBaseline(nn.Module):
 
 
 class TransformerBaseline(nn.Module):
-    def __init__(self, n_features: int, n_classes: int, config: ModelConfig) -> None:
+    def __init__(self, n_features: int, action_count: int, config: ModelConfig) -> None:
         super().__init__()
         self.input_projection = nn.Linear(n_features, config.d_model)
         self.position_encoding = SinusoidalPositionalEncoding(config.d_model)
@@ -79,7 +79,7 @@ class TransformerBaseline(nn.Module):
             batch_first=True,
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=config.transformer_layers)
-        self.classifier = MLPHead(config.d_model, config.head_hidden_dim, n_classes)
+        self.classifier = MLPHead(config.d_model, config.head_hidden_dim, action_count)
         self.regressor = MLPHead(config.d_model, config.head_hidden_dim, 1)
 
     def forward(self, inputs: torch.Tensor) -> ModelOutputs:
@@ -93,7 +93,7 @@ class TransformerBaseline(nn.Module):
 
 
 class TransformerLSTMBaseline(nn.Module):
-    def __init__(self, n_features: int, n_classes: int, config: ModelConfig) -> None:
+    def __init__(self, n_features: int, action_count: int, config: ModelConfig) -> None:
         super().__init__()
         self.input_projection = nn.Linear(n_features, config.d_model)
         self.position_encoding = SinusoidalPositionalEncoding(config.d_model)
@@ -113,7 +113,7 @@ class TransformerLSTMBaseline(nn.Module):
             dropout=config.dropout if config.num_layers > 2 else 0.0,
             batch_first=True,
         )
-        self.classifier = MLPHead(config.hidden_size, config.head_hidden_dim, n_classes)
+        self.classifier = MLPHead(config.hidden_size, config.head_hidden_dim, action_count)
         self.regressor = MLPHead(config.hidden_size, config.head_hidden_dim, 1)
 
     def forward(self, inputs: torch.Tensor) -> ModelOutputs:
@@ -127,12 +127,12 @@ class TransformerLSTMBaseline(nn.Module):
         )
 
 
-def build_model(n_features: int, n_classes: int, config: ModelConfig) -> TemporalModel:
+def build_model(n_features: int, action_count: int, config: ModelConfig) -> TemporalModel:
     family = config.family
     if family == "lstm":
-        return LSTMBaseline(n_features, n_classes, config)
+        return LSTMBaseline(n_features, action_count, config)
     if family == "transformer":
-        return TransformerBaseline(n_features, n_classes, config)
+        return TransformerBaseline(n_features, action_count, config)
     if family == "transformer_lstm":
-        return TransformerLSTMBaseline(n_features, n_classes, config)
+        return TransformerLSTMBaseline(n_features, action_count, config)
     raise ValueError(f"Unsupported model family: {family}")

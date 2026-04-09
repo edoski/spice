@@ -29,9 +29,8 @@ class TrainingArtifactManifest:
     target_anchor_count: int
     lookback_steps: int
     max_extra_wait_steps: int
-    candidate_block_count: int
+    action_count: int
     n_features: int
-    n_classes: int
     feature_names: list[str]
     model_config: ModelConfig
     scaler: StandardScaler
@@ -59,9 +58,8 @@ def build_training_artifact_manifest(
         target_anchor_count=target_anchor_count,
         lookback_steps=prepared.geometry.lookback_steps,
         max_extra_wait_steps=prepared.geometry.max_extra_wait_steps,
-        candidate_block_count=prepared.geometry.candidate_block_count,
+        action_count=prepared.geometry.action_count,
         n_features=prepared.n_features,
-        n_classes=prepared.n_classes,
         feature_names=feature_names(),
         model_config=model_config,
         scaler=prepared.scaler,
@@ -77,10 +75,7 @@ def write_training_artifact(
     artifact_dir.mkdir(parents=True, exist_ok=True)
     with (artifact_dir / ARTIFACT_MANIFEST_FILENAME).open("w", encoding="utf-8") as handle:
         json.dump(asdict(manifest), handle, ensure_ascii=True, indent=2)
-    cpu_state = {
-        key: value.detach().cpu().clone()
-        for key, value in model.state_dict().items()
-    }
+    cpu_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
     torch.save(cpu_state, artifact_dir / MODEL_STATE_FILENAME)
 
 
@@ -97,14 +92,13 @@ def load_training_artifact(artifact_dir: Path) -> LoadedTrainingArtifact:
         target_anchor_count=int(raw["target_anchor_count"]),
         lookback_steps=int(raw["lookback_steps"]),
         max_extra_wait_steps=int(raw["max_extra_wait_steps"]),
-        candidate_block_count=int(raw["candidate_block_count"]),
+        action_count=int(raw["action_count"]),
         n_features=int(raw["n_features"]),
-        n_classes=int(raw["n_classes"]),
         feature_names=list(raw["feature_names"]),
         model_config=ModelConfig(**raw["model_config"]),
         scaler=StandardScaler(**raw["scaler"]),
     )
-    model = build_model(manifest.n_features, manifest.n_classes, manifest.model_config)
+    model = build_model(manifest.n_features, manifest.action_count, manifest.model_config)
     state_dict = torch.load(model_path, map_location="cpu")
     model.load_state_dict(state_dict)
     model.eval()

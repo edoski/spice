@@ -4,19 +4,21 @@ from __future__ import annotations
 
 import math
 import random
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
 import torch
+from numpy.typing import NDArray
 from torch import nn
 from torch.utils.data import DataLoader
 
 from spice_temporal.config import TrainingConfig
 from spice_temporal.contracts import ModelOutputs, SequenceBatch, TemporalModel
+from spice_temporal.datasets import TemporalDatasetStore
 from spice_temporal.evaluation import BatchMetrics, compute_batch_metrics
-from spice_temporal.records import SupervisedExample
 from spice_temporal.torch_datasets import SequenceDataset, build_class_weights
+
+IntVector = NDArray[np.int64]
 
 
 @dataclass(slots=True)
@@ -64,15 +66,16 @@ def _mean_metrics(metrics: list[BatchMetrics]) -> EpochMetrics:
     if not metrics:
         raise ValueError("Cannot summarize an empty metric list")
     denominator = sum(item.count for item in metrics)
+    total_loss_sum = sum(item.total_loss_sum for item in metrics)
+    correct_count = sum(item.correct_count for item in metrics)
+    realized_fee_sum = sum(item.realized_fee_sum for item in metrics)
+    baseline_fee_sum = sum(item.baseline_fee_sum for item in metrics)
+    optimal_fee_sum = sum(item.optimal_fee_sum for item in metrics)
     return EpochMetrics(
-        total_loss=sum(item.total_loss * item.count for item in metrics) / denominator,
-        accuracy=sum(item.accuracy * item.count for item in metrics) / denominator,
-        mean_cost_over_optimum=(
-            sum(item.mean_cost_over_optimum * item.count for item in metrics) / denominator
-        ),
-        mean_profit_over_baseline=(
-            sum(item.mean_profit_over_baseline * item.count for item in metrics) / denominator
-        ),
+        total_loss=total_loss_sum / denominator,
+        accuracy=correct_count / denominator,
+        mean_cost_over_optimum=(realized_fee_sum - optimal_fee_sum) / optimal_fee_sum,
+        mean_profit_over_baseline=(baseline_fee_sum - realized_fee_sum) / baseline_fee_sum,
     )
 
 
@@ -101,7 +104,7 @@ def _run_epoch(
         inputs = batch["inputs"].to(device)
         class_labels = batch["class_label"].to(device)
         target_log_fee = batch["target_log_fee"].to(device)
-        candidate_log_fees = batch["candidate_log_fees"].to(device)
+        action_log_fees = batch["action_log_fees"].to(device)
         next_block_log_fee = batch["next_block_log_fee"].to(device)
         optimal_log_fee = batch["optimal_log_fee"].to(device)
 
@@ -124,7 +127,7 @@ def _run_epoch(
                 logits=outputs.logits.detach(),
                 total_loss=total_loss.detach(),
                 class_labels=class_labels.detach(),
-                candidate_log_fees=candidate_log_fees.detach(),
+                action_log_fees=action_log_fees.detach(),
                 next_block_log_fee=next_block_log_fee.detach(),
                 optimal_log_fee=optimal_log_fee.detach(),
             )
@@ -139,51 +142,56 @@ def _run_epoch(
 def train_model(
     model: TemporalModel,
     *,
-    train_examples: Sequence[SupervisedExample],
-    validation_examples: Sequence[SupervisedExample],
-    config: TrainingConfig,
+    store: TemporalDatasetStore,
+    train_sample_indices: IntVector,
+    validation_sample_indices: IntVector,
+    lookback_steps: int,
+    training_config: TrainingConfig,
 ) -> TrainingResult:
-    if not train_examples or not validation_examples:
-        raise ValueError("Train and validation examples must both be non-empty")
+    if train_sample_indices.size == 0 or validation_sample_indices.size == 0:
+        raise ValueError("Train and validation sample selections must both be non-empty")
 
-    set_global_seed(config.seed)
-    device = resolve_device(config.device)
+    set_global_seed(training_config.seed)
+    device = resolve_device(training_config.device)
     model.to(device)
-    n_classes = len(train_examples[0].candidate_log_fees)
-    class_weights = build_class_weights(train_examples, n_classes).to(device)
+    class_weights = build_class_weights(
+        store.class_labels,
+        train_sample_indices,
+        store.action_count,
+    ).to(device)
 
-    microbatch_size = choose_microbatch_size(config.effective_batch_size, device)
-    accumulation_steps = max(1, math.ceil(config.effective_batch_size / microbatch_size))
+    microbatch_size = choose_microbatch_size(training_config.effective_batch_size, device)
+    accumulation_steps = max(1, math.ceil(training_config.effective_batch_size / microbatch_size))
     train_loader = DataLoader(
-        SequenceDataset(train_examples),
+        SequenceDataset(store, train_sample_indices, lookback_steps=lookback_steps),
         batch_size=microbatch_size,
         shuffle=False,
     )
     validation_loader = DataLoader(
-        SequenceDataset(validation_examples),
+        SequenceDataset(store, validation_sample_indices, lookback_steps=lookback_steps),
         batch_size=microbatch_size,
         shuffle=False,
     )
     optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=config.learning_rate,
-        weight_decay=config.weight_decay,
+        lr=training_config.learning_rate,
+        weight_decay=training_config.weight_decay,
     )
 
     best_epoch = 0
     best_loss = float("inf")
-    patience_left = config.early_stopping_patience
+    patience_left = training_config.early_stopping_patience
     best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
     train_history: list[EpochMetrics] = []
     validation_history: list[EpochMetrics] = []
 
-    for epoch in range(config.max_epochs):
+    for epoch in range(training_config.max_epochs):
         train_metrics = _run_epoch(
             model,
             train_loader,
             optimizer=optimizer,
             class_weights=class_weights,
-            config=config,
+            config=training_config,
             device=device,
             accumulation_steps=accumulation_steps,
         )
@@ -192,21 +200,21 @@ def train_model(
             validation_loader,
             optimizer=None,
             class_weights=class_weights,
-            config=config,
+            config=training_config,
             device=device,
             accumulation_steps=1,
         )
         train_history.append(train_metrics)
         validation_history.append(validation_metrics)
 
-        if validation_metrics.total_loss < best_loss - config.early_stopping_min_delta:
+        if validation_metrics.total_loss < best_loss - training_config.early_stopping_min_delta:
             best_loss = validation_metrics.total_loss
             best_epoch = epoch
             best_state = {
                 key: value.detach().cpu().clone()
                 for key, value in model.state_dict().items()
             }
-            patience_left = config.early_stopping_patience
+            patience_left = training_config.early_stopping_patience
         else:
             patience_left -= 1
             if patience_left <= 0:
@@ -223,21 +231,22 @@ def train_model(
 def evaluate_model(
     model: TemporalModel,
     *,
-    examples: Sequence[SupervisedExample],
+    store: TemporalDatasetStore,
+    sample_indices: IntVector,
+    lookback_steps: int,
     training_config: TrainingConfig,
     class_weights: torch.Tensor | None = None,
 ) -> EpochMetrics:
-    if not examples:
-        raise ValueError("examples must be non-empty")
+    if sample_indices.size == 0:
+        raise ValueError("sample_indices must be non-empty")
     device = resolve_device(training_config.device)
     model.to(device)
-    n_classes = len(examples[0].candidate_log_fees)
     if class_weights is None:
-        class_weights = build_class_weights(examples, n_classes)
+        class_weights = build_class_weights(store.class_labels, sample_indices, store.action_count)
     class_weights = class_weights.to(device)
     microbatch_size = choose_microbatch_size(training_config.effective_batch_size, device)
     loader = DataLoader(
-        SequenceDataset(examples),
+        SequenceDataset(store, sample_indices, lookback_steps=lookback_steps),
         batch_size=microbatch_size,
         shuffle=False,
     )

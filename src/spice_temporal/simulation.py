@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import bisect
-import math
 import random
 import statistics
 from dataclasses import dataclass
 
-from spice_temporal.records import SupervisedExample
+import numpy as np
+from numpy.typing import NDArray
+
+from spice_temporal.datasets import TemporalDatasetStore
+
+IntVector = NDArray[np.int64]
 
 
 @dataclass(slots=True)
@@ -17,9 +21,9 @@ class SimulationRunSummary:
     window_end_timestamp: float
     n_arrivals: int
     n_events: int
-    mean_profit_over_baseline: float
-    mean_cost_over_optimum: float
-    baseline_mean_cost_over_optimum: float
+    profit_over_baseline: float
+    cost_over_optimum: float
+    baseline_cost_over_optimum: float
 
 
 @dataclass(slots=True)
@@ -52,77 +56,86 @@ def sample_poisson_arrivals(
     return arrivals
 
 
-def select_example_indices_for_arrivals(
-    examples: list[SupervisedExample],
+def select_sample_positions_for_arrivals(
+    anchor_timestamps: list[int],
     arrivals: list[float],
 ) -> list[int]:
-    timestamps = [example.anchor_timestamp for example in examples]
-    selected_indices: list[int] = []
+    selected_positions: list[int] = []
     for arrival in arrivals:
-        index = bisect.bisect_right(timestamps, arrival) - 1
-        if index >= 0:
-            selected_indices.append(index)
-    return selected_indices
+        position = bisect.bisect_right(anchor_timestamps, arrival) - 1
+        if position >= 0:
+            selected_positions.append(position)
+    return selected_positions
 
 
 def summarize_realized_costs(
-    examples: list[SupervisedExample],
+    store: TemporalDatasetStore,
     predicted_offsets: list[int],
-    selected_indices: list[int],
+    sample_indices: IntVector,
+    selected_positions: list[int],
     *,
     window_start_timestamp: float,
     window_end_timestamp: float,
     n_arrivals: int,
 ) -> SimulationRunSummary:
-    if len(examples) != len(predicted_offsets):
-        raise ValueError("examples and predicted_offsets must have the same length")
-    if not selected_indices:
-        raise ValueError("selected_indices must be non-empty")
+    if len(predicted_offsets) != int(sample_indices.shape[0]):
+        raise ValueError("predicted_offsets must align with sample_indices")
+    if not selected_positions:
+        raise ValueError("selected_positions must be non-empty")
 
-    profits: list[float] = []
-    model_costs: list[float] = []
-    baseline_costs: list[float] = []
-    for index in selected_indices:
-        example = examples[index]
-        predicted_offset = predicted_offsets[index]
-        realized = math.exp(example.candidate_log_fees[predicted_offset])
-        baseline = math.exp(example.next_block_log_fee)
-        optimum = math.exp(example.optimal_log_fee)
-        profits.append((baseline - realized) / baseline)
-        model_costs.append((realized - optimum) / optimum)
-        baseline_costs.append((baseline - optimum) / optimum)
+    selected_sample_indices = sample_indices[np.asarray(selected_positions, dtype=np.int64)]
+    selected_offsets = np.asarray(
+        [predicted_offsets[position] for position in selected_positions],
+        dtype=np.int64,
+    )
+    selected_action_log_fees = store.action_log_fees[selected_sample_indices]
+    realized_logs = selected_action_log_fees[np.arange(selected_offsets.shape[0]), selected_offsets]
+    realized_total = float(np.exp(realized_logs.astype(np.float64, copy=False)).sum())
+    baseline_total = float(
+        np.exp(
+            store.next_block_log_fee[selected_sample_indices].astype(np.float64, copy=False)
+        ).sum()
+    )
+    optimum_total = float(
+        np.exp(
+            store.optimal_log_fee[selected_sample_indices].astype(np.float64, copy=False)
+        ).sum()
+    )
 
     return SimulationRunSummary(
         window_start_timestamp=window_start_timestamp,
         window_end_timestamp=window_end_timestamp,
         n_arrivals=n_arrivals,
-        n_events=len(selected_indices),
-        mean_profit_over_baseline=statistics.fmean(profits),
-        mean_cost_over_optimum=statistics.fmean(model_costs),
-        baseline_mean_cost_over_optimum=statistics.fmean(baseline_costs),
+        n_events=len(selected_positions),
+        profit_over_baseline=(baseline_total - realized_total) / baseline_total,
+        cost_over_optimum=(realized_total - optimum_total) / optimum_total,
+        baseline_cost_over_optimum=(baseline_total - optimum_total) / optimum_total,
     )
 
 
 def run_temporal_simulation(
-    examples: list[SupervisedExample],
+    store: TemporalDatasetStore,
     predicted_offsets: list[int],
     *,
+    sample_indices: IntVector,
     window_seconds: int,
     arrival_rate_per_second: float,
     repetitions: int,
     seed: int,
 ) -> SimulationSummary:
-    if len(examples) != len(predicted_offsets):
-        raise ValueError("examples and predicted_offsets must have the same length")
+    if len(predicted_offsets) != int(sample_indices.shape[0]):
+        raise ValueError("predicted_offsets must align with sample_indices")
     if repetitions <= 0:
         raise ValueError("repetitions must be positive")
     if window_seconds <= 0:
         raise ValueError("window_seconds must be positive")
-    if not examples:
-        raise ValueError("examples must be non-empty")
+    if sample_indices.size == 0:
+        raise ValueError("sample_indices must be non-empty")
 
-    first_timestamp = examples[0].anchor_timestamp
-    last_timestamp = examples[-1].anchor_timestamp
+    anchor_timestamps_array = store.timestamps[store.anchor_row_indices[sample_indices]]
+    anchor_timestamps = anchor_timestamps_array.tolist()
+    first_timestamp = anchor_timestamps[0]
+    last_timestamp = anchor_timestamps[-1]
     latest_start = last_timestamp - window_seconds
     if latest_start < first_timestamp:
         raise ValueError("Evaluation examples do not cover the requested simulation window")
@@ -138,14 +151,15 @@ def run_temporal_simulation(
             start_timestamp=window_start,
             end_timestamp=window_end,
         )
-        selected_indices = select_example_indices_for_arrivals(examples, arrivals)
-        if not selected_indices:
+        selected_positions = select_sample_positions_for_arrivals(anchor_timestamps, arrivals)
+        if not selected_positions:
             continue
         runs.append(
             summarize_realized_costs(
-                examples,
+                store,
                 predicted_offsets,
-                selected_indices,
+                sample_indices,
+                selected_positions,
                 window_start_timestamp=window_start,
                 window_end_timestamp=window_end,
                 n_arrivals=len(arrivals),
@@ -155,9 +169,9 @@ def run_temporal_simulation(
     if not runs:
         raise ValueError("Simulation produced no valid runs")
 
-    profits = [run.mean_profit_over_baseline for run in runs]
-    model_costs = [run.mean_cost_over_optimum for run in runs]
-    baseline_costs = [run.baseline_mean_cost_over_optimum for run in runs]
+    profits = [run.profit_over_baseline for run in runs]
+    model_costs = [run.cost_over_optimum for run in runs]
+    baseline_costs = [run.baseline_cost_over_optimum for run in runs]
     return SimulationSummary(
         mean_profit_over_baseline=statistics.fmean(profits),
         std_profit_over_baseline=statistics.pstdev(profits),

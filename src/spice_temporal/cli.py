@@ -200,12 +200,11 @@ def train(
     typer.echo(f"n_examples_total={result.prepared.n_examples_total}")
     typer.echo(f"lookback_steps={result.prepared.geometry.lookback_steps}")
     typer.echo(f"max_extra_wait_steps={result.prepared.geometry.max_extra_wait_steps}")
-    typer.echo(f"candidate_block_count={result.prepared.geometry.candidate_block_count}")
+    typer.echo(f"action_count={result.prepared.geometry.action_count}")
     typer.echo(f"n_features={result.prepared.n_features}")
-    typer.echo(f"n_classes={result.prepared.n_classes}")
-    typer.echo(f"train_examples={len(result.prepared.train_examples)}")
-    typer.echo(f"validation_examples={len(result.prepared.validation_examples)}")
-    typer.echo(f"test_examples={len(result.prepared.test_examples)}")
+    typer.echo(f"train_examples={result.prepared.split_indices.train.shape[0]}")
+    typer.echo(f"validation_examples={result.prepared.split_indices.validation.shape[0]}")
+    typer.echo(f"test_examples={result.prepared.split_indices.test.shape[0]}")
     typer.echo(f"best_epoch={result.training_result.best_epoch}")
     typer.echo(f"test_loss={result.test_metrics.total_loss:.6f}")
     typer.echo(f"test_accuracy={result.test_metrics.accuracy:.4f}")
@@ -242,13 +241,16 @@ def simulate(
     )
     predicted_offsets = predict_class_offsets(
         loaded_artifact.model,
-        examples=prepared.examples,
+        store=prepared.store,
+        sample_indices=prepared.sample_indices,
+        lookback_steps=prepared.geometry.lookback_steps,
         effective_batch_size=config.training.effective_batch_size,
         device=device,
     )
     simulation = run_temporal_simulation(
-        prepared.examples,
+        prepared.store,
         predicted_offsets,
+        sample_indices=prepared.sample_indices,
         window_seconds=config.simulation.window_seconds,
         arrival_rate_per_second=config.simulation.arrival_rate_per_second,
         repetitions=config.simulation.repetitions,

@@ -74,14 +74,17 @@ class ArtifactRoundTripTestCase(unittest.TestCase):
             self.assertTrue((artifact_dir / ARTIFACT_MANIFEST_FILENAME).exists())
             self.assertTrue((artifact_dir / MODEL_STATE_FILENAME).exists())
             self.assertEqual(loaded.manifest.max_delay_seconds, 36)
-            self.assertEqual(loaded.manifest.n_classes, result.prepared.n_classes)
+            self.assertEqual(loaded.manifest.action_count, result.prepared.action_count)
             with torch.no_grad():
-                sample = torch.tensor(
-                    result.prepared.train_examples[0].inputs,
-                    dtype=torch.float32,
+                first_train_index = int(result.prepared.split_indices.train[0])
+                anchor_row = int(result.prepared.store.anchor_row_indices[first_train_index])
+                sample = torch.from_numpy(
+                    result.prepared.store.feature_matrix[
+                        anchor_row - result.prepared.geometry.lookback_steps + 1 : anchor_row + 1
+                    ]
                 ).unsqueeze(0)
                 outputs = loaded.model(sample)
-            self.assertEqual(outputs.logits.shape[-1], result.prepared.n_classes)
+            self.assertEqual(outputs.logits.shape[-1], result.prepared.action_count)
 
 
 if __name__ == "__main__":

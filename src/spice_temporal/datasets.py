@@ -1,34 +1,70 @@
-"""Dataset construction logic."""
+"""Dataset geometry and array-backed temporal stores."""
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 
+import numpy as np
+from numpy.typing import NDArray
+
 from spice_temporal.config import SplitConfig
-from spice_temporal.features import feature_warmup_blocks
-from spice_temporal.records import BlockRecord, FeatureRow, SupervisedExample
+from spice_temporal.features import FeatureTable, feature_warmup_blocks
+from spice_temporal.records import BlockRecord
+
+FloatMatrix = NDArray[np.float32]
+FloatVector = NDArray[np.float32]
+IntVector = NDArray[np.int64]
 
 
 @dataclass(slots=True)
 class DatasetGeometry:
     lookback_steps: int
     max_extra_wait_steps: int
-    candidate_block_count: int
+    action_count: int
     feature_warmup_blocks: int
     context_block_count: int
 
     def required_training_block_count(self, target_anchor_count: int) -> int:
         if target_anchor_count <= 0:
             raise ValueError("target_anchor_count must be positive")
-        return self.context_block_count + target_anchor_count + self.candidate_block_count
+        return self.context_block_count + target_anchor_count + self.action_count
 
 
 @dataclass(slots=True)
-class DatasetSplit:
-    train: list[SupervisedExample]
-    validation: list[SupervisedExample]
-    test: list[SupervisedExample]
+class DatasetSplitIndices:
+    train: IntVector
+    validation: IntVector
+    test: IntVector
+
+
+@dataclass(slots=True)
+class TemporalDatasetStore:
+    feature_matrix: FloatMatrix
+    block_numbers: IntVector
+    timestamps: IntVector
+    anchor_row_indices: IntVector
+    class_labels: IntVector
+    action_log_fees: FloatMatrix
+    target_log_fee: FloatVector
+    next_block_log_fee: FloatVector
+    optimal_log_fee: FloatVector
+
+    @property
+    def n_rows(self) -> int:
+        return int(self.feature_matrix.shape[0])
+
+    @property
+    def n_features(self) -> int:
+        return int(self.feature_matrix.shape[1])
+
+    @property
+    def n_samples(self) -> int:
+        return int(self.anchor_row_indices.shape[0])
+
+    @property
+    def action_count(self) -> int:
+        return int(self.action_log_fees.shape[1])
 
 
 def lookback_steps_for_seconds(lookback_seconds: int, block_time_seconds: float) -> int:
@@ -43,7 +79,7 @@ def max_extra_wait_steps_for_delay(max_delay_seconds: int, block_time_seconds: f
     return max(1, math.floor(max_delay_seconds / block_time_seconds))
 
 
-def candidate_block_count_for_delay(max_delay_seconds: int, block_time_seconds: float) -> int:
+def action_count_for_delay(max_delay_seconds: int, block_time_seconds: float) -> int:
     return max_extra_wait_steps_for_delay(max_delay_seconds, block_time_seconds) + 1
 
 
@@ -55,12 +91,12 @@ def derive_dataset_geometry(
 ) -> DatasetGeometry:
     lookback_steps = lookback_steps_for_seconds(lookback_seconds, block_time_seconds)
     max_extra_wait_steps = max_extra_wait_steps_for_delay(max_delay_seconds, block_time_seconds)
-    candidate_block_count = candidate_block_count_for_delay(max_delay_seconds, block_time_seconds)
+    action_count = action_count_for_delay(max_delay_seconds, block_time_seconds)
     warmup_blocks = feature_warmup_blocks()
     return DatasetGeometry(
         lookback_steps=lookback_steps,
         max_extra_wait_steps=max_extra_wait_steps,
-        candidate_block_count=candidate_block_count,
+        action_count=action_count,
         feature_warmup_blocks=warmup_blocks,
         context_block_count=warmup_blocks + lookback_steps - 1,
     )
@@ -94,77 +130,78 @@ def history_context_blocks(
     return blocks[-geometry.context_block_count :]
 
 
-def earliest_min_offset(values: list[float]) -> int:
-    if not values:
-        raise ValueError("Cannot choose a minimum offset from an empty list")
-    min_value = min(values)
-    for index, value in enumerate(values):
-        if value == min_value:
-            return index
-    raise RuntimeError("Unreachable")
-
-
-def build_supervised_examples(
-    feature_rows: list[FeatureRow],
+def build_temporal_store(
+    feature_table: FeatureTable,
     *,
     lookback_steps: int,
-    candidate_block_count: int,
-) -> list[SupervisedExample]:
+    action_count: int,
+) -> TemporalDatasetStore:
     if lookback_steps <= 0:
         raise ValueError("lookback_steps must be positive")
-    if candidate_block_count <= 0:
-        raise ValueError("candidate_block_count must be positive")
+    if action_count <= 0:
+        raise ValueError("action_count must be positive")
 
-    examples: list[SupervisedExample] = []
-    max_anchor = len(feature_rows) - candidate_block_count
-    for anchor_index in range(lookback_steps - 1, max_anchor):
-        sequence_start = anchor_index - lookback_steps + 1
-        sequence = feature_rows[sequence_start : anchor_index + 1]
-        candidates = feature_rows[anchor_index + 1 : anchor_index + 1 + candidate_block_count]
-        candidate_log_fees = [row.log_base_fee for row in candidates]
-        min_offset = earliest_min_offset(candidate_log_fees)
-        examples.append(
-            SupervisedExample(
-                anchor_block_number=feature_rows[anchor_index].block_number,
-                anchor_timestamp=feature_rows[anchor_index].timestamp,
-                inputs=[row.features for row in sequence],
-                class_label=min_offset,
-                target_log_fee=candidate_log_fees[min_offset],
-                candidate_log_fees=candidate_log_fees,
-                next_block_log_fee=candidate_log_fees[0],
-                optimal_log_fee=min(candidate_log_fees),
-            )
-        )
-    return examples
+    max_anchor = len(feature_table.block_numbers) - action_count
+    if max_anchor <= lookback_steps - 1:
+        raise ValueError("Feature table is too short to produce any supervised samples")
+
+    anchor_row_indices = np.arange(lookback_steps - 1, max_anchor, dtype=np.int64)
+    n_samples = int(anchor_row_indices.shape[0])
+    class_labels = np.empty(n_samples, dtype=np.int64)
+    action_log_fees = np.empty((n_samples, action_count), dtype=np.float32)
+    target_log_fee = np.empty(n_samples, dtype=np.float32)
+    next_block_log_fee = np.empty(n_samples, dtype=np.float32)
+    optimal_log_fee = np.empty(n_samples, dtype=np.float32)
+
+    for sample_index, anchor_row_index in enumerate(anchor_row_indices):
+        candidates = feature_table.log_base_fees[
+            anchor_row_index + 1 : anchor_row_index + 1 + action_count
+        ]
+        class_label = int(np.argmin(candidates))
+        class_labels[sample_index] = class_label
+        action_log_fees[sample_index] = candidates
+        target_log_fee[sample_index] = candidates[class_label]
+        next_block_log_fee[sample_index] = candidates[0]
+        optimal_log_fee[sample_index] = float(candidates.min())
+
+    return TemporalDatasetStore(
+        feature_matrix=feature_table.feature_matrix,
+        block_numbers=feature_table.block_numbers,
+        timestamps=feature_table.timestamps,
+        anchor_row_indices=anchor_row_indices,
+        class_labels=class_labels,
+        action_log_fees=action_log_fees,
+        target_log_fee=target_log_fee,
+        next_block_log_fee=next_block_log_fee,
+        optimal_log_fee=optimal_log_fee,
+    )
 
 
-def filter_examples_by_anchor_window(
-    examples: list[SupervisedExample],
+def filter_sample_indices_by_anchor_window(
+    store: TemporalDatasetStore,
     *,
     start_timestamp: int,
     end_timestamp: int,
-) -> list[SupervisedExample]:
-    return [
-        example
-        for example in examples
-        if start_timestamp <= example.anchor_timestamp < end_timestamp
-    ]
+) -> IntVector:
+    anchor_timestamps = store.timestamps[store.anchor_row_indices]
+    mask = (anchor_timestamps >= start_timestamp) & (anchor_timestamps < end_timestamp)
+    return np.flatnonzero(mask).astype(np.int64, copy=False)
 
 
-def chronological_split(
-    examples: list[SupervisedExample],
+def chronological_split_indices(
+    n_samples: int,
     split_config: SplitConfig,
-) -> DatasetSplit:
-    total = len(examples)
-    if total < 3:
+) -> DatasetSplitIndices:
+    if n_samples < 3:
         raise ValueError("Need at least three examples to create train/validation/test splits")
 
-    train_end = int(total * split_config.train_fraction)
-    validation_end = train_end + int(total * split_config.validation_fraction)
-    train_end = max(1, min(train_end, total - 2))
-    validation_end = max(train_end + 1, min(validation_end, total - 1))
-    return DatasetSplit(
-        train=examples[:train_end],
-        validation=examples[train_end:validation_end],
-        test=examples[validation_end:],
+    train_end = int(n_samples * split_config.train_fraction)
+    validation_end = train_end + int(n_samples * split_config.validation_fraction)
+    train_end = max(1, min(train_end, n_samples - 2))
+    validation_end = max(train_end + 1, min(validation_end, n_samples - 1))
+    all_indices = np.arange(n_samples, dtype=np.int64)
+    return DatasetSplitIndices(
+        train=all_indices[:train_end],
+        validation=all_indices[train_end:validation_end],
+        test=all_indices[validation_end:],
     )

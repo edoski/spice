@@ -16,8 +16,8 @@ Practical reproduction scaffold for the temporal module described in `ICDCS_2026
 - `env.py`: local `.env` loading and Alchemy URL resolution.
 - `cryo.py`: cryo pull planning and execution.
 - `io.py` and `enrich.py`: block-dataset loading plus `gas_limit` enrichment for cryo output.
-- `features.py`, `datasets.py`, and `normalization.py`: feature engineering, supervised example construction, chronological splits, and train-only scaling.
-- `models.py`, `torch_datasets.py`, `training.py`, and `evaluation.py`: PyTorch models, tensor adapters, training loop, and metrics.
+- `features.py`, `datasets.py`, and `normalization.py`: feature engineering, array-backed temporal dataset stores, chronological split indices, and exact train-only scaling over overlapping windows.
+- `models.py`, `torch_datasets.py`, `training.py`, and `evaluation.py`: PyTorch models, lazy sequence slicing, training loop, inverse-frequency class weighting, and ratio-of-sums economic metrics.
 - `pipeline.py`: training-dataset preparation, inference-dataset preparation, and one-run model training.
 - `artifacts.py`: canonical training artifact manifest plus model save/load helpers.
 - `reporting.py`: structured JSON report artifacts for training and simulation runs.
@@ -34,7 +34,7 @@ Practical reproduction scaffold for the temporal module described in `ICDCS_2026
 
 1. Pull raw block data with `cryo`.
 2. Enrich missing block fields if needed.
-3. Build supervised datasets with fixed lookback and bounded delay budgets.
+3. Build supervised datasets with fixed lookback and bounded delay budgets, where action `0` means next-block execution and action `k` means waiting `k` extra blocks.
 4. Train the 27-model baseline matrix into canonical artifact directories.
 5. Run evaluation-day temporal simulations from persisted artifacts.
 6. Start chain-specific HPO only after the baseline matrix is verified.
