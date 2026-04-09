@@ -53,7 +53,7 @@ def build_cryo_args(
         "--timestamps",
         timestamps.as_cryo_arg(),
         "--rpc",
-        resolve_rpc_url(chain.rpc_env_var),
+        resolve_rpc_url(chain.name),
         "--network-name",
         chain.name,
         "--include-columns",
@@ -73,7 +73,7 @@ def build_cryo_command(
     *,
     overwrite: bool = False,
 ) -> str:
-    rpc_template = ALCHEMY_RPC_TEMPLATE[chain.rpc_env_var].replace("{api_key}", "$ALCHEMY_API_KEY")
+    rpc_template = ALCHEMY_RPC_TEMPLATE[chain.name].replace("{api_key}", "$ALCHEMY_API_KEY")
     parts = [
         "cryo",
         "blocks",

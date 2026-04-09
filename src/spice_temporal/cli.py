@@ -7,7 +7,7 @@ from pathlib import Path
 
 import typer
 
-from spice_temporal.config import ExperimentConfig, ModelConfig
+from spice_temporal.config import ChainConfig, ExperimentConfig, ModelConfig
 from spice_temporal.cryo import build_pull_plan, evaluation_range, history_range_for_chain, run_cryo
 from spice_temporal.enrich import enrich_path
 from spice_temporal.env import load_project_env, redact_sensitive_text, resolve_rpc_url
@@ -16,6 +16,13 @@ from spice_temporal.rpc import RpcClient
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 load_project_env()
+
+
+def require_chain(config: ExperimentConfig, chain_name: str) -> ChainConfig:
+    chain = next((item for item in config.chains if item.name == chain_name), None)
+    if chain is None:
+        raise typer.BadParameter(f"Unknown chain: {chain_name}")
+    return chain
 
 
 @app.command("show-config")
@@ -29,8 +36,7 @@ def show_config(config_path: Path) -> None:
     for chain in config.chains:
         typer.echo(
             f"  - {chain.name}: chain_id={chain.chain_id}, "
-            f"nominal_block_time={chain.nominal_block_time_seconds}s, "
-            f"rpc_env_var={chain.rpc_env_var}"
+            f"nominal_block_time={chain.nominal_block_time_seconds}s"
         )
 
 
@@ -57,10 +63,8 @@ def enrich_blocks(
 ) -> None:
     """Add gas_limit to cryo block files using direct JSON-RPC lookups."""
     config = ExperimentConfig.from_yaml(config_path)
-    chain = next((item for item in config.chains if item.name == chain_name), None)
-    if chain is None:
-        raise typer.BadParameter(f"Unknown chain: {chain_name}")
-    client = RpcClient(resolve_rpc_url(chain.rpc_env_var))
+    chain = require_chain(config, chain_name)
+    client = RpcClient(resolve_rpc_url(chain.name))
     written = enrich_path(
         input_path,
         output_path,
@@ -83,9 +87,7 @@ def pull_blocks(
 ) -> None:
     """Run cryo for one chain and one dataset segment."""
     config = ExperimentConfig.from_yaml(config_path)
-    chain = next((item for item in config.chains if item.name == chain_name), None)
-    if chain is None:
-        raise typer.BadParameter(f"Unknown chain: {chain_name}")
+    chain = require_chain(config, chain_name)
     if segment not in {"history", "evaluation"}:
         raise typer.BadParameter("segment must be 'history' or 'evaluation'")
 
@@ -115,9 +117,7 @@ def train_single(
 ) -> None:
     """Run one local training job from a single raw block file."""
     config = ExperimentConfig.from_yaml(config_path)
-    chain = next((item for item in config.chains if item.name == chain_name), None)
-    if chain is None:
-        raise typer.BadParameter(f"Unknown chain: {chain_name}")
+    chain = require_chain(config, chain_name)
     if family not in {"lstm", "transformer", "transformer_lstm"}:
         raise typer.BadParameter(f"Unknown model family: {family}")
 

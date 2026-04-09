@@ -6,12 +6,13 @@ import os
 
 from dotenv import load_dotenv
 
+from spice_temporal.config import ChainName
 from spice_temporal.constants import PROJECT_ROOT
 
 ALCHEMY_RPC_TEMPLATE = {
-    "ETH_RPC_URL": "https://eth-mainnet.g.alchemy.com/v2/{api_key}",
-    "POLYGON_RPC_URL": "https://polygon-mainnet.g.alchemy.com/v2/{api_key}",
-    "AVAX_RPC_URL": "https://avax-mainnet.g.alchemy.com/v2/{api_key}",
+    "ethereum": "https://eth-mainnet.g.alchemy.com/v2/{api_key}",
+    "polygon": "https://polygon-mainnet.g.alchemy.com/v2/{api_key}",
+    "avalanche": "https://avax-mainnet.g.alchemy.com/v2/{api_key}",
 }
 
 
@@ -26,8 +27,8 @@ def get_alchemy_api_key() -> str:
     return api_key
 
 
-def resolve_rpc_url(env_var: str) -> str:
-    return ALCHEMY_RPC_TEMPLATE[env_var].format(api_key=get_alchemy_api_key())
+def resolve_rpc_url(chain_name: ChainName) -> str:
+    return ALCHEMY_RPC_TEMPLATE[chain_name].format(api_key=get_alchemy_api_key())
 
 
 def redact_sensitive_text(text: str) -> str:

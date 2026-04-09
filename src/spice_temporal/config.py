@@ -18,7 +18,6 @@ class ChainConfig:
     chain_id: int
     nominal_block_time_seconds: float
     history_days_hint: int
-    rpc_env_var: str
 
 
 @dataclass(slots=True)
@@ -73,21 +72,18 @@ class ExperimentConfig:
                 chain_id=1,
                 nominal_block_time_seconds=12.0,
                 history_days_hint=70,
-                rpc_env_var="ETH_RPC_URL",
             ),
             ChainConfig(
                 name="polygon",
                 chain_id=137,
                 nominal_block_time_seconds=2.0,
                 history_days_hint=20,
-                rpc_env_var="POLYGON_RPC_URL",
             ),
             ChainConfig(
                 name="avalanche",
                 chain_id=43114,
                 nominal_block_time_seconds=1.0,
                 history_days_hint=20,
-                rpc_env_var="AVAX_RPC_URL",
             ),
         ]
     )

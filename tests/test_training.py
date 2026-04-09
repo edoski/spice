@@ -3,10 +3,11 @@ import unittest
 import torch
 
 from spice_temporal.config import ModelConfig, TrainingConfig
+from spice_temporal.evaluation import BatchMetrics
 from spice_temporal.models import build_model
 from spice_temporal.normalization import fit_standard_scaler, transform_examples
 from spice_temporal.records import SupervisedExample
-from spice_temporal.training import train_model
+from spice_temporal.training import _mean_metrics, train_model
 
 
 def make_example(anchor: int, label: int) -> SupervisedExample:
@@ -28,6 +29,30 @@ def make_example(anchor: int, label: int) -> SupervisedExample:
 
 
 class TrainingSmokeTestCase(unittest.TestCase):
+    def test_epoch_metrics_are_weighted_by_batch_size(self) -> None:
+        summary = _mean_metrics(
+            [
+                BatchMetrics(
+                    count=4,
+                    total_loss=1.0,
+                    accuracy=0.5,
+                    mean_cost_over_optimum=0.2,
+                    mean_profit_over_baseline=0.1,
+                ),
+                BatchMetrics(
+                    count=1,
+                    total_loss=3.0,
+                    accuracy=1.0,
+                    mean_cost_over_optimum=0.8,
+                    mean_profit_over_baseline=0.4,
+                ),
+            ]
+        )
+        self.assertAlmostEqual(summary.total_loss, 1.4)
+        self.assertAlmostEqual(summary.accuracy, 0.6)
+        self.assertAlmostEqual(summary.mean_cost_over_optimum, 0.32)
+        self.assertAlmostEqual(summary.mean_profit_over_baseline, 0.16)
+
     def test_lstm_smoke_train(self) -> None:
         train_examples = [make_example(index, index % 3) for index in range(24)]
         validation_examples = [make_example(100 + index, index % 3) for index in range(6)]

@@ -9,6 +9,7 @@ import torch
 
 @dataclass(slots=True)
 class BatchMetrics:
+    count: int
     total_loss: float
     accuracy: float
     mean_cost_over_optimum: float
@@ -32,6 +33,7 @@ def compute_batch_metrics(
     next_block_log_fee: torch.Tensor,
     optimal_log_fee: torch.Tensor,
 ) -> BatchMetrics:
+    count = class_labels.numel()
     realized_log_fee = realized_log_fees_from_logits(logits, future_log_fees)
     realized_fee = torch.exp(realized_log_fee)
     baseline_fee = torch.exp(next_block_log_fee)
@@ -43,6 +45,7 @@ def compute_batch_metrics(
         (baseline_fee - realized_fee) / baseline_fee.clamp_min(1e-8)
     ).mean().item()
     return BatchMetrics(
+        count=count,
         total_loss=total_loss.item(),
         accuracy=accuracy,
         mean_cost_over_optimum=cost_over_optimum,

@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 
 from spice_temporal.config import TrainingConfig
 from spice_temporal.evaluation import BatchMetrics, compute_batch_metrics
+from spice_temporal.records import SupervisedExample
 from spice_temporal.torch_datasets import SequenceDataset, build_class_weights
 
 
@@ -60,13 +61,15 @@ def choose_microbatch_size(effective_batch_size: int, device: torch.device) -> i
 def _mean_metrics(metrics: list[BatchMetrics]) -> EpochMetrics:
     if not metrics:
         raise ValueError("Cannot summarize an empty metric list")
-    denominator = len(metrics)
+    denominator = sum(item.count for item in metrics)
     return EpochMetrics(
-        total_loss=sum(item.total_loss for item in metrics) / denominator,
-        accuracy=sum(item.accuracy for item in metrics) / denominator,
-        mean_cost_over_optimum=sum(item.mean_cost_over_optimum for item in metrics) / denominator,
+        total_loss=sum(item.total_loss * item.count for item in metrics) / denominator,
+        accuracy=sum(item.accuracy * item.count for item in metrics) / denominator,
+        mean_cost_over_optimum=(
+            sum(item.mean_cost_over_optimum * item.count for item in metrics) / denominator
+        ),
         mean_profit_over_baseline=(
-            sum(item.mean_profit_over_baseline for item in metrics) / denominator
+            sum(item.mean_profit_over_baseline * item.count for item in metrics) / denominator
         ),
     )
 
@@ -134,8 +137,8 @@ def _run_epoch(
 def train_model(
     model: nn.Module,
     *,
-    train_examples: list,
-    validation_examples: list,
+    train_examples: list[SupervisedExample],
+    validation_examples: list[SupervisedExample],
     config: TrainingConfig,
 ) -> TrainingResult:
     if not train_examples or not validation_examples:
@@ -218,15 +221,18 @@ def train_model(
 def evaluate_model(
     model: nn.Module,
     *,
-    examples: list,
+    examples: list[SupervisedExample],
     training_config: TrainingConfig,
+    class_weights: torch.Tensor | None = None,
 ) -> EpochMetrics:
     if not examples:
         raise ValueError("examples must be non-empty")
     device = resolve_device(training_config.device)
     model.to(device)
     n_classes = len(examples[0].future_log_fees)
-    class_weights = build_class_weights(examples, n_classes).to(device)
+    if class_weights is None:
+        class_weights = build_class_weights(examples, n_classes)
+    class_weights = class_weights.to(device)
     microbatch_size = choose_microbatch_size(training_config.effective_batch_size, device)
     loader = DataLoader(
         SequenceDataset(examples),

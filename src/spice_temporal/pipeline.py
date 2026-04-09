@@ -17,6 +17,7 @@ from spice_temporal.io import load_block_records
 from spice_temporal.models import build_model
 from spice_temporal.normalization import StandardScaler, fit_standard_scaler, transform_examples
 from spice_temporal.records import BlockRecord, SupervisedExample
+from spice_temporal.torch_datasets import build_class_weights
 from spice_temporal.training import EpochMetrics, TrainingResult, evaluate_model, train_model
 
 
@@ -65,6 +66,8 @@ def prepare_dataset(
         horizon_blocks=horizon_blocks,
     )
     split = chronological_split(examples, split_config)
+    if not split.train or not split.validation or not split.test:
+        raise ValueError("Dataset split produced an empty partition; provide more block history")
     scaler = fit_standard_scaler(split.train)
     train_examples = transform_examples(split.train, scaler)
     validation_examples = transform_examples(split.validation, scaler)
@@ -106,10 +109,12 @@ def run_single_training(
         validation_examples=prepared.validation_examples,
         config=training_config,
     )
+    class_weights = build_class_weights(prepared.train_examples, prepared.n_classes)
     test_metrics = evaluate_model(
         model,
         examples=prepared.test_examples,
         training_config=training_config,
+        class_weights=class_weights,
     )
     return SingleRunResult(
         prepared=prepared,
