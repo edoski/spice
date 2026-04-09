@@ -35,7 +35,7 @@ class SequenceBatch(TypedDict):
     inputs: Tensor
     class_label: Tensor
     target_log_fee: Tensor
-    future_log_fees: Tensor
+    candidate_log_fees: Tensor
     next_block_log_fee: Tensor
     optimal_log_fee: Tensor
 

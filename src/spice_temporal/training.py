@@ -101,7 +101,7 @@ def _run_epoch(
         inputs = batch["inputs"].to(device)
         class_labels = batch["class_label"].to(device)
         target_log_fee = batch["target_log_fee"].to(device)
-        future_log_fees = batch["future_log_fees"].to(device)
+        candidate_log_fees = batch["candidate_log_fees"].to(device)
         next_block_log_fee = batch["next_block_log_fee"].to(device)
         optimal_log_fee = batch["optimal_log_fee"].to(device)
 
@@ -124,7 +124,7 @@ def _run_epoch(
                 logits=outputs.logits.detach(),
                 total_loss=total_loss.detach(),
                 class_labels=class_labels.detach(),
-                future_log_fees=future_log_fees.detach(),
+                candidate_log_fees=candidate_log_fees.detach(),
                 next_block_log_fee=next_block_log_fee.detach(),
                 optimal_log_fee=optimal_log_fee.detach(),
             )
@@ -149,7 +149,7 @@ def train_model(
     set_global_seed(config.seed)
     device = resolve_device(config.device)
     model.to(device)
-    n_classes = len(train_examples[0].future_log_fees)
+    n_classes = len(train_examples[0].candidate_log_fees)
     class_weights = build_class_weights(train_examples, n_classes).to(device)
 
     microbatch_size = choose_microbatch_size(config.effective_batch_size, device)
@@ -231,7 +231,7 @@ def evaluate_model(
         raise ValueError("examples must be non-empty")
     device = resolve_device(training_config.device)
     model.to(device)
-    n_classes = len(examples[0].future_log_fees)
+    n_classes = len(examples[0].candidate_log_fees)
     if class_weights is None:
         class_weights = build_class_weights(examples, n_classes)
     class_weights = class_weights.to(device)

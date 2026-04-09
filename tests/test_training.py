@@ -22,7 +22,7 @@ def make_example(anchor: int, label: int) -> SupervisedExample:
         inputs=[[float(label), float(step)] for step in range(5)],
         class_label=label,
         target_log_fee=future[label],
-        future_log_fees=future,
+        candidate_log_fees=future,
         next_block_log_fee=future[0],
         optimal_log_fee=min(future),
     )

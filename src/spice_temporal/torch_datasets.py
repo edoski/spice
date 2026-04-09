@@ -29,7 +29,7 @@ class SequenceDataset(Dataset[SequenceBatch]):
             "inputs": torch.tensor(example.inputs, dtype=torch.float32),
             "class_label": torch.tensor(example.class_label, dtype=torch.long),
             "target_log_fee": torch.tensor(example.target_log_fee, dtype=torch.float32),
-            "future_log_fees": torch.tensor(example.future_log_fees, dtype=torch.float32),
+            "candidate_log_fees": torch.tensor(example.candidate_log_fees, dtype=torch.float32),
             "next_block_log_fee": torch.tensor(example.next_block_log_fee, dtype=torch.float32),
             "optimal_log_fee": torch.tensor(example.optimal_log_fee, dtype=torch.float32),
         }

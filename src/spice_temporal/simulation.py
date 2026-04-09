@@ -45,7 +45,7 @@ def summarize_realized_costs(
     profits: list[float] = []
     costs: list[float] = []
     for example, predicted_offset in zip(examples, predicted_offsets, strict=True):
-        realized = math.exp(example.future_log_fees[predicted_offset])
+        realized = math.exp(example.candidate_log_fees[predicted_offset])
         baseline = math.exp(example.next_block_log_fee)
         optimum = math.exp(example.optimal_log_fee)
         profits.append((baseline - realized) / baseline)

@@ -18,23 +18,23 @@ class BatchMetrics:
 
 def realized_log_fees_from_logits(
     logits: torch.Tensor,
-    future_log_fees: torch.Tensor,
+    candidate_log_fees: torch.Tensor,
 ) -> torch.Tensor:
     predicted_offsets = logits.argmax(dim=-1)
     gather_index = predicted_offsets.unsqueeze(-1)
-    return future_log_fees.gather(dim=1, index=gather_index).squeeze(-1)
+    return candidate_log_fees.gather(dim=1, index=gather_index).squeeze(-1)
 
 
 def compute_batch_metrics(
     logits: torch.Tensor,
     total_loss: torch.Tensor,
     class_labels: torch.Tensor,
-    future_log_fees: torch.Tensor,
+    candidate_log_fees: torch.Tensor,
     next_block_log_fee: torch.Tensor,
     optimal_log_fee: torch.Tensor,
 ) -> BatchMetrics:
     count = class_labels.numel()
-    realized_log_fee = realized_log_fees_from_logits(logits, future_log_fees)
+    realized_log_fee = realized_log_fees_from_logits(logits, candidate_log_fees)
     realized_fee = torch.exp(realized_log_fee)
     baseline_fee = torch.exp(next_block_log_fee)
     optimum_fee = torch.exp(optimal_log_fee)

@@ -18,7 +18,7 @@ Practical reproduction scaffold for the temporal module described in `ICDCS_2026
 - `io.py` and `enrich.py`: block-dataset loading plus `gas_limit` enrichment for cryo output.
 - `features.py`, `datasets.py`, and `normalization.py`: feature engineering, supervised example construction, chronological splits, and train-only scaling.
 - `models.py`, `torch_datasets.py`, `training.py`, and `evaluation.py`: PyTorch models, tensor adapters, training loop, and metrics.
-- `pipeline.py`: one-file orchestration for a single training run.
+- `pipeline.py`: one-run orchestration for dataset preparation, training, and evaluation.
 - `reporting.py`: structured JSON report artifacts for training runs.
 - `simulation.py`: temporal economic simulation helpers for the evaluation phase.
 - `cli.py`: Typer entrypoints for pull, enrich, and train commands.
@@ -33,7 +33,7 @@ Practical reproduction scaffold for the temporal module described in `ICDCS_2026
 
 1. Pull raw block data with `cryo`.
 2. Enrich missing block fields if needed.
-3. Build supervised datasets with fixed lookback and future windows.
+3. Build supervised datasets with fixed lookback and bounded delay budgets.
 4. Train the 27-model baseline matrix.
 5. Run economic simulations on the evaluation day.
 6. Start chain-specific HPO only after the baseline matrix is verified.
@@ -44,9 +44,9 @@ Use the dedicated pilot config to validate the full raw-data-to-training path be
 
 1. `python -m spice_temporal.cli pull-blocks configs/pilots/ethereum-36s.yaml ethereum history --no-dry-run`
 2. `python -m spice_temporal.cli enrich-blocks configs/pilots/ethereum-36s.yaml ethereum artifacts/pilots/ethereum-36s/raw/ethereum/history artifacts/pilots/ethereum-36s/enriched/ethereum/history`
-3. `python -m spice_temporal.cli train-single configs/pilots/ethereum-36s.yaml artifacts/pilots/ethereum-36s/enriched/ethereum/history ethereum lstm 36 --report-path artifacts/pilots/ethereum-36s/train-report.json`
+3. `python -m spice_temporal.cli train configs/pilots/ethereum-36s.yaml artifacts/pilots/ethereum-36s/enriched/ethereum/history ethereum lstm 36 --report-path artifacts/pilots/ethereum-36s/train-report.json`
 
-The first pilot target is `Ethereum + 36s + LSTM`, because it is the smallest real-data run that should still produce a non-trivial classification task.
+The first pilot target is `Ethereum + 36s + LSTM`, using fixed chain block times and a 36-second maximum additional delay budget over next-block execution.
 
 ## Verification
 
@@ -64,4 +64,4 @@ Typing is intentionally boundary-focused for now rather than repo-wide strict.
 - `python -m spice_temporal.cli plan-pull configs/pilots/ethereum-36s.yaml`
 - `python -m spice_temporal.cli pull-blocks configs/pilots/ethereum-36s.yaml ethereum history --no-dry-run`
 - `python -m spice_temporal.cli enrich-blocks configs/pilots/ethereum-36s.yaml ethereum <input-dir> <output-dir>`
-- `python -m spice_temporal.cli train-single configs/pilots/ethereum-36s.yaml <dataset-path> ethereum lstm 36 --report-path <report.json>`
+- `python -m spice_temporal.cli train configs/pilots/ethereum-36s.yaml <dataset-path> ethereum lstm 36 --report-path <report.json>`

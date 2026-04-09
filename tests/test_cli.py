@@ -22,7 +22,7 @@ def make_block(index: int) -> BlockRecord:
 
 
 class CliTrainingTestCase(unittest.TestCase):
-    def test_train_single_writes_report_for_dataset_directory(self) -> None:
+    def test_train_writes_report_for_dataset_directory(self) -> None:
         runner = CliRunner()
         with tempfile.TemporaryDirectory() as tmp_dir:
             dataset_dir = Path(tmp_dir) / "dataset"
@@ -35,7 +35,7 @@ class CliTrainingTestCase(unittest.TestCase):
             result = runner.invoke(
                 app,
                 [
-                    "train-single",
+                    "train",
                     "configs/pilots/ethereum-36s.yaml",
                     str(dataset_dir),
                     "ethereum",
@@ -51,7 +51,10 @@ class CliTrainingTestCase(unittest.TestCase):
             report = json.loads(report_path.read_text(encoding="utf-8"))
         self.assertEqual(report["chain"], "ethereum")
         self.assertEqual(report["family"], "lstm")
-        self.assertEqual(report["window_seconds"], 36)
+        self.assertEqual(report["max_delay_seconds"], 36)
+        self.assertEqual(report["block_time_seconds"], 12.0)
+        self.assertEqual(report["max_extra_wait_steps"], 3)
+        self.assertEqual(report["candidate_block_count"], 4)
         self.assertGreater(report["n_blocks"], 0)
         self.assertGreater(report["split_sizes"]["train_examples"], 0)
 

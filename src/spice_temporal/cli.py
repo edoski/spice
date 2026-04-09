@@ -12,7 +12,7 @@ from spice_temporal.config import ChainConfig, ExperimentConfig, ModelConfig, Mo
 from spice_temporal.cryo import build_pull_plan, evaluation_range, history_range_for_chain, run_cryo
 from spice_temporal.enrich import enrich_path
 from spice_temporal.env import load_project_env, redact_sensitive_text, resolve_rpc_url
-from spice_temporal.pipeline import run_single_training
+from spice_temporal.pipeline import run_training
 from spice_temporal.reporting import build_training_run_report, write_training_run_report
 from spice_temporal.rpc import RpcClient
 
@@ -32,7 +32,7 @@ def show_config(config_path: Path) -> None:
     """Print a quick summary of the experiment configuration."""
     config = ExperimentConfig.from_yaml(config_path)
     typer.echo(f"Output root: {config.output_root}")
-    typer.echo(f"Windows: {config.window_seconds}")
+    typer.echo(f"Max delays: {config.max_delay_seconds}")
     typer.echo(f"Lookback: {config.lookback_seconds}s")
     typer.echo(
         "Pull: "
@@ -44,7 +44,7 @@ def show_config(config_path: Path) -> None:
     for chain in config.chains:
         typer.echo(
             f"  - {chain.name}: chain_id={chain.chain_id}, "
-            f"nominal_block_time={chain.nominal_block_time_seconds}s"
+            f"block_time={chain.block_time_seconds}s"
         )
 
 
@@ -115,13 +115,13 @@ def pull_blocks(
         typer.echo(redact_sensitive_text(result.stderr.rstrip()))
 
 
-@app.command("train-single")
-def train_single(
+@app.command("train")
+def train(
     config_path: Path,
     block_path: Path,
     chain_name: str,
     family: str,
-    window_seconds: int,
+    max_delay_seconds: int,
     device: str = "auto",
     report_path: Path | None = None,
 ) -> None:
@@ -132,10 +132,10 @@ def train_single(
         raise typer.BadParameter(f"Unknown model family: {family}")
     family_name = cast(ModelFamily, family)
 
-    result = run_single_training(
+    result = run_training(
         block_path=block_path,
         chain=chain,
-        window_seconds=window_seconds,
+        max_delay_seconds=max_delay_seconds,
         lookback_seconds=config.lookback_seconds,
         model_config=ModelConfig(family=family_name),
         training_config=replace(config.training, device=device),
@@ -143,7 +143,8 @@ def train_single(
     )
     typer.echo(f"n_blocks={result.prepared.n_blocks}")
     typer.echo(f"lookback_steps={result.prepared.lookback_steps}")
-    typer.echo(f"horizon_blocks={result.prepared.horizon_blocks}")
+    typer.echo(f"max_extra_wait_steps={result.prepared.max_extra_wait_steps}")
+    typer.echo(f"candidate_block_count={result.prepared.candidate_block_count}")
     typer.echo(f"n_features={result.prepared.n_features}")
     typer.echo(f"n_classes={result.prepared.n_classes}")
     typer.echo(f"train_examples={len(result.prepared.train_examples)}")
@@ -159,9 +160,9 @@ def train_single(
         report = build_training_run_report(
             result,
             block_path=block_path,
-            chain_name=chain.name,
+            chain=chain,
             family=family_name,
-            window_seconds=window_seconds,
+            max_delay_seconds=max_delay_seconds,
             device_requested=device,
             lookback_seconds=config.lookback_seconds,
         )

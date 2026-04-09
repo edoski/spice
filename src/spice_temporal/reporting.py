@@ -6,8 +6,8 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from spice_temporal.config import ModelFamily
-from spice_temporal.pipeline import SingleRunResult
+from spice_temporal.config import ChainConfig, ModelFamily
+from spice_temporal.pipeline import TrainingRunResult
 
 
 @dataclass(slots=True)
@@ -30,12 +30,14 @@ class TrainingRunReport:
     input_path: str
     chain: str
     family: ModelFamily
-    window_seconds: int
+    max_delay_seconds: int
     device_requested: str
     lookback_seconds: int
+    block_time_seconds: float
+    max_extra_wait_steps: int
     n_blocks: int
     lookback_steps: int
-    horizon_blocks: int
+    candidate_block_count: int
     n_features: int
     n_classes: int
     split_sizes: SplitSizes
@@ -44,12 +46,12 @@ class TrainingRunReport:
 
 
 def build_training_run_report(
-    result: SingleRunResult,
+    result: TrainingRunResult,
     *,
     block_path: Path,
-    chain_name: str,
+    chain: ChainConfig,
     family: ModelFamily,
-    window_seconds: int,
+    max_delay_seconds: int,
     device_requested: str,
     lookback_seconds: int,
 ) -> TrainingRunReport:
@@ -57,14 +59,16 @@ def build_training_run_report(
     metrics = result.test_metrics
     return TrainingRunReport(
         input_path=str(block_path),
-        chain=chain_name,
+        chain=chain.name,
         family=family,
-        window_seconds=window_seconds,
+        max_delay_seconds=max_delay_seconds,
         device_requested=device_requested,
         lookback_seconds=lookback_seconds,
+        block_time_seconds=chain.block_time_seconds,
+        max_extra_wait_steps=prepared.max_extra_wait_steps,
         n_blocks=prepared.n_blocks,
         lookback_steps=prepared.lookback_steps,
-        horizon_blocks=prepared.horizon_blocks,
+        candidate_block_count=prepared.candidate_block_count,
         n_features=prepared.n_features,
         n_classes=prepared.n_classes,
         split_sizes=SplitSizes(

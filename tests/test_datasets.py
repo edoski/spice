@@ -2,11 +2,12 @@ import unittest
 
 from spice_temporal.config import SplitConfig
 from spice_temporal.datasets import (
-    average_interblock_seconds,
     build_supervised_examples,
+    candidate_block_count_for_delay,
     chronological_split,
     earliest_min_offset,
-    estimate_horizon_blocks,
+    lookback_steps_for_seconds,
+    max_extra_wait_steps_for_delay,
 )
 from spice_temporal.features import build_feature_rows, feature_names
 from spice_temporal.records import BlockRecord
@@ -24,12 +25,14 @@ def make_block(index: int, base_fee: int) -> BlockRecord:
 
 
 class DatasetLogicTestCase(unittest.TestCase):
-    def test_estimate_horizon_blocks(self) -> None:
-        self.assertEqual(estimate_horizon_blocks(36, 12.0), 3)
-        self.assertEqual(estimate_horizon_blocks(12, 1.6), 7)
-
-    def test_average_interblock_seconds(self) -> None:
-        self.assertAlmostEqual(average_interblock_seconds([0, 12, 24, 36]), 12.0)
+    def test_fixed_step_mappings(self) -> None:
+        self.assertEqual(lookback_steps_for_seconds(600, 12.0), 50)
+        self.assertEqual(max_extra_wait_steps_for_delay(12, 12.0), 1)
+        self.assertEqual(candidate_block_count_for_delay(12, 12.0), 2)
+        self.assertEqual(max_extra_wait_steps_for_delay(36, 12.0), 3)
+        self.assertEqual(candidate_block_count_for_delay(36, 12.0), 4)
+        self.assertEqual(max_extra_wait_steps_for_delay(12, 1.6), 7)
+        self.assertEqual(candidate_block_count_for_delay(12, 1.6), 8)
 
     def test_earliest_min_offset_breaks_ties_early(self) -> None:
         self.assertEqual(earliest_min_offset([4.0, 2.0, 2.0, 3.0]), 1)
@@ -38,18 +41,18 @@ class DatasetLogicTestCase(unittest.TestCase):
         blocks = [make_block(index, 100 + (index % 5)) for index in range(260)]
         rows = build_feature_rows(blocks)
         self.assertEqual(len(rows[0].features), len(feature_names()))
-        examples = build_supervised_examples(rows, lookback_steps=5, horizon_blocks=3)
+        examples = build_supervised_examples(rows, lookback_steps=5, candidate_block_count=4)
         self.assertGreater(len(examples), 0)
         first = examples[0]
         self.assertEqual(len(first.inputs), 5)
-        self.assertIn(first.class_label, {0, 1, 2})
-        self.assertEqual(len(first.future_log_fees), 3)
+        self.assertIn(first.class_label, {0, 1, 2, 3})
+        self.assertEqual(len(first.candidate_log_fees), 4)
         self.assertLessEqual(first.optimal_log_fee, first.next_block_log_fee)
 
     def test_chronological_split_preserves_order(self) -> None:
         blocks = [make_block(index, 100 + index) for index in range(260)]
         rows = build_feature_rows(blocks)
-        examples = build_supervised_examples(rows, lookback_steps=5, horizon_blocks=3)
+        examples = build_supervised_examples(rows, lookback_steps=5, candidate_block_count=4)
         split = chronological_split(examples, SplitConfig())
         self.assertLess(split.train[0].anchor_block_number, split.validation[0].anchor_block_number)
         self.assertLess(split.validation[0].anchor_block_number, split.test[0].anchor_block_number)

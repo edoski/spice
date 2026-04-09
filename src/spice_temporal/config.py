@@ -16,7 +16,7 @@ ChainName = Literal["ethereum", "polygon", "avalanche"]
 class ChainConfig:
     name: ChainName
     chain_id: int
-    nominal_block_time_seconds: float
+    block_time_seconds: float
     history_days_hint: int
 
 
@@ -66,7 +66,7 @@ class ModelConfig:
 @dataclass(slots=True)
 class ExperimentConfig:
     output_root: Path
-    window_seconds: list[int] = field(default_factory=lambda: [12, 24, 36])
+    max_delay_seconds: list[int] = field(default_factory=lambda: [12, 24, 36])
     lookback_seconds: int = 600
     target_anchor_count: int = 400_000
     anchor_buffer: int = 20_000
@@ -84,19 +84,19 @@ class ExperimentConfig:
             ChainConfig(
                 name="ethereum",
                 chain_id=1,
-                nominal_block_time_seconds=12.0,
+                block_time_seconds=12.0,
                 history_days_hint=70,
             ),
             ChainConfig(
                 name="polygon",
                 chain_id=137,
-                nominal_block_time_seconds=2.0,
+                block_time_seconds=2.0,
                 history_days_hint=20,
             ),
             ChainConfig(
                 name="avalanche",
                 chain_id=43114,
-                nominal_block_time_seconds=1.0,
+                block_time_seconds=1.6,
                 history_days_hint=20,
             ),
         ]
@@ -109,15 +109,18 @@ class ExperimentConfig:
 
         if "pull" not in raw:
             raise ValueError(f"Config at {path} must define a pull section")
+        if "max_delay_seconds" not in raw:
+            raise ValueError(f"Config at {path} must define max_delay_seconds")
+        if "chains" not in raw:
+            raise ValueError(f"Config at {path} must define chains")
 
         pull = PullConfig(**raw["pull"])
         split = SplitConfig(**raw.get("split", {}))
         training = TrainingConfig(**raw.get("training", {}))
-        default_chains = cls(output_root=Path(".")).chains
-        chains = [ChainConfig(**item) for item in raw.get("chains", [])] or default_chains
+        chains = [ChainConfig(**item) for item in raw["chains"]]
         return cls(
             output_root=Path(raw["output_root"]),
-            window_seconds=list(raw.get("window_seconds", [12, 24, 36])),
+            max_delay_seconds=list(raw["max_delay_seconds"]),
             lookback_seconds=raw.get("lookback_seconds", 600),
             target_anchor_count=raw.get("target_anchor_count", 400_000),
             anchor_buffer=raw.get("anchor_buffer", 20_000),

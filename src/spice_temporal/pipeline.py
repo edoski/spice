@@ -1,4 +1,4 @@
-"""End-to-end orchestration for a single training run."""
+"""End-to-end orchestration for one training run."""
 
 from __future__ import annotations
 
@@ -7,10 +7,11 @@ from pathlib import Path
 
 from spice_temporal.config import ChainConfig, ModelConfig, SplitConfig, TrainingConfig
 from spice_temporal.datasets import (
-    average_interblock_seconds,
     build_supervised_examples,
+    candidate_block_count_for_delay,
     chronological_split,
-    estimate_horizon_blocks,
+    lookback_steps_for_seconds,
+    max_extra_wait_steps_for_delay,
 )
 from spice_temporal.features import build_feature_rows
 from spice_temporal.io import load_block_records
@@ -29,42 +30,41 @@ class PreparedDataset:
     test_examples: list[SupervisedExample]
     scaler: StandardScaler
     lookback_steps: int
-    horizon_blocks: int
+    max_extra_wait_steps: int
+    candidate_block_count: int
     n_features: int
     n_classes: int
 
 
 @dataclass(slots=True)
-class SingleRunResult:
+class TrainingRunResult:
     prepared: PreparedDataset
     training_result: TrainingResult
     test_metrics: EpochMetrics
-
-
-def derive_lookback_steps(lookback_seconds: int, nominal_block_time_seconds: float) -> int:
-    if nominal_block_time_seconds <= 0:
-        raise ValueError("nominal_block_time_seconds must be positive")
-    return max(1, round(lookback_seconds / nominal_block_time_seconds))
 
 
 def prepare_dataset(
     blocks: list[BlockRecord],
     *,
     chain: ChainConfig,
-    window_seconds: int,
+    max_delay_seconds: int,
     lookback_seconds: int,
     split_config: SplitConfig,
 ) -> PreparedDataset:
     feature_rows = build_feature_rows(blocks)
-    lookback_steps = derive_lookback_steps(lookback_seconds, chain.nominal_block_time_seconds)
-    horizon_blocks = estimate_horizon_blocks(
-        window_seconds,
-        average_interblock_seconds([block.timestamp for block in blocks]),
+    lookback_steps = lookback_steps_for_seconds(lookback_seconds, chain.block_time_seconds)
+    max_extra_wait_steps = max_extra_wait_steps_for_delay(
+        max_delay_seconds,
+        chain.block_time_seconds,
+    )
+    candidate_block_count = candidate_block_count_for_delay(
+        max_delay_seconds,
+        chain.block_time_seconds,
     )
     examples = build_supervised_examples(
         feature_rows,
         lookback_steps=lookback_steps,
-        horizon_blocks=horizon_blocks,
+        candidate_block_count=candidate_block_count,
     )
     split = chronological_split(examples, split_config)
     if not split.train or not split.validation or not split.test:
@@ -80,27 +80,28 @@ def prepare_dataset(
         test_examples=test_examples,
         scaler=scaler,
         lookback_steps=lookback_steps,
-        horizon_blocks=horizon_blocks,
+        max_extra_wait_steps=max_extra_wait_steps,
+        candidate_block_count=candidate_block_count,
         n_features=len(train_examples[0].inputs[0]),
-        n_classes=len(train_examples[0].future_log_fees),
+        n_classes=len(train_examples[0].candidate_log_fees),
     )
 
 
-def run_single_training(
+def run_training(
     block_path: Path,
     *,
     chain: ChainConfig,
-    window_seconds: int,
+    max_delay_seconds: int,
     lookback_seconds: int,
     model_config: ModelConfig,
     training_config: TrainingConfig,
     split_config: SplitConfig,
-) -> SingleRunResult:
+) -> TrainingRunResult:
     blocks = load_block_records(block_path)
     prepared = prepare_dataset(
         blocks,
         chain=chain,
-        window_seconds=window_seconds,
+        max_delay_seconds=max_delay_seconds,
         lookback_seconds=lookback_seconds,
         split_config=split_config,
     )
@@ -118,7 +119,7 @@ def run_single_training(
         training_config=training_config,
         class_weights=class_weights,
     )
-    return SingleRunResult(
+    return TrainingRunResult(
         prepared=prepared,
         training_result=training_result,
         test_metrics=test_metrics,

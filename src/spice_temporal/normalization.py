@@ -55,7 +55,7 @@ def transform_examples(
                 inputs=[scaler.transform_vector(row) for row in example.inputs],
                 class_label=example.class_label,
                 target_log_fee=example.target_log_fee,
-                future_log_fees=list(example.future_log_fees),
+                candidate_log_fees=list(example.candidate_log_fees),
                 next_block_log_fee=example.next_block_log_fee,
                 optimal_log_fee=example.optimal_log_fee,
             )
