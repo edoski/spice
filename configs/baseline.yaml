@@ -1,0 +1,23 @@
+output_root: ./artifacts/baseline
+window_seconds: [12, 24, 36]
+lookback_seconds: 600
+target_anchor_count: 400000
+anchor_buffer: 20000
+
+split:
+  train_fraction: 0.8
+  validation_fraction: 0.1
+  test_fraction: 0.1
+
+training:
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  effective_batch_size: 64
+  max_epochs: 50
+  early_stopping_patience: 8
+  early_stopping_min_delta: 0.0001
+  gradient_clip_norm: 1.0
+  alpha: 1.0
+  beta: 0.25
+  device: auto
+  seed: 2026
