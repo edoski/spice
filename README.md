@@ -18,9 +18,10 @@ full SPICE framework.
 - `config.py`: typed experiment, training, and chain configuration.
 - `api.py`: the supported high-level Python API for training and simulation workflows.
 - `contracts.py`: typed boundary contracts for raw rows, tensor batches, and model outputs.
-- `env.py`: local `.env` loading and Alchemy URL resolution.
+- `env.py`: local `.env` loading.
 - `cryo.py`: cryo pull planning and execution.
-- `_alchemy_rpc.py`: internal enrichment-only JSON-RPC client used to hydrate missing `gas_limit`.
+- `_rpc.py`: internal generic JSON-RPC client used to hydrate missing `gas_limit`.
+- `rpc_providers.py`: standalone RPC provider registry for direct URLs and hosted providers.
 - `io.py` and `enrich.py`: block-dataset loading plus `gas_limit` enrichment for cryo output.
 - `features.py`, `datasets.py`, and `normalization.py`: feature engineering, array-backed temporal dataset stores, chronological split indices, and exact train-only scaling over overlapping windows.
 - `models.py`, `torch_datasets.py`, `training.py`, and `evaluation.py`: PyTorch models, lazy sequence slicing, training loop, inverse-frequency class weighting, and ratio-of-sums economic metrics.
@@ -34,7 +35,12 @@ full SPICE framework.
 
 - Python 3.11 or 3.12 for the most predictable PyTorch support.
 - Apple Silicon is supported through the PyTorch MPS backend.
-- Define `ALCHEMY_API_KEY` in a local `.env` before running data pulls.
+- Define `RPC_PROVIDER` in a local `.env` to select a provider such as `direct`, `alchemy`,
+  or `publicnode`.
+- For `direct`, define per-chain URLs such as `ETHEREUM_RPC_URL`, `POLYGON_RPC_URL`,
+  and `AVALANCHE_RPC_URL`.
+- For `alchemy`, define `ALCHEMY_API_KEY`.
+- `publicnode` currently requires no additional secrets.
 
 ## Planned workflow
 

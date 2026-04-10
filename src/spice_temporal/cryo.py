@@ -9,7 +9,7 @@ from pathlib import Path
 
 from spice_temporal.config import ChainConfig, ExperimentConfig, PullConfig
 from spice_temporal.constants import EVALUATION_END_TS, EVALUATION_START_TS
-from spice_temporal.env import ALCHEMY_RPC_TEMPLATE, resolve_rpc_url
+from spice_temporal.rpc_providers import RpcProvider
 
 
 @dataclass(slots=True)
@@ -80,6 +80,7 @@ def build_cryo_args(
     output_dir: Path,
     timestamps: TimestampRange,
     *,
+    provider: RpcProvider,
     overwrite: bool = False,
 ) -> list[str]:
     return _build_cryo_tokens(
@@ -87,7 +88,7 @@ def build_cryo_args(
         pull,
         output_dir,
         timestamps,
-        rpc_url=resolve_rpc_url(chain.name),
+        rpc_url=provider.url_for(chain.name),
         overwrite=overwrite,
     )
 
@@ -98,15 +99,15 @@ def build_cryo_command(
     output_dir: Path,
     timestamps: TimestampRange,
     *,
+    provider: RpcProvider,
     overwrite: bool = False,
 ) -> str:
-    rpc_template = ALCHEMY_RPC_TEMPLATE[chain.name].replace("{api_key}", "$ALCHEMY_API_KEY")
     tokens = _build_cryo_tokens(
         chain,
         pull,
         output_dir,
         timestamps,
-        rpc_url=rpc_template,
+        rpc_url=provider.reference_for(chain.name),
         overwrite=overwrite,
     )
     return " ".join(shlex.quote(token) for token in tokens)
@@ -118,6 +119,7 @@ def run_cryo(
     output_dir: Path,
     timestamps: TimestampRange,
     *,
+    provider: RpcProvider,
     overwrite: bool = False,
     dry_run: bool = False,
 ) -> subprocess.CompletedProcess[str]:
@@ -126,6 +128,7 @@ def run_cryo(
         pull,
         output_dir,
         timestamps,
+        provider=provider,
         overwrite=overwrite,
     )
     if dry_run:
@@ -133,7 +136,11 @@ def run_cryo(
     return subprocess.run(args, check=True, text=True, capture_output=True)
 
 
-def build_pull_plan(config: ExperimentConfig) -> list[CryoCommandPlan]:
+def build_pull_plan(
+    config: ExperimentConfig,
+    *,
+    provider: RpcProvider,
+) -> list[CryoCommandPlan]:
     plans: list[CryoCommandPlan] = []
     for chain in config.chains:
         history_output_dir = config.output_root / "raw" / chain.name / "history"
@@ -142,8 +149,20 @@ def build_pull_plan(config: ExperimentConfig) -> list[CryoCommandPlan]:
         evaluation = evaluation_range()
         command = "\n".join(
             [
-                build_cryo_command(chain, config.pull, history_output_dir, history),
-                build_cryo_command(chain, config.pull, evaluation_output_dir, evaluation),
+                build_cryo_command(
+                    chain,
+                    config.pull,
+                    history_output_dir,
+                    history,
+                    provider=provider,
+                ),
+                build_cryo_command(
+                    chain,
+                    config.pull,
+                    evaluation_output_dir,
+                    evaluation,
+                    provider=provider,
+                ),
             ]
         )
         plans.append(

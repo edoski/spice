@@ -1,4 +1,4 @@
-"""Minimal Alchemy JSON-RPC client used only during block enrichment."""
+"""Minimal generic JSON-RPC client used during block enrichment."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ def _hex_to_int(value: str) -> int:
 
 
 @dataclass(slots=True)
-class AlchemyRpcClient:
+class JsonRpcClient:
     url: str
     timeout_seconds: float = 30.0
 

@@ -16,8 +16,13 @@ from spice_temporal.api import (
 )
 from spice_temporal.artifacts import SIMULATION_REPORT_FILENAME, TRAIN_REPORT_FILENAME
 from spice_temporal.config import BlockSegment, ChainName, ModelFamily
-from spice_temporal.env import redact_sensitive_text
+from spice_temporal.env import load_project_env
 from spice_temporal.raw_validation import format_raw_pull_validation_report
+from spice_temporal.rpc_providers import (
+    RpcProviderName,
+    redact_sensitive_text,
+    resolve_rpc_provider,
+)
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 blocks_app = typer.Typer(no_args_is_help=True)
@@ -25,9 +30,12 @@ app.add_typer(blocks_app, name="blocks")
 
 
 @blocks_app.command("plan")
-def plan_blocks(config_path: Path) -> None:
+def plan_blocks(
+    config_path: Path,
+    rpc_provider: RpcProviderName | None = None,
+) -> None:
     """Render the cryo commands required for the baseline pull."""
-    for plan in _plan_block_pulls(config_path):
+    for plan in _plan_block_pulls(config_path, rpc_provider=rpc_provider):
         typer.echo(f"[{plan.chain}]")
         typer.echo(f"history={plan.history_range.start}:{plan.history_range.end}")
         typer.echo(f"evaluation={plan.evaluation_range.start}:{plan.evaluation_range.end}")
@@ -41,6 +49,7 @@ def enrich_blocks(
     chain_name: ChainName,
     input_path: Path,
     output_path: Path,
+    rpc_provider: RpcProviderName | None = None,
     batch_size: int = 100,
     max_methods_per_second: float = 20.0,
 ) -> None:
@@ -50,6 +59,7 @@ def enrich_blocks(
         chain_name,
         input_path,
         output_path,
+        rpc_provider=rpc_provider,
         batch_size=batch_size,
         max_methods_per_second=max_methods_per_second,
     )
@@ -63,6 +73,7 @@ def pull_blocks(
     config_path: Path,
     chain_name: ChainName,
     segment: BlockSegment,
+    rpc_provider: RpcProviderName | None = None,
     dry_run: bool = True,
     overwrite: bool = False,
     validate_on_success: bool = False,
@@ -73,6 +84,7 @@ def pull_blocks(
             config_path,
             chain_name,
             segment,
+            rpc_provider=rpc_provider,
             dry_run=dry_run,
             overwrite=overwrite,
             validate_on_success=validate_on_success,
@@ -80,10 +92,20 @@ def pull_blocks(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
+    provider = None
     if result.process.stdout:
-        typer.echo(redact_sensitive_text(result.process.stdout.rstrip()))
+        load_project_env()
+        provider = resolve_rpc_provider(rpc_provider, chains=(chain_name,))
+        typer.echo(
+            redact_sensitive_text(result.process.stdout.rstrip(), provider)
+        )
     if result.process.stderr:
-        typer.echo(redact_sensitive_text(result.process.stderr.rstrip()))
+        if provider is None:
+            load_project_env()
+            provider = resolve_rpc_provider(rpc_provider, chains=(chain_name,))
+        typer.echo(
+            redact_sensitive_text(result.process.stderr.rstrip(), provider)
+        )
     if result.validation is not None:
         for line in format_raw_pull_validation_report(result.validation):
             typer.echo(line)

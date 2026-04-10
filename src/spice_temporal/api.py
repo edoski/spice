@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from subprocess import CompletedProcess
 
-from spice_temporal._alchemy_rpc import AlchemyRpcClient
+from spice_temporal._rpc import JsonRpcClient
 from spice_temporal.artifacts import (
     SIMULATION_REPORT_FILENAME,
     TRAIN_REPORT_FILENAME,
@@ -33,7 +33,7 @@ from spice_temporal.cryo import (
 )
 from spice_temporal.datasets import derive_dataset_geometry
 from spice_temporal.enrich import enrich_path
-from spice_temporal.env import load_project_env, resolve_rpc_url
+from spice_temporal.env import load_project_env
 from spice_temporal.inference import predict_class_offsets
 from spice_temporal.io import load_block_records
 from spice_temporal.pipeline import prepare_inference_dataset, run_training
@@ -45,6 +45,7 @@ from spice_temporal.reporting import (
     build_training_run_report,
     write_json_report,
 )
+from spice_temporal.rpc_providers import RpcProviderName, resolve_rpc_provider
 from spice_temporal.simulation import run_temporal_simulation
 from spice_temporal.specs import SimulationSpec, TrainingSpec
 
@@ -184,9 +185,15 @@ def run_simulation_workflow(
     return report
 
 
-def _plan_block_pulls(config_or_path: ExperimentConfig | Path) -> list[CryoCommandPlan]:
+def _plan_block_pulls(
+    config_or_path: ExperimentConfig | Path,
+    *,
+    rpc_provider: RpcProviderName | None = None,
+) -> list[CryoCommandPlan]:
     config = _coerce_config(config_or_path)
-    return build_pull_plan(config)
+    load_project_env()
+    provider = resolve_rpc_provider(rpc_provider, chains=(chain.name for chain in config.chains))
+    return build_pull_plan(config, provider=provider)
 
 
 def _enrich_blocks(
@@ -195,13 +202,15 @@ def _enrich_blocks(
     input_path: Path,
     output_path: Path,
     *,
+    rpc_provider: RpcProviderName | None = None,
     batch_size: int = 100,
     max_methods_per_second: float = 20.0,
 ) -> list[Path]:
     config = _coerce_config(config_or_path)
     chain = _require_chain(config, chain_name)
     load_project_env()
-    client = AlchemyRpcClient(resolve_rpc_url(chain.name))
+    provider = resolve_rpc_provider(rpc_provider, chains=(chain.name,))
+    client = JsonRpcClient(provider.url_for(chain.name))
     return enrich_path(
         input_path,
         output_path,
@@ -216,6 +225,7 @@ def _pull_blocks(
     chain_name: ChainName | str,
     segment: BlockSegment | str,
     *,
+    rpc_provider: RpcProviderName | None = None,
     dry_run: bool = True,
     overwrite: bool = False,
     validate_on_success: bool = False,
@@ -227,12 +237,14 @@ def _pull_blocks(
         raise ValueError("Cannot use validate_on_success with dry-run pulls")
 
     load_project_env()
+    provider = resolve_rpc_provider(rpc_provider, chains=(chain.name,))
     output_dir, timestamps = _resolve_pull_target(config, chain, segment_name)
     process = run_cryo(
         chain,
         config.pull,
         output_dir,
         timestamps,
+        provider=provider,
         overwrite=overwrite,
         dry_run=dry_run,
     )
