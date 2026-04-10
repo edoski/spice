@@ -43,11 +43,6 @@ class TimestampWindow(ManifestModel):
     end: int
 
 
-class PromotionSummary(ManifestModel):
-    promoted_at_utc: str
-    promoted_from: str
-
-
 class RawSourceManifest(ManifestModel):
     kind: Literal["raw_block_dataset_source"] = "raw_block_dataset_source"
     written_at_utc: str
@@ -62,7 +57,6 @@ class RawSourceManifest(ManifestModel):
     overwrite: bool
     command: str
     validation: ValidationSummary | None = None
-    promotion: PromotionSummary | None = None
 
 
 class EnrichedSourceManifest(ManifestModel):
@@ -203,31 +197,5 @@ def write_enrichment_manifest(
         provider_reference=provider.reference_for(chain.name),
         batch_size=batch_size,
         max_methods_per_second=max_methods_per_second,
-    )
-    return _write_manifest(source_manifest_path_for(output_dir), manifest)
-
-
-def update_source_manifest_for_promotion(
-    output_dir: Path,
-    *,
-    promoted_from: Path,
-    validation: RawPullValidationReport,
-) -> Path:
-    loaded = load_source_manifest(output_dir)
-    if not isinstance(loaded, RawSourceManifest):
-        raise ValueError(
-            "Raw dataset promotion requires an existing raw source manifest at "
-            f"{source_manifest_path_for(output_dir)}"
-        )
-    manifest = loaded.model_copy(
-        update={
-            "written_at_utc": _now_utc_isoformat(),
-            "output_dir": str(output_dir.resolve()),
-            "validation": _serialize_validation(validation),
-            "promotion": PromotionSummary(
-                promoted_at_utc=_now_utc_isoformat(),
-                promoted_from=str(promoted_from.resolve()),
-            ),
-        }
     )
     return _write_manifest(source_manifest_path_for(output_dir), manifest)

@@ -3,23 +3,25 @@ from __future__ import annotations
 import sys
 
 import polars as pl
-import pytest
 
 from spice.acquisition.cryo import TimestampRange, run_cryo
 from spice.acquisition.enrich import enrich_frame_with_gas_limit, enrich_path
 from spice.acquisition.provenance import (
     load_source_manifest,
     source_manifest_path_for,
-    update_source_manifest_for_promotion,
     write_source_manifest,
 )
-from spice.acquisition.raw_validation import RawPullValidationReport
 from spice.acquisition.rpc import JsonRpcClient
 from spice.acquisition.rpc_providers import RpcProviderName, resolve_rpc_provider
+from spice.acquisition.snapshots import (
+    activate_snapshot,
+    load_snapshot_registry,
+    record_snapshot,
+)
 from spice.core.config import BlockSegment, ChainConfig, ChainName, PullConfig
 from spice.core.console import NullReporter
 from spice.data.block_schema import ENRICHED_BLOCK_SCHEMA
-from tests.support import make_block_rows, make_history_rows, write_dataset_dir
+from tests.support import make_block_rows, write_dataset_dir
 
 
 def test_enrich_frame_with_gas_limit_fills_missing_blocks() -> None:
@@ -129,20 +131,30 @@ def test_json_rpc_client_retries_throttled_items(monkeypatch) -> None:
     assert gas_limits == {1: 100, 2: 101}
 
 
-def test_promotion_requires_existing_raw_manifest(tmp_path) -> None:
-    dataset_dir = tmp_path / "raw"
-    write_dataset_dir(dataset_dir, make_history_rows(16))
+def test_snapshot_registry_tracks_active_snapshot(tmp_path) -> None:
+    output_root = tmp_path / "artifacts"
+    chain = ChainConfig(
+        name=ChainName.ETHEREUM,
+        chain_id=1,
+        block_time_seconds=12.0,
+        history_days=1,
+    )
 
-    with pytest.raises(ValueError, match="requires an existing raw source manifest"):
-        update_source_manifest_for_promotion(
-            dataset_dir,
-            promoted_from=tmp_path / "staging",
-            validation=RawPullValidationReport(
-                dataset_path=dataset_dir,
-                expected_start_timestamp=0,
-                expected_end_timestamp=1,
-            ),
-        )
+    record_snapshot(
+        output_root,
+        chain,
+        snapshot_name="working",
+        pull_provider="publicnode",
+        enrich_provider="publicnode",
+        history_start_timestamp=1,
+        history_end_timestamp=2,
+        evaluation_start_timestamp=3,
+        evaluation_end_timestamp=4,
+    )
+    registry = activate_snapshot(output_root, chain, "working")
+
+    assert registry.active_snapshot == "working"
+    assert load_snapshot_registry(output_root, chain).snapshots[0].name == "working"
 
 
 def test_source_manifest_round_trip(tmp_path) -> None:

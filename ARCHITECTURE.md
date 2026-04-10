@@ -56,13 +56,14 @@ This layer has no chain-specific logic and no model-specific logic.
 - `enrich.py`: table-oriented `gas_limit` hydration
 - `raw_validation.py`: file-range and timestamp validation for raw pulls
 - `provenance.py`: persisted dataset source manifests
+- `snapshots.py`: snapshot paths, active-pointer metadata, and snapshot summaries
 
 Key invariants:
 
-- raw pulls and enrichment are separate stages
+- raw pulls and enrichment stay separate inside each named snapshot
 - validation is read-only
 - manifests are strict Pydantic payloads
-- promotion requires an existing raw manifest
+- snapshot activation is metadata-only
 
 ### `data`
 
@@ -107,26 +108,22 @@ Key invariants:
 
 The operational flow is:
 
-1. pull raw blocks with `cryo`
-2. validate raw output
-3. enrich missing `gas_limit`
-4. build feature tables and temporal stores
-5. fit a weighted train-only scaler
-6. train a baseline model
-7. persist artifacts and JSON reports
-8. run evaluation-day simulation from the persisted artifact
+1. acquire raw and enriched `history` + `evaluation` datasets into a named snapshot
+2. optionally activate that snapshot for later commands
+3. build feature tables and temporal stores from the active or selected snapshot
+4. fit a weighted train-only scaler
+5. train a baseline model and persist artifacts
+6. optionally run evaluation-day simulation from the persisted artifact
 
 At the API/CLI boundary this is exposed as:
 
-- `blocks plan`
-- `blocks pull`
-- `blocks stage`
-- `blocks acquire`
-- `blocks enrich`
-- `blocks validate`
-- `blocks promote`
+- `acquire`
 - `train`
 - `simulate`
+- `datasets list`
+- `datasets show`
+- `datasets validate`
+- `datasets activate`
 
 ## Why These Packages
 

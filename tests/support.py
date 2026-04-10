@@ -141,3 +141,14 @@ def write_raw_chunk(
         dataset_dir / f"{chain_name}__blocks__{start_block}_to_{end_block}.parquet",
         rows,
     )
+
+
+def snapshot_dataset_dir(
+    output_root: Path,
+    *,
+    chain_name: str,
+    snapshot_name: str,
+    dataset_kind: str,
+    segment: str,
+) -> Path:
+    return output_root / "datasets" / chain_name / snapshot_name / dataset_kind / segment

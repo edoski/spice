@@ -16,7 +16,7 @@ It does not implement the broader SPICE spatial/oracle/reputation system.
 
 - `Typer` + `Rich` for CLI and progress output
 - `Pydantic v2` + `pydantic-settings` for config, settings, manifests, and reports
-- `Polars` for Parquet IO, validation scans, enrichment staging, and feature prep
+- `Polars` for Parquet IO, validation scans, canonicalization, and feature prep
 - `HTTPX` for JSON-RPC transport
 - `scikit-learn` for weighted feature scaling
 - `NumPy` + `PyTorch` for dataset math, modeling, training, inference, and simulation
@@ -34,6 +34,7 @@ The package itself is now split into four shallow subpackages plus two top-level
 - `src/spice/cli.py`: supported CLI surface
 
 There are no dual paths for old/new formats. Runtime block datasets are Parquet-only.
+Named snapshots live under `output_root/datasets/<chain>/<snapshot>/...`.
 Under `enriched/`, datasets are canonical model inputs with exactly these six `Int64`
 columns: `block_number`, `timestamp`, `base_fee_per_gas`, `gas_used`, `chain_id`,
 and `gas_limit`.
@@ -57,13 +58,14 @@ The installed command is `spice`.
 
 Examples:
 
-- `spice blocks plan configs/baseline.yaml`
-- `spice blocks pull configs/pilots/ethereum-36s.yaml ethereum history --rpc-provider publicnode --no-dry-run`
-- `spice blocks enrich configs/pilots/ethereum-36s.yaml ethereum <raw-dir> <enriched-dir>`
-- `spice train configs/pilots/ethereum-36s.yaml <history-dir> <artifact-dir> ethereum lstm 36 --device cpu`
-- `spice simulate configs/pilots/ethereum-36s.yaml <artifact-dir> <history-dir> <evaluation-dir> --device cpu`
+- `spice acquire configs/pilots/ethereum-36s.yaml --provider publicnode --no-dry-run`
+- `spice train configs/pilots/ethereum-36s.yaml lstm --device cpu`
+- `spice train configs/pilots/ethereum-36s.yaml lstm --device cpu --evaluate`
+- `spice simulate configs/pilots/ethereum-36s.yaml lstm --device cpu`
+- `spice datasets list configs/pilots/ethereum-36s.yaml`
 
-The CLI uses Rich progress for pull, enrich, and train stages and then prints concise stable summary lines at the end.
+The CLI infers chain and delay values only when the config makes them unambiguous.
+It uses Rich progress for acquisition and training, then prints concise stable summary lines.
 
 ## Python API
 
@@ -73,33 +75,31 @@ The CLI uses Rich progress for pull, enrich, and train stages and then prints co
 from pathlib import Path
 
 from spice.api import (
-    load_artifact,
+    acquire_snapshot,
     load_config,
-    run_simulation_workflow,
-    run_training_workflow,
+    simulate_model,
+    train_model,
 )
 
 config = load_config(Path("configs/pilots/ethereum-36s.yaml"))
 
-train_report = run_training_workflow(
+acquire_result = acquire_snapshot(
     config,
-    Path("artifacts/pilots/ethereum-36s/enriched/ethereum/history"),
-    Path("artifacts/pilots/ethereum-36s/runs/ethereum/lstm-36s"),
     "ethereum",
+    snapshot_name="working",
+    rpc_provider="publicnode",
+    dry_run=False,
+)
+
+train_result = train_model(
+    config,
     "lstm",
+    "ethereum",
     36,
     device="cpu",
 )
 
-artifact = load_artifact(Path("artifacts/pilots/ethereum-36s/runs/ethereum/lstm-36s"))
-
-simulation_report = run_simulation_workflow(
-    config,
-    Path("artifacts/pilots/ethereum-36s/runs/ethereum/lstm-36s"),
-    Path("artifacts/pilots/ethereum-36s/enriched/ethereum/history"),
-    Path("artifacts/pilots/ethereum-36s/enriched/ethereum/evaluation"),
-    device="cpu",
-)
+simulation_result = simulate_model(config, "lstm", "ethereum", 36, device="cpu")
 ```
 
 ## Artifacts
@@ -109,9 +109,14 @@ Training writes:
 - `artifact.json`
 - `model.pt`
 - `train_report.json`
+
+Simulation writes:
+
 - `simulation_report.json`
 
 Dataset provenance is stored under `.spice/source.json` inside dataset directories.
+Snapshot activation and summary metadata are stored under
+`output_root/datasets/<chain>/.spice/snapshots.json`.
 
 ## Verification
 
