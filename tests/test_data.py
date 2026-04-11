@@ -108,6 +108,53 @@ def test_validate_raw_pull_detects_file_range_gaps(tmp_path) -> None:
     assert report.gap_count >= 1
 
 
+def test_validate_raw_pull_reports_shared_window_and_raw_file_issues(tmp_path) -> None:
+    dataset_dir = tmp_path / "raw"
+    write_raw_chunk(
+        dataset_dir,
+        chain_name="ethereum",
+        rows=[
+            {
+                "block_number": 1,
+                "timestamp": 100,
+                "base_fee_per_gas": 1,
+                "gas_used": 1,
+                "chain_id": 1,
+            },
+            {
+                "block_number": 1,
+                "timestamp": 112,
+                "base_fee_per_gas": 1,
+                "gas_used": 1,
+                "chain_id": 137,
+            },
+            {
+                "block_number": 3,
+                "timestamp": 124,
+                "base_fee_per_gas": 1,
+                "gas_used": 1,
+                "chain_id": 1,
+            },
+        ],
+    )
+
+    report = validate_raw_pull(
+        dataset_dir,
+        expected_chain_name="ethereum",
+        expected_chain_id=1,
+        expected_start_timestamp=100,
+        expected_end_timestamp=136,
+        expected_chunk_size=1000,
+    )
+
+    assert report.status == "error"
+    assert report.duplicate_count == 1
+    assert report.gap_count == 1
+    assert report.chain_id_mismatch_count == 1
+    assert any("exactly one chain_id" in error for error in report.errors)
+    assert any("non-sequential block transition" in error for error in report.errors)
+
+
 def test_validate_exact_window_dataset_passes_on_canonical_dataset(tmp_path) -> None:
     dataset_dir = tmp_path / "dataset"
     rows = make_history_rows(8)

@@ -211,9 +211,3 @@ class RichReporter(NullReporter):
 
     def close(self) -> None:
         self.progress.stop()
-
-    def __enter__(self) -> RichReporter:
-        return self
-
-    def __exit__(self, _exc_type: object, _exc: object, _tb: object) -> None:
-        self.close()

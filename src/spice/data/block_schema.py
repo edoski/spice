@@ -14,7 +14,6 @@ ENRICHED_BLOCK_SCHEMA = {
     "gas_limit": pl.Int64,
 }
 ENRICHED_BLOCK_COLUMNS = tuple(ENRICHED_BLOCK_SCHEMA)
-RAW_BLOCK_COLUMNS = tuple(column for column in ENRICHED_BLOCK_COLUMNS if column != "gas_limit")
 
 ENRICHED_BLOCK_FRAME_SCHEMA = pa.DataFrameSchema(
     {
@@ -52,5 +51,7 @@ def canonicalize_enriched_block_frame(frame: pl.DataFrame) -> pl.DataFrame:
             for column, dtype in ENRICHED_BLOCK_SCHEMA.items()
         ]
     )
+
+
 def validate_enriched_block_frame(frame: pl.DataFrame) -> None:
     ENRICHED_BLOCK_FRAME_SCHEMA.validate(frame)

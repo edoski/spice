@@ -12,13 +12,13 @@ import polars as pl
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..data.io import iter_block_files
-from ..data.validation import validate_exact_window_dataset
+from ..data.validation import assess_exact_window_summary, summarize_exact_window_dataset
 
 RAW_BLOCK_FILENAME_RE = re.compile(
     r"^(?P<chain>[a-z0-9_]+)__blocks__(?P<start>\d+)_to_(?P<end>\d+)$"
 )
 CRYO_DEFAULT_CHUNK_SIZE = 1_000
-ValidationStatus = Literal["clean", "warning", "error"]
+ValidationStatus = Literal["clean", "error"]
 
 
 class ValidationModel(BaseModel):
@@ -60,7 +60,6 @@ class RawPullValidationReport(ValidationModel):
     below_start_count: int = 0
     above_end_count: int = 0
     status: ValidationStatus = "clean"
-    warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 
 
@@ -337,7 +336,6 @@ def _build_summary_schema(chunk_size: int) -> pa.DataFrameSchema:
 def _merge_summary_into_report(report: RawPullValidationReport, summary: RawFileSummary) -> None:
     report.row_count += summary.row_count
     report.chain_id_mismatch_count += summary.chain_id_mismatch_count
-    report.duplicate_count += summary.duplicate_count
     if report.first_block_number is None:
         report.first_block_number = summary.first_block_number
         report.first_timestamp = summary.first_timestamp
@@ -345,11 +343,37 @@ def _merge_summary_into_report(report: RawPullValidationReport, summary: RawFile
     report.last_timestamp = summary.last_timestamp
 
 
+def _apply_exact_window_summary(
+    report: RawPullValidationReport,
+    *,
+    expected_chain_id: int,
+) -> None:
+    summary = summarize_exact_window_dataset(
+        report.dataset_path,
+        expected_start_timestamp=report.expected_start_timestamp,
+        expected_end_timestamp=report.expected_end_timestamp,
+    )
+    report.row_count = summary.row_count
+    report.first_block_number = summary.first_block_number
+    report.last_block_number = summary.last_block_number
+    report.first_timestamp = summary.first_timestamp
+    report.last_timestamp = summary.last_timestamp
+    report.duplicate_count = summary.duplicate_count
+    report.gap_count = summary.gap_count
+    report.below_start_count = summary.below_start_count
+    report.above_end_count = summary.above_end_count
+    assessment = assess_exact_window_summary(
+        summary,
+        expected_chain_id=expected_chain_id,
+    )
+    for error in assessment.errors:
+        if error not in report.errors:
+            report.errors.append(error)
+
+
 def _finalize_status(report: RawPullValidationReport) -> None:
     if report.errors:
         report.status = "error"
-    elif report.warnings:
-        report.status = "warning"
     else:
         report.status = "clean"
 
@@ -404,11 +428,12 @@ def validate_raw_pull(
         _merge_summary_into_report(report, summary)
 
     if summary_frame.height:
-        report.gap_count = int(summary_frame["gap_after_previous"].gt(0).sum())
+        file_range_gap_count = int(summary_frame["gap_after_previous"].gt(0).sum())
         report.overlap_count = int(summary_frame["overlap_with_previous"].gt(0).sum())
-        report.duplicate_count += int(summary_frame["duplicate_transition_from_previous"].sum())
-        if report.gap_count:
-            report.errors.append(f"Detected {report.gap_count} block-range gap(s) across files")
+        if file_range_gap_count:
+            report.errors.append(
+                f"Detected {file_range_gap_count} block-range gap(s) across files"
+            )
         if report.overlap_count:
             report.errors.append(f"Detected {report.overlap_count} overlapping file-range pair(s)")
         if int(summary_frame["block_order_violation"].sum()):
@@ -422,26 +447,12 @@ def validate_raw_pull(
                 f"from {expected_chain_id}"
             )
 
-    dataset_report = validate_exact_window_dataset(
-        dataset_path,
-        expected_chain_id=expected_chain_id,
-        expected_start_timestamp=expected_start_timestamp,
-        expected_end_timestamp=expected_end_timestamp,
-    )
-    report.row_count = dataset_report.row_count
-    report.first_block_number = dataset_report.first_block_number
-    report.last_block_number = dataset_report.last_block_number
-    report.first_timestamp = dataset_report.first_timestamp
-    report.last_timestamp = dataset_report.last_timestamp
-    report.duplicate_count = max(report.duplicate_count, dataset_report.duplicate_count)
-    report.gap_count = max(report.gap_count, dataset_report.gap_count)
-    report.below_start_count = dataset_report.below_start_count
-    report.above_end_count = dataset_report.above_end_count
-    for error in dataset_report.errors:
-        if error not in report.errors:
-            report.errors.append(error)
-    for warning in dataset_report.warnings:
-        if warning not in report.warnings:
-            report.warnings.append(warning)
+    try:
+        _apply_exact_window_summary(
+            report,
+            expected_chain_id=expected_chain_id,
+        )
+    except Exception as exc:
+        report.errors.append(str(exc))
     _finalize_status(report)
     return report

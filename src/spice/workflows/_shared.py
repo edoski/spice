@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import mlflow
 
 from ..core.config import ExperimentConfig, validate_config
+from ..core.console import NullReporter, Reporter
+from ..core.tracking import configure_mlflow, log_config
 from ..modeling.lightning_module import EpochMetrics
 from ..modeling.pipeline import TrainingSpec
 
@@ -36,15 +41,46 @@ def epoch_metrics_to_dict(metrics: EpochMetrics) -> dict[str, float]:
     }
 
 
-def start_run_if_enabled(
+@dataclass(slots=True)
+class WorkflowSession:
+    reporter: Reporter
+    tracking_enabled: bool
+
+
+@contextmanager
+def managed_workflow(
     config: ExperimentConfig,
     *,
     run_name: str,
+    reporter: Reporter | None = None,
+    default_reporter_factory: Callable[[], Reporter] = NullReporter,
     nested: bool = False,
-):
-    if not config.tracking.enabled:
-        return None
-    return mlflow.start_run(run_name=run_name, nested=nested)
+) -> Iterator[WorkflowSession]:
+    active_reporter = reporter or default_reporter_factory()
+    owns_reporter = reporter is None
+    try:
+        if config.tracking.enabled:
+            configure_mlflow(config)
+            with mlflow.start_run(run_name=run_name, nested=nested):
+                log_config(config)
+                mlflow.set_tags(config.tracking.tags)
+                yield WorkflowSession(
+                    reporter=active_reporter,
+                    tracking_enabled=True,
+                )
+        else:
+            yield WorkflowSession(
+                reporter=active_reporter,
+                tracking_enabled=False,
+            )
+    finally:
+        if owns_reporter:
+            active_reporter.close()
+
+
+def write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def trial_artifact_dir(config: ExperimentConfig, trial_number: int) -> Path:

@@ -47,7 +47,10 @@ params.yaml
 - [provider.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/provider.py): thin provider config to `web3.py` bridge
 - [rpc.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/rpc.py): block gas-limit hydration client on top of `web3.py`
 - [enrich.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/enrich.py): canonical enrichment
+- [datasets.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/datasets.py): raw pull execution, canonicalization, reuse, and enriched-dataset rebuilding
+- [metadata.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/metadata.py): dataset metadata loading, validation, and serialization
 - [raw_validation.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/raw_validation.py): raw parquet pull validation, including Pandera-validated cross-file summary checks
+- [windowing.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/windowing.py): history window sizing, reuse, and backward expansion rules
 
 This layer no longer contains snapshot registries or a custom JSON-RPC transport.
 
@@ -76,6 +79,7 @@ adapter would not reduce real complexity.
 - [lightning_module.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/lightning_module.py): Lightning training harness
 - [training.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/training.py): trainer assembly and evaluation helpers
 - [pipeline.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/pipeline.py): dataset preparation for training and inference
+- [execution.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/execution.py): shared persisted training execution used by train and tune
 - [inference.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/inference.py): prediction
 - [simulation.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/simulation.py): temporal-only Poisson simulation
 - [artifacts.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/artifacts.py): model persistence
@@ -96,11 +100,18 @@ What stays custom here:
 - [train.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/train.py)
 - [simulate.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/simulate.py)
 - [tune.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/tune.py)
+- [_shared.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/_shared.py): workflow session/runtime helpers, JSON emission, and small shared config utilities
 
 Each workflow exposes:
 
 - a callable `run(...)` function for direct execution and tests
 - a Hydra `main(...)` wrapper for installed entrypoints
+
+The workflow layer is intentionally thin:
+
+- `workflows/_shared.py` owns reporter lifecycle, MLflow setup, config logging, and nested run handling
+- `acquire.py` orchestrates stage order only and delegates pull/window/metadata policy to `acquisition/*`
+- `train.py` and `tune.py` both route persisted model/report generation through `modeling/execution.py`
 
 ## Workflow Graph
 

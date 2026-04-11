@@ -44,6 +44,12 @@ dvc.yaml
 params.yaml
 ```
 
+Consolidated runtime boundaries:
+
+- acquisition window planning, raw/enriched dataset materialization, and metadata shaping live under `src/spice/acquisition/`
+- workflow lifecycle and small shared workflow helpers live in `src/spice/workflows/_shared.py`
+- persisted training execution is centralized in `src/spice/modeling/execution.py`
+
 Key runtime paths:
 
 - raw datasets: `artifacts/datasets/<chain>/<dataset_id>/raw/...`

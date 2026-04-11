@@ -10,7 +10,7 @@ from omegaconf import DictConfig
 
 from ..core.config import ExperimentConfig, coerce_config
 from ..core.console import Reporter, RichReporter
-from ..core.tracking import configure_mlflow, log_artifacts, log_config
+from ..core.tracking import log_artifacts
 from ..data.datasets import derive_dataset_geometry
 from ..data.io import load_enriched_block_frame
 from ..modeling.artifacts import load_training_artifact
@@ -18,30 +18,22 @@ from ..modeling.inference import predict_class_offsets
 from ..modeling.pipeline import prepare_inference_dataset
 from ..modeling.reporting import build_simulation_report, write_json_report
 from ..modeling.simulation import run_temporal_simulation
-from ._shared import start_run_if_enabled
+from ._shared import managed_workflow
 
 
 def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
     artifact_dir = Path(config.paths.artifact_root)
     history_block_path = Path(config.paths.enriched_history_dir)
     evaluation_block_path = Path(config.paths.enriched_evaluation_dir)
-    if config.tracking.enabled:
-        configure_mlflow(config)
-
-    active_reporter = reporter or RichReporter()
-    run_context = start_run_if_enabled(
+    with managed_workflow(
         config,
         run_name=(
             f"simulate-{config.chain.name.value}-{config.model.family.value}"
             f"-{config.max_delay_seconds}s"
         ),
-    )
-    try:
-        if run_context is not None:
-            run_context.__enter__()
-            log_config(config)
-            mlflow.set_tags(config.tracking.tags)
-
+        reporter=reporter,
+        default_reporter_factory=RichReporter,
+    ) as session:
         loaded_artifact = load_training_artifact(artifact_dir)
         history_blocks = load_enriched_block_frame(history_block_path)
         evaluation_blocks = load_enriched_block_frame(evaluation_block_path)
@@ -86,12 +78,10 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             repetitions=config.simulation.repetitions,
         )
         report_path = Path(config.paths.simulation_report_path)
-        if report_path.exists():
-            report_path.unlink()
         write_json_report(report_path, report)
-        active_reporter.log(f"simulation finished: {report_path}")
+        session.reporter.log(f"simulation finished: {report_path}")
 
-        if config.tracking.enabled:
+        if session.tracking_enabled:
             mlflow.log_metrics(
                 {
                     "simulation_profit_over_baseline_mean": report.profit_over_baseline.mean,
@@ -105,11 +95,6 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                 }
             )
             log_artifacts([report_path])
-    finally:
-        if run_context is not None:
-            run_context.__exit__(None, None, None)
-        if reporter is None:
-            active_reporter.close()
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="simulate")

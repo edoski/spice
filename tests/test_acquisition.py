@@ -296,7 +296,7 @@ def test_acquire_workflow_writes_validation_reports(tmp_path, monkeypatch) -> No
         write_raw_chunk(output_dir, chain_name=chain.name.value, rows=rows)
         return CryoRunResult(command=f"cryo {segment}", completed_chunks=1, expected_chunks=1)
 
-    monkeypatch.setattr("spice.workflows.acquire.run_cryo", fake_run_cryo)
+    monkeypatch.setattr("spice.acquisition.datasets.run_cryo", fake_run_cryo)
     monkeypatch.setattr("spice.workflows.acquire.Web3BlockClient", _FakeBlockClient)
 
     run_acquire(config, reporter=NullReporter())
@@ -352,7 +352,7 @@ def test_acquire_reuses_larger_valid_dataset_for_lower_target(tmp_path, monkeypa
             expected_chunks=1,
         )
 
-    monkeypatch.setattr("spice.workflows.acquire.run_cryo", fake_run_cryo)
+    monkeypatch.setattr("spice.acquisition.datasets.run_cryo", fake_run_cryo)
     monkeypatch.setattr("spice.workflows.acquire.Web3BlockClient", _FakeBlockClient)
     run_acquire(config, reporter=NullReporter())
 
@@ -367,7 +367,7 @@ def test_acquire_reuses_larger_valid_dataset_for_lower_target(tmp_path, monkeypa
         ],
     )
     monkeypatch.setattr(
-        "spice.workflows.acquire.run_cryo",
+        "spice.acquisition.datasets.run_cryo",
         lambda *_args, **_kwargs: pytest.fail("existing dataset should have been reused"),
     )
     run_acquire(lower_config, reporter=NullReporter())
@@ -462,7 +462,7 @@ def test_acquire_expands_short_history_window_backward(tmp_path, monkeypatch) ->
             expected_chunks=1,
         )
 
-    monkeypatch.setattr("spice.workflows.acquire.run_cryo", fake_run_cryo)
+    monkeypatch.setattr("spice.acquisition.datasets.run_cryo", fake_run_cryo)
     monkeypatch.setattr("spice.workflows.acquire.Web3BlockClient", _FakeBlockClient)
 
     run_acquire(config, reporter=NullReporter())
@@ -529,7 +529,7 @@ def test_acquire_workflow_rejects_non_trim_boundary_violations(tmp_path, monkeyp
         def get_block_gas_limits(self, block_numbers: list[int]) -> dict[int, int]:
             return {block_number: 30_000_000 for block_number in block_numbers}
 
-    monkeypatch.setattr("spice.workflows.acquire.run_cryo", fake_run_cryo)
+    monkeypatch.setattr("spice.acquisition.datasets.run_cryo", fake_run_cryo)
     monkeypatch.setattr("spice.workflows.acquire.Web3BlockClient", FakeBlockClient)
 
     with pytest.raises(ValueError, match="inside the requested block window"):

@@ -3,495 +3,33 @@
 from __future__ import annotations
 
 import json
-import shutil
-from collections.abc import Callable, Mapping
-from hashlib import sha256
-from math import ceil
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Any
 
 import hydra
 import mlflow
 from omegaconf import DictConfig
 
-from ..acquisition.cryo import (
-    CryoRunResult,
-    TimestampRange,
-    evaluation_range,
-    history_range_for_required_blocks,
-    run_cryo,
+from ..acquisition.cryo import evaluation_range
+from ..acquisition.datasets import (
+    ensure_enriched_dataset,
+    ensure_evaluation_raw_dataset,
+    ensure_history_raw_dataset,
+    run_raw_pull,
 )
-from ..acquisition.enrich import enrich_path
-from ..acquisition.raw_normalization import normalize_raw_dataset
-from ..acquisition.raw_validation import RawPullValidationReport, validate_raw_pull
+from ..acquisition.metadata import (
+    build_dataset_metadata,
+    check_existing_dataset_metadata,
+)
 from ..acquisition.rpc import Web3BlockClient
+from ..acquisition.windowing import (
+    history_range_from_metadata,
+    initial_history_range,
+    required_history_block_count,
+)
 from ..core.config import ExperimentConfig, coerce_config
 from ..core.console import Reporter, RichReporter
-from ..core.tracking import configure_mlflow, log_artifacts, log_config
-from ..data.datasets import derive_dataset_geometry
-from ..data.io import iter_block_files, load_enriched_block_frame
-from ..data.validation import BlockDatasetValidationReport, validate_exact_window_frame
-from ._shared import start_run_if_enabled
-
-
-def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-
-def _path_string(path: Path) -> str:
-    return path.as_posix()
-
-
-def _provider_metadata(config: ExperimentConfig) -> dict[str, str]:
-    endpoint = config.provider.endpoint_for(config.chain.name)
-    return {
-        "name": config.provider.name.value,
-        "reference": config.provider.reference_for(config.chain.name),
-        "endpoint_fingerprint": sha256(endpoint.encode("utf-8")).hexdigest()[:16],
-    }
-
-
-def _required_history_block_count(config: ExperimentConfig) -> int:
-    geometry = derive_dataset_geometry(
-        lookback_seconds=config.lookback_seconds,
-        max_delay_seconds=config.max_delay_seconds,
-        block_time_seconds=config.chain.block_time_seconds,
-    )
-    return geometry.required_block_count(config.dataset.min_history_anchor_count)
-
-
-def _initial_history_range(
-    config: ExperimentConfig,
-    *,
-    required_history_blocks: int,
-) -> TimestampRange:
-    return history_range_for_required_blocks(
-        config.chain,
-        config.pull,
-        required_history_blocks=required_history_blocks,
-        evaluation_start_timestamp=config.dataset.evaluation_start_timestamp,
-    )
-
-
-def _expanded_history_range(
-    current: TimestampRange,
-    validation: RawPullValidationReport,
-    *,
-    config: ExperimentConfig,
-    required_history_blocks: int,
-) -> TimestampRange:
-    missing_blocks = required_history_blocks - validation.row_count
-    if missing_blocks <= 0:
-        return current
-    if (
-        validation.first_timestamp is not None
-        and validation.last_timestamp is not None
-        and validation.row_count > 1
-    ):
-        seconds_per_block = max(
-            config.chain.block_time_seconds,
-            (validation.last_timestamp - validation.first_timestamp) / (validation.row_count - 1),
-        )
-    else:
-        seconds_per_block = config.chain.block_time_seconds
-    additional_blocks = missing_blocks + config.pull.chunk_size
-    return TimestampRange(
-        start=current.start - ceil(additional_blocks * seconds_per_block),
-        end=current.end,
-    )
-
-
-def _load_metadata(path: Path) -> dict[str, Any] | None:
-    if not path.is_file():
-        return None
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Dataset metadata is not a JSON object: {path}")
-    return payload
-
-
-def _metadata_has_dataset_files(config: ExperimentConfig) -> bool:
-    for candidate in (
-        Path(config.paths.raw_history_dir),
-        Path(config.paths.raw_evaluation_dir),
-        Path(config.paths.enriched_history_dir),
-        Path(config.paths.enriched_evaluation_dir),
-    ):
-        if _has_block_files(candidate):
-            return True
-    return False
-
-
-def _check_existing_metadata(
-    *,
-    config: ExperimentConfig,
-    metadata_path: Path,
-    overwrite: bool,
-) -> dict[str, Any] | None:
-    metadata = _load_metadata(metadata_path)
-    if metadata is None:
-        if not overwrite and _metadata_has_dataset_files(config):
-            raise ValueError(
-                f"Dataset files exist without canonical metadata at {metadata_path}; "
-                "rerun with pull.overwrite=true to replace them."
-            )
-        return None
-
-    if overwrite:
-        return metadata
-
-    expected = {
-        "dataset_id": config.dataset.id,
-        "chain_name": config.chain.name.value,
-        "chain_id": config.chain.chain_id,
-        "provider": _provider_metadata(config),
-        "evaluation_window": {
-            "start_timestamp": config.dataset.evaluation_start_timestamp,
-            "end_timestamp": config.dataset.evaluation_end_timestamp,
-        },
-    }
-    actual = {
-        "dataset_id": metadata.get("dataset", {}).get("id"),
-        "chain_name": metadata.get("chain", {}).get("name"),
-        "chain_id": metadata.get("chain", {}).get("chain_id"),
-        "provider": metadata.get("provider"),
-        "evaluation_window": metadata.get("windows", {}).get("evaluation"),
-    }
-    if actual != expected:
-        raise ValueError(
-            "Existing dataset metadata does not match the requested dataset window/provider. "
-            f"Expected {expected}, got {actual}. Use pull.overwrite=true to replace it."
-        )
-    return metadata
-
-
-def _history_range_from_metadata(metadata: Mapping[str, Any]) -> TimestampRange:
-    history = metadata.get("windows", {}).get("history")
-    if not isinstance(history, Mapping):
-        raise ValueError("Dataset metadata is missing windows.history")
-    return TimestampRange(
-        start=int(history["start_timestamp"]),
-        end=int(history["end_timestamp"]),
-    )
-
-
-def _compact_validation_report(
-    report: RawPullValidationReport | BlockDatasetValidationReport,
-) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "status": report.status,
-        "rows": report.row_count,
-        "block_range": {
-            "first": report.first_block_number,
-            "last": report.last_block_number,
-        },
-        "timestamp_range": {
-            "first": report.first_timestamp,
-            "last": report.last_timestamp,
-        },
-    }
-    if isinstance(report, RawPullValidationReport):
-        payload["files"] = report.file_count
-
-    issue_counts: dict[str, int] = {}
-    for name in (
-        "gap_count",
-        "overlap_count",
-        "duplicate_count",
-        "chain_id_mismatch_count",
-        "below_start_count",
-        "above_end_count",
-    ):
-        value = getattr(report, name, 0)
-        if value:
-            issue_counts[name.removesuffix("_count")] = int(value)
-    if issue_counts or report.warnings or report.errors:
-        payload["issues"] = {
-            **issue_counts,
-            **({"warnings": report.warnings} if report.warnings else {}),
-            **({"errors": report.errors} if report.errors else {}),
-        }
-    return payload
-
-
-def _build_dataset_metadata(
-    *,
-    config: ExperimentConfig,
-    raw_history_dir: Path,
-    raw_evaluation_dir: Path,
-    enriched_history_dir: Path,
-    enriched_evaluation_dir: Path,
-    history_window_start: int,
-    history_window_end: int,
-    evaluation_window_start: int,
-    evaluation_window_end: int,
-    history_validation: RawPullValidationReport,
-    evaluation_validation: RawPullValidationReport,
-    history_enriched: BlockDatasetValidationReport,
-    evaluation_enriched: BlockDatasetValidationReport,
-) -> dict[str, object]:
-    return {
-        "dataset": {
-            "id": config.dataset.id,
-        },
-        "chain": {
-            "name": config.chain.name.value,
-            "chain_id": config.chain.chain_id,
-        },
-        "provider": _provider_metadata(config),
-        "paths": {
-            "raw": {
-                "history": _path_string(raw_history_dir),
-                "evaluation": _path_string(raw_evaluation_dir),
-            },
-            "enriched": {
-                "history": _path_string(enriched_history_dir),
-                "evaluation": _path_string(enriched_evaluation_dir),
-            },
-        },
-        "windows": {
-            "history": {
-                "start_timestamp": history_window_start,
-                "end_timestamp": history_window_end,
-            },
-            "evaluation": {
-                "start_timestamp": evaluation_window_start,
-                "end_timestamp": evaluation_window_end,
-            },
-        },
-        "settings": {
-            "min_history_anchor_count": config.dataset.min_history_anchor_count,
-            "target_anchor_count": config.target_anchor_count,
-            "lookback_seconds": config.lookback_seconds,
-            "max_delay_seconds": config.max_delay_seconds,
-            "raw_chunk_size": config.pull.chunk_size,
-            "enrich_batch_size": config.pull.enrich_batch_size,
-            "max_methods_per_second": config.pull.max_methods_per_second,
-        },
-        "validation": {
-            "raw": {
-                "history": _compact_validation_report(history_validation),
-                "evaluation": _compact_validation_report(evaluation_validation),
-            },
-            "enriched": {
-                "history": _compact_validation_report(history_enriched),
-                "evaluation": _compact_validation_report(evaluation_enriched),
-            },
-        },
-    }
-
-
-def _has_block_files(path: Path) -> bool:
-    try:
-        return bool(iter_block_files(path))
-    except ValueError:
-        return False
-
-
-def _validate_enriched(
-    path: Path,
-    *,
-    expected_chain_id: int,
-    expected_start_timestamp: int,
-    expected_end_timestamp: int,
-) -> BlockDatasetValidationReport:
-    try:
-        frame = load_enriched_block_frame(path)
-    except Exception as exc:  # pragma: no cover - surfaced in workflow smoke tests
-        return BlockDatasetValidationReport(
-            dataset_path=path,
-            expected_start_timestamp=expected_start_timestamp,
-            expected_end_timestamp=expected_end_timestamp,
-            status="error",
-            errors=[str(exc)],
-        )
-    return validate_exact_window_frame(
-        frame,
-        dataset_path=path,
-        expected_chain_id=expected_chain_id,
-        expected_start_timestamp=expected_start_timestamp,
-        expected_end_timestamp=expected_end_timestamp,
-    )
-
-
-def _ensure_canonical_raw_dataset(
-    *,
-    chain_name: str,
-    chain_id: int,
-    output_dir: Path,
-    expected_start_timestamp: int,
-    expected_end_timestamp: int,
-    chunk_size: int,
-    overwrite: bool,
-    run_pull: Callable[[Path], CryoRunResult],
-    reporter: Reporter,
-) -> tuple[CryoRunResult | None, RawPullValidationReport]:
-    if not overwrite and _has_block_files(output_dir):
-        validation = validate_raw_pull(
-            output_dir,
-            expected_chain_name=chain_name,
-            expected_chain_id=chain_id,
-            expected_start_timestamp=expected_start_timestamp,
-            expected_end_timestamp=expected_end_timestamp,
-            expected_chunk_size=chunk_size,
-        )
-        if validation.status == "clean":
-            reporter.log(f"reusing canonical raw dataset: {output_dir}")
-            return None, validation
-        reporter.log(
-            f"rebuilding raw dataset after failed validation: {output_dir}",
-            level="warning",
-        )
-
-    with TemporaryDirectory(prefix=f"spice-{chain_name}-{output_dir.name}-raw-") as scratch_root:
-        scratch_dir = Path(scratch_root) / output_dir.name
-        pull_result = run_pull(scratch_dir)
-        normalize_raw_dataset(
-            scratch_dir,
-            output_dir,
-            chain_name=chain_name,
-            expected_chain_id=chain_id,
-            expected_start_timestamp=expected_start_timestamp,
-            expected_end_timestamp=expected_end_timestamp,
-            chunk_size=chunk_size,
-        )
-
-    validation = validate_raw_pull(
-        output_dir,
-        expected_chain_name=chain_name,
-        expected_chain_id=chain_id,
-        expected_start_timestamp=expected_start_timestamp,
-        expected_end_timestamp=expected_end_timestamp,
-        expected_chunk_size=chunk_size,
-    )
-    if validation.status != "clean":
-        raise ValueError(f"Canonical raw dataset validation failed for {output_dir}: {validation}")
-    return pull_result, validation
-
-
-def _ensure_enriched_dataset(
-    *,
-    input_dir: Path,
-    output_dir: Path,
-    expected_chain_id: int,
-    expected_start_timestamp: int,
-    expected_end_timestamp: int,
-    overwrite: bool,
-    fetch_gas_limits,
-    batch_size: int,
-    max_methods_per_second: float,
-    reporter: Reporter,
-) -> BlockDatasetValidationReport:
-    if not overwrite and _has_block_files(output_dir):
-        validation = _validate_enriched(
-            output_dir,
-            expected_chain_id=expected_chain_id,
-            expected_start_timestamp=expected_start_timestamp,
-            expected_end_timestamp=expected_end_timestamp,
-        )
-        if validation.status == "clean":
-            reporter.log(f"reusing canonical enriched dataset: {output_dir}")
-            return validation
-        reporter.log(
-            f"rebuilding enriched dataset after failed validation: {output_dir}",
-            level="warning",
-        )
-
-    if output_dir.exists():
-        shutil.rmtree(output_dir)
-    enrich_path(
-        input_dir,
-        output_dir,
-        fetch_gas_limits=fetch_gas_limits,
-        batch_size=batch_size,
-        max_methods_per_second=max_methods_per_second,
-        reporter=reporter,
-    )
-    validation = _validate_enriched(
-        output_dir,
-        expected_chain_id=expected_chain_id,
-        expected_start_timestamp=expected_start_timestamp,
-        expected_end_timestamp=expected_end_timestamp,
-    )
-    if validation.status != "clean":
-        raise ValueError(
-            f"Canonical enriched dataset validation failed for {output_dir}: {validation}"
-        )
-    return validation
-
-
-def _ensure_history_raw_dataset(
-    *,
-    config: ExperimentConfig,
-    output_dir: Path,
-    history_window: TimestampRange,
-    required_history_blocks: int,
-    reporter: Reporter,
-) -> tuple[CryoRunResult | None, RawPullValidationReport, TimestampRange]:
-    result, validation = _ensure_canonical_raw_dataset(
-        chain_name=config.chain.name.value,
-        chain_id=config.chain.chain_id,
-        output_dir=output_dir,
-        expected_start_timestamp=history_window.start,
-        expected_end_timestamp=history_window.end,
-        chunk_size=config.pull.chunk_size,
-        overwrite=config.pull.overwrite,
-        run_pull=lambda scratch_dir: run_cryo(
-            config.chain,
-            config.pull,
-            scratch_dir,
-            history_window,
-            provider=config.provider,
-            overwrite=True,
-            dry_run=False,
-            reporter=reporter,
-        ),
-        reporter=reporter,
-    )
-    if validation.row_count >= required_history_blocks:
-        return result, validation, history_window
-
-    expanded_window = _expanded_history_range(
-        history_window,
-        validation,
-        config=config,
-        required_history_blocks=required_history_blocks,
-    )
-    reporter.log(
-        "expanding history window backward "
-        f"from {history_window.start} to {expanded_window.start} "
-        f"for {required_history_blocks} required blocks",
-        level="warning",
-    )
-    expanded_result, expanded_validation = _ensure_canonical_raw_dataset(
-        chain_name=config.chain.name.value,
-        chain_id=config.chain.chain_id,
-        output_dir=output_dir,
-        expected_start_timestamp=expanded_window.start,
-        expected_end_timestamp=expanded_window.end,
-        chunk_size=config.pull.chunk_size,
-        overwrite=True,
-        run_pull=lambda scratch_dir: run_cryo(
-            config.chain,
-            config.pull,
-            scratch_dir,
-            expanded_window,
-            provider=config.provider,
-            overwrite=True,
-            dry_run=False,
-            reporter=reporter,
-        ),
-        reporter=reporter,
-    )
-    if expanded_validation.row_count < required_history_blocks:
-        raise ValueError(
-            "History dataset is too short after one expansion; "
-            f"need at least {required_history_blocks} blocks, "
-            f"got {expanded_validation.row_count}"
-        )
-    return expanded_result, expanded_validation, expanded_window
+from ..core.tracking import log_artifacts
+from ._shared import managed_workflow, write_json
 
 
 def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
@@ -500,11 +38,9 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
     enriched_history_dir = Path(config.paths.enriched_history_dir)
     enriched_evaluation_dir = Path(config.paths.enriched_evaluation_dir)
     metadata_path = Path(config.paths.dataset_metadata_path)
-    if config.tracking.enabled:
-        configure_mlflow(config)
 
-    required_history_blocks = _required_history_block_count(config)
-    history_window = _initial_history_range(
+    required_history_blocks = required_history_block_count(config)
+    history_window = initial_history_range(
         config,
         required_history_blocks=required_history_blocks,
     )
@@ -512,53 +48,39 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         config.dataset.evaluation_start_timestamp,
         config.dataset.evaluation_end_timestamp,
     )
-    existing_metadata = _check_existing_metadata(
+    existing_metadata = check_existing_dataset_metadata(
         config=config,
         metadata_path=metadata_path,
         overwrite=config.pull.overwrite,
     )
     if existing_metadata is not None and not config.pull.overwrite:
-        history_window = _history_range_from_metadata(existing_metadata)
+        history_window = history_range_from_metadata(existing_metadata)
+
     block_client = Web3BlockClient(config.provider, config.chain)
-    active_reporter = reporter or RichReporter()
-    run_context = start_run_if_enabled(
+    with managed_workflow(
         config,
         run_name=f"acquire-{config.chain.name.value}-{config.provider.name.value}",
-    )
-    try:
-        if run_context is not None:
-            run_context.__enter__()
-            log_config(config)
-            mlflow.set_tags(config.tracking.tags)
-
+        reporter=reporter,
+        default_reporter_factory=RichReporter,
+    ) as session:
         if config.pull.dry_run:
-            with TemporaryDirectory(
-                prefix=f"spice-{config.chain.name.value}-history-dry-"
-            ) as scratch:
-                history_result = run_cryo(
-                    config.chain,
-                    config.pull,
-                    Path(scratch) / "history",
-                    history_window,
-                    provider=config.provider,
-                    overwrite=config.pull.overwrite,
-                    dry_run=True,
-                    reporter=active_reporter,
-                )
-            with TemporaryDirectory(
-                prefix=f"spice-{config.chain.name.value}-evaluation-dry-"
-            ) as scratch:
-                evaluation_result = run_cryo(
-                    config.chain,
-                    config.pull,
-                    Path(scratch) / "evaluation",
-                    evaluation_window,
-                    provider=config.provider,
-                    overwrite=config.pull.overwrite,
-                    dry_run=True,
-                    reporter=active_reporter,
-                )
-            active_reporter.log(
+            history_result = run_raw_pull(
+                config,
+                output_dir=raw_history_dir,
+                window=history_window,
+                reporter=session.reporter,
+                overwrite=config.pull.overwrite,
+                dry_run=True,
+            )
+            evaluation_result = run_raw_pull(
+                config,
+                output_dir=raw_evaluation_dir,
+                window=evaluation_window,
+                reporter=session.reporter,
+                overwrite=config.pull.overwrite,
+                dry_run=True,
+            )
+            session.reporter.log(
                 json.dumps(
                     {
                         "history_completed_chunks": history_result.completed_chunks,
@@ -579,34 +101,20 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             )
             return
 
-        history_result, history_validation, history_window = _ensure_history_raw_dataset(
+        history_result, history_validation, history_window = ensure_history_raw_dataset(
             config=config,
             output_dir=raw_history_dir,
             history_window=history_window,
             required_history_blocks=required_history_blocks,
-            reporter=active_reporter,
+            reporter=session.reporter,
         )
-        evaluation_result, evaluation_validation = _ensure_canonical_raw_dataset(
-            chain_name=config.chain.name.value,
-            chain_id=config.chain.chain_id,
+        evaluation_result, evaluation_validation = ensure_evaluation_raw_dataset(
+            config=config,
             output_dir=raw_evaluation_dir,
-            expected_start_timestamp=evaluation_window.start,
-            expected_end_timestamp=evaluation_window.end,
-            chunk_size=config.pull.chunk_size,
-            overwrite=config.pull.overwrite,
-            run_pull=lambda scratch_dir: run_cryo(
-                config.chain,
-                config.pull,
-                scratch_dir,
-                evaluation_window,
-                provider=config.provider,
-                overwrite=True,
-                dry_run=False,
-                reporter=active_reporter,
-            ),
-            reporter=active_reporter,
+            evaluation_window=evaluation_window,
+            reporter=session.reporter,
         )
-        history_enriched = _ensure_enriched_dataset(
+        history_enriched = ensure_enriched_dataset(
             input_dir=raw_history_dir,
             output_dir=enriched_history_dir,
             expected_chain_id=config.chain.chain_id,
@@ -616,9 +124,9 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             fetch_gas_limits=block_client.get_block_gas_limits,
             batch_size=config.pull.enrich_batch_size,
             max_methods_per_second=config.pull.max_methods_per_second,
-            reporter=active_reporter,
+            reporter=session.reporter,
         )
-        evaluation_enriched = _ensure_enriched_dataset(
+        evaluation_enriched = ensure_enriched_dataset(
             input_dir=raw_evaluation_dir,
             output_dir=enriched_evaluation_dir,
             expected_chain_id=config.chain.chain_id,
@@ -628,9 +136,9 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             fetch_gas_limits=block_client.get_block_gas_limits,
             batch_size=config.pull.enrich_batch_size,
             max_methods_per_second=config.pull.max_methods_per_second,
-            reporter=active_reporter,
+            reporter=session.reporter,
         )
-        metadata = _build_dataset_metadata(
+        metadata = build_dataset_metadata(
             config=config,
             raw_history_dir=raw_history_dir,
             raw_evaluation_dir=raw_evaluation_dir,
@@ -645,8 +153,8 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             history_enriched=history_enriched,
             evaluation_enriched=evaluation_enriched,
         )
-        _write_json(metadata_path, metadata)
-        active_reporter.log(
+        write_json(metadata_path, metadata)
+        session.reporter.log(
             json.dumps(
                 {
                     "history_completed_chunks": (
@@ -664,7 +172,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                 }
             )
         )
-        if config.tracking.enabled:
+        if session.tracking_enabled:
             mlflow.log_metrics(
                 {
                     "history_completed_chunks": float(
@@ -679,16 +187,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                     "evaluation_overlap_count": float(evaluation_validation.overlap_count),
                 }
             )
-            log_artifacts(
-                [
-                    metadata_path,
-                ]
-            )
-    finally:
-        if run_context is not None:
-            run_context.__exit__(None, None, None)
-        if reporter is None:
-            active_reporter.close()
+            log_artifacts([metadata_path])
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="acquire")
