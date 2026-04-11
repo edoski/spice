@@ -45,7 +45,11 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
     history_block_path = Path(config.paths.enriched_history_dir)
     with managed_workflow(
         config,
-        run_name=f"train-{config.chain.name.value}-{config.model.family.value}-{config.max_delay_seconds}s",
+        run_name=(
+            "train-"
+            f"{config.chain.name.value}-{config.model.family.value}-"
+            f"{config.dataset.temporal.max_delay_seconds}s"
+        ),
         reporter=reporter,
         default_reporter_factory=RichReporter,
     ) as session:

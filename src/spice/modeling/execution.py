@@ -50,7 +50,7 @@ def run_persisted_training(
     )
     report = build_training_run_report(
         training_run,
-        target_anchor_count=spec.target_anchor_count,
+        anchor_count=spec.anchor_count,
         max_delay_seconds=spec.max_delay_seconds,
         lookback_seconds=spec.lookback_seconds,
         chain_name=spec.chain.name.value,

@@ -32,18 +32,18 @@ def set_global_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def choose_microbatch_size(effective_batch_size: int, device: torch.device) -> int:
-    candidates = [effective_batch_size, 32, 16, 8]
+def choose_microbatch_size(batch_size: int, device: torch.device) -> int:
+    candidates = [batch_size, 32, 16, 8]
     if device.type == "cpu":
-        return min(effective_batch_size, 16)
+        return min(batch_size, 16)
     for candidate in candidates:
-        if candidate <= effective_batch_size:
+        if candidate <= batch_size:
             return candidate
     return 8
 
 
-def accumulation_steps(effective_batch_size: int, microbatch_size: int) -> int:
-    return max(1, math.ceil(effective_batch_size / microbatch_size))
+def accumulation_steps(batch_size: int, microbatch_size: int) -> int:
+    return max(1, math.ceil(batch_size / microbatch_size))
 
 
 def build_sequence_loader(
@@ -51,10 +51,10 @@ def build_sequence_loader(
     sample_indices: IntVector,
     *,
     lookback_steps: int,
-    effective_batch_size: int,
+    batch_size: int,
     device: torch.device,
 ) -> DataLoader[SequenceBatch]:
-    microbatch_size = choose_microbatch_size(effective_batch_size, device)
+    microbatch_size = choose_microbatch_size(batch_size, device)
     return DataLoader(
         SequenceDataset(store, sample_indices, lookback_steps=lookback_steps),
         batch_size=microbatch_size,

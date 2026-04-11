@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import pytest
 
+from spice.core.constants import DEFAULT_WINDOW_END_TIMESTAMP, DEFAULT_WINDOW_START_TIMESTAMP
 from tests.support import base_overrides, compose_experiment
 
 
 def test_hydra_train_config_composes_and_resolves_paths(tmp_path) -> None:
     config = compose_experiment(
         "train",
-        overrides=base_overrides(tmp_path) + ["max_delay_seconds=24", "model=transformer"],
+        overrides=base_overrides(tmp_path)
+        + ["dataset.temporal.max_delay_seconds=24", "model=transformer"],
     )
 
     assert config.task == "train"
-    assert config.max_delay_seconds == 24
+    assert config.dataset.temporal.max_delay_seconds == 24
     assert config.model.family.value == "transformer"
     assert config.dataset.id == "icdcs_2025_11_09"
-    assert config.dataset.min_history_anchor_count == 48
+    assert config.dataset.sampling.history_anchor_count is None
+    assert config.dataset.sampling.effective_history_anchor_count == 48
     assert config.paths.artifact_root.endswith("/ethereum/icdcs_2025_11_09/transformer/24s")
     assert config.paths.raw_history_dir.endswith(
         "/datasets/ethereum/icdcs_2025_11_09/raw/history"
@@ -72,4 +75,23 @@ def test_invalid_transformer_config_fails_early(tmp_path) -> None:
             "train",
             overrides=base_overrides(tmp_path)
             + ["model=transformer", "model.d_model=126", "model.nhead=8"],
+        )
+
+
+def test_date_window_resolves_to_half_open_utc_timestamps(tmp_path) -> None:
+    config = compose_experiment("simulate", overrides=base_overrides(tmp_path))
+
+    assert config.dataset.window.start_timestamp == DEFAULT_WINDOW_START_TIMESTAMP
+    assert config.dataset.window.end_timestamp == DEFAULT_WINDOW_END_TIMESTAMP
+
+
+def test_history_anchor_count_cannot_be_smaller_than_anchor_count(tmp_path) -> None:
+    with pytest.raises(
+        ValueError,
+        match="history_anchor_count must be at least dataset.sampling.anchor_count",
+    ):
+        compose_experiment(
+            "acquire",
+            overrides=base_overrides(tmp_path)
+            + ["dataset.sampling.history_anchor_count=32"],
         )

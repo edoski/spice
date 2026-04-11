@@ -7,7 +7,7 @@ import polars as pl
 from hydra import compose, initialize_config_dir
 
 from spice.core.config import ExperimentConfig, coerce_config
-from spice.core.constants import EVALUATION_START_TS
+from spice.core.constants import DEFAULT_WINDOW_START_TIMESTAMP
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONF_DIR = REPO_ROOT / "src" / "spice" / "conf"
@@ -25,16 +25,16 @@ def base_overrides(tmp_path: Path) -> list[str]:
         "tracking.enabled=false",
         "training.device=cpu",
         "training.max_epochs=1",
-        "training.effective_batch_size=8",
-        "training.early_stopping_patience=1",
+        "training.batch_size=8",
+        "training.early_stopping.patience=1",
         "training.log_every_n_steps=1",
         "simulation.window_seconds=600",
         "simulation.arrival_rate_per_second=0.02",
         "simulation.repetitions=3",
-        "pull.enrich_batch_size=1000",
-        "pull.max_methods_per_second=1000000",
-        "lookback_seconds=120",
-        "target_anchor_count=48",
+        "acquisition.enrich_batch_size=1000",
+        "acquisition.max_methods_per_second=1000000",
+        "dataset.temporal.lookback_seconds=120",
+        "dataset.sampling.anchor_count=48",
     ]
 
 
@@ -76,7 +76,7 @@ def make_history_rows(count: int = 320) -> list[dict[str, int | None]]:
     return make_block_rows(
         count,
         start_block=1,
-        start_timestamp=EVALUATION_START_TS - count * 12,
+        start_timestamp=DEFAULT_WINDOW_START_TIMESTAMP - count * 12,
         include_gas_limit=True,
     )
 
@@ -89,7 +89,7 @@ def make_evaluation_rows(
     return make_block_rows(
         count,
         start_block=start_block,
-        start_timestamp=EVALUATION_START_TS,
+        start_timestamp=DEFAULT_WINDOW_START_TIMESTAMP,
         include_gas_limit=True,
     )
 

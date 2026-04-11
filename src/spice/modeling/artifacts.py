@@ -30,7 +30,7 @@ class TrainingArtifactManifest(ArtifactModel):
     dataset_id: str
     max_delay_seconds: int
     lookback_seconds: int
-    target_anchor_count: int
+    anchor_count: int
     lookback_steps: int
     max_extra_wait_steps: int
     action_count: int
@@ -56,7 +56,7 @@ def build_training_artifact_manifest(
         dataset_id=spec.dataset_id,
         max_delay_seconds=spec.max_delay_seconds,
         lookback_seconds=spec.lookback_seconds,
-        target_anchor_count=spec.target_anchor_count,
+        anchor_count=spec.anchor_count,
         lookback_steps=prepared.geometry.lookback_steps,
         max_extra_wait_steps=prepared.geometry.max_extra_wait_steps,
         action_count=prepared.geometry.action_count,

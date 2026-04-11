@@ -1,19 +1,23 @@
-run:
-  chain: ethereum
-  model: lstm
-  provider: publicnode
+chain: ethereum
+model: lstm
+provider: publicnode
+
+runtime:
   output_root: artifacts
-  max_delay_seconds: 36
-  lookback_seconds: 600
-  target_anchor_count: 400000
 
 dataset:
   id: icdcs_2025_11_09
-  evaluation_start_timestamp: 1762646400
-  evaluation_end_timestamp: 1762732800
-  min_history_anchor_count: 400000
+  window:
+    start_date: "2025-11-09"
+    end_date: "2025-11-09"
+  temporal:
+    max_delay_seconds: 36
+    lookback_seconds: 600
+  sampling:
+    anchor_count: 400000
+    history_anchor_count: null
 
-pull:
+acquisition:
   requests_per_second: 25
   max_concurrent_requests: 2
   max_concurrent_chunks: 1
@@ -25,8 +29,9 @@ pull:
 training:
   device: auto
   max_epochs: 50
-  effective_batch_size: 64
-  early_stopping_patience: 8
+  batch_size: 64
+  early_stopping:
+    patience: 8
 
 simulation:
   window_seconds: 7200
@@ -34,5 +39,5 @@ simulation:
   repetitions: 50
 
 tuning:
-  n_trials: 20
-  prune: true
+  trial_count: 20
+  enable_pruning: true

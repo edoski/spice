@@ -96,7 +96,7 @@ You can also run the workflow entrypoints directly:
 .venv/bin/spice-acquire chain=ethereum provider=publicnode
 .venv/bin/spice-train chain=ethereum model=lstm training.device=cpu
 .venv/bin/spice-simulate chain=ethereum model=lstm training.device=cpu
-.venv/bin/spice-tune chain=ethereum model=lstm tuning.n_trials=20
+.venv/bin/spice-tune chain=ethereum model=lstm tuning.trial_count=20
 ```
 
 The default dataset window is configured explicitly through `dataset.*` in
@@ -104,28 +104,33 @@ The default dataset window is configured explicitly through `dataset.*` in
 and Hydra defaults:
 
 - `dataset.id`
-- `dataset.evaluation_start_timestamp`
-- `dataset.evaluation_end_timestamp`
-- `dataset.min_history_anchor_count`
+- `dataset.window.start_date`
+- `dataset.window.end_date`
+- `dataset.temporal.max_delay_seconds`
+- `dataset.temporal.lookback_seconds`
+- `dataset.sampling.anchor_count`
+- `dataset.sampling.history_anchor_count`
 
-`target_anchor_count` remains the training/tuning sample count. By default,
-`dataset.min_history_anchor_count` follows it so one knob still covers the
-common path, but acquisition reuse/expansion decisions stay explicit inside the
-workflow code.
+`dataset.sampling.anchor_count` is the training/tuning sample count.
+`dataset.sampling.history_anchor_count` is optional. When unset, it follows
+`anchor_count`, but you can raise it to keep a larger reusable history window
+for acquisition.
 
 ## Configuration
 
 Hydra config groups live under [src/spice/conf](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf):
 
+- `acquisition/`
 - `chain/`
+- `dataset/`
 - `model/`
 - `provider/`
-- `dataset/` via the structured `dataset` section in `base.yaml`
-- `training/`
-- `simulation/`
-- `tracking/`
-- `tuning/`
 - `runtime/`
+- `simulation/`
+- `split/`
+- `tracking/`
+- `training/`
+- `tuning/`
 
 Runtime validation happens in [config.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/config.py). That layer enforces the repo’s structural invariants, including transformer head divisibility and provider endpoint availability.
 

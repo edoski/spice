@@ -84,7 +84,10 @@ class TemporalLightningModule(L.LightningModule):
         outputs = self.model(batch["inputs"])
         block_loss = self._ce_loss(outputs.logits, batch["class_label"])
         fee_loss = self._smooth_l1(outputs.fee_hat, batch["target_log_fee"])
-        total_loss = self.training_config.alpha * block_loss + self.training_config.beta * fee_loss
+        total_loss = (
+            self.training_config.action_loss_weight * block_loss
+            + self.training_config.fee_loss_weight * fee_loss
+        )
 
         accuracy_metric = (
             self.train_accuracy if stage == "train" else self.validation_accuracy

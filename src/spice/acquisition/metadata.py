@@ -49,7 +49,7 @@ def check_existing_dataset_metadata(
         if not overwrite and _metadata_has_dataset_files(config):
             raise ValueError(
                 f"Dataset files exist without canonical metadata at {metadata_path}; "
-                "rerun with pull.overwrite=true to replace them."
+                "rerun with acquisition.overwrite=true to replace them."
             )
         return None
 
@@ -62,8 +62,8 @@ def check_existing_dataset_metadata(
         "chain_id": config.chain.chain_id,
         "provider": provider_metadata(config),
         "evaluation_window": {
-            "start_timestamp": config.dataset.evaluation_start_timestamp,
-            "end_timestamp": config.dataset.evaluation_end_timestamp,
+            "start_timestamp": config.dataset.window.start_timestamp,
+            "end_timestamp": config.dataset.window.end_timestamp,
         },
     }
     actual = {
@@ -76,7 +76,7 @@ def check_existing_dataset_metadata(
     if actual != expected:
         raise ValueError(
             "Existing dataset metadata does not match the requested dataset window/provider. "
-            f"Expected {expected}, got {actual}. Use pull.overwrite=true to replace it."
+            f"Expected {expected}, got {actual}. Use acquisition.overwrite=true to replace it."
         )
     return metadata
 
@@ -165,13 +165,19 @@ def build_dataset_metadata(
             },
         },
         "settings": {
-            "min_history_anchor_count": config.dataset.min_history_anchor_count,
-            "target_anchor_count": config.target_anchor_count,
-            "lookback_seconds": config.lookback_seconds,
-            "max_delay_seconds": config.max_delay_seconds,
-            "raw_chunk_size": config.pull.chunk_size,
-            "enrich_batch_size": config.pull.enrich_batch_size,
-            "max_methods_per_second": config.pull.max_methods_per_second,
+            "sampling": {
+                "anchor_count": config.dataset.sampling.anchor_count,
+                "history_anchor_count": config.dataset.sampling.effective_history_anchor_count,
+            },
+            "temporal": {
+                "lookback_seconds": config.dataset.temporal.lookback_seconds,
+                "max_delay_seconds": config.dataset.temporal.max_delay_seconds,
+            },
+            "acquisition": {
+                "chunk_size": config.acquisition.chunk_size,
+                "enrich_batch_size": config.acquisition.enrich_batch_size,
+                "max_methods_per_second": config.acquisition.max_methods_per_second,
+            },
         },
         "validation": {
             "raw": {

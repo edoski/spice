@@ -29,7 +29,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         config,
         run_name=(
             f"simulate-{config.chain.name.value}-{config.model.family.value}"
-            f"-{config.max_delay_seconds}s"
+            f"-{config.dataset.temporal.max_delay_seconds}s"
         ),
         reporter=reporter,
         default_reporter_factory=RichReporter,
@@ -46,15 +46,15 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                 block_time_seconds=loaded_artifact.manifest.chain.block_time_seconds,
             ),
             scaler=loaded_artifact.manifest.scaler,
-            evaluation_start_timestamp=config.dataset.evaluation_start_timestamp,
-            evaluation_end_timestamp=config.dataset.evaluation_end_timestamp,
+            window_start_timestamp=config.dataset.window.start_timestamp,
+            window_end_timestamp=config.dataset.window.end_timestamp,
         )
         predictions = predict_class_offsets(
             loaded_artifact.model,
             store=prepared.store,
             sample_indices=prepared.sample_indices,
             lookback_steps=prepared.geometry.lookback_steps,
-            effective_batch_size=config.training.effective_batch_size,
+            batch_size=config.training.batch_size,
             device=config.training.device,
         )
         simulation = run_temporal_simulation(

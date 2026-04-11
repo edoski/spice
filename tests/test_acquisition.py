@@ -14,7 +14,13 @@ from spice.acquisition.cryo import (
 )
 from spice.acquisition.enrich import enrich_frame_with_gas_limit
 from spice.acquisition.raw_normalization import normalize_raw_dataset
-from spice.core.config import ChainConfig, ChainName, ProviderConfig, PullConfig, RpcProviderName
+from spice.core.config import (
+    AcquisitionConfig,
+    ChainConfig,
+    ChainName,
+    ProviderConfig,
+    RpcProviderName,
+)
 from spice.core.console import NullReporter
 from spice.data.block_schema import ENRICHED_BLOCK_SCHEMA
 from spice.data.io import load_enriched_block_frame, read_block_dataset
@@ -100,7 +106,7 @@ def test_run_cryo_polls_progress_before_stdout_lines(tmp_path, monkeypatch) -> N
 
     result = run_cryo(
         ChainConfig(name=ChainName.ETHEREUM, chain_id=1, block_time_seconds=12.0),
-        PullConfig(chunk_size=1),
+        AcquisitionConfig(chunk_size=1),
         output_dir,
         TimestampRange(start=1, end=13),
         provider=provider,
@@ -279,7 +285,7 @@ def test_normalize_raw_dataset_rejects_invalid_sequences(tmp_path, rows, match) 
 def test_acquire_workflow_writes_validation_reports(tmp_path, monkeypatch) -> None:
     config = compose_experiment(
         "acquire",
-        overrides=base_overrides(tmp_path) + ["provider=publicnode", "pull.dry_run=false"],
+        overrides=base_overrides(tmp_path) + ["provider=publicnode", "acquisition.dry_run=false"],
     )
 
     def fake_run_cryo(chain, _pull, output_dir, timestamps, **_kwargs):
@@ -333,7 +339,7 @@ def test_acquire_workflow_writes_validation_reports(tmp_path, monkeypatch) -> No
 def test_acquire_reuses_larger_valid_dataset_for_lower_target(tmp_path, monkeypatch) -> None:
     config = compose_experiment(
         "acquire",
-        overrides=base_overrides(tmp_path) + ["provider=publicnode", "pull.dry_run=false"],
+        overrides=base_overrides(tmp_path) + ["provider=publicnode", "acquisition.dry_run=false"],
     )
 
     def fake_run_cryo(chain, _pull, output_dir, timestamps, **_kwargs):
@@ -361,9 +367,9 @@ def test_acquire_reuses_larger_valid_dataset_for_lower_target(tmp_path, monkeypa
         overrides=base_overrides(tmp_path)
         + [
             "provider=publicnode",
-            "pull.dry_run=false",
-            "target_anchor_count=8",
-            "dataset.min_history_anchor_count=8",
+            "acquisition.dry_run=false",
+            "dataset.sampling.anchor_count=8",
+            "dataset.sampling.history_anchor_count=8",
         ],
     )
     monkeypatch.setattr(
@@ -388,7 +394,7 @@ def test_acquire_reuses_larger_valid_dataset_for_lower_target(tmp_path, monkeypa
 def test_acquire_rejects_dataset_id_metadata_mismatch_without_overwrite(tmp_path) -> None:
     config = compose_experiment(
         "acquire",
-        overrides=base_overrides(tmp_path) + ["provider=publicnode", "pull.dry_run=false"],
+        overrides=base_overrides(tmp_path) + ["provider=publicnode", "acquisition.dry_run=false"],
     )
     metadata_path = (
         tmp_path
@@ -412,8 +418,8 @@ def test_acquire_rejects_dataset_id_metadata_mismatch_without_overwrite(tmp_path
                 },
                 "windows": {
                     "evaluation": {
-                        "start_timestamp": config.dataset.evaluation_start_timestamp,
-                        "end_timestamp": config.dataset.evaluation_end_timestamp,
+                        "start_timestamp": config.dataset.window.start_timestamp,
+                        "end_timestamp": config.dataset.window.end_timestamp,
                     }
                 },
             }
@@ -431,10 +437,10 @@ def test_acquire_expands_short_history_window_backward(tmp_path, monkeypatch) ->
         overrides=base_overrides(tmp_path)
         + [
             "provider=publicnode",
-            "pull.dry_run=false",
-            "pull.chunk_size=5",
-            "target_anchor_count=20",
-            "dataset.min_history_anchor_count=20",
+            "acquisition.dry_run=false",
+            "acquisition.chunk_size=5",
+            "dataset.sampling.anchor_count=20",
+            "dataset.sampling.history_anchor_count=20",
         ],
     )
     history_starts: list[int] = []
@@ -485,7 +491,7 @@ def test_acquire_expands_short_history_window_backward(tmp_path, monkeypatch) ->
 def test_acquire_workflow_rejects_non_trim_boundary_violations(tmp_path, monkeypatch) -> None:
     config = compose_experiment(
         "acquire",
-        overrides=base_overrides(tmp_path) + ["provider=publicnode", "pull.dry_run=false"],
+        overrides=base_overrides(tmp_path) + ["provider=publicnode", "acquisition.dry_run=false"],
     )
 
     def fake_run_cryo(chain, _pull, output_dir, timestamps, **_kwargs):

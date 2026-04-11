@@ -13,11 +13,11 @@ from .raw_validation import RawPullValidationReport
 
 def required_history_block_count(config: ExperimentConfig) -> int:
     geometry = derive_dataset_geometry(
-        lookback_seconds=config.lookback_seconds,
-        max_delay_seconds=config.max_delay_seconds,
+        lookback_seconds=config.dataset.temporal.lookback_seconds,
+        max_delay_seconds=config.dataset.temporal.max_delay_seconds,
         block_time_seconds=config.chain.block_time_seconds,
     )
-    return geometry.required_block_count(config.dataset.min_history_anchor_count)
+    return geometry.required_block_count(config.dataset.sampling.effective_history_anchor_count)
 
 
 def initial_history_range(
@@ -27,9 +27,9 @@ def initial_history_range(
 ) -> TimestampRange:
     return history_range_for_required_blocks(
         config.chain,
-        config.pull,
+        config.acquisition,
         required_history_blocks=required_history_blocks,
-        evaluation_start_timestamp=config.dataset.evaluation_start_timestamp,
+        window_start_timestamp=config.dataset.window.start_timestamp,
     )
 
 
@@ -54,7 +54,7 @@ def expanded_history_range(
         )
     else:
         seconds_per_block = config.chain.block_time_seconds
-    additional_blocks = missing_blocks + config.pull.chunk_size
+    additional_blocks = missing_blocks + config.acquisition.chunk_size
     return TimestampRange(
         start=current.start - ceil(additional_blocks * seconds_per_block),
         end=current.end,

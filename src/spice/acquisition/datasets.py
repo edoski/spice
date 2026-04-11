@@ -56,7 +56,7 @@ def run_raw_pull(
 ) -> CryoRunResult:
     return run_cryo(
         config.chain,
-        config.pull,
+        config.acquisition,
         output_dir,
         window,
         provider=config.provider,
@@ -186,8 +186,8 @@ def ensure_history_raw_dataset(
         output_dir=output_dir,
         expected_start_timestamp=history_window.start,
         expected_end_timestamp=history_window.end,
-        chunk_size=config.pull.chunk_size,
-        overwrite=config.pull.overwrite,
+        chunk_size=config.acquisition.chunk_size,
+        overwrite=config.acquisition.overwrite,
         run_pull=lambda scratch_dir: run_raw_pull(
             config,
             output_dir=scratch_dir,
@@ -219,7 +219,7 @@ def ensure_history_raw_dataset(
         output_dir=output_dir,
         expected_start_timestamp=expanded_window.start,
         expected_end_timestamp=expanded_window.end,
-        chunk_size=config.pull.chunk_size,
+        chunk_size=config.acquisition.chunk_size,
         overwrite=True,
         run_pull=lambda scratch_dir: run_raw_pull(
             config,
@@ -253,8 +253,8 @@ def ensure_evaluation_raw_dataset(
         output_dir=output_dir,
         expected_start_timestamp=evaluation_window.start,
         expected_end_timestamp=evaluation_window.end,
-        chunk_size=config.pull.chunk_size,
-        overwrite=config.pull.overwrite,
+        chunk_size=config.acquisition.chunk_size,
+        overwrite=config.acquisition.overwrite,
         run_pull=lambda scratch_dir: run_raw_pull(
             config,
             output_dir=scratch_dir,

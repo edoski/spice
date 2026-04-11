@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
 from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
 from pydantic import TypeAdapter
 
-from .constants import EVALUATION_END_TS, EVALUATION_START_TS
+from .constants import DEFAULT_WINDOW_END_DATE, DEFAULT_WINDOW_START_DATE
 
 
 class ChainName(StrEnum):
@@ -30,6 +31,10 @@ class RpcProviderName(StrEnum):
     PUBLICNODE = "publicnode"
 
 
+def _utc_midnight_timestamp(value: date) -> int:
+    return int(datetime.combine(value, time.min, tzinfo=UTC).timestamp())
+
+
 @dataclass(slots=True)
 class ChainConfig:
     name: ChainName = ChainName.ETHEREUM
@@ -39,11 +44,43 @@ class ChainConfig:
 
 
 @dataclass(slots=True)
+class DatasetWindowConfig:
+    start_date: date = DEFAULT_WINDOW_START_DATE
+    end_date: date = DEFAULT_WINDOW_END_DATE
+
+    @property
+    def start_timestamp(self) -> int:
+        return _utc_midnight_timestamp(self.start_date)
+
+    @property
+    def end_timestamp(self) -> int:
+        return _utc_midnight_timestamp(self.end_date + timedelta(days=1))
+
+
+@dataclass(slots=True)
+class DatasetTemporalConfig:
+    max_delay_seconds: int = 36
+    lookback_seconds: int = 600
+
+
+@dataclass(slots=True)
+class DatasetSamplingConfig:
+    anchor_count: int = 400_000
+    history_anchor_count: int | None = None
+
+    @property
+    def effective_history_anchor_count(self) -> int:
+        if self.history_anchor_count is None:
+            return self.anchor_count
+        return self.history_anchor_count
+
+
+@dataclass(slots=True)
 class DatasetConfig:
     id: str = "icdcs_2025_11_09"
-    evaluation_start_timestamp: int = EVALUATION_START_TS
-    evaluation_end_timestamp: int = EVALUATION_END_TS
-    min_history_anchor_count: int = 400_000
+    window: DatasetWindowConfig = field(default_factory=DatasetWindowConfig)
+    temporal: DatasetTemporalConfig = field(default_factory=DatasetTemporalConfig)
+    sampling: DatasetSamplingConfig = field(default_factory=DatasetSamplingConfig)
 
 
 @dataclass(slots=True)
@@ -53,16 +90,21 @@ class SplitConfig:
 
 
 @dataclass(slots=True)
+class EarlyStoppingConfig:
+    patience: int = 8
+    min_delta: float = 1e-4
+
+
+@dataclass(slots=True)
 class TrainingConfig:
     learning_rate: float = 3e-4
     weight_decay: float = 1e-2
-    effective_batch_size: int = 64
+    batch_size: int = 64
     max_epochs: int = 50
-    early_stopping_patience: int = 8
-    early_stopping_min_delta: float = 1e-4
+    early_stopping: EarlyStoppingConfig = field(default_factory=EarlyStoppingConfig)
     gradient_clip_norm: float = 1.0
-    alpha: float = 1.0
-    beta: float = 0.25
+    action_loss_weight: float = 1.0
+    fee_loss_weight: float = 0.25
     device: str = "auto"
     seed: int = 2026
     deterministic: bool = True
@@ -70,7 +112,7 @@ class TrainingConfig:
 
 
 @dataclass(slots=True)
-class PullConfig:
+class AcquisitionConfig:
     requests_per_second: int = 10
     max_concurrent_requests: int = 2
     max_concurrent_chunks: int = 1
@@ -116,11 +158,11 @@ class TuningConfig:
     apply_best_params: bool = False
     study_name: str = "spice-study"
     direction: str = "maximize"
-    n_trials: int = 20
+    trial_count: int = 20
     timeout_seconds: int | None = None
-    metric_name: str = "validation_profit_over_baseline"
+    objective_metric: str = "validation_profit_over_baseline"
     sampler_seed: int = 2026
-    prune: bool = True
+    enable_pruning: bool = True
     search_space: dict[str, list[Any]] = field(
         default_factory=lambda: {
             "training.learning_rate": [1e-4, 3e-4, 1e-3],
@@ -151,7 +193,8 @@ class PathsConfig:
     enriched_evaluation_dir: str = "${paths.enriched_root}/evaluation"
     dataset_metadata_path: str = "${paths.metadata_root}/metadata.json"
     artifact_root: str = (
-        "${paths.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${max_delay_seconds}s"
+        "${paths.output_root}/models/${chain.name}/${dataset.id}/${model.family}/"
+        "${dataset.temporal.max_delay_seconds}s"
     )
     checkpoint_dir: str = "${paths.artifact_root}/checkpoints"
     train_report_path: str = "${paths.artifact_root}/train_report.json"
@@ -191,13 +234,10 @@ class ProviderConfig:
 @dataclass(slots=True)
 class ExperimentConfig:
     task: str = "train"
-    max_delay_seconds: int = 36
-    lookback_seconds: int = 600
-    target_anchor_count: int = 400_000
     chain: ChainConfig = field(default_factory=ChainConfig)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
-    pull: PullConfig = field(default_factory=PullConfig)
+    acquisition: AcquisitionConfig = field(default_factory=AcquisitionConfig)
     split: SplitConfig = field(default_factory=SplitConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     simulation: SimulationConfig = field(default_factory=SimulationConfig)
@@ -235,34 +275,35 @@ def config_to_dict(cfg: ExperimentConfig) -> dict[str, Any]:
 
 
 def validate_config(cfg: ExperimentConfig) -> None:
-    _validate_experiment_root(cfg)
     _validate_dataset(cfg.dataset)
     _validate_chain(cfg.chain)
     _validate_split(cfg.split)
     _validate_training(cfg.training)
-    _validate_pull(cfg.pull)
+    _validate_acquisition(cfg.acquisition)
     _validate_simulation(cfg.simulation)
     _validate_model(cfg.model)
     _validate_provider(cfg)
     _validate_tuning(cfg.tuning)
 
 
-def _validate_experiment_root(cfg: ExperimentConfig) -> None:
-    if cfg.max_delay_seconds <= 0:
-        raise ValueError("max_delay_seconds must be positive")
-    if cfg.lookback_seconds <= 0:
-        raise ValueError("lookback_seconds must be positive")
-    if cfg.target_anchor_count <= 0:
-        raise ValueError("target_anchor_count must be positive")
-
-
 def _validate_dataset(cfg: DatasetConfig) -> None:
     if not cfg.id or "/" in cfg.id or "\\" in cfg.id:
         raise ValueError("dataset id must be a non-empty path segment")
-    if cfg.evaluation_start_timestamp >= cfg.evaluation_end_timestamp:
-        raise ValueError("evaluation_start_timestamp must be before evaluation_end_timestamp")
-    if cfg.min_history_anchor_count <= 0:
-        raise ValueError("min_history_anchor_count must be positive")
+    if cfg.window.start_date > cfg.window.end_date:
+        raise ValueError("dataset.window.start_date must be on or before dataset.window.end_date")
+    if cfg.temporal.max_delay_seconds <= 0:
+        raise ValueError("dataset.temporal.max_delay_seconds must be positive")
+    if cfg.temporal.lookback_seconds <= 0:
+        raise ValueError("dataset.temporal.lookback_seconds must be positive")
+    if cfg.sampling.anchor_count <= 0:
+        raise ValueError("dataset.sampling.anchor_count must be positive")
+    if cfg.sampling.history_anchor_count is not None and cfg.sampling.history_anchor_count <= 0:
+        raise ValueError("dataset.sampling.history_anchor_count must be positive when set")
+    if cfg.sampling.effective_history_anchor_count < cfg.sampling.anchor_count:
+        raise ValueError(
+            "dataset.sampling.history_anchor_count must be at least "
+            "dataset.sampling.anchor_count"
+        )
 
 
 def _validate_chain(cfg: ChainConfig) -> None:
@@ -286,35 +327,37 @@ def _validate_training(cfg: TrainingConfig) -> None:
         raise ValueError("learning_rate must be positive")
     if cfg.weight_decay < 0:
         raise ValueError("weight_decay must be non-negative")
-    if cfg.effective_batch_size <= 0:
-        raise ValueError("effective_batch_size must be positive")
+    if cfg.batch_size <= 0:
+        raise ValueError("training.batch_size must be positive")
     if cfg.max_epochs <= 0:
         raise ValueError("max_epochs must be positive")
-    if cfg.early_stopping_patience <= 0:
-        raise ValueError("early_stopping_patience must be positive")
-    if cfg.early_stopping_min_delta < 0:
-        raise ValueError("early_stopping_min_delta must be non-negative")
+    if cfg.early_stopping.patience <= 0:
+        raise ValueError("training.early_stopping.patience must be positive")
+    if cfg.early_stopping.min_delta < 0:
+        raise ValueError("training.early_stopping.min_delta must be non-negative")
     if cfg.gradient_clip_norm <= 0:
         raise ValueError("gradient_clip_norm must be positive")
-    if cfg.alpha <= 0 or cfg.beta <= 0:
-        raise ValueError("alpha and beta must be positive")
+    if cfg.action_loss_weight <= 0 or cfg.fee_loss_weight <= 0:
+        raise ValueError(
+            "training.action_loss_weight and training.fee_loss_weight must be positive"
+        )
     if cfg.seed < 0:
         raise ValueError("training seed must be non-negative")
 
 
-def _validate_pull(cfg: PullConfig) -> None:
+def _validate_acquisition(cfg: AcquisitionConfig) -> None:
     if cfg.requests_per_second <= 0:
-        raise ValueError("requests_per_second must be positive")
+        raise ValueError("acquisition.requests_per_second must be positive")
     if cfg.max_concurrent_requests <= 0:
-        raise ValueError("max_concurrent_requests must be positive")
+        raise ValueError("acquisition.max_concurrent_requests must be positive")
     if cfg.max_concurrent_chunks <= 0:
-        raise ValueError("max_concurrent_chunks must be positive")
+        raise ValueError("acquisition.max_concurrent_chunks must be positive")
     if cfg.chunk_size <= 0:
-        raise ValueError("chunk_size must be positive")
+        raise ValueError("acquisition.chunk_size must be positive")
     if cfg.enrich_batch_size <= 0:
-        raise ValueError("enrich_batch_size must be positive")
+        raise ValueError("acquisition.enrich_batch_size must be positive")
     if cfg.max_methods_per_second <= 0:
-        raise ValueError("max_methods_per_second must be positive")
+        raise ValueError("acquisition.max_methods_per_second must be positive")
 
 
 def _validate_simulation(cfg: SimulationConfig) -> None:
@@ -356,14 +399,14 @@ def _validate_provider(cfg: ExperimentConfig) -> None:
         if cfg.provider.timeout_seconds <= 0:
             raise ValueError("provider timeout_seconds must be positive")
         if cfg.provider.retry_count < 0:
-            raise ValueError("provider retry_count must be non-negative")
+            raise ValueError("provider.retry_count must be non-negative")
         if cfg.provider.backoff_factor < 0:
-            raise ValueError("provider backoff_factor must be non-negative")
+            raise ValueError("provider.backoff_factor must be non-negative")
         cfg.provider.endpoint_for(cfg.chain.name)
 
 
 def _validate_tuning(cfg: TuningConfig) -> None:
-    if cfg.n_trials <= 0:
-        raise ValueError("tuning n_trials must be positive")
+    if cfg.trial_count <= 0:
+        raise ValueError("tuning.trial_count must be positive")
     if cfg.timeout_seconds is not None and cfg.timeout_seconds <= 0:
-        raise ValueError("tuning timeout_seconds must be positive when set")
+        raise ValueError("tuning.timeout_seconds must be positive when set")

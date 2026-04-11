@@ -77,9 +77,9 @@ def train_model(
     set_global_seed(training_config.seed)
     L.seed_everything(training_config.seed, workers=True)
     device = resolve_device(training_config.device)
-    microbatch_size = choose_microbatch_size(training_config.effective_batch_size, device)
+    microbatch_size = choose_microbatch_size(training_config.batch_size, device)
     accumulation_steps = resolve_accumulation_steps(
-        training_config.effective_batch_size,
+        training_config.batch_size,
         microbatch_size,
     )
 
@@ -92,14 +92,14 @@ def train_model(
         store,
         train_sample_indices,
         lookback_steps=lookback_steps,
-        effective_batch_size=training_config.effective_batch_size,
+        batch_size=training_config.batch_size,
         device=device,
     )
     validation_loader = build_sequence_loader(
         store,
         validation_sample_indices,
         lookback_steps=lookback_steps,
-        effective_batch_size=training_config.effective_batch_size,
+        batch_size=training_config.batch_size,
         device=device,
     )
 
@@ -120,8 +120,8 @@ def train_model(
     early_stopping = EarlyStopping(
         monitor="validation_loss",
         mode="min",
-        patience=training_config.early_stopping_patience,
-        min_delta=training_config.early_stopping_min_delta,
+        patience=training_config.early_stopping.patience,
+        min_delta=training_config.early_stopping.min_delta,
     )
     accelerator, devices = _trainer_device_args(training_config.device)
     trainer = L.Trainer(
@@ -184,7 +184,7 @@ def evaluate_model(
         store,
         sample_indices,
         lookback_steps=lookback_steps,
-        effective_batch_size=training_config.effective_batch_size,
+        batch_size=training_config.batch_size,
         device=device,
     )
     metrics = []
@@ -196,7 +196,10 @@ def evaluate_model(
             outputs = model(inputs)
             block_loss = ce_loss(outputs.logits, class_labels)
             fee_loss = smooth_l1(outputs.fee_hat, target_log_fee)
-            total_loss = training_config.alpha * block_loss + training_config.beta * fee_loss
+            total_loss = (
+                training_config.action_loss_weight * block_loss
+                + training_config.fee_loss_weight * fee_loss
+            )
             metrics.append(
                 compute_batch_metrics(
                     logits=outputs.logits.detach(),

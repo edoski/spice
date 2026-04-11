@@ -36,7 +36,7 @@ class TrainingSpec:
     model: ModelConfig
     max_delay_seconds: int
     lookback_seconds: int
-    target_anchor_count: int
+    anchor_count: int
     split: SplitConfig
     training: TrainingConfig
 
@@ -102,7 +102,7 @@ def prepare_training_dataset(
         blocks.sort("block_number"),
         trim_history_for_anchor_count(
             blocks.height,
-            anchor_count=spec.target_anchor_count,
+            anchor_count=spec.anchor_count,
             geometry=geometry,
         ),
     )
@@ -112,10 +112,10 @@ def prepare_training_dataset(
         lookback_steps=geometry.lookback_steps,
         action_count=geometry.action_count,
     )
-    if store.n_samples != spec.target_anchor_count:
+    if store.n_samples != spec.anchor_count:
         raise RuntimeError(
             "Training dataset preparation produced an unexpected number of anchors; "
-            f"expected {spec.target_anchor_count}, got {store.n_samples}"
+            f"expected {spec.anchor_count}, got {store.n_samples}"
         )
     split_indices = chronological_split_indices(store.n_samples, spec.split)
     scaler = fit_standard_scaler(
@@ -145,8 +145,8 @@ def prepare_inference_dataset(
     *,
     geometry: DatasetGeometry,
     scaler: ScalerStats,
-    evaluation_start_timestamp: int,
-    evaluation_end_timestamp: int,
+    window_start_timestamp: int,
+    window_end_timestamp: int,
 ) -> PreparedInferenceDataset:
     context_blocks = _slice_frame(
         history_blocks.sort("block_number"),
@@ -161,8 +161,8 @@ def prepare_inference_dataset(
     )
     sample_indices = filter_sample_indices_by_anchor_window(
         store,
-        start_timestamp=evaluation_start_timestamp,
-        end_timestamp=evaluation_end_timestamp,
+        start_timestamp=window_start_timestamp,
+        end_timestamp=window_end_timestamp,
     )
     if sample_indices.size == 0:
         raise ValueError("Evaluation dataset produced no valid inference examples")

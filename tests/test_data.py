@@ -11,7 +11,7 @@ from spice.core.config import (
     SplitConfig,
     TrainingConfig,
 )
-from spice.core.constants import EVALUATION_START_TS
+from spice.core.constants import DEFAULT_WINDOW_START_TIMESTAMP
 from spice.data.block_schema import ENRICHED_BLOCK_SCHEMA
 from spice.data.datasets import derive_dataset_geometry
 from spice.data.io import iter_block_files, load_enriched_block_frame
@@ -237,9 +237,9 @@ def test_prepare_training_and_inference_datasets(tmp_path) -> None:
         model=ModelConfig(family=ModelFamily.LSTM),
         max_delay_seconds=36,
         lookback_seconds=120,
-        target_anchor_count=48,
+        anchor_count=48,
         split=SplitConfig(train_fraction=0.7, validation_fraction=0.15),
-        training=TrainingConfig(max_epochs=1, effective_batch_size=8, device="cpu"),
+        training=TrainingConfig(max_epochs=1, batch_size=8, device="cpu"),
     )
 
     prepared = prepare_training_dataset(history_blocks, spec=spec)
@@ -252,8 +252,8 @@ def test_prepare_training_and_inference_datasets(tmp_path) -> None:
             block_time_seconds=12.0,
         ),
         scaler=prepared.scaler,
-        evaluation_start_timestamp=EVALUATION_START_TS,
-        evaluation_end_timestamp=EVALUATION_START_TS + 180 * 12,
+        window_start_timestamp=DEFAULT_WINDOW_START_TIMESTAMP,
+        window_end_timestamp=DEFAULT_WINDOW_START_TIMESTAMP + 180 * 12,
     )
 
     assert prepared.n_examples_total == 48

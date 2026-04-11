@@ -133,10 +133,9 @@ Model storage is keyed by the training dataset window:
 - `artifacts/models/<chain>/<dataset_id>/<family>/<delay>s/...`
 - `artifacts/models/<chain>/<dataset_id>/<family>/<delay>s/tuning/...`
 
-`dataset.id`, `dataset.evaluation_start_timestamp`,
-`dataset.evaluation_end_timestamp`, and `dataset.min_history_anchor_count`
-define the active dataset window. `target_anchor_count` remains the
-training/tuning sample count.
+`dataset.id`, `dataset.window.start_date`, `dataset.window.end_date`,
+`dataset.temporal.*`, and `dataset.sampling.*` define the active dataset
+configuration.
 
 In the DVC thesis path, `train` explicitly depends on the tuned model-local
 `best_params.json` artifact and runs with `tuning.apply_best_params=true`, so

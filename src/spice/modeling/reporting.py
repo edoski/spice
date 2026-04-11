@@ -44,7 +44,7 @@ class TrainingRunReport(ReportModel):
     device_requested: str
     lookback_seconds: int
     block_time_seconds: float
-    target_anchor_count: int
+    anchor_count: int
     n_blocks_available: int
     n_blocks_used: int
     n_examples_total: int
@@ -102,7 +102,7 @@ class SimulationReport(ReportModel):
 def build_training_run_report(
     result: TrainingRunResult,
     *,
-    target_anchor_count: int,
+    anchor_count: int,
     max_delay_seconds: int,
     lookback_seconds: int,
     chain_name: str,
@@ -126,7 +126,7 @@ def build_training_run_report(
         device_requested=device_requested,
         lookback_seconds=lookback_seconds,
         block_time_seconds=block_time_seconds,
-        target_anchor_count=target_anchor_count,
+        anchor_count=anchor_count,
         n_blocks_available=prepared.n_blocks_available,
         n_blocks_used=prepared.n_blocks_used,
         n_examples_total=prepared.n_examples_total,

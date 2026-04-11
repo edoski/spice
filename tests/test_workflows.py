@@ -146,8 +146,8 @@ def test_train_applies_best_tuning_params_and_cleans_stale_outputs(tmp_path) -> 
 
 def test_tune_workflow_writes_optuna_summary(tmp_path) -> None:
     config = compose_experiment("tune", overrides=base_overrides(tmp_path))
-    config.tuning.n_trials = 2
-    config.tuning.prune = False
+    config.tuning.trial_count = 2
+    config.tuning.enable_pruning = False
     config.training.max_epochs = 1
     config.tracking.enabled = False
     config.tuning.search_space = {

@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..core.config import ChainConfig, ProviderConfig, PullConfig
+from ..core.config import AcquisitionConfig, ChainConfig, ProviderConfig
 from ..core.console import NullReporter, Reporter
 from .provider import redact_sensitive_text
 
@@ -36,18 +36,18 @@ class CryoRunResult:
 
 def history_range_for_required_blocks(
     chain: ChainConfig,
-    pull: PullConfig,
+    acquisition: AcquisitionConfig,
     *,
     required_history_blocks: int,
-    evaluation_start_timestamp: int,
+    window_start_timestamp: int,
 ) -> TimestampRange:
     if required_history_blocks <= 0:
         raise ValueError("required_history_blocks must be positive")
-    block_count = required_history_blocks + pull.chunk_size
+    block_count = required_history_blocks + acquisition.chunk_size
     span_seconds = math.ceil(block_count * chain.block_time_seconds)
     return TimestampRange(
-        start=evaluation_start_timestamp - span_seconds,
-        end=evaluation_start_timestamp,
+        start=window_start_timestamp - span_seconds,
+        end=window_start_timestamp,
     )
 
 
@@ -61,15 +61,19 @@ def _existing_parquet_count(path: Path) -> int:
     return sum(1 for candidate in path.rglob("*.parquet") if candidate.is_file())
 
 
-def _expected_chunk_count(chain: ChainConfig, pull: PullConfig, timestamps: TimestampRange) -> int:
+def _expected_chunk_count(
+    chain: ChainConfig,
+    acquisition: AcquisitionConfig,
+    timestamps: TimestampRange,
+) -> int:
     span_seconds = max(1, timestamps.end - timestamps.start)
     approx_blocks = math.ceil(span_seconds / chain.block_time_seconds)
-    return max(1, math.ceil(approx_blocks / pull.chunk_size))
+    return max(1, math.ceil(approx_blocks / acquisition.chunk_size))
 
 
 def _build_cryo_tokens(
     chain: ChainConfig,
-    pull: PullConfig,
+    acquisition: AcquisitionConfig,
     output_dir: Path,
     timestamps: TimestampRange,
     *,
@@ -90,13 +94,13 @@ def _build_cryo_tokens(
         "--output-dir",
         str(output_dir),
         "--requests-per-second",
-        str(pull.requests_per_second),
+        str(acquisition.requests_per_second),
         "--max-concurrent-requests",
-        str(pull.max_concurrent_requests),
+        str(acquisition.max_concurrent_requests),
         "--max-concurrent-chunks",
-        str(pull.max_concurrent_chunks),
+        str(acquisition.max_concurrent_chunks),
         "--chunk-size",
-        str(pull.chunk_size),
+        str(acquisition.chunk_size),
     ]
     if overwrite:
         tokens.append("--overwrite")
@@ -105,7 +109,7 @@ def _build_cryo_tokens(
 
 def build_cryo_args(
     chain: ChainConfig,
-    pull: PullConfig,
+    acquisition: AcquisitionConfig,
     output_dir: Path,
     timestamps: TimestampRange,
     *,
@@ -114,7 +118,7 @@ def build_cryo_args(
 ) -> list[str]:
     return _build_cryo_tokens(
         chain,
-        pull,
+        acquisition,
         output_dir,
         timestamps,
         rpc_url=provider.endpoint_for(chain.name),
@@ -124,7 +128,7 @@ def build_cryo_args(
 
 def build_cryo_command(
     chain: ChainConfig,
-    pull: PullConfig,
+    acquisition: AcquisitionConfig,
     output_dir: Path,
     timestamps: TimestampRange,
     *,
@@ -133,7 +137,7 @@ def build_cryo_command(
 ) -> str:
     tokens = _build_cryo_tokens(
         chain,
-        pull,
+        acquisition,
         output_dir,
         timestamps,
         rpc_url=provider.reference_for(chain.name),
@@ -231,7 +235,7 @@ def _stream_pull_progress(
 
 def run_cryo(
     chain: ChainConfig,
-    pull: PullConfig,
+    acquisition: AcquisitionConfig,
     output_dir: Path,
     timestamps: TimestampRange,
     *,
@@ -241,10 +245,10 @@ def run_cryo(
     reporter: Reporter | None = None,
 ) -> CryoRunResult:
     reporter = reporter or NullReporter()
-    expected_chunks = None if dry_run else _expected_chunk_count(chain, pull, timestamps)
+    expected_chunks = None if dry_run else _expected_chunk_count(chain, acquisition, timestamps)
     command = build_cryo_command(
         chain,
-        pull,
+        acquisition,
         output_dir,
         timestamps,
         provider=provider,
@@ -252,7 +256,7 @@ def run_cryo(
     )
     args = build_cryo_args(
         chain,
-        pull,
+        acquisition,
         output_dir,
         timestamps,
         provider=provider,

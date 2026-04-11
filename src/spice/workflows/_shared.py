@@ -24,9 +24,9 @@ def build_training_spec(config: ExperimentConfig) -> TrainingSpec:
         chain=config.chain,
         dataset_id=config.dataset.id,
         model=config.model,
-        max_delay_seconds=config.max_delay_seconds,
-        lookback_seconds=config.lookback_seconds,
-        target_anchor_count=config.target_anchor_count,
+        max_delay_seconds=config.dataset.temporal.max_delay_seconds,
+        lookback_seconds=config.dataset.temporal.lookback_seconds,
+        anchor_count=config.dataset.sampling.anchor_count,
         split=config.split,
         training=config.training,
     )

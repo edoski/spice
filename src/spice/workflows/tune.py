@@ -64,16 +64,16 @@ def _study_summary(config: ExperimentConfig, study: optuna.Study) -> dict[str, A
         "chain": config.chain.name.value,
         "dataset_id": config.dataset.id,
         "family": config.model.family.value,
-        "max_delay_seconds": config.max_delay_seconds,
-        "lookback_seconds": config.lookback_seconds,
-        "target_anchor_count": config.target_anchor_count,
-        "metric_name": config.tuning.metric_name,
+        "max_delay_seconds": config.dataset.temporal.max_delay_seconds,
+        "lookback_seconds": config.dataset.temporal.lookback_seconds,
+        "anchor_count": config.dataset.sampling.anchor_count,
+        "objective_metric": config.tuning.objective_metric,
         "direction": config.tuning.direction,
-        "n_trials_requested": config.tuning.n_trials,
+        "trial_count_requested": config.tuning.trial_count,
         "timeout_seconds": config.tuning.timeout_seconds,
         "sampler": "TPESampler",
         "sampler_seed": config.tuning.sampler_seed,
-        "pruner": "MedianPruner" if config.tuning.prune else "NopPruner",
+        "pruner": "MedianPruner" if config.tuning.enable_pruning else "NopPruner",
         "search_space": config.tuning.search_space,
         "trial_counts": {
             "total": len(study.trials),
@@ -108,10 +108,10 @@ def _best_params_summary(config: ExperimentConfig, study: optuna.Study) -> dict[
         "chain": config.chain.name.value,
         "dataset_id": config.dataset.id,
         "family": config.model.family.value,
-        "max_delay_seconds": config.max_delay_seconds,
-        "lookback_seconds": config.lookback_seconds,
-        "target_anchor_count": config.target_anchor_count,
-        "metric_name": config.tuning.metric_name,
+        "max_delay_seconds": config.dataset.temporal.max_delay_seconds,
+        "lookback_seconds": config.dataset.temporal.lookback_seconds,
+        "anchor_count": config.dataset.sampling.anchor_count,
+        "objective_metric": config.tuning.objective_metric,
         "direction": config.tuning.direction,
         "trial": {
             "number": best_trial.number,
@@ -156,10 +156,10 @@ def _objective(base_config, trial: optuna.Trial) -> float:
             reporter=session.reporter,
         )
         metric_map = epoch_metrics_to_dict(persisted.best_validation_metrics)
-        metric_value = metric_map[config.tuning.metric_name.removeprefix("validation_")]
+        metric_value = metric_map[config.tuning.objective_metric.removeprefix("validation_")]
         trial.set_user_attr("best_epoch", persisted.training_run.training_result.best_epoch)
         trial.set_user_attr("artifact_dir", str(artifact_dir))
-        if config.tuning.prune:
+        if config.tuning.enable_pruning:
             trial.report(metric_value, step=persisted.training_run.training_result.best_epoch)
             if trial.should_prune():
                 raise optuna.TrialPruned()
@@ -172,7 +172,11 @@ def _objective(base_config, trial: optuna.Trial) -> float:
 def run(config: ExperimentConfig) -> None:
     with managed_workflow(
         config,
-        run_name=f"study-{config.chain.name.value}-{config.model.family.value}-{config.max_delay_seconds}s",
+        run_name=(
+            "study-"
+            f"{config.chain.name.value}-{config.model.family.value}-"
+            f"{config.dataset.temporal.max_delay_seconds}s"
+        ),
         default_reporter_factory=NullReporter,
     ) as session:
         tuning_root = Path(config.paths.tuning_root)
@@ -183,14 +187,14 @@ def run(config: ExperimentConfig) -> None:
             direction=config.tuning.direction,
             pruner=(
                 optuna.pruners.MedianPruner()
-                if config.tuning.prune
+                if config.tuning.enable_pruning
                 else optuna.pruners.NopPruner()
             ),
             sampler=optuna.samplers.TPESampler(seed=config.tuning.sampler_seed),
         )
         study.optimize(
             lambda trial: _objective(config, trial),
-            n_trials=config.tuning.n_trials,
+            n_trials=config.tuning.trial_count,
             timeout=config.tuning.timeout_seconds,
         )
         study_path = tuning_root / "study.json"
@@ -200,7 +204,7 @@ def run(config: ExperimentConfig) -> None:
         write_json(trials_path, [_trial_record(trial) for trial in study.trials])
         write_json(best_params_path, _best_params_summary(config, study))
         if session.tracking_enabled:
-            metrics = {"study.n_trials": float(len(study.trials))}
+            metrics = {"study.trial_count": float(len(study.trials))}
             completed_trials = [
                 trial for trial in study.trials if trial.state == TrialState.COMPLETE
             ]

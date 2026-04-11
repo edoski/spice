@@ -19,7 +19,7 @@ def predict_class_offsets(
     store: TemporalDatasetStore,
     sample_indices: IntVector,
     lookback_steps: int,
-    effective_batch_size: int,
+    batch_size: int,
     device: str,
 ) -> list[int]:
     if sample_indices.size == 0:
@@ -32,7 +32,7 @@ def predict_class_offsets(
         store,
         sample_indices,
         lookback_steps=lookback_steps,
-        effective_batch_size=effective_batch_size,
+        batch_size=batch_size,
         device=resolved_device,
     )
     predictions: list[int] = []

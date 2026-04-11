@@ -45,15 +45,15 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         required_history_blocks=required_history_blocks,
     )
     evaluation_window = evaluation_range(
-        config.dataset.evaluation_start_timestamp,
-        config.dataset.evaluation_end_timestamp,
+        config.dataset.window.start_timestamp,
+        config.dataset.window.end_timestamp,
     )
     existing_metadata = check_existing_dataset_metadata(
         config=config,
         metadata_path=metadata_path,
-        overwrite=config.pull.overwrite,
+        overwrite=config.acquisition.overwrite,
     )
-    if existing_metadata is not None and not config.pull.overwrite:
+    if existing_metadata is not None and not config.acquisition.overwrite:
         history_window = history_range_from_metadata(existing_metadata)
 
     block_client = Web3BlockClient(config.provider, config.chain)
@@ -63,13 +63,13 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         reporter=reporter,
         default_reporter_factory=RichReporter,
     ) as session:
-        if config.pull.dry_run:
+        if config.acquisition.dry_run:
             history_result = run_raw_pull(
                 config,
                 output_dir=raw_history_dir,
                 window=history_window,
                 reporter=session.reporter,
-                overwrite=config.pull.overwrite,
+                overwrite=config.acquisition.overwrite,
                 dry_run=True,
             )
             evaluation_result = run_raw_pull(
@@ -77,7 +77,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                 output_dir=raw_evaluation_dir,
                 window=evaluation_window,
                 reporter=session.reporter,
-                overwrite=config.pull.overwrite,
+                overwrite=config.acquisition.overwrite,
                 dry_run=True,
             )
             session.reporter.log(
@@ -120,10 +120,10 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             expected_chain_id=config.chain.chain_id,
             expected_start_timestamp=history_window.start,
             expected_end_timestamp=history_window.end,
-            overwrite=config.pull.overwrite or history_result is not None,
+            overwrite=config.acquisition.overwrite or history_result is not None,
             fetch_gas_limits=block_client.get_block_gas_limits,
-            batch_size=config.pull.enrich_batch_size,
-            max_methods_per_second=config.pull.max_methods_per_second,
+            batch_size=config.acquisition.enrich_batch_size,
+            max_methods_per_second=config.acquisition.max_methods_per_second,
             reporter=session.reporter,
         )
         evaluation_enriched = ensure_enriched_dataset(
@@ -132,10 +132,10 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             expected_chain_id=config.chain.chain_id,
             expected_start_timestamp=evaluation_window.start,
             expected_end_timestamp=evaluation_window.end,
-            overwrite=config.pull.overwrite or evaluation_result is not None,
+            overwrite=config.acquisition.overwrite or evaluation_result is not None,
             fetch_gas_limits=block_client.get_block_gas_limits,
-            batch_size=config.pull.enrich_batch_size,
-            max_methods_per_second=config.pull.max_methods_per_second,
+            batch_size=config.acquisition.enrich_batch_size,
+            max_methods_per_second=config.acquisition.max_methods_per_second,
             reporter=session.reporter,
         )
         metadata = build_dataset_metadata(
