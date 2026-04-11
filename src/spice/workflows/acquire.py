@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import hydra
 from omegaconf import DictConfig
 
@@ -13,7 +15,7 @@ from ..acquisition.metadata import (
     build_dataset_metadata,
     check_existing_dataset_metadata,
 )
-from ..acquisition.rpc import Web3BlockClient, evaluation_range
+from ..acquisition.rpc import RpcController, Web3BlockClient, evaluation_range
 from ..acquisition.windowing import (
     history_range_from_metadata,
     required_history_block_count,
@@ -43,9 +45,14 @@ def _window_summary_rows(
 
 
 def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
+    asyncio.run(_run_async(config, reporter=reporter))
+
+
+async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
     history_dir = config.paths.history_dir
     evaluation_dir = config.paths.evaluation_dir
     metadata_path = config.paths.dataset_metadata_path
+    rpc_controller = RpcController.from_config(config.acquisition)
 
     required_history_blocks = required_history_block_count(config)
     evaluation_window = evaluation_range(
@@ -53,122 +60,134 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         config.dataset.window.end_timestamp,
     )
     block_client = Web3BlockClient(config.provider, config.chain)
-    evaluation_plan = block_client.plan_window(
-        evaluation_window,
-        chunk_size=config.acquisition.chunk_size,
-    )
-    existing_metadata = check_existing_dataset_metadata(
-        config=config,
-        metadata_path=metadata_path,
-        overwrite=config.acquisition.overwrite,
-    )
-    if existing_metadata is not None and not config.acquisition.overwrite:
-        history_plan = block_client.plan_window(
-            history_range_from_metadata(existing_metadata),
+    try:
+        evaluation_plan = await block_client.plan_window(
+            evaluation_window,
             chunk_size=config.acquisition.chunk_size,
         )
-    else:
-        history_plan = block_client.plan_history_window(
-            end_timestamp=config.dataset.window.start_timestamp,
-            required_history_blocks=required_history_blocks,
-            chunk_size=config.acquisition.chunk_size,
+        existing_metadata = check_existing_dataset_metadata(
+            config=config,
+            metadata_path=metadata_path,
+            overwrite=config.acquisition.overwrite,
         )
+        if existing_metadata is not None and not config.acquisition.overwrite:
+            history_plan = await block_client.plan_window(
+                history_range_from_metadata(existing_metadata),
+                chunk_size=config.acquisition.chunk_size,
+            )
+        else:
+            history_plan = await block_client.plan_history_window(
+                end_timestamp=config.dataset.window.start_timestamp,
+                required_history_blocks=required_history_blocks,
+                chunk_size=config.acquisition.chunk_size,
+            )
 
-    with managed_workflow(
-        config,
-        run_name=f"acquire-{config.chain.name.value}-{config.provider.name.value}",
-        reporter=reporter,
-    ) as session:
-        if config.acquisition.dry_run:
-            session.runtime.log_summary(
-                "acquire dry run",
-                [("dataset", config.dataset.id)]
-                + _window_summary_rows(
-                    "history",
-                    start_timestamp=history_plan.window.start,
-                    end_timestamp=history_plan.window.end,
-                    block_start=history_plan.block_range.start,
-                    block_end=history_plan.block_range.end,
-                    expected_rows=history_plan.expected_rows,
-                    expected_files=history_plan.expected_files,
+        with managed_workflow(
+            config,
+            run_name=f"acquire-{config.chain.name.value}-{config.provider.name.value}",
+            reporter=reporter,
+        ) as session:
+            if config.acquisition.dry_run:
+                session.runtime.log_summary(
+                    "acquire dry run",
+                    [("dataset", config.dataset.id)]
+                    + _window_summary_rows(
+                        "history",
+                        start_timestamp=history_plan.window.start,
+                        end_timestamp=history_plan.window.end,
+                        block_start=history_plan.block_range.start,
+                        block_end=history_plan.block_range.end,
+                        expected_rows=history_plan.expected_rows,
+                        expected_files=history_plan.expected_files,
+                    )
+                    + _window_summary_rows(
+                        "evaluation",
+                        start_timestamp=evaluation_window.start,
+                        end_timestamp=evaluation_window.end,
+                        block_start=evaluation_plan.block_range.start,
+                        block_end=evaluation_plan.block_range.end,
+                        expected_rows=evaluation_plan.expected_rows,
+                        expected_files=evaluation_plan.expected_files,
+                    ),
                 )
-                + _window_summary_rows(
-                    "evaluation",
-                    start_timestamp=evaluation_window.start,
-                    end_timestamp=evaluation_window.end,
-                    block_start=evaluation_plan.block_range.start,
-                    block_end=evaluation_plan.block_range.end,
-                    expected_rows=evaluation_plan.expected_rows,
-                    expected_files=evaluation_plan.expected_files,
-                ),
+                return
+
+            history_result, history_validation, resolved_history_plan = await ensure_history_dataset(
+                config=config,
+                block_client=block_client,
+                output_dir=history_dir,
+                history_plan=history_plan,
+                required_history_blocks=required_history_blocks,
+                rpc_controller=rpc_controller,
+                reporter=session.reporter,
             )
-            return
-
-        history_result, history_validation, resolved_history_plan = ensure_history_dataset(
-            config=config,
-            block_client=block_client,
-            output_dir=history_dir,
-            history_plan=history_plan,
-            required_history_blocks=required_history_blocks,
-            reporter=session.reporter,
-        )
-        evaluation_result, evaluation_validation = ensure_evaluation_dataset(
-            config=config,
-            block_client=block_client,
-            output_dir=evaluation_dir,
-            evaluation_plan=evaluation_plan,
-            reporter=session.reporter,
-        )
-        metadata = build_dataset_metadata(
-            config=config,
-            history_dir=history_dir,
-            evaluation_dir=evaluation_dir,
-            history_window_start=resolved_history_plan.window.start,
-            history_window_end=resolved_history_plan.window.end,
-            evaluation_window_start=evaluation_window.start,
-            evaluation_window_end=evaluation_window.end,
-            history_validation=history_validation,
-            evaluation_validation=evaluation_validation,
-        )
-        metadata_task = session.reporter.start_task("write dataset metadata")
-        write_json(metadata_path, metadata)
-        session.reporter.finish_task(metadata_task, message=str(metadata_path))
-        session.runtime.log_summary(
-            "acquisition summary",
-            [
-                ("dataset", config.dataset.id),
-                (
-                    "history",
-                    f"{history_validation.row_count} rows, "
-                    f"{0 if history_result is None else history_result.expected_files} files, "
-                    f"validation={history_validation.status}",
-                ),
-                (
-                    "evaluation",
-                    f"{evaluation_validation.row_count} rows, "
-                    f"{0 if evaluation_result is None else evaluation_result.expected_files} "
-                    f"files, validation={evaluation_validation.status}",
-                ),
-                ("required history blocks", str(required_history_blocks)),
-                ("metadata", str(metadata_path)),
-            ],
-        )
-        if session.tracking_enabled:
-            import mlflow
-
-            mlflow.log_metrics(
+            evaluation_result, evaluation_validation = await ensure_evaluation_dataset(
+                config=config,
+                block_client=block_client,
+                output_dir=evaluation_dir,
+                evaluation_plan=evaluation_plan,
+                rpc_controller=rpc_controller,
+                reporter=session.reporter,
+            )
+            metadata = build_dataset_metadata(
+                config=config,
+                history_dir=history_dir,
+                evaluation_dir=evaluation_dir,
+                history_window_start=resolved_history_plan.window.start,
+                history_window_end=resolved_history_plan.window.end,
+                evaluation_window_start=evaluation_window.start,
+                evaluation_window_end=evaluation_window.end,
+                history_validation=history_validation,
+                evaluation_validation=evaluation_validation,
+                acquisition_runtime=rpc_controller.snapshot(),
+            )
+            metadata_task = session.reporter.start_task("write dataset metadata")
+            write_json(metadata_path, metadata)
+            session.reporter.finish_task(metadata_task, message=str(metadata_path))
+            session.runtime.log_summary(
+                "acquisition summary",
                 {
-                    "history_files": float(
-                        0 if history_result is None else history_result.expected_files
+                    "dataset": config.dataset.id,
+                    "history": (
+                        f"{history_validation.row_count} rows, "
+                        f"{0 if history_result is None else history_result.expected_files} files, "
+                        f"validation={history_validation.status}"
                     ),
-                    "evaluation_files": float(
-                        0 if evaluation_result is None else evaluation_result.expected_files
+                    "evaluation": (
+                        f"{evaluation_validation.row_count} rows, "
+                        f"{0 if evaluation_result is None else evaluation_result.expected_files} "
+                        f"files, validation={evaluation_validation.status}"
                     ),
-                    "history_gap_count": float(history_validation.gap_count),
-                    "evaluation_gap_count": float(evaluation_validation.gap_count),
-                }
+                    "rpc": (
+                        f"batch={rpc_controller.current_batch_size}, "
+                        f"concurrency={rpc_controller.current_concurrency}, "
+                        f"oversize_backoffs={rpc_controller.oversize_backoffs}, "
+                        f"transient_backoffs={rpc_controller.transient_backoffs}"
+                    ),
+                    "required history blocks": str(required_history_blocks),
+                    "metadata": str(metadata_path),
+                }.items(),
             )
-            log_artifacts([metadata_path])
+            if session.tracking_enabled:
+                import mlflow
+
+                mlflow.log_metrics(
+                    {
+                        "history_files": float(
+                            0 if history_result is None else history_result.expected_files
+                        ),
+                        "evaluation_files": float(
+                            0 if evaluation_result is None else evaluation_result.expected_files
+                        ),
+                        "history_gap_count": float(history_validation.gap_count),
+                        "evaluation_gap_count": float(evaluation_validation.gap_count),
+                        "rpc_final_batch_size": float(rpc_controller.current_batch_size),
+                        "rpc_final_concurrency": float(rpc_controller.current_concurrency),
+                    }
+                )
+                log_artifacts([metadata_path])
+    finally:
+        await block_client.close()
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="acquire")

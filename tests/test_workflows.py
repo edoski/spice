@@ -211,7 +211,10 @@ def test_acquire_dry_run_plain_output_is_human_summary(tmp_path, monkeypatch) ->
         def __init__(self, provider, chain) -> None:
             del provider, chain
 
-        def plan_history_window(
+        async def close(self) -> None:
+            return None
+
+        async def plan_history_window(
             self,
             *,
             end_timestamp: int,
@@ -228,7 +231,7 @@ def test_acquire_dry_run_plain_output_is_human_summary(tmp_path, monkeypatch) ->
                 expected_files=2,
             )
 
-        def plan_window(self, window: TimestampRange, *, chunk_size: int) -> BlockPullPlan:
+        async def plan_window(self, window: TimestampRange, *, chunk_size: int) -> BlockPullPlan:
             self.__class__.evaluation_requests.append((window.start, window.end, chunk_size))
             return BlockPullPlan(
                 window=window,
@@ -237,7 +240,7 @@ def test_acquire_dry_run_plain_output_is_human_summary(tmp_path, monkeypatch) ->
                 expected_files=2,
             )
 
-        def pull_block_range(self, *_args, **_kwargs):
+        async def pull_block_range(self, *_args, **_kwargs):
             raise AssertionError("dry run should not pull blocks")
 
     monkeypatch.setattr("spice.workflows.acquire.Web3BlockClient", FakeDryRunBlockClient)

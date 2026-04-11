@@ -1,13 +1,15 @@
-"""Thin provider helpers built on top of runtime configuration."""
+"""Thin async provider helpers built on top of runtime configuration."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-import requests
-from web3 import Web3
+import aiohttp
+from web3 import AsyncWeb3
 from web3.middleware import ExtraDataToPOAMiddleware
+from web3.providers import AsyncIPCProvider
+from web3.providers.rpc import AsyncHTTPProvider
 from web3.providers.rpc.utils import ExceptionRetryConfiguration
 
 from ..core.config import ChainConfig, ProviderConfig
@@ -24,27 +26,36 @@ def _ipc_path_from_endpoint(endpoint: str) -> str | None:
     return None
 
 
-def build_web3(provider: ProviderConfig, chain: ChainConfig) -> Web3:
-    endpoint = provider.endpoint_for(chain.name)
-    retry_configuration = ExceptionRetryConfiguration(
-        errors=[requests.RequestException, OSError, TimeoutError],
+def _retry_configuration(provider: ProviderConfig) -> ExceptionRetryConfiguration:
+    return ExceptionRetryConfiguration(
+        errors=[aiohttp.ClientError, OSError, TimeoutError],
         retries=provider.retry_count,
         backoff_factor=provider.backoff_factor,
     )
 
+
+def build_async_web3(provider: ProviderConfig, chain: ChainConfig) -> AsyncWeb3:
+    endpoint = provider.endpoint_for(chain.name)
+
     if endpoint.startswith(("http://", "https://")):
-        web3 = Web3(
-            Web3.HTTPProvider(
+        web3 = AsyncWeb3(
+            AsyncHTTPProvider(
                 endpoint,
                 request_kwargs={"timeout": provider.timeout_seconds},
-                exception_retry_configuration=retry_configuration,
+                exception_retry_configuration=_retry_configuration(provider),
             )
         )
     else:
         ipc_path = _ipc_path_from_endpoint(endpoint)
         if ipc_path is None:
             raise ValueError(f"Unsupported RPC endpoint format: {endpoint}")
-        web3 = Web3(Web3.IPCProvider(ipc_path, timeout=int(provider.timeout_seconds)))
+        web3 = AsyncWeb3(
+            AsyncIPCProvider(
+                ipc_path,
+                request_timeout=provider.timeout_seconds,
+                max_connection_retries=provider.retry_count,
+            )
+        )
 
     if chain.uses_poa_extra_data:
         web3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)

@@ -41,14 +41,14 @@ def validate_block_dataset(
     )
 
 
-def ensure_block_dataset(
+async def ensure_block_dataset(
     *,
     block_client: Web3BlockClient,
     output_dir: Path,
     plan: BlockPullPlan,
     expected_chain_id: int,
     chunk_size: int,
-    rpc_batch_size: int,
+    rpc_controller,
     overwrite: bool,
     reporter: Reporter,
 ) -> tuple[BlockPullPlan | None, BlockDatasetValidationReport]:
@@ -78,11 +78,11 @@ def ensure_block_dataset(
         else:
             output_dir.unlink()
 
-    pulled_plan = block_client.pull_block_range(
+    pulled_plan = await block_client.pull_block_range(
         output_dir,
         plan=plan,
         chunk_size=chunk_size,
-        rpc_batch_size=rpc_batch_size,
+        rpc_controller=rpc_controller,
         reporter=reporter,
     )
     validate_final_task = reporter.start_task(f"validate dataset {output_dir.name}")
@@ -98,13 +98,14 @@ def ensure_block_dataset(
     return pulled_plan, validation
 
 
-def ensure_history_dataset(
+async def ensure_history_dataset(
     *,
     config: ExperimentConfig,
     block_client: Web3BlockClient,
     output_dir: Path,
     history_plan: BlockPullPlan,
     required_history_blocks: int,
+    rpc_controller,
     reporter: Reporter,
 ) -> tuple[BlockPullPlan | None, BlockDatasetValidationReport, BlockPullPlan]:
     current_plan = history_plan
@@ -113,13 +114,13 @@ def ensure_history_dataset(
     validation: BlockDatasetValidationReport | None = None
 
     for attempt_index in range(MAX_HISTORY_WINDOW_ATTEMPTS):
-        pulled_plan, validation = ensure_block_dataset(
+        pulled_plan, validation = await ensure_block_dataset(
             block_client=block_client,
             output_dir=output_dir,
             plan=current_plan,
             expected_chain_id=config.chain.chain_id,
             chunk_size=config.acquisition.chunk_size,
-            rpc_batch_size=config.acquisition.rpc_batch_size,
+            rpc_controller=rpc_controller,
             overwrite=overwrite,
             reporter=reporter,
         )
@@ -128,7 +129,7 @@ def ensure_history_dataset(
         if attempt_index == MAX_HISTORY_WINDOW_ATTEMPTS - 1:
             break
 
-        expanded_plan = block_client.expand_history_plan(
+        expanded_plan = await block_client.expand_history_plan(
             current_plan,
             observed_row_count=validation.row_count,
             required_history_blocks=required_history_blocks,
@@ -152,21 +153,22 @@ def ensure_history_dataset(
     )
 
 
-def ensure_evaluation_dataset(
+async def ensure_evaluation_dataset(
     *,
     config: ExperimentConfig,
     block_client: Web3BlockClient,
     output_dir: Path,
     evaluation_plan: BlockPullPlan,
+    rpc_controller,
     reporter: Reporter,
 ) -> tuple[BlockPullPlan | None, BlockDatasetValidationReport]:
-    return ensure_block_dataset(
+    return await ensure_block_dataset(
         block_client=block_client,
         output_dir=output_dir,
         plan=evaluation_plan,
         expected_chain_id=config.chain.chain_id,
         chunk_size=config.acquisition.chunk_size,
-        rpc_batch_size=config.acquisition.rpc_batch_size,
+        rpc_controller=rpc_controller,
         overwrite=config.acquisition.overwrite,
         reporter=reporter,
     )

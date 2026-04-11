@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from ..core.config import ExperimentConfig
 from ..data.io import iter_block_files
 from ..data.validation import BlockDatasetValidationReport
+from .rpc import AcquisitionRuntimeSnapshot
 
 
 class MetadataModel(BaseModel):
@@ -59,6 +60,9 @@ class DatasetTemporalSettings(MetadataModel):
 class DatasetAcquisitionSettings(MetadataModel):
     chunk_size: int
     rpc_batch_size: int
+    rpc_concurrency: int
+    rpc_min_batch_size: int
+    rpc_concurrency_rungs: list[int]
 
 
 class DatasetSettingsMetadata(MetadataModel):
@@ -90,6 +94,24 @@ class DatasetValidationMetadata(MetadataModel):
     evaluation: CompactValidationReport
 
 
+class DatasetAcquisitionRuntimeMetadata(MetadataModel):
+    configured_batch_size: int
+    final_batch_size: int
+    min_batch_size: int
+    configured_concurrency: int
+    final_concurrency: int
+    concurrency_rungs: list[int]
+    oversize_error_count: int
+    transient_error_count: int
+    oversize_backoffs: int
+    transient_backoffs: int
+    concurrency_recoveries: int
+
+
+class DatasetRuntimeMetadata(MetadataModel):
+    acquisition: DatasetAcquisitionRuntimeMetadata
+
+
 class DatasetMetadata(MetadataModel):
     dataset: DatasetIdentity
     chain: ChainMetadata
@@ -98,6 +120,7 @@ class DatasetMetadata(MetadataModel):
     windows: DatasetWindowsMetadata
     settings: DatasetSettingsMetadata
     validation: DatasetValidationMetadata
+    runtime: DatasetRuntimeMetadata
 
 
 def has_block_files(path: Path) -> bool:
@@ -209,6 +232,7 @@ def build_dataset_metadata(
     evaluation_window_end: int,
     history_validation: BlockDatasetValidationReport,
     evaluation_validation: BlockDatasetValidationReport,
+    acquisition_runtime: AcquisitionRuntimeSnapshot,
 ) -> DatasetMetadata:
     return DatasetMetadata(
         dataset=DatasetIdentity(id=config.dataset.id),
@@ -243,11 +267,29 @@ def build_dataset_metadata(
             acquisition=DatasetAcquisitionSettings(
                 chunk_size=config.acquisition.chunk_size,
                 rpc_batch_size=config.acquisition.rpc_batch_size,
+                rpc_concurrency=config.acquisition.rpc_concurrency,
+                rpc_min_batch_size=config.acquisition.rpc_min_batch_size,
+                rpc_concurrency_rungs=list(config.acquisition.rpc_concurrency_rungs),
             ),
         ),
         validation=DatasetValidationMetadata(
             history=compact_validation_report(history_validation),
             evaluation=compact_validation_report(evaluation_validation),
+        ),
+        runtime=DatasetRuntimeMetadata(
+            acquisition=DatasetAcquisitionRuntimeMetadata(
+                configured_batch_size=acquisition_runtime.configured_batch_size,
+                final_batch_size=acquisition_runtime.final_batch_size,
+                min_batch_size=acquisition_runtime.min_batch_size,
+                configured_concurrency=acquisition_runtime.configured_concurrency,
+                final_concurrency=acquisition_runtime.final_concurrency,
+                concurrency_rungs=list(acquisition_runtime.concurrency_rungs),
+                oversize_error_count=acquisition_runtime.oversize_error_count,
+                transient_error_count=acquisition_runtime.transient_error_count,
+                oversize_backoffs=acquisition_runtime.oversize_backoffs,
+                transient_backoffs=acquisition_runtime.transient_backoffs,
+                concurrency_recoveries=acquisition_runtime.concurrency_recoveries,
+            )
         ),
     )
 

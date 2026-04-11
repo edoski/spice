@@ -49,8 +49,11 @@ def test_direct_provider_reads_env_interpolation(tmp_path, monkeypatch) -> None:
 
     assert config.provider.endpoint_for(config.chain.name) == "https://eth.example.test"
     assert config.provider.reference_for(config.chain.name) == "$ETHEREUM_RPC_URL"
-    assert config.acquisition.chunk_size == 500
+    assert config.acquisition.chunk_size == 8192
     assert config.acquisition.rpc_batch_size == 256
+    assert config.acquisition.rpc_concurrency == 48
+    assert config.acquisition.rpc_min_batch_size == 64
+    assert config.acquisition.rpc_concurrency_rungs == [8, 16, 24, 32, 48]
 
 
 def test_train_config_does_not_require_direct_provider_endpoint(tmp_path, monkeypatch) -> None:
@@ -76,9 +79,9 @@ def test_acquire_config_requires_direct_provider_endpoint(tmp_path, monkeypatch)
 @pytest.mark.parametrize(
     ("chain_name", "uses_poa_extra_data", "rpc_batch_size", "chunk_size"),
     [
-        ("ethereum", False, 128, 500),
-        ("polygon", True, 32, 500),
-        ("avalanche", True, 128, 500),
+        ("ethereum", False, 256, 8192),
+        ("polygon", True, 256, 8192),
+        ("avalanche", True, 256, 8192),
     ],
 )
 def test_publicnode_chain_matrix_applies_expected_chain_settings(
@@ -101,6 +104,17 @@ def test_publicnode_chain_matrix_applies_expected_chain_settings(
     assert config.chain.uses_poa_extra_data is uses_poa_extra_data
     assert config.acquisition.rpc_batch_size == rpc_batch_size
     assert config.acquisition.chunk_size == chunk_size
+    assert config.acquisition.rpc_concurrency == 48
+    assert config.acquisition.rpc_min_batch_size == 64
+    assert config.acquisition.rpc_concurrency_rungs == [8, 16, 24, 32, 48]
+
+
+def test_invalid_rpc_concurrency_config_fails_early(tmp_path) -> None:
+    with pytest.raises(ValueError, match="rpc_concurrency must be present in rpc_concurrency_rungs"):
+        compose_experiment(
+            "acquire",
+            overrides=base_overrides(tmp_path) + ["acquisition.rpc_concurrency=12"],
+        )
 
 
 def test_invalid_transformer_config_fails_early(tmp_path) -> None:

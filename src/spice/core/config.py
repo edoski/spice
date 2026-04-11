@@ -164,6 +164,23 @@ class AcquisitionConfig(ConfigModel):
     overwrite: bool
     chunk_size: int = Field(gt=0)
     rpc_batch_size: int = Field(gt=0)
+    rpc_concurrency: int = Field(gt=0)
+    rpc_min_batch_size: int = Field(gt=0)
+    rpc_concurrency_rungs: list[int] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_rpc_runtime(self) -> Self:
+        if self.rpc_min_batch_size > self.rpc_batch_size:
+            raise ValueError("rpc_min_batch_size must be less than or equal to rpc_batch_size")
+        if sorted(self.rpc_concurrency_rungs) != self.rpc_concurrency_rungs:
+            raise ValueError("rpc_concurrency_rungs must be sorted in ascending order")
+        if len(set(self.rpc_concurrency_rungs)) != len(self.rpc_concurrency_rungs):
+            raise ValueError("rpc_concurrency_rungs must not contain duplicates")
+        if any(value <= 0 for value in self.rpc_concurrency_rungs):
+            raise ValueError("rpc_concurrency_rungs values must be positive")
+        if self.rpc_concurrency not in self.rpc_concurrency_rungs:
+            raise ValueError("rpc_concurrency must be present in rpc_concurrency_rungs")
+        return self
 
 
 class SimulationConfig(ConfigModel):
