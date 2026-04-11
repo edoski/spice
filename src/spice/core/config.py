@@ -133,23 +133,11 @@ class TrainingConfig(ConfigModel):
     log_every_n_steps: int = Field(gt=0)
 
 
-class AcquisitionRawConfig(ConfigModel):
-    requests_per_second: int = Field(gt=0)
-    max_concurrent_requests: int = Field(gt=0)
-    max_concurrent_chunks: int = Field(gt=0)
-    chunk_size: int = Field(gt=0)
-
-
-class AcquisitionEnrichConfig(ConfigModel):
-    batch_size: int = Field(gt=0)
-    max_methods_per_second: float = Field(gt=0.0)
-
-
 class AcquisitionConfig(ConfigModel):
     dry_run: bool
     overwrite: bool
-    raw: AcquisitionRawConfig
-    enrich: AcquisitionEnrichConfig
+    chunk_size: int = Field(gt=0)
+    rpc_batch_size: int = Field(gt=0)
 
 
 class SimulationConfig(ConfigModel):
@@ -209,12 +197,8 @@ class PathsConfig(ConfigModel):
     output_root: str
     dataset_root: str
     metadata_root: str
-    raw_root: str
-    raw_history_dir: str
-    raw_evaluation_dir: str
-    enriched_root: str
-    enriched_history_dir: str
-    enriched_evaluation_dir: str
+    history_dir: str
+    evaluation_dir: str
     dataset_metadata_path: str
     artifact_root: str
     checkpoint_dir: str

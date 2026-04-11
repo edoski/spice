@@ -1,1 +1,1 @@
-"""Raw block pull, enrichment, RPC, and validation modules."""
+"""Block acquisition, provider, metadata, and validation modules."""

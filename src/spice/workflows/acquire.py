@@ -1,4 +1,4 @@
-"""Hydra entrypoint for dataset acquisition and enrichment."""
+"""Hydra entrypoint for direct block dataset acquisition."""
 
 from __future__ import annotations
 
@@ -8,18 +8,15 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
-from ..acquisition.cryo import evaluation_range
 from ..acquisition.datasets import (
-    ensure_enriched_dataset,
-    ensure_evaluation_raw_dataset,
-    ensure_history_raw_dataset,
-    run_raw_pull,
+    ensure_evaluation_dataset,
+    ensure_history_dataset,
 )
 from ..acquisition.metadata import (
     build_dataset_metadata,
     check_existing_dataset_metadata,
 )
-from ..acquisition.rpc import Web3BlockClient
+from ..acquisition.rpc import Web3BlockClient, evaluation_range
 from ..acquisition.windowing import (
     history_range_from_metadata,
     initial_history_range,
@@ -33,10 +30,8 @@ from ._shared import managed_workflow
 
 
 def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
-    raw_history_dir = Path(config.paths.raw_history_dir)
-    raw_evaluation_dir = Path(config.paths.raw_evaluation_dir)
-    enriched_history_dir = Path(config.paths.enriched_history_dir)
-    enriched_evaluation_dir = Path(config.paths.enriched_evaluation_dir)
+    history_dir = Path(config.paths.history_dir)
+    evaluation_dir = Path(config.paths.evaluation_dir)
     metadata_path = Path(config.paths.dataset_metadata_path)
 
     required_history_blocks = required_history_block_count(config)
@@ -63,35 +58,33 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         reporter=reporter,
     ) as session:
         if config.acquisition.dry_run:
-            history_result = run_raw_pull(
-                config,
-                output_dir=raw_history_dir,
-                window=history_window,
-                reporter=session.reporter,
-                overwrite=config.acquisition.overwrite,
-                dry_run=True,
+            history_plan = block_client.plan_window(
+                history_window,
+                chunk_size=config.acquisition.chunk_size,
             )
-            evaluation_result = run_raw_pull(
-                config,
-                output_dir=raw_evaluation_dir,
-                window=evaluation_window,
-                reporter=session.reporter,
-                overwrite=config.acquisition.overwrite,
-                dry_run=True,
+            evaluation_plan = block_client.plan_window(
+                evaluation_window,
+                chunk_size=config.acquisition.chunk_size,
             )
             session.reporter.log(
                 json.dumps(
                     {
-                        "history_completed_chunks": history_result.completed_chunks,
-                        "evaluation_completed_chunks": evaluation_result.completed_chunks,
                         "dataset_id": config.dataset.id,
                         "history_window": {
                             "start_timestamp": history_window.start,
                             "end_timestamp": history_window.end,
+                            "block_start": history_plan.block_range.start,
+                            "block_end": history_plan.block_range.end,
+                            "expected_rows": history_plan.expected_rows,
+                            "expected_files": history_plan.expected_files,
                         },
                         "evaluation_window": {
                             "start_timestamp": evaluation_window.start,
                             "end_timestamp": evaluation_window.end,
+                            "block_start": evaluation_plan.block_range.start,
+                            "block_end": evaluation_plan.block_range.end,
+                            "expected_rows": evaluation_plan.expected_rows,
+                            "expected_files": evaluation_plan.expected_files,
                         },
                         "history_validation": "dry_run",
                         "evaluation_validation": "dry_run",
@@ -100,57 +93,31 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             )
             return
 
-        history_result, history_validation, history_window = ensure_history_raw_dataset(
+        history_result, history_validation, history_window = ensure_history_dataset(
             config=config,
-            output_dir=raw_history_dir,
+            block_client=block_client,
+            output_dir=history_dir,
             history_window=history_window,
             required_history_blocks=required_history_blocks,
             reporter=session.reporter,
         )
-        evaluation_result, evaluation_validation = ensure_evaluation_raw_dataset(
+        evaluation_result, evaluation_validation = ensure_evaluation_dataset(
             config=config,
-            output_dir=raw_evaluation_dir,
+            block_client=block_client,
+            output_dir=evaluation_dir,
             evaluation_window=evaluation_window,
-            reporter=session.reporter,
-        )
-        history_enriched = ensure_enriched_dataset(
-            input_dir=raw_history_dir,
-            output_dir=enriched_history_dir,
-            expected_chain_id=config.chain.chain_id,
-            expected_start_timestamp=history_window.start,
-            expected_end_timestamp=history_window.end,
-            overwrite=config.acquisition.overwrite or history_result is not None,
-            fetch_gas_limits=block_client.get_block_gas_limits,
-            batch_size=config.acquisition.enrich.batch_size,
-            max_methods_per_second=config.acquisition.enrich.max_methods_per_second,
-            reporter=session.reporter,
-        )
-        evaluation_enriched = ensure_enriched_dataset(
-            input_dir=raw_evaluation_dir,
-            output_dir=enriched_evaluation_dir,
-            expected_chain_id=config.chain.chain_id,
-            expected_start_timestamp=evaluation_window.start,
-            expected_end_timestamp=evaluation_window.end,
-            overwrite=config.acquisition.overwrite or evaluation_result is not None,
-            fetch_gas_limits=block_client.get_block_gas_limits,
-            batch_size=config.acquisition.enrich.batch_size,
-            max_methods_per_second=config.acquisition.enrich.max_methods_per_second,
             reporter=session.reporter,
         )
         metadata = build_dataset_metadata(
             config=config,
-            raw_history_dir=raw_history_dir,
-            raw_evaluation_dir=raw_evaluation_dir,
-            enriched_history_dir=enriched_history_dir,
-            enriched_evaluation_dir=enriched_evaluation_dir,
+            history_dir=history_dir,
+            evaluation_dir=evaluation_dir,
             history_window_start=history_window.start,
             history_window_end=history_window.end,
             evaluation_window_start=evaluation_window.start,
             evaluation_window_end=evaluation_window.end,
             history_validation=history_validation,
             evaluation_validation=evaluation_validation,
-            history_enriched=history_enriched,
-            evaluation_enriched=evaluation_enriched,
         )
         metadata_task = session.reporter.start_task("write dataset metadata")
         write_json(metadata_path, metadata)
@@ -158,17 +125,14 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         session.reporter.log(
             json.dumps(
                 {
-                    "history_completed_chunks": (
-                        0 if history_result is None else history_result.completed_chunks
-                    ),
-                    "evaluation_completed_chunks": (
-                        0 if evaluation_result is None else evaluation_result.completed_chunks
-                    ),
+                    "history_rows": history_validation.row_count,
+                    "evaluation_rows": evaluation_validation.row_count,
                     "history_validation": history_validation.status,
                     "evaluation_validation": evaluation_validation.status,
-                    "history_enriched": history_enriched.status,
-                    "evaluation_enriched": evaluation_enriched.status,
-                    "history_rows": history_validation.row_count,
+                    "history_files": 0 if history_result is None else history_result.expected_files,
+                    "evaluation_files": (
+                        0 if evaluation_result is None else evaluation_result.expected_files
+                    ),
                     "required_history_blocks": required_history_blocks,
                 }
             )
@@ -178,16 +142,14 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
 
             mlflow.log_metrics(
                 {
-                    "history_completed_chunks": float(
-                        0 if history_result is None else history_result.completed_chunks
+                    "history_files": float(
+                        0 if history_result is None else history_result.expected_files
                     ),
-                    "evaluation_completed_chunks": float(
-                        0 if evaluation_result is None else evaluation_result.completed_chunks
+                    "evaluation_files": float(
+                        0 if evaluation_result is None else evaluation_result.expected_files
                     ),
                     "history_gap_count": float(history_validation.gap_count),
                     "evaluation_gap_count": float(evaluation_validation.gap_count),
-                    "history_overlap_count": float(history_validation.overlap_count),
-                    "evaluation_overlap_count": float(evaluation_validation.overlap_count),
                 }
             )
             log_artifacts([metadata_path])

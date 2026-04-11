@@ -8,8 +8,6 @@ from hydra import compose, initialize_config_dir
 
 from spice.core.config import (
     AcquisitionConfig,
-    AcquisitionEnrichConfig,
-    AcquisitionRawConfig,
     ChainConfig,
     ChainName,
     ExperimentConfig,
@@ -44,8 +42,7 @@ def base_overrides(tmp_path: Path) -> list[str]:
         "simulation.window_seconds=600",
         "simulation.arrival_rate_per_second=0.02",
         "simulation.repetitions=3",
-        "acquisition.enrich.batch_size=1000",
-        "acquisition.enrich.max_methods_per_second=1000000",
+        "acquisition.rpc_batch_size=256",
         "dataset.temporal.lookback_seconds=120",
         "dataset.sampling.anchor_count=48",
     ]
@@ -80,16 +77,8 @@ def make_acquisition_config(*, chunk_size: int = 1) -> AcquisitionConfig:
     return AcquisitionConfig(
         dry_run=False,
         overwrite=False,
-        raw=AcquisitionRawConfig(
-            requests_per_second=10,
-            max_concurrent_requests=2,
-            max_concurrent_chunks=1,
-            chunk_size=chunk_size,
-        ),
-        enrich=AcquisitionEnrichConfig(
-            batch_size=100,
-            max_methods_per_second=20.0,
-        ),
+        chunk_size=chunk_size,
+        rpc_batch_size=32,
     )
 
 
@@ -189,20 +178,3 @@ def write_parquet_rows(path: Path, rows: list[dict[str, int | None]]) -> Path:
 
 def write_dataset_dir(dataset_dir: Path, rows: list[dict[str, int | None]]) -> Path:
     return write_parquet_rows(dataset_dir / "blocks.parquet", rows)
-
-
-def write_raw_chunk(
-    dataset_dir: Path,
-    *,
-    chain_name: str,
-    rows: list[dict[str, int | None]],
-) -> Path:
-    assert rows
-    assert rows[0]["block_number"] is not None
-    assert rows[-1]["block_number"] is not None
-    start_block = int(rows[0]["block_number"])
-    end_block = int(rows[-1]["block_number"])
-    return write_parquet_rows(
-        dataset_dir / f"{chain_name}__blocks__{start_block}_to_{end_block}.parquet",
-        rows,
-    )

@@ -41,7 +41,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
     spec = build_training_spec(config)
     artifact_dir = Path(config.paths.artifact_root)
     report_path = Path(config.paths.train_report_path)
-    history_block_path = Path(config.paths.enriched_history_dir)
+    history_block_path = Path(config.paths.history_dir)
     with managed_workflow(
         config,
         run_name=(

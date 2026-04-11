@@ -12,7 +12,7 @@ dataset:
     max_delay_seconds: 36
     lookback_seconds: 600
   sampling:
-    anchor_count: 400000
+    anchor_count: 1000000
     history_anchor_count: null
 model:
   family: lstm
@@ -41,14 +41,8 @@ provider:
 acquisition:
   dry_run: false
   overwrite: false
-  raw:
-    requests_per_second: 640
-    max_concurrent_requests: 64
-    max_concurrent_chunks: 4
-    chunk_size: 500
-  enrich:
-    batch_size: 500
-    max_methods_per_second: 200.0
+  chunk_size: 500
+  rpc_batch_size: 128
 split:
   train_fraction: 0.8
   validation_fraction: 0.1
@@ -111,12 +105,8 @@ paths:
   output_root: artifacts
   dataset_root: artifacts/datasets/ethereum/icdcs_2025_11_09
   metadata_root: artifacts/datasets/ethereum/icdcs_2025_11_09/.spice
-  raw_root: artifacts/datasets/ethereum/icdcs_2025_11_09/raw
-  raw_history_dir: artifacts/datasets/ethereum/icdcs_2025_11_09/raw/history
-  raw_evaluation_dir: artifacts/datasets/ethereum/icdcs_2025_11_09/raw/evaluation
-  enriched_root: artifacts/datasets/ethereum/icdcs_2025_11_09/enriched
-  enriched_history_dir: artifacts/datasets/ethereum/icdcs_2025_11_09/enriched/history
-  enriched_evaluation_dir: artifacts/datasets/ethereum/icdcs_2025_11_09/enriched/evaluation
+  history_dir: artifacts/datasets/ethereum/icdcs_2025_11_09/history
+  evaluation_dir: artifacts/datasets/ethereum/icdcs_2025_11_09/evaluation
   dataset_metadata_path: artifacts/datasets/ethereum/icdcs_2025_11_09/.spice/metadata.json
   artifact_root: artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s
   checkpoint_dir: artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/checkpoints

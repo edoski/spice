@@ -44,13 +44,10 @@ params.yaml
 
 ### `acquisition`
 
-- [cryo.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/cryo.py): cryo command planning and streamed execution
 - [provider.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/provider.py): thin provider config to `web3.py` bridge
-- [rpc.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/rpc.py): block gas-limit hydration client on top of `web3.py`
-- [enrich.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/enrich.py): canonical enrichment
-- [datasets.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/datasets.py): raw pull execution, canonicalization, reuse, and enriched-dataset rebuilding
+- [rpc.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/rpc.py): timestamp-window resolution, block-range planning, batched block pulls, and canonical Parquet writing
+- [datasets.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/datasets.py): dataset reuse, validation, rebuilding, and history-window expansion
 - [metadata.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/metadata.py): dataset metadata loading, validation, and serialization
-- [raw_validation.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/raw_validation.py): raw parquet pull validation, including Pandera-validated cross-file summary checks
 - [windowing.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/windowing.py): history window sizing, reuse, and backward expansion rules
 
 This layer no longer contains snapshot registries or a custom JSON-RPC transport.
@@ -70,7 +67,7 @@ repo’s dataset-path contract:
 - only parquet inputs are accepted
 - the single hidden metadata namespace is `.spice/metadata.json`
 - dataset roots may be a file or directory
-- enriched loads always pass through canonical validation
+- block loads always pass through canonical validation
 
 The actual parquet engine is already delegated to `Polars`. Replacing this small
 adapter would not reduce real complexity.
@@ -129,8 +126,8 @@ DVC is the primary orchestration surface:
 
 Dataset storage is keyed by explicit dataset windows:
 
-- `artifacts/datasets/<chain>/<dataset_id>/raw/...`
-- `artifacts/datasets/<chain>/<dataset_id>/enriched/...`
+- `artifacts/datasets/<chain>/<dataset_id>/history/...`
+- `artifacts/datasets/<chain>/<dataset_id>/evaluation/...`
 - `artifacts/datasets/<chain>/<dataset_id>/.spice/metadata.json`
 
 Model storage is keyed by the training dataset window:

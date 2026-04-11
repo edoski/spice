@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from spice.core.constants import DEFAULT_WINDOW_END_TIMESTAMP, DEFAULT_WINDOW_START_TIMESTAMP
@@ -21,9 +23,7 @@ def test_hydra_train_config_composes_and_resolves_paths(tmp_path) -> None:
     assert config.dataset.sampling.history_anchor_count is None
     assert config.dataset.sampling.effective_history_anchor_count == 48
     assert config.paths.artifact_root.endswith("/ethereum/icdcs_2025_11_09/transformer/24s")
-    assert config.paths.raw_history_dir.endswith(
-        "/datasets/ethereum/icdcs_2025_11_09/raw/history"
-    )
+    assert config.paths.history_dir.endswith("/datasets/ethereum/icdcs_2025_11_09/history")
     assert config.paths.metadata_root.endswith("/datasets/ethereum/icdcs_2025_11_09/.spice")
     assert config.paths.dataset_metadata_path.endswith(
         "/datasets/ethereum/icdcs_2025_11_09/.spice/metadata.json"
@@ -39,8 +39,8 @@ def test_direct_provider_reads_env_interpolation(tmp_path, monkeypatch) -> None:
 
     assert config.provider.endpoint_for(config.chain.name) == "https://eth.example.test"
     assert config.provider.reference_for(config.chain.name) == "$ETHEREUM_RPC_URL"
-    assert config.acquisition.raw.requests_per_second == 10
-    assert config.acquisition.enrich.batch_size == 1000
+    assert config.acquisition.chunk_size == 500
+    assert config.acquisition.rpc_batch_size == 256
 
 
 def test_train_config_does_not_require_direct_provider_endpoint(tmp_path, monkeypatch) -> None:
@@ -106,14 +106,12 @@ def test_publicnode_profiles_apply_per_chain_tuning(tmp_path) -> None:
         ],
     )
 
-    assert ethereum.acquisition.raw.requests_per_second == 640
-    assert ethereum.acquisition.raw.max_concurrent_requests == 64
-    assert ethereum.acquisition.enrich.max_methods_per_second == 200.0
-    assert polygon.acquisition.raw.requests_per_second == 11
-    assert polygon.acquisition.raw.max_concurrent_requests == 2
-    assert polygon.acquisition.enrich.max_methods_per_second == 120.0
-    assert avalanche.acquisition.raw.requests_per_second == 640
-    assert avalanche.acquisition.enrich.max_methods_per_second == 500.0
+    assert ethereum.acquisition.rpc_batch_size == 128
+    assert ethereum.acquisition.chunk_size == 500
+    assert polygon.acquisition.rpc_batch_size == 32
+    assert polygon.acquisition.chunk_size == 500
+    assert avalanche.acquisition.rpc_batch_size == 128
+    assert avalanche.acquisition.chunk_size == 500
 
 
 def test_invalid_transformer_config_fails_early(tmp_path) -> None:
@@ -150,3 +148,28 @@ def test_dvc_runner_loads_generated_params_and_forces_stage_task() -> None:
     assert config.task == "train"
     assert config.tuning.apply_best_params is True
     assert config.paths.artifact_root.endswith("/models/ethereum/icdcs_2025_11_09/lstm/36s")
+
+
+def test_dvc_runner_wraps_stage_execution_with_keep_system_awake(monkeypatch, tmp_path) -> None:
+    calls: list[str | tuple[str, object]] = []
+    config = object()
+
+    class _KeepAwake:
+        def __enter__(self) -> None:
+            calls.append("enter")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            calls.append("exit")
+
+    monkeypatch.setattr("spice.workflows.dvc.keep_system_awake", lambda: _KeepAwake())
+    monkeypatch.setattr("spice.workflows.dvc.load_stage_config", lambda stage, params: config)
+    monkeypatch.setattr(
+        "spice.workflows.dvc.import_module",
+        lambda name: SimpleNamespace(run=lambda run_config: calls.append(("run", run_config))),
+    )
+
+    from spice.workflows.dvc import main
+
+    main(["train", "--params", str(tmp_path / "params.yaml")])
+
+    assert calls == ["enter", ("run", config), "exit"]

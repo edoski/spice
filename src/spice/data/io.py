@@ -8,8 +8,8 @@ from pathlib import Path
 import polars as pl
 
 from .block_schema import (
-    ENRICHED_BLOCK_COLUMNS,
-    validate_enriched_block_frame,
+    BLOCK_COLUMNS,
+    validate_block_frame,
 )
 
 
@@ -50,7 +50,7 @@ def write_block_file(path: Path, frame: pl.DataFrame) -> None:
     frame.write_parquet(path)
 
 
-def load_enriched_block_frame(path: Path) -> pl.DataFrame:
-    frame = read_block_dataset(path, columns=ENRICHED_BLOCK_COLUMNS).sort("block_number")
-    validate_enriched_block_frame(frame)
+def load_block_frame(path: Path) -> pl.DataFrame:
+    frame = read_block_dataset(path, columns=BLOCK_COLUMNS).sort("block_number")
+    validate_block_frame(frame)
     return frame

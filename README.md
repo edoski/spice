@@ -4,8 +4,7 @@ Temporal-module baseline for SPICE-style fee-timing experiments.
 
 This repository is intentionally scoped to the temporal module only:
 
-- acquire raw EVM block data
-- enrich missing block fields
+- acquire canonical EVM block datasets
 - build fixed-horizon temporal datasets
 - train baseline sequence models
 - run evaluation-day temporal simulations
@@ -45,14 +44,14 @@ params.yaml
 
 Consolidated runtime boundaries:
 
-- acquisition window planning, raw/enriched dataset materialization, and metadata shaping live under `src/spice/acquisition/`
+- acquisition window planning, direct block pulling, dataset validation, and metadata shaping live under `src/spice/acquisition/`
 - workflow lifecycle and small shared workflow helpers live in `src/spice/workflows/_shared.py`
 - persisted training execution is centralized in `src/spice/modeling/execution.py`
 
 Key runtime paths:
 
-- raw datasets: `artifacts/datasets/<chain>/<dataset_id>/raw/...`
-- enriched datasets: `artifacts/datasets/<chain>/<dataset_id>/enriched/...`
+- history datasets: `artifacts/datasets/<chain>/<dataset_id>/history/...`
+- evaluation datasets: `artifacts/datasets/<chain>/<dataset_id>/evaluation/...`
 - dataset metadata: `artifacts/datasets/<chain>/<dataset_id>/.spice/metadata.json`
 - model artifacts: `artifacts/models/<chain>/<dataset_id>/<family>/<delay>s/...`
 - simulation reports: `artifacts/models/<chain>/<dataset_id>/<family>/<delay>s/simulation_report.json`
@@ -90,6 +89,8 @@ Use DVC as the primary surface:
 Hydra defaults live under [src/spice/conf](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf). DVC Hydra composition is enabled, and [params.yaml](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/params.yaml) is the composed baseline consumed by the DVC stages.
 
 DVC stages call `spice-dvc`, a thin runner that loads `params.yaml`, pins the requested stage task, and dispatches the same workflow `run(...)` functions used by the direct entrypoints. Direct `spice-train` keeps `tuning.apply_best_params=false`; the DVC `train` stage applies the tuned best params because it depends on the model-local `best_params.json`.
+
+On macOS, `spice-dvc` also attaches `caffeinate` automatically when it is available, so long `dvc repro ...` runs do not idle-sleep the machine mid-stage.
 
 You can also run the workflow entrypoints directly:
 

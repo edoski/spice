@@ -17,7 +17,7 @@ from tests.support import base_overrides, compose_experiment, make_history_rows,
 
 def test_run_persisted_training_writes_canonical_training_outputs(tmp_path) -> None:
     config = compose_experiment("train", overrides=base_overrides(tmp_path))
-    history_dir = Path(config.paths.enriched_history_dir)
+    history_dir = Path(config.paths.history_dir)
     artifact_dir = Path(config.paths.artifact_root)
     report_path = Path(config.paths.train_report_path)
     write_dataset_dir(history_dir, make_history_rows())

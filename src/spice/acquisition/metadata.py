@@ -10,7 +10,6 @@ from pydantic import BaseModel, ConfigDict
 from ..core.config import ExperimentConfig
 from ..data.io import iter_block_files
 from ..data.validation import BlockDatasetValidationReport
-from .raw_validation import RawPullValidationReport
 
 
 class MetadataModel(BaseModel):
@@ -32,14 +31,9 @@ class ProviderMetadata(MetadataModel):
     endpoint_fingerprint: str
 
 
-class DatasetPathPair(MetadataModel):
+class DatasetPathsMetadata(MetadataModel):
     history: str
     evaluation: str
-
-
-class DatasetPathsMetadata(MetadataModel):
-    raw: DatasetPathPair
-    enriched: DatasetPathPair
 
 
 class DatasetWindowMetadata(MetadataModel):
@@ -63,9 +57,8 @@ class DatasetTemporalSettings(MetadataModel):
 
 
 class DatasetAcquisitionSettings(MetadataModel):
-    raw_chunk_size: int
-    enrich_batch_size: int
-    max_methods_per_second: float
+    chunk_size: int
+    rpc_batch_size: int
 
 
 class DatasetSettingsMetadata(MetadataModel):
@@ -89,18 +82,12 @@ class CompactValidationReport(MetadataModel):
     rows: int
     block_range: BlockRangeMetadata
     timestamp_range: TimestampRangeMetadata
-    files: int | None = None
     issues: dict[str, object] | None = None
 
 
-class DatasetValidationSection(MetadataModel):
+class DatasetValidationMetadata(MetadataModel):
     history: CompactValidationReport
     evaluation: CompactValidationReport
-
-
-class DatasetValidationMetadata(MetadataModel):
-    raw: DatasetValidationSection
-    enriched: DatasetValidationSection
 
 
 class DatasetMetadata(MetadataModel):
@@ -178,15 +165,11 @@ def check_existing_dataset_metadata(
     return metadata
 
 
-def compact_validation_report(
-    report: RawPullValidationReport | BlockDatasetValidationReport,
-) -> CompactValidationReport:
+def compact_validation_report(report: BlockDatasetValidationReport) -> CompactValidationReport:
     issue_counts: dict[str, int] = {}
     for name in (
         "gap_count",
-        "overlap_count",
         "duplicate_count",
-        "chain_id_mismatch_count",
         "below_start_count",
         "above_end_count",
     ):
@@ -211,7 +194,6 @@ def compact_validation_report(
             first=report.first_timestamp,
             last=report.last_timestamp,
         ),
-        files=report.file_count if isinstance(report, RawPullValidationReport) else None,
         issues=issues,
     )
 
@@ -219,18 +201,14 @@ def compact_validation_report(
 def build_dataset_metadata(
     *,
     config: ExperimentConfig,
-    raw_history_dir: Path,
-    raw_evaluation_dir: Path,
-    enriched_history_dir: Path,
-    enriched_evaluation_dir: Path,
+    history_dir: Path,
+    evaluation_dir: Path,
     history_window_start: int,
     history_window_end: int,
     evaluation_window_start: int,
     evaluation_window_end: int,
-    history_validation: RawPullValidationReport,
-    evaluation_validation: RawPullValidationReport,
-    history_enriched: BlockDatasetValidationReport,
-    evaluation_enriched: BlockDatasetValidationReport,
+    history_validation: BlockDatasetValidationReport,
+    evaluation_validation: BlockDatasetValidationReport,
 ) -> DatasetMetadata:
     return DatasetMetadata(
         dataset=DatasetIdentity(id=config.dataset.id),
@@ -240,14 +218,8 @@ def build_dataset_metadata(
         ),
         provider=provider_metadata(config),
         paths=DatasetPathsMetadata(
-            raw=DatasetPathPair(
-                history=raw_history_dir.as_posix(),
-                evaluation=raw_evaluation_dir.as_posix(),
-            ),
-            enriched=DatasetPathPair(
-                history=enriched_history_dir.as_posix(),
-                evaluation=enriched_evaluation_dir.as_posix(),
-            ),
+            history=history_dir.as_posix(),
+            evaluation=evaluation_dir.as_posix(),
         ),
         windows=DatasetWindowsMetadata(
             history=DatasetWindowMetadata(
@@ -269,30 +241,21 @@ def build_dataset_metadata(
                 max_delay_seconds=config.dataset.temporal.max_delay_seconds,
             ),
             acquisition=DatasetAcquisitionSettings(
-                raw_chunk_size=config.acquisition.raw.chunk_size,
-                enrich_batch_size=config.acquisition.enrich.batch_size,
-                max_methods_per_second=config.acquisition.enrich.max_methods_per_second,
+                chunk_size=config.acquisition.chunk_size,
+                rpc_batch_size=config.acquisition.rpc_batch_size,
             ),
         ),
         validation=DatasetValidationMetadata(
-            raw=DatasetValidationSection(
-                history=compact_validation_report(history_validation),
-                evaluation=compact_validation_report(evaluation_validation),
-            ),
-            enriched=DatasetValidationSection(
-                history=compact_validation_report(history_enriched),
-                evaluation=compact_validation_report(evaluation_enriched),
-            ),
+            history=compact_validation_report(history_validation),
+            evaluation=compact_validation_report(evaluation_validation),
         ),
     )
 
 
 def _metadata_has_dataset_files(config: ExperimentConfig) -> bool:
     for candidate in (
-        Path(config.paths.raw_history_dir),
-        Path(config.paths.raw_evaluation_dir),
-        Path(config.paths.enriched_history_dir),
-        Path(config.paths.enriched_evaluation_dir),
+        Path(config.paths.history_dir),
+        Path(config.paths.evaluation_dir),
     ):
         if has_block_files(candidate):
             return True

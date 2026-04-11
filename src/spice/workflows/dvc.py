@@ -9,6 +9,7 @@ from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
 from ..core.config import ExperimentConfig, coerce_config, revalidate_config
+from ..core.power import keep_system_awake
 
 STAGE_MODULES: dict[str, str] = {
     "acquire": "spice.workflows.acquire",
@@ -35,7 +36,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--params", type=Path, default=Path("params.yaml"))
     args = parser.parse_args(argv)
     module = import_module(STAGE_MODULES[args.stage])
-    module.run(load_stage_config(args.stage, args.params))
+    with keep_system_awake():
+        module.run(load_stage_config(args.stage, args.params))
 
 
 if __name__ == "__main__":

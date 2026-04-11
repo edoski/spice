@@ -2,12 +2,11 @@ import polars as pl
 import pytest
 from pandera.errors import SchemaError, SchemaErrors
 
-from spice.acquisition.raw_validation import validate_raw_pull
 from spice.core.config import SplitConfig
 from spice.core.constants import DEFAULT_WINDOW_START_TIMESTAMP
-from spice.data.block_schema import ENRICHED_BLOCK_SCHEMA
+from spice.data.block_schema import BLOCK_SCHEMA
 from spice.data.datasets import derive_dataset_geometry
-from spice.data.io import iter_block_files, load_enriched_block_frame
+from spice.data.io import iter_block_files, load_block_frame
 from spice.data.validation import validate_exact_window_dataset
 from spice.modeling.pipeline import (
     TrainingSpec,
@@ -21,7 +20,6 @@ from tests.support import (
     make_model_config,
     make_training_config,
     write_dataset_dir,
-    write_raw_chunk,
 )
 
 
@@ -44,21 +42,19 @@ def test_iter_block_files_ignores_hidden_metadata(tmp_path) -> None:
     assert files[0].name == "blocks.parquet"
 
 
-def test_load_enriched_block_frame_rejects_duplicate_block_numbers(tmp_path) -> None:
+def test_load_block_frame_rejects_duplicate_block_numbers(tmp_path) -> None:
     dataset_dir = tmp_path / "dataset"
     rows = make_history_rows(8)
     write_dataset_dir(dataset_dir, rows[:4] + [rows[3]] + rows[4:])
 
     with pytest.raises((ValueError, SchemaError, SchemaErrors)):
-        load_enriched_block_frame(dataset_dir)
+        load_block_frame(dataset_dir)
 
 
-def test_load_enriched_block_frame_rejects_noncanonical_schema(tmp_path) -> None:
+def test_load_block_frame_rejects_noncanonical_schema(tmp_path) -> None:
     dataset_dir = tmp_path / "dataset"
     dataset_dir.mkdir()
     frame = make_history_rows(4)
-    # Simulate a provider-shaped "enriched" dataset that was never canonicalized.
-
     wide_frame = pl.DataFrame(
         {
             "block_hash": [b"a", b"b", b"c", b"d"],
@@ -75,91 +71,7 @@ def test_load_enriched_block_frame_rejects_noncanonical_schema(tmp_path) -> None
     wide_frame.write_parquet(dataset_dir / "blocks.parquet")
 
     with pytest.raises((ValueError, SchemaError, SchemaErrors)):
-        load_enriched_block_frame(dataset_dir)
-
-
-def test_validate_raw_pull_detects_file_range_gaps(tmp_path) -> None:
-    dataset_dir = tmp_path / "raw"
-    write_raw_chunk(
-        dataset_dir,
-        chain_name="ethereum",
-        rows=make_history_rows(3),
-    )
-    write_raw_chunk(
-        dataset_dir,
-        chain_name="ethereum",
-        rows=make_evaluation_rows(2, start_block=5),
-    )
-
-    report = validate_raw_pull(
-        dataset_dir,
-        expected_chain_name="ethereum",
-        expected_chain_id=1,
-        expected_start_timestamp=0,
-        expected_end_timestamp=2_000_000_000,
-        expected_chunk_size=1000,
-    )
-
-    assert report.status == "error"
-    assert report.gap_count >= 1
-
-
-def test_validate_raw_pull_requires_explicit_chunk_size(tmp_path) -> None:
-    with pytest.raises(TypeError, match="expected_chunk_size"):
-        validate_raw_pull(
-            tmp_path / "raw",
-            expected_chain_name="ethereum",
-            expected_chain_id=1,
-            expected_start_timestamp=0,
-            expected_end_timestamp=2_000_000_000,
-        )
-
-
-def test_validate_raw_pull_reports_shared_window_and_raw_file_issues(tmp_path) -> None:
-    dataset_dir = tmp_path / "raw"
-    write_raw_chunk(
-        dataset_dir,
-        chain_name="ethereum",
-        rows=[
-            {
-                "block_number": 1,
-                "timestamp": 100,
-                "base_fee_per_gas": 1,
-                "gas_used": 1,
-                "chain_id": 1,
-            },
-            {
-                "block_number": 1,
-                "timestamp": 112,
-                "base_fee_per_gas": 1,
-                "gas_used": 1,
-                "chain_id": 137,
-            },
-            {
-                "block_number": 3,
-                "timestamp": 124,
-                "base_fee_per_gas": 1,
-                "gas_used": 1,
-                "chain_id": 1,
-            },
-        ],
-    )
-
-    report = validate_raw_pull(
-        dataset_dir,
-        expected_chain_name="ethereum",
-        expected_chain_id=1,
-        expected_start_timestamp=100,
-        expected_end_timestamp=136,
-        expected_chunk_size=1000,
-    )
-
-    assert report.status == "error"
-    assert report.duplicate_count == 1
-    assert report.gap_count == 1
-    assert report.chain_id_mismatch_count == 1
-    assert any("exactly one chain_id" in error for error in report.errors)
-    assert any("non-sequential block transition" in error for error in report.errors)
+        load_block_frame(dataset_dir)
 
 
 def test_validate_exact_window_dataset_passes_on_canonical_dataset(tmp_path) -> None:
@@ -230,10 +142,10 @@ def test_prepare_training_and_inference_datasets(tmp_path) -> None:
     write_dataset_dir(history_dir, make_history_rows())
     write_dataset_dir(evaluation_dir, make_evaluation_rows())
 
-    history_blocks = load_enriched_block_frame(history_dir)
-    evaluation_blocks = load_enriched_block_frame(evaluation_dir)
-    assert history_blocks.schema == ENRICHED_BLOCK_SCHEMA
-    assert evaluation_blocks.schema == ENRICHED_BLOCK_SCHEMA
+    history_blocks = load_block_frame(history_dir)
+    evaluation_blocks = load_block_frame(evaluation_dir)
+    assert history_blocks.schema == BLOCK_SCHEMA
+    assert evaluation_blocks.schema == BLOCK_SCHEMA
     spec = TrainingSpec(
         chain=make_chain_config(),
         dataset_id="icdcs_2025_11_09",

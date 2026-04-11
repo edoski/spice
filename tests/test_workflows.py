@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from spice.core.console import NullReporter
 from spice.workflows.simulate import run as run_simulate
@@ -56,24 +57,8 @@ def test_train_and_simulate_workflows_write_reports(tmp_path) -> None:
     train_config = compose_experiment("train", overrides=base_overrides(tmp_path))
     simulate_config = compose_experiment("simulate", overrides=base_overrides(tmp_path))
 
-    history_dir = (
-        tmp_path
-        / "artifacts"
-        / "datasets"
-        / "ethereum"
-        / "icdcs_2025_11_09"
-        / "enriched"
-        / "history"
-    )
-    evaluation_dir = (
-        tmp_path
-        / "artifacts"
-        / "datasets"
-        / "ethereum"
-        / "icdcs_2025_11_09"
-        / "enriched"
-        / "evaluation"
-    )
+    history_dir = Path(train_config.paths.history_dir)
+    evaluation_dir = Path(simulate_config.paths.evaluation_dir)
     write_dataset_dir(history_dir, make_history_rows())
     write_dataset_dir(evaluation_dir, make_evaluation_rows())
 
@@ -106,15 +91,7 @@ def test_train_and_simulate_workflows_write_reports(tmp_path) -> None:
 
 def test_train_workflow_reports_standardized_progress(tmp_path) -> None:
     config = compose_experiment("train", overrides=base_overrides(tmp_path))
-    history_dir = (
-        tmp_path
-        / "artifacts"
-        / "datasets"
-        / "ethereum"
-        / "icdcs_2025_11_09"
-        / "enriched"
-        / "history"
-    )
+    history_dir = Path(config.paths.history_dir)
     write_dataset_dir(history_dir, make_history_rows())
     reporter = RecordingReporter()
 
@@ -133,15 +110,7 @@ def test_train_workflow_creates_local_mlflow_run(tmp_path) -> None:
         "train",
         overrides=base_overrides(tmp_path) + ["tracking.enabled=true"],
     )
-    history_dir = (
-        tmp_path
-        / "artifacts"
-        / "datasets"
-        / "ethereum"
-        / "icdcs_2025_11_09"
-        / "enriched"
-        / "history"
-    )
+    history_dir = Path(config.paths.history_dir)
     write_dataset_dir(history_dir, make_history_rows())
 
     run_train(config, reporter=NullReporter())
@@ -157,15 +126,7 @@ def test_train_applies_best_tuning_params_and_cleans_stale_outputs(tmp_path) -> 
         "train",
         overrides=base_overrides(tmp_path) + ["tuning.apply_best_params=true"],
     )
-    history_dir = (
-        tmp_path
-        / "artifacts"
-        / "datasets"
-        / "ethereum"
-        / "icdcs_2025_11_09"
-        / "enriched"
-        / "history"
-    )
+    history_dir = Path(config.paths.history_dir)
     write_dataset_dir(history_dir, make_history_rows())
 
     artifact_dir = (
@@ -216,15 +177,7 @@ def test_tune_workflow_writes_optuna_summary(tmp_path) -> None:
         "model.hidden_size": [64, 128],
     }
 
-    history_dir = (
-        tmp_path
-        / "artifacts"
-        / "datasets"
-        / "ethereum"
-        / "icdcs_2025_11_09"
-        / "enriched"
-        / "history"
-    )
+    history_dir = Path(config.paths.history_dir)
     write_dataset_dir(history_dir, make_history_rows())
     stale_trial = (
         tmp_path
@@ -284,15 +237,7 @@ def test_tune_workflow_reports_study_progress(tmp_path) -> None:
         "training.learning_rate": [1e-4, 3e-4],
         "model.hidden_size": [64, 128],
     }
-    history_dir = (
-        tmp_path
-        / "artifacts"
-        / "datasets"
-        / "ethereum"
-        / "icdcs_2025_11_09"
-        / "enriched"
-        / "history"
-    )
+    history_dir = Path(config.paths.history_dir)
     write_dataset_dir(history_dir, make_history_rows())
     reporter = RecordingReporter()
 
@@ -307,24 +252,8 @@ def test_tune_workflow_reports_study_progress(tmp_path) -> None:
 def test_simulate_workflow_reports_standardized_progress(tmp_path) -> None:
     train_config = compose_experiment("train", overrides=base_overrides(tmp_path))
     simulate_config = compose_experiment("simulate", overrides=base_overrides(tmp_path))
-    history_dir = (
-        tmp_path
-        / "artifacts"
-        / "datasets"
-        / "ethereum"
-        / "icdcs_2025_11_09"
-        / "enriched"
-        / "history"
-    )
-    evaluation_dir = (
-        tmp_path
-        / "artifacts"
-        / "datasets"
-        / "ethereum"
-        / "icdcs_2025_11_09"
-        / "enriched"
-        / "evaluation"
-    )
+    history_dir = Path(train_config.paths.history_dir)
+    evaluation_dir = Path(simulate_config.paths.evaluation_dir)
     write_dataset_dir(history_dir, make_history_rows())
     write_dataset_dir(evaluation_dir, make_evaluation_rows())
     run_train(train_config, reporter=NullReporter())

@@ -155,7 +155,7 @@ def _objective(
 
     spec = build_training_spec(config)
     artifact_dir = trial_artifact_dir(config, trial.number)
-    history_block_path = Path(config.paths.enriched_history_dir)
+    history_block_path = Path(config.paths.history_dir)
     with managed_workflow(
         config,
         run_name=f"trial-{trial.number:03d}",

@@ -22,7 +22,7 @@ from ..data.datasets import (
     trim_history_for_anchor_count,
 )
 from ..data.features import build_feature_table
-from ..data.io import load_enriched_block_frame
+from ..data.io import load_block_frame
 from ..data.normalization import ScalerStats, fit_standard_scaler, transform_feature_matrix
 from .evaluation import EpochMetrics
 from .models import TemporalModel, build_model
@@ -191,7 +191,7 @@ def run_training(
 ) -> TrainingRunResult:
     reporter = reporter or NullReporter()
     load_task = reporter.start_task("load history dataset")
-    blocks = load_enriched_block_frame(history_block_path)
+    blocks = load_block_frame(history_block_path)
     reporter.finish_task(load_task, message=str(history_block_path))
     prepare_task = reporter.start_task("prepare training dataset")
     prepared = prepare_training_dataset(blocks, spec=spec)

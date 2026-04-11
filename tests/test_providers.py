@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import pytest
 from web3.middleware import ExtraDataToPOAMiddleware
 
 from spice.acquisition.provider import build_web3, redact_sensitive_text
-from spice.acquisition.rpc import Web3BlockClient
+from spice.acquisition.rpc import TimestampRange, Web3BlockClient
 from tests.support import make_chain_config, make_provider_config
 
 
-def test_build_web3_uses_configured_endpoint() -> None:
+def test_build_web3_uses_configured_http_endpoint() -> None:
     web3 = build_web3(
         make_provider_config(),
         make_chain_config(),
@@ -17,6 +18,23 @@ def test_build_web3_uses_configured_endpoint() -> None:
 
     assert web3.provider is not None
     assert cast(Any, web3.provider).endpoint_uri == "https://rpc.example.test"
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "expected_suffix"),
+    [
+        ("file:///tmp/geth.ipc", "/tmp/geth.ipc"),
+        ("/tmp/geth.ipc", "/tmp/geth.ipc"),
+    ],
+)
+def test_build_web3_supports_ipc_endpoints(endpoint: str, expected_suffix: str) -> None:
+    web3 = build_web3(
+        make_provider_config(endpoint=endpoint),
+        make_chain_config(),
+    )
+
+    assert web3.provider is not None
+    assert cast(Any, web3.provider).ipc_path.endswith(expected_suffix)
 
 
 def test_build_web3_injects_poa_middleware_for_poa_extra_data_chains() -> None:
@@ -34,7 +52,7 @@ def test_redact_sensitive_text_masks_endpoint() -> None:
     assert redact_sensitive_text(text, make_provider_config()) == "rpc=***"
 
 
-def test_web3_block_client_reads_gas_limits(monkeypatch) -> None:
+def test_web3_block_client_reads_canonical_block_rows(monkeypatch) -> None:
     class FakeBatch:
         def __init__(self) -> None:
             self.blocks: list[dict[str, int]] = []
@@ -52,8 +70,16 @@ def test_web3_block_client_reads_gas_limits(monkeypatch) -> None:
             return self.blocks
 
     class FakeEth:
-        def get_block(self, block_number: int) -> dict[str, int]:
-            return {"gasLimit": 30_000_000 + block_number}
+        block_number = 9
+
+        def get_block(self, block_number: int, _full_transactions: bool = False) -> dict[str, int]:
+            return {
+                "number": block_number,
+                "timestamp": 1_700_000_000 + block_number,
+                "baseFeePerGas": 1_000_000_000 + block_number,
+                "gasUsed": 20_000_000 + block_number,
+                "gasLimit": 30_000_000 + block_number,
+            }
 
     class FakeWeb3:
         eth = FakeEth()
@@ -67,5 +93,70 @@ def test_web3_block_client_reads_gas_limits(monkeypatch) -> None:
     )
 
     client = Web3BlockClient(make_provider_config(), make_chain_config())
+    rows = client.get_block_rows([1, 2])
 
-    assert client.get_block_gas_limits([1, 2]) == {1: 30_000_001, 2: 30_000_002}
+    assert rows == [
+        {
+            "block_number": 1,
+            "timestamp": 1_700_000_001,
+            "base_fee_per_gas": 1_000_000_001,
+            "gas_used": 20_000_001,
+            "chain_id": 1,
+            "gas_limit": 30_000_001,
+        },
+        {
+            "block_number": 2,
+            "timestamp": 1_700_000_002,
+            "base_fee_per_gas": 1_000_000_002,
+            "gas_used": 20_000_002,
+            "chain_id": 1,
+            "gas_limit": 30_000_002,
+        },
+    ]
+
+
+def test_web3_block_client_finds_first_block_at_or_after_timestamp(monkeypatch) -> None:
+    timestamps = {
+        0: 100,
+        1: 112,
+        2: 124,
+        3: 136,
+        4: 148,
+    }
+
+    class FakeEth:
+        block_number = 4
+
+        def get_block(
+            self,
+            block_number: int | str,
+            _full_transactions: bool = False,
+        ) -> dict[str, int]:
+            if block_number == "latest":
+                block_number = 4
+            block_number = int(block_number)
+            return {
+                "number": block_number,
+                "timestamp": timestamps[block_number],
+                "baseFeePerGas": 1,
+                "gasUsed": 1,
+                "gasLimit": 1,
+            }
+
+    class FakeWeb3:
+        eth = FakeEth()
+
+        def batch_requests(self):
+            raise AssertionError("batch path not used in binary search")
+
+    monkeypatch.setattr(
+        "spice.acquisition.rpc.build_web3",
+        lambda _provider, _chain: FakeWeb3(),
+    )
+
+    client = Web3BlockClient(make_provider_config(), make_chain_config())
+
+    assert client.find_first_block_at_or_after(100) == 0
+    assert client.find_first_block_at_or_after(113) == 2
+    assert client.find_first_block_at_or_after(149) == 5
+    assert client.resolve_block_range(TimestampRange(start=112, end=148)).count == 3

@@ -6,9 +6,9 @@ from math import ceil
 
 from ..core.config import ExperimentConfig
 from ..data.datasets import derive_dataset_geometry
-from .cryo import TimestampRange, history_range_for_required_blocks
+from ..data.validation import BlockDatasetValidationReport
 from .metadata import DatasetMetadata
-from .raw_validation import RawPullValidationReport
+from .rpc import TimestampRange, history_range_for_required_blocks
 
 
 def required_history_block_count(config: ExperimentConfig) -> int:
@@ -35,7 +35,7 @@ def initial_history_range(
 
 def expanded_history_range(
     current: TimestampRange,
-    validation: RawPullValidationReport,
+    validation: BlockDatasetValidationReport,
     *,
     config: ExperimentConfig,
     required_history_blocks: int,
@@ -43,6 +43,7 @@ def expanded_history_range(
     missing_blocks = required_history_blocks - validation.row_count
     if missing_blocks <= 0:
         return current
+
     if (
         validation.first_timestamp is not None
         and validation.last_timestamp is not None
@@ -54,7 +55,8 @@ def expanded_history_range(
         )
     else:
         seconds_per_block = config.chain.block_time_seconds
-    additional_blocks = missing_blocks + config.acquisition.raw.chunk_size
+
+    additional_blocks = missing_blocks + config.acquisition.chunk_size
     return TimestampRange(
         start=current.start - ceil(additional_blocks * seconds_per_block),
         end=current.end,

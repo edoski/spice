@@ -10,8 +10,8 @@ stages:
     params:
       - params.yaml:
     outs:
-      - ${paths.raw_root}
-      - ${paths.enriched_root}
+      - ${paths.history_dir}
+      - ${paths.evaluation_dir}
       - ${paths.metadata_root}
 
   tune:
@@ -19,7 +19,7 @@ stages:
     deps:
       - pyproject.toml
       - src/spice
-      - ${paths.enriched_history_dir}
+      - ${paths.history_dir}
     params:
       - params.yaml:
     outs:
@@ -33,7 +33,7 @@ stages:
     deps:
       - pyproject.toml
       - src/spice
-      - ${paths.enriched_history_dir}
+      - ${paths.history_dir}
       - ${paths.tuning_best_params_path}
     params:
       - params.yaml:
@@ -49,8 +49,8 @@ stages:
       - src/spice
       - ${paths.artifact_root}/artifact.json
       - ${paths.artifact_root}/model.pt
-      - ${paths.enriched_history_dir}
-      - ${paths.enriched_evaluation_dir}
+      - ${paths.history_dir}
+      - ${paths.evaluation_dir}
     params:
       - params.yaml:
     outs:

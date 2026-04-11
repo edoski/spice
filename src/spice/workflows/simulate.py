@@ -11,7 +11,7 @@ from ..core.config import ExperimentConfig, coerce_config
 from ..core.console import Reporter
 from ..core.tracking import log_artifacts
 from ..data.datasets import derive_dataset_geometry
-from ..data.io import load_enriched_block_frame
+from ..data.io import load_block_frame
 from ..modeling.artifacts import load_training_artifact
 from ..modeling.inference import predict_class_offsets
 from ..modeling.pipeline import prepare_inference_dataset
@@ -22,8 +22,8 @@ from ._shared import managed_workflow
 
 def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
     artifact_dir = Path(config.paths.artifact_root)
-    history_block_path = Path(config.paths.enriched_history_dir)
-    evaluation_block_path = Path(config.paths.enriched_evaluation_dir)
+    history_block_path = Path(config.paths.history_dir)
+    evaluation_block_path = Path(config.paths.evaluation_dir)
     with managed_workflow(
         config,
         run_name=(
@@ -34,8 +34,8 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
     ) as session:
         load_task = session.reporter.start_task("load inference inputs")
         loaded_artifact = load_training_artifact(artifact_dir)
-        history_blocks = load_enriched_block_frame(history_block_path)
-        evaluation_blocks = load_enriched_block_frame(evaluation_block_path)
+        history_blocks = load_block_frame(history_block_path)
+        evaluation_blocks = load_block_frame(evaluation_block_path)
         session.reporter.finish_task(
             load_task,
             message=f"artifact={artifact_dir} evaluation={evaluation_block_path}",
