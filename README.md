@@ -1,127 +1,115 @@
 # SPICE
 
-Lean temporal-module baseline for SPICE-style fee-timing experiments.
+Temporal-module baseline for SPICE-style fee-timing experiments.
 
 This repository is intentionally scoped to the temporal module only:
 
-- pull raw EVM block data
+- acquire raw EVM block data
 - enrich missing block fields
 - build fixed-horizon temporal datasets
 - train baseline sequence models
 - run evaluation-day temporal simulations
+- tune model hyperparameters
 
 It does not implement the broader SPICE spatial/oracle/reputation system.
 
 ## Stack
 
-- `Typer` + `Rich` for CLI and progress output
-- `Pydantic v2` + `pydantic-settings` for config, settings, manifests, and reports
-- `Polars` for Parquet IO, validation scans, canonicalization, and feature prep
-- `HTTPX` for JSON-RPC transport
-- `scikit-learn` for weighted feature scaling
-- `NumPy` + `PyTorch` for dataset math, modeling, training, inference, and simulation
+- `Hydra` for runtime configuration and composition
+- `DVC` for reproducible stages, artifact tracking, and future remote execution
+- `MLflow` for run tracking, params, metrics, and artifacts
+- `Lightning` + `TorchMetrics` for training orchestration
+- `Optuna` for hyperparameter optimization
+- `web3.py` for RPC transport
+- `Pandera` + `Polars` for dataset validation and parquet/table work
+- `scikit-learn` for scaling
+- `NumPy` + `PyTorch` for dataset math, modeling, inference, and simulation
 
-## Package Layout
+There is no legacy compatibility layer. The repository does not expose `spice.api`,
+the old `spice` Typer CLI, snapshot registries, provenance manifests, or the old
+custom YAML/settings loader.
 
-The installable namespace is `spice`, so the source layout stays `src/spice/...`.
-The package itself is now split into four shallow subpackages plus two top-level entrypoints:
+## Layout
 
-- `src/spice/core`: config, settings, constants, and console/reporting primitives
-- `src/spice/acquisition`: raw pulls, RPC, enrichment, validation, and provenance
-- `src/spice/data`: Parquet IO, feature engineering, dataset geometry, and scaling
-- `src/spice/modeling`: models, training, inference, simulation, artifacts, and reports
-- `src/spice/api.py`: supported high-level Python API
-- `src/spice/cli.py`: supported CLI surface
+```text
+src/spice/
+  acquisition/
+  conf/
+  core/
+  data/
+  modeling/
+  workflows/
+tests/
+dvc.yaml
+params.yaml
+```
 
-There are no dual paths for old/new formats. Runtime block datasets are Parquet-only.
-Named snapshots live under `output_root/datasets/<chain>/<snapshot>/...`.
-Under `enriched/`, datasets are canonical model inputs with exactly these six `Int64`
-columns: `block_number`, `timestamp`, `base_fee_per_gas`, `gas_used`, `chain_id`,
-and `gas_limit`.
+Key runtime paths:
 
-## Configuration
+- raw datasets: `artifacts/datasets/<chain>/raw/...`
+- enriched datasets: `artifacts/datasets/<chain>/enriched/...`
+- validation reports: `artifacts/validation/<chain>/...`
+- model artifacts: `artifacts/models/<chain>/<family>/<delay>s/...`
+- simulation reports: `artifacts/simulations/<chain>/<family>/<delay>s/...`
+- tuning outputs: `artifacts/tuning/<chain>/<family>/<delay>s/...`
+- MLflow store: `artifacts/mlruns/`
 
-Experiment configuration is loaded from YAML through `spice.core.config.ExperimentConfig`.
-Environment-backed RPC settings are loaded through `spice.core.settings.RuntimeSettings`.
+## Setup
 
-Supported environment variables:
+```bash
+.venv/bin/pip install -e .
+```
 
-- `RPC_PROVIDER`
+If you use the `direct` provider, export chain RPC URLs:
+
 - `ETHEREUM_RPC_URL`
 - `POLYGON_RPC_URL`
 - `AVALANCHE_RPC_URL`
+
+If you use the `alchemy` provider, export:
+
 - `ALCHEMY_API_KEY`
 
-## CLI
+## Running
 
-The installed command is `spice`.
+Use DVC as the primary surface:
 
-Examples:
-
-- `spice acquire configs/pilots/ethereum-36s.yaml --provider publicnode --no-dry-run`
-- `spice train configs/pilots/ethereum-36s.yaml lstm --device cpu`
-- `spice train configs/pilots/ethereum-36s.yaml lstm --device cpu --evaluate`
-- `spice simulate configs/pilots/ethereum-36s.yaml lstm --device cpu`
-- `spice datasets list configs/pilots/ethereum-36s.yaml`
-
-The CLI infers chain and delay values only when the config makes them unambiguous.
-It uses Rich progress for acquisition and training, then prints concise stable summary lines.
-
-## Python API
-
-`spice.api` is the only supported Python API surface.
-
-```python
-from pathlib import Path
-
-from spice.api import (
-    acquire_snapshot,
-    load_config,
-    simulate_model,
-    train_model,
-)
-
-config = load_config(Path("configs/pilots/ethereum-36s.yaml"))
-
-acquire_result = acquire_snapshot(
-    config,
-    "ethereum",
-    snapshot_name="working",
-    rpc_provider="publicnode",
-    dry_run=False,
-)
-
-train_result = train_model(
-    config,
-    "lstm",
-    "ethereum",
-    36,
-    device="cpu",
-)
-
-simulation_result = simulate_model(config, "lstm", "ethereum", 36, device="cpu")
+```bash
+.venv/bin/dvc repro acquire
+.venv/bin/dvc repro train
+.venv/bin/dvc repro simulate
+.venv/bin/dvc repro tune
 ```
 
-## Artifacts
+The baseline DVC variables live in [params.yaml](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/params.yaml). Hydra defaults live under [src/spice/conf](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf).
 
-Training writes:
+You can also run the workflow entrypoints directly:
 
-- `artifact.json`
-- `model.pt`
-- `train_report.json`
+```bash
+.venv/bin/spice-acquire chain=ethereum provider=publicnode
+.venv/bin/spice-train chain=ethereum model=lstm training.device=cpu
+.venv/bin/spice-simulate chain=ethereum model=lstm training.device=cpu
+.venv/bin/spice-tune chain=ethereum model=lstm tuning.n_trials=20
+```
 
-Simulation writes:
+## Configuration
 
-- `simulation_report.json`
+Hydra config groups live under [src/spice/conf](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf):
 
-Dataset provenance is stored under `.spice/source.json` inside dataset directories.
-Snapshot activation and summary metadata are stored under
-`output_root/datasets/<chain>/.spice/snapshots.json`.
+- `chain/`
+- `model/`
+- `provider/`
+- `training/`
+- `simulation/`
+- `tracking/`
+- `tuning/`
+- `runtime/`
+
+Runtime validation happens in [config.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/config.py). That layer enforces the repo’s structural invariants, including transformer head divisibility and provider endpoint availability.
 
 ## Verification
 
-Run all checks inside the project virtual environment:
-
-- `.venv/bin/ruff check src/spice tests`
-- `.venv/bin/pyright src/spice tests`
-- `.venv/bin/pytest -q`
+```bash
+.venv/bin/ruff check src/spice tests
+.venv/bin/pytest -q
+```

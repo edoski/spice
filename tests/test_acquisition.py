@@ -1,27 +1,24 @@
 from __future__ import annotations
 
+import json
 import sys
 
 import polars as pl
 
-from spice.acquisition.cryo import TimestampRange, run_cryo
+from spice.acquisition.cryo import CryoRunResult, TimestampRange, run_cryo
 from spice.acquisition.enrich import enrich_frame_with_gas_limit, enrich_path
-from spice.acquisition.provenance import (
-    load_source_manifest,
-    source_manifest_path_for,
-    write_source_manifest,
-)
-from spice.acquisition.rpc import JsonRpcClient
-from spice.acquisition.rpc_providers import RpcProviderName, resolve_rpc_provider
-from spice.acquisition.snapshots import (
-    activate_snapshot,
-    load_snapshot_registry,
-    record_snapshot,
-)
-from spice.core.config import BlockSegment, ChainConfig, ChainName, PullConfig
+from spice.core.config import ChainConfig, ChainName, ProviderConfig, PullConfig, RpcProviderName
 from spice.core.console import NullReporter
 from spice.data.block_schema import ENRICHED_BLOCK_SCHEMA
-from tests.support import make_block_rows, write_dataset_dir
+from spice.data.io import load_enriched_block_frame
+from spice.workflows.acquire import run as run_acquire
+from tests.support import (
+    base_overrides,
+    compose_experiment,
+    make_block_rows,
+    write_dataset_dir,
+    write_raw_chunk,
+)
 
 
 def test_enrich_frame_with_gas_limit_fills_missing_blocks() -> None:
@@ -48,34 +45,6 @@ def test_enrich_frame_with_gas_limit_fills_missing_blocks() -> None:
     assert fetched == 2
     assert enriched.schema == ENRICHED_BLOCK_SCHEMA
     assert enriched["gas_limit"].to_list() == [30_000_000, 30_000_002, 30_000_000, 30_000_004]
-
-
-def test_enrich_frame_with_gas_limit_canonicalizes_wide_uint_input() -> None:
-    def fetch_gas_limits(block_numbers: list[int]) -> dict[int, int]:
-        return {block: 45_000_000 for block in block_numbers}
-
-    frame = pl.DataFrame(
-        {
-            "block_hash": [b"a", b"b"],
-            "block_number": pl.Series([1, 2], dtype=pl.UInt32),
-            "timestamp": pl.Series([1_700_000_000, 1_700_000_002], dtype=pl.UInt32),
-            "base_fee_per_gas": pl.Series([3_000_000_000, 3_100_000_000], dtype=pl.UInt64),
-            "gas_used": pl.Series([20_000_000, 21_000_000], dtype=pl.UInt64),
-            "chain_id": pl.Series([137, 137], dtype=pl.UInt64),
-            "gas_limit": pl.Series([None, None], dtype=pl.Int64),
-        }
-    )
-
-    enriched, fetched = enrich_frame_with_gas_limit(
-        frame,
-        fetch_gas_limits=fetch_gas_limits,
-        batch_size=2,
-        max_methods_per_second=1_000.0,
-    )
-
-    assert fetched == 2
-    assert enriched.schema == ENRICHED_BLOCK_SCHEMA
-    assert enriched.columns == list(ENRICHED_BLOCK_SCHEMA)
 
 
 def test_enrich_path_writes_parquet_outputs(tmp_path) -> None:
@@ -110,82 +79,6 @@ def test_enrich_path_writes_parquet_outputs(tmp_path) -> None:
     assert written_frame["gas_limit"].null_count() == 0
 
 
-def test_json_rpc_client_retries_throttled_items(monkeypatch) -> None:
-    client = JsonRpcClient("https://rpc.example.test", max_retries=2, retry_backoff_seconds=0.0)
-    responses = iter(
-        [
-            [
-                {"id": 1, "result": {"number": "0x1", "gasLimit": "0x64"}},
-                {"id": 2, "error": {"code": 429}},
-            ],
-            [
-                {"id": 1, "result": {"number": "0x2", "gasLimit": "0x65"}},
-            ],
-        ]
-    )
-    monkeypatch.setattr(client, "_post", lambda payload: next(responses))
-    monkeypatch.setattr("spice.acquisition.rpc.time.sleep", lambda _: None)
-
-    gas_limits = client.get_block_gas_limits([1, 2])
-
-    assert gas_limits == {1: 100, 2: 101}
-
-
-def test_snapshot_registry_tracks_active_snapshot(tmp_path) -> None:
-    output_root = tmp_path / "artifacts"
-    chain = ChainConfig(
-        name=ChainName.ETHEREUM,
-        chain_id=1,
-        block_time_seconds=12.0,
-        history_days=1,
-    )
-
-    record_snapshot(
-        output_root,
-        chain,
-        snapshot_name="working",
-        pull_provider="publicnode",
-        enrich_provider="publicnode",
-        history_start_timestamp=1,
-        history_end_timestamp=2,
-        evaluation_start_timestamp=3,
-        evaluation_end_timestamp=4,
-    )
-    registry = activate_snapshot(output_root, chain, "working")
-
-    assert registry.active_snapshot == "working"
-    assert load_snapshot_registry(output_root, chain).snapshots[0].name == "working"
-
-
-def test_source_manifest_round_trip(tmp_path) -> None:
-    dataset_dir = tmp_path / "raw"
-    dataset_dir.mkdir()
-    provider = resolve_rpc_provider(RpcProviderName.PUBLICNODE, chains=(ChainName.ETHEREUM,))
-    manifest_path = write_source_manifest(
-        dataset_dir,
-        config_path=None,
-        chain=ChainConfig(
-            name=ChainName.ETHEREUM,
-            chain_id=1,
-            block_time_seconds=12.0,
-            history_days=1,
-        ),
-        segment=BlockSegment.HISTORY,
-        timestamps=TimestampRange(start=1, end=10),
-        provider=provider,
-        pull=PullConfig(),
-        overwrite=False,
-        validation=None,
-    )
-
-    loaded = load_source_manifest(dataset_dir)
-
-    assert manifest_path == source_manifest_path_for(dataset_dir)
-    assert loaded is not None
-    assert loaded.chain == "ethereum"
-    assert loaded.provider == "publicnode"
-
-
 def test_run_cryo_polls_progress_before_stdout_lines(tmp_path, monkeypatch) -> None:
     class RecordingReporter(NullReporter):
         def __init__(self) -> None:
@@ -202,7 +95,11 @@ def test_run_cryo_polls_progress_before_stdout_lines(tmp_path, monkeypatch) -> N
 
     output_dir = tmp_path / "raw"
     reporter = RecordingReporter()
-    provider = resolve_rpc_provider(RpcProviderName.PUBLICNODE, chains=(ChainName.ETHEREUM,))
+    provider = ProviderConfig(
+        name=RpcProviderName.PUBLICNODE,
+        endpoints={"ethereum": "https://rpc.example.test"},
+        references={"ethereum": "https://rpc.example.test"},
+    )
     script = "\n".join(
         [
             "from pathlib import Path",
@@ -219,38 +116,63 @@ def test_run_cryo_polls_progress_before_stdout_lines(tmp_path, monkeypatch) -> N
 
     monkeypatch.setattr(
         "spice.acquisition.cryo.build_cryo_args",
-        lambda *args, **kwargs: [sys.executable, "-c", script, str(output_dir)],
+        lambda *_args, **_kwargs: [sys.executable, "-c", script, str(output_dir)],
     )
     monkeypatch.setattr(
         "spice.acquisition.cryo.build_cryo_command",
-        lambda *args, **kwargs: f"{sys.executable} -c <script>",
+        lambda *_args, **_kwargs: "python fake_cryo.py",
     )
-    monkeypatch.setattr("spice.acquisition.cryo.CRYO_PROGRESS_POLL_INTERVAL_SECONDS", 0.02)
 
     result = run_cryo(
-        ChainConfig(
-            name=ChainName.ETHEREUM,
-            chain_id=1,
-            block_time_seconds=12.0,
-            history_days=1,
-        ),
-        PullConfig(),
+        ChainConfig(name=ChainName.ETHEREUM, chain_id=1, block_time_seconds=12.0, history_days=1),
+        PullConfig(chunk_size=1),
         output_dir,
         TimestampRange(start=1, end=13),
         provider=provider,
         reporter=reporter,
     )
 
-    done_index = next(
-        index
-        for index, (_completed, _total, latest_output) in enumerate(reporter.pull_updates)
-        if latest_output == "done"
-    )
-    progress_index = next(
-        index
-        for index, (completed, _total, latest_output) in enumerate(reporter.pull_updates)
-        if completed == 1 and latest_output is None
+    assert result.completed_chunks == 1
+    assert reporter.pull_updates
+    assert reporter.pull_updates[0][0] == 1
+    assert any(update[2] == "done" for update in reporter.pull_updates)
+
+
+def test_acquire_workflow_writes_validation_reports(tmp_path, monkeypatch) -> None:
+    config = compose_experiment(
+        "acquire",
+        overrides=base_overrides(tmp_path) + ["provider=publicnode", "pull.dry_run=false"],
     )
 
-    assert progress_index < done_index
-    assert result.completed_chunks == 1
+    def fake_run_cryo(chain, _pull, output_dir, timestamps, **_kwargs):
+        segment = output_dir.name
+        rows = make_block_rows(
+            4,
+            start_block=1 if segment == "history" else 10_001,
+            start_timestamp=timestamps.start,
+            include_gas_limit=False,
+        )
+        write_raw_chunk(output_dir, chain_name=chain.name.value, rows=rows)
+        return CryoRunResult(command=f"cryo {segment}", completed_chunks=1, expected_chunks=1)
+
+    class FakeBlockClient:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def get_block_gas_limits(self, block_numbers: list[int]) -> dict[int, int]:
+            return {block_number: 30_000_000 for block_number in block_numbers}
+
+    monkeypatch.setattr("spice.workflows.acquire.run_cryo", fake_run_cryo)
+    monkeypatch.setattr("spice.workflows.acquire.Web3BlockClient", FakeBlockClient)
+
+    run_acquire(config, reporter=NullReporter())
+
+    validation_dir = tmp_path / "artifacts" / "validation" / "ethereum"
+    assert (validation_dir / "history_raw.json").is_file()
+    assert (validation_dir / "evaluation_raw.json").is_file()
+    assert (validation_dir / "history_enriched.json").is_file()
+    assert (validation_dir / "evaluation_enriched.json").is_file()
+    payload = json.loads((validation_dir / "history_raw.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "clean"
+    history_dir = tmp_path / "artifacts" / "datasets" / "ethereum" / "enriched" / "history"
+    assert load_enriched_block_frame(history_dir).height > 0

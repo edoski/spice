@@ -10,7 +10,6 @@ import polars as pl
 from .block_schema import (
     ENRICHED_BLOCK_COLUMNS,
     validate_enriched_block_frame,
-    validate_enriched_block_schema,
 )
 
 
@@ -52,13 +51,6 @@ def write_block_file(path: Path, frame: pl.DataFrame) -> None:
 
 
 def load_enriched_block_frame(path: Path) -> pl.DataFrame:
-    files = iter_block_files(path)
-    for file_path in files:
-        validate_enriched_block_schema(
-            pl.read_parquet_schema(file_path),
-            context=f"Block file {file_path}",
-        )
-
     frame = read_block_dataset(path, columns=ENRICHED_BLOCK_COLUMNS).sort("block_number")
     validate_enriched_block_frame(frame)
     return frame

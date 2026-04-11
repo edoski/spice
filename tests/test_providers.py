@@ -1,42 +1,43 @@
 from __future__ import annotations
 
-from spice.acquisition.rpc_providers import (
-    RpcProviderName,
-    resolve_acquisition_providers,
-    resolve_rpc_provider,
-)
-from spice.core.config import ChainName
-from spice.core.settings import RuntimeSettings
+from types import SimpleNamespace
+
+from spice.acquisition.provider import build_web3, redact_sensitive_text
+from spice.acquisition.rpc import Web3BlockClient
+from spice.core.config import ChainName, ProviderConfig, RpcProviderName
 
 
-def test_resolve_direct_provider_uses_runtime_settings() -> None:
-    settings = RuntimeSettings(
-        rpc_provider=RpcProviderName.DIRECT,
-        ethereum_rpc_url="https://eth.example.test",
-        polygon_rpc_url="https://polygon.example.test",
-        avalanche_rpc_url="https://avax.example.test",
+def _provider(endpoint: str = "https://rpc.example.test") -> ProviderConfig:
+    return ProviderConfig(
+        name=RpcProviderName.DIRECT,
+        endpoints={"ethereum": endpoint},
+        references={"ethereum": "$ETHEREUM_RPC_URL"},
     )
 
-    provider = resolve_rpc_provider(chains=(ChainName.ETHEREUM,), settings=settings)
 
-    assert provider.name is RpcProviderName.DIRECT
-    assert provider.url_for(ChainName.ETHEREUM) == "https://eth.example.test"
-    assert provider.reference_for(ChainName.ETHEREUM) == "$ETHEREUM_RPC_URL"
+def test_build_web3_uses_configured_endpoint() -> None:
+    web3 = build_web3(_provider(), ChainName.ETHEREUM)
+
+    assert web3.provider is not None
+    assert web3.provider.endpoint_uri == "https://rpc.example.test"
 
 
-def test_resolve_acquisition_providers_supports_distinct_pull_and_enrich() -> None:
-    settings = RuntimeSettings(
-        rpc_provider=RpcProviderName.PUBLICNODE,
-        alchemy_api_key="test-key",
+def test_redact_sensitive_text_masks_endpoint() -> None:
+    text = "rpc=https://rpc.example.test"
+
+    assert redact_sensitive_text(text, _provider()) == "rpc=***"
+
+
+def test_web3_block_client_reads_gas_limits(monkeypatch) -> None:
+    class FakeEth:
+        def get_block(self, block_number: int) -> dict[str, int]:
+            return {"gasLimit": 30_000_000 + block_number}
+
+    monkeypatch.setattr(
+        "spice.acquisition.rpc.build_web3",
+        lambda _provider, _chain_name: SimpleNamespace(eth=FakeEth()),
     )
 
-    providers = resolve_acquisition_providers(
-        pull_provider_name=RpcProviderName.ALCHEMY,
-        enrich_provider_name=RpcProviderName.PUBLICNODE,
-        chains=(ChainName.ETHEREUM,),
-        settings=settings,
-    )
+    client = Web3BlockClient(_provider(), ChainName.ETHEREUM)
 
-    assert providers.pull.name is RpcProviderName.ALCHEMY
-    assert providers.enrich.name is RpcProviderName.PUBLICNODE
-    assert "test-key" in providers.pull.url_for(ChainName.ETHEREUM)
+    assert client.get_block_gas_limits([1, 2]) == {1: 30_000_001, 2: 30_000_002}

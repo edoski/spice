@@ -1,0 +1,13 @@
+defaults:
+  - base
+  - _self_
+
+name: direct
+endpoints:
+  ethereum: ${oc.env:ETHEREUM_RPC_URL,""}
+  polygon: ${oc.env:POLYGON_RPC_URL,""}
+  avalanche: ${oc.env:AVALANCHE_RPC_URL,""}
+references:
+  ethereum: $ETHEREUM_RPC_URL
+  polygon: $POLYGON_RPC_URL
+  avalanche: $AVALANCHE_RPC_URL

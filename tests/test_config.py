@@ -1,40 +1,38 @@
 from __future__ import annotations
 
 import pytest
-import yaml
 
-from spice.core.config import ChainName, ExperimentConfig
-from tests.support import build_test_config, write_config
+from tests.support import base_overrides, compose_experiment
 
 
-def test_experiment_config_loads_and_resolves_chain(tmp_path) -> None:
-    config_path = tmp_path / "config.yaml"
-    output_root = tmp_path / "artifacts"
-    write_config(config_path, output_root=output_root)
+def test_hydra_train_config_composes_and_resolves_paths(tmp_path) -> None:
+    config = compose_experiment(
+        "train",
+        overrides=base_overrides(tmp_path) + ["max_delay_seconds=24", "model=transformer"],
+    )
 
-    config = ExperimentConfig.load(config_path)
-
-    assert config.output_root == output_root
-    assert config.lookback_seconds == 120
-    assert config.max_delay_seconds == [36]
-    assert config.resolve_chain(ChainName.ETHEREUM).chain_id == 1
-
-
-def test_experiment_config_rejects_invalid_split_sum(tmp_path) -> None:
-    config_path = tmp_path / "config.yaml"
-    payload = build_test_config(tmp_path / "artifacts")
-    payload["split"] = {"train_fraction": 0.8, "validation_fraction": 0.2}
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
-
-    with pytest.raises(ValueError, match="must be less than 1"):
-        ExperimentConfig.load(config_path)
+    assert config.task == "train"
+    assert config.max_delay_seconds == 24
+    assert config.model.family.value == "transformer"
+    assert config.paths.artifact_root.endswith("/transformer/24s")
+    assert config.paths.raw_history_dir.endswith("/datasets/ethereum/raw/history")
 
 
-def test_experiment_config_rejects_unknown_top_level_keys(tmp_path) -> None:
-    config_path = tmp_path / "config.yaml"
-    payload = build_test_config(tmp_path / "artifacts")
-    payload["unexpected_option"] = True
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+def test_direct_provider_reads_env_interpolation(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ETHEREUM_RPC_URL", "https://eth.example.test")
+    config = compose_experiment(
+        "acquire",
+        overrides=base_overrides(tmp_path) + ["provider=direct"],
+    )
 
-    with pytest.raises(Exception, match="Extra inputs are not permitted"):
-        ExperimentConfig.load(config_path)
+    assert config.provider.endpoint_for(config.chain.name) == "https://eth.example.test"
+    assert config.provider.reference_for(config.chain.name) == "$ETHEREUM_RPC_URL"
+
+
+def test_invalid_transformer_config_fails_early(tmp_path) -> None:
+    with pytest.raises(ValueError, match="d_model must be divisible by nhead"):
+        compose_experiment(
+            "train",
+            overrides=base_overrides(tmp_path)
+            + ["model=transformer", "model.d_model=126", "model.nhead=8"],
+        )

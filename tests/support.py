@@ -2,62 +2,39 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any
 
 import polars as pl
-import yaml
+from hydra import compose, initialize_config_dir
 
+from spice.core.config import ExperimentConfig, coerce_config
 from spice.core.constants import EVALUATION_START_TS
 
-
-def build_test_config(output_root: Path) -> dict[str, Any]:
-    return {
-        "output_root": str(output_root),
-        "max_delay_seconds": [36],
-        "lookback_seconds": 120,
-        "target_anchor_count": 48,
-        "pull": {
-            "requests_per_second": 10,
-            "max_concurrent_requests": 2,
-            "max_concurrent_chunks": 1,
-            "chunk_size": 1000,
-        },
-        "split": {
-            "train_fraction": 0.7,
-            "validation_fraction": 0.15,
-        },
-        "training": {
-            "learning_rate": 0.0003,
-            "weight_decay": 0.01,
-            "effective_batch_size": 8,
-            "max_epochs": 1,
-            "early_stopping_patience": 1,
-            "early_stopping_min_delta": 0.0001,
-            "gradient_clip_norm": 1.0,
-            "alpha": 1.0,
-            "beta": 0.25,
-            "device": "cpu",
-            "seed": 2026,
-        },
-        "simulation": {
-            "window_seconds": 600,
-            "arrival_rate_per_second": 0.02,
-            "repetitions": 3,
-            "seed": 2026,
-        },
-        "chains": [
-            {
-                "name": "ethereum",
-                "chain_id": 1,
-                "block_time_seconds": 12.0,
-                "history_days": 1,
-            }
-        ],
-    }
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CONF_DIR = REPO_ROOT / "src" / "spice" / "conf"
 
 
-def write_config(path: Path, *, output_root: Path) -> None:
-    path.write_text(yaml.safe_dump(build_test_config(output_root)), encoding="utf-8")
+def compose_experiment(config_name: str, *, overrides: list[str] | None = None) -> ExperimentConfig:
+    with initialize_config_dir(version_base=None, config_dir=str(CONF_DIR)):
+        cfg = compose(config_name=config_name, overrides=overrides or [])
+    return coerce_config(cfg, task=config_name)
+
+
+def base_overrides(tmp_path: Path) -> list[str]:
+    return [
+        f"runtime.output_root={tmp_path / 'artifacts'}",
+        "tracking.enabled=false",
+        "training.device=cpu",
+        "training.max_epochs=1",
+        "training.effective_batch_size=8",
+        "training.early_stopping_patience=1",
+        "training.log_every_n_steps=1",
+        "simulation.window_seconds=600",
+        "simulation.arrival_rate_per_second=0.02",
+        "simulation.repetitions=3",
+        "chain.history_days=1",
+        "lookback_seconds=120",
+        "target_anchor_count=48",
+    ]
 
 
 def make_block_rows(
@@ -141,14 +118,3 @@ def write_raw_chunk(
         dataset_dir / f"{chain_name}__blocks__{start_block}_to_{end_block}.parquet",
         rows,
     )
-
-
-def snapshot_dataset_dir(
-    output_root: Path,
-    *,
-    chain_name: str,
-    snapshot_name: str,
-    dataset_kind: str,
-    segment: str,
-) -> Path:
-    return output_root / "datasets" / chain_name / snapshot_name / dataset_kind / segment

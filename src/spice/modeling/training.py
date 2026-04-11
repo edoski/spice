@@ -1,14 +1,15 @@
-"""Model training utilities."""
+"""Training utilities backed by Lightning."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
+import lightning as L
 import numpy as np
 import torch
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from numpy.typing import NDArray
-from torch import nn
-from torch.utils.data import DataLoader
 
 from ..core.config import TrainingConfig
 from ..core.console import NullReporter, Reporter
@@ -18,22 +19,15 @@ from ._runtime import (
 )
 from ._runtime import (
     build_sequence_loader,
+    choose_microbatch_size,
     resolve_device,
     set_global_seed,
 )
-from .evaluation import BatchMetrics, compute_batch_metrics
-from .models import ModelOutputs, TemporalModel
-from .torch_datasets import SequenceBatch, build_class_weights
+from .evaluation import compute_batch_metrics
+from .lightning_module import EpochMetrics, TemporalLightningModule, mean_metrics
+from .torch_datasets import build_class_weights
 
 IntVector = NDArray[np.int64]
-
-
-@dataclass(slots=True)
-class EpochMetrics:
-    total_loss: float
-    accuracy: float
-    mean_cost_over_optimum: float
-    mean_profit_over_baseline: float
 
 
 @dataclass(slots=True)
@@ -41,87 +35,38 @@ class TrainingResult:
     best_epoch: int
     train_history: list[EpochMetrics]
     validation_history: list[EpochMetrics]
+    best_checkpoint_path: Path | None
 
 
-def _mean_metrics(metrics: list[BatchMetrics]) -> EpochMetrics:
-    if not metrics:
-        raise ValueError("Cannot summarize an empty metric list")
-    denominator = sum(item.count for item in metrics)
-    total_loss_sum = sum(item.total_loss_sum for item in metrics)
-    correct_count = sum(item.correct_count for item in metrics)
-    realized_fee_sum = sum(item.realized_fee_sum for item in metrics)
-    baseline_fee_sum = sum(item.baseline_fee_sum for item in metrics)
-    optimal_fee_sum = sum(item.optimal_fee_sum for item in metrics)
-    return EpochMetrics(
-        total_loss=total_loss_sum / denominator,
-        accuracy=correct_count / denominator,
-        mean_cost_over_optimum=(realized_fee_sum - optimal_fee_sum) / optimal_fee_sum,
-        mean_profit_over_baseline=(baseline_fee_sum - realized_fee_sum) / baseline_fee_sum,
-    )
+def _trainer_device_args(device_name: str) -> tuple[str, int | str | list[int]]:
+    resolved = resolve_device(device_name)
+    if resolved.type == "cuda":
+        if resolved.index is None:
+            return "gpu", 1
+        return "gpu", [resolved.index]
+    if resolved.type == "mps":
+        return "mps", 1
+    return "cpu", 1
 
 
-def _run_epoch(
-    model: TemporalModel,
-    loader: DataLoader[SequenceBatch],
-    *,
-    optimizer: torch.optim.Optimizer | None,
-    class_weights: torch.Tensor,
-    config: TrainingConfig,
-    device: torch.device,
-    accumulation_steps: int,
-) -> EpochMetrics:
-    is_training = optimizer is not None
-    model.train(is_training)
-    ce_loss = nn.CrossEntropyLoss(weight=class_weights)
-    smooth_l1 = nn.SmoothL1Loss()
-    batch_metrics: list[BatchMetrics] = []
-
-    if is_training:
-        optimizer.zero_grad(set_to_none=True)
-
-    for step, batch in enumerate(loader, start=1):
-        inputs = batch["inputs"].to(device)
-        class_labels = batch["class_label"].to(device)
-        target_log_fee = batch["target_log_fee"].to(device)
-        action_log_fees = batch["action_log_fees"].to(device)
-        next_block_log_fee = batch["next_block_log_fee"].to(device)
-        optimal_log_fee = batch["optimal_log_fee"].to(device)
-
-        with torch.set_grad_enabled(is_training):
-            outputs: ModelOutputs = model(inputs)
-            block_loss = ce_loss(outputs.logits, class_labels)
-            fee_loss = smooth_l1(outputs.fee_hat, target_log_fee)
-            total_loss = config.alpha * block_loss + config.beta * fee_loss
-
-            if is_training:
-                (total_loss / accumulation_steps).backward()
-                if step % accumulation_steps == 0 or step == len(loader):
-                    nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip_norm)
-                    optimizer.step()
-                    optimizer.zero_grad(set_to_none=True)
-
-        batch_metrics.append(
-            compute_batch_metrics(
-                logits=outputs.logits.detach(),
-                total_loss=total_loss.detach(),
-                class_labels=class_labels.detach(),
-                action_log_fees=action_log_fees.detach(),
-                next_block_log_fee=next_block_log_fee.detach(),
-                optimal_log_fee=optimal_log_fee.detach(),
-            )
-        )
-
-    return _mean_metrics(batch_metrics)
+def _best_epoch(validation_history: list[EpochMetrics]) -> int:
+    if not validation_history:
+        return 1
+    return min(
+        range(len(validation_history)),
+        key=lambda index: validation_history[index].total_loss,
+    ) + 1
 
 
 def train_model(
-    model: TemporalModel,
+    model: torch.nn.Module,
     *,
     store: TemporalDatasetStore,
     train_sample_indices: IntVector,
     validation_sample_indices: IntVector,
     lookback_steps: int,
     training_config: TrainingConfig,
+    artifact_dir: Path,
     reporter: Reporter | None = None,
 ) -> TrainingResult:
     reporter = reporter or NullReporter()
@@ -129,14 +74,19 @@ def train_model(
         raise ValueError("Train and validation sample selections must both be non-empty")
 
     set_global_seed(training_config.seed)
+    L.seed_everything(training_config.seed, workers=True)
     device = resolve_device(training_config.device)
-    model.to(device)
+    microbatch_size = choose_microbatch_size(training_config.effective_batch_size, device)
+    accumulation_steps = resolve_accumulation_steps(
+        training_config.effective_batch_size,
+        microbatch_size,
+    )
+
     class_weights = build_class_weights(
         store.class_labels,
         train_sample_indices,
         store.action_count,
-    ).to(device)
-
+    )
     train_loader = build_sequence_loader(
         store,
         train_sample_indices,
@@ -151,82 +101,67 @@ def train_model(
         effective_batch_size=training_config.effective_batch_size,
         device=device,
     )
-    accumulation_steps = resolve_accumulation_steps(
-        training_config.effective_batch_size,
-        train_loader.batch_size or training_config.effective_batch_size,
+
+    module = TemporalLightningModule(
+        model,
+        class_weights=class_weights,
+        action_count=store.action_count,
+        training_config=training_config,
     )
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=training_config.learning_rate,
-        weight_decay=training_config.weight_decay,
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=artifact_dir / "checkpoints",
+        filename="epoch={epoch:02d}-validation_loss={validation_loss:.6f}",
+        monitor="validation_loss",
+        mode="min",
+        save_top_k=1,
+        save_last=False,
     )
+    early_stopping = EarlyStopping(
+        monitor="validation_loss",
+        mode="min",
+        patience=training_config.early_stopping_patience,
+        min_delta=training_config.early_stopping_min_delta,
+    )
+    accelerator, devices = _trainer_device_args(training_config.device)
+    trainer = L.Trainer(
+        accelerator=accelerator,
+        devices=devices,
+        max_epochs=training_config.max_epochs,
+        callbacks=[checkpoint_callback, early_stopping],
+        deterministic=training_config.deterministic,
+        gradient_clip_val=training_config.gradient_clip_norm,
+        accumulate_grad_batches=accumulation_steps,
+        logger=False,
+        enable_checkpointing=True,
+        enable_model_summary=False,
+        log_every_n_steps=training_config.log_every_n_steps,
+        num_sanity_val_steps=0,
+        default_root_dir=str(artifact_dir),
+    )
+    reporter.log(
+        "training started "
+        f"(accelerator={accelerator}, devices={devices}, microbatch={microbatch_size})"
+    )
+    trainer.fit(module, train_dataloaders=train_loader, val_dataloaders=validation_loader)
 
-    best_epoch = 1
-    best_loss = float("inf")
-    patience_left = training_config.early_stopping_patience
-    best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
-    train_history: list[EpochMetrics] = []
-    validation_history: list[EpochMetrics] = []
-    reporter.start_training(total_epochs=training_config.max_epochs)
-
-    for epoch in range(training_config.max_epochs):
-        train_metrics = _run_epoch(
-            model,
-            train_loader,
-            optimizer=optimizer,
-            class_weights=class_weights,
-            config=training_config,
-            device=device,
-            accumulation_steps=accumulation_steps,
-        )
-        validation_metrics = _run_epoch(
-            model,
-            validation_loader,
-            optimizer=None,
-            class_weights=class_weights,
-            config=training_config,
-            device=device,
-            accumulation_steps=1,
-        )
-        train_history.append(train_metrics)
-        validation_history.append(validation_metrics)
-
-        improved = validation_metrics.total_loss < (
-            best_loss - training_config.early_stopping_min_delta
-        )
-        if improved:
-            best_loss = validation_metrics.total_loss
-            best_epoch = epoch + 1
-            best_state = {
-                key: value.detach().cpu().clone()
-                for key, value in model.state_dict().items()
-            }
-            patience_left = training_config.early_stopping_patience
-        else:
-            patience_left -= 1
-
-        reporter.training_epoch(
-            epoch=epoch + 1,
-            total_epochs=training_config.max_epochs,
-            train_metrics=train_metrics,
-            validation_metrics=validation_metrics,
-            best_epoch=best_epoch,
-            patience_left=patience_left,
-        )
-        if patience_left <= 0:
-            break
-
-    model.load_state_dict(best_state)
-    reporter.finish_training()
+    if checkpoint_callback.best_model_path:
+        state = torch.load(checkpoint_callback.best_model_path, map_location="cpu")
+        module.load_state_dict(state["state_dict"])
+    reporter.log("training finished")
     return TrainingResult(
-        best_epoch=best_epoch,
-        train_history=train_history,
-        validation_history=validation_history,
+        best_epoch=_best_epoch(module.validation_history),
+        train_history=module.train_history,
+        validation_history=module.validation_history,
+        best_checkpoint_path=(
+            Path(checkpoint_callback.best_model_path)
+            if checkpoint_callback.best_model_path
+            else None
+        ),
     )
 
 
 def evaluate_model(
-    model: TemporalModel,
+    model: torch.nn.Module,
     *,
     store: TemporalDatasetStore,
     sample_indices: IntVector,
@@ -238,9 +173,12 @@ def evaluate_model(
         raise ValueError("sample_indices must be non-empty")
     device = resolve_device(training_config.device)
     model.to(device)
+    model.eval()
     if class_weights is None:
         class_weights = build_class_weights(store.class_labels, sample_indices, store.action_count)
     class_weights = class_weights.to(device)
+    ce_loss = torch.nn.CrossEntropyLoss(weight=class_weights)
+    smooth_l1 = torch.nn.SmoothL1Loss()
     loader = build_sequence_loader(
         store,
         sample_indices,
@@ -248,12 +186,24 @@ def evaluate_model(
         effective_batch_size=training_config.effective_batch_size,
         device=device,
     )
-    return _run_epoch(
-        model,
-        loader,
-        optimizer=None,
-        class_weights=class_weights,
-        config=training_config,
-        device=device,
-        accumulation_steps=1,
-    )
+    metrics = []
+    with torch.no_grad():
+        for batch in loader:
+            inputs = batch["inputs"].to(device)
+            class_labels = batch["class_label"].to(device)
+            target_log_fee = batch["target_log_fee"].to(device)
+            outputs = model(inputs)
+            block_loss = ce_loss(outputs.logits, class_labels)
+            fee_loss = smooth_l1(outputs.fee_hat, target_log_fee)
+            total_loss = training_config.alpha * block_loss + training_config.beta * fee_loss
+            metrics.append(
+                compute_batch_metrics(
+                    logits=outputs.logits.detach(),
+                    total_loss=total_loss.detach(),
+                    class_labels=class_labels.detach(),
+                    action_log_fees=batch["action_log_fees"].to(device).detach(),
+                    next_block_log_fee=batch["next_block_log_fee"].to(device).detach(),
+                    optimal_log_fee=batch["optimal_log_fee"].to(device).detach(),
+                )
+            )
+    return mean_metrics(metrics)

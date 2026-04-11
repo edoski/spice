@@ -1,0 +1,23 @@
+run:
+  chain: ethereum
+  model: lstm
+  provider: publicnode
+  output_root: artifacts
+  max_delay_seconds: 36
+  lookback_seconds: 600
+  target_anchor_count: 400000
+
+training:
+  device: auto
+  max_epochs: 50
+  effective_batch_size: 64
+  early_stopping_patience: 8
+
+simulation:
+  window_seconds: 7200
+  arrival_rate_per_second: 0.05
+  repetitions: 50
+
+tuning:
+  n_trials: 20
+  prune: true

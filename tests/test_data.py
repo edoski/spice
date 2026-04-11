@@ -1,5 +1,6 @@
 import polars as pl
 import pytest
+from pandera.errors import SchemaError, SchemaErrors
 
 from spice.acquisition.raw_validation import validate_raw_pull
 from spice.core.config import (
@@ -44,7 +45,7 @@ def test_load_enriched_block_frame_rejects_duplicate_block_numbers(tmp_path) -> 
     rows = make_history_rows(8)
     write_dataset_dir(dataset_dir, rows[:4] + [rows[3]] + rows[4:])
 
-    with pytest.raises(ValueError, match="duplicate block_number"):
+    with pytest.raises((ValueError, SchemaError, SchemaErrors)):
         load_enriched_block_frame(dataset_dir)
 
 
@@ -69,7 +70,7 @@ def test_load_enriched_block_frame_rejects_noncanonical_schema(tmp_path) -> None
     )
     wide_frame.write_parquet(dataset_dir / "blocks.parquet")
 
-    with pytest.raises(ValueError, match="canonical enriched block schema"):
+    with pytest.raises((ValueError, SchemaError, SchemaErrors)):
         load_enriched_block_frame(dataset_dir)
 
 

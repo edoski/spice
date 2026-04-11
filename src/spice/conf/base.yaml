@@ -1,0 +1,55 @@
+defaults:
+  - chain: ethereum
+  - model: lstm
+  - provider: publicnode
+  - training: default
+  - simulation: default
+  - tracking: mlflow
+  - tuning: default
+  - runtime: local
+  - _self_
+
+max_delay_seconds: 36
+lookback_seconds: 600
+target_anchor_count: 400000
+
+pull:
+  requests_per_second: 25
+  max_concurrent_requests: 2
+  max_concurrent_chunks: 1
+  chunk_size: 1000
+  dry_run: false
+  overwrite: false
+  enrich_batch_size: 100
+  max_methods_per_second: 20.0
+
+split:
+  train_fraction: 0.8
+  validation_fraction: 0.1
+
+paths:
+  output_root: ${runtime.output_root}
+  dataset_root: ${paths.output_root}/datasets/${chain.name}
+  raw_root: ${paths.dataset_root}/raw
+  raw_history_dir: ${paths.raw_root}/history
+  raw_evaluation_dir: ${paths.raw_root}/evaluation
+  enriched_root: ${paths.dataset_root}/enriched
+  enriched_history_dir: ${paths.enriched_root}/history
+  enriched_evaluation_dir: ${paths.enriched_root}/evaluation
+  validation_root: ${paths.output_root}/validation/${chain.name}
+  validation_report_dir: ${paths.validation_root}
+  artifact_root: ${paths.output_root}/models/${chain.name}/${model.family}/${max_delay_seconds}s
+  checkpoint_dir: ${paths.artifact_root}/checkpoints
+  train_report_path: ${paths.artifact_root}/train_report.json
+  simulation_root: ${paths.output_root}/simulations/${chain.name}/${model.family}/${max_delay_seconds}s
+  simulation_report_path: ${paths.simulation_root}/simulation_report.json
+  tuning_root: ${paths.output_root}/tuning/${chain.name}/${model.family}/${max_delay_seconds}s
+  mlruns_dir: ${paths.output_root}/mlruns
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: ${runtime.hydra_run_dir}
+  sweep:
+    dir: ${runtime.hydra_sweep_dir}

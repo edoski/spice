@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import Literal
 
+import pandera.polars as pa
 import polars as pl
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -178,7 +179,6 @@ def _summarize_file(
             f"Malformed raw block filename: {path.name}. "
             "Expected <chain>__blocks__<start>_to_<end>."
         )
-
     filename_chain = match.group("chain")
     range_start = int(match.group("start"))
     range_end = int(match.group("end"))
@@ -199,7 +199,6 @@ def _summarize_file(
         expected_end_timestamp=expected_end_timestamp,
     )
     duplicate_count, non_sequential_transition_count = _scan_block_transitions(block_numbers)
-
     return RawFileSummary(
         path=path,
         filename_chain=filename_chain,
@@ -219,6 +218,122 @@ def _summarize_file(
     )
 
 
+def _summary_frame(summaries: list[RawFileSummary]) -> pl.DataFrame:
+    rows: list[dict[str, object]] = []
+    previous_range_end: int | None = None
+    previous_last_block: int | None = None
+    for summary in summaries:
+        gap_after_previous = 0
+        overlap_with_previous = 0
+        duplicate_transition_from_previous = 0
+        block_order_violation = False
+        if previous_range_end is not None:
+            if summary.range_start > previous_range_end + 1:
+                gap_after_previous = summary.range_start - previous_range_end - 1
+            elif summary.range_start <= previous_range_end:
+                overlap_with_previous = previous_range_end - summary.range_start + 1
+        if previous_last_block is not None:
+            if summary.first_block_number == previous_last_block:
+                duplicate_transition_from_previous = 1
+            elif summary.first_block_number < previous_last_block:
+                block_order_violation = True
+        rows.append(
+            {
+                **summary.model_dump(mode="json"),
+                "path": str(summary.path),
+                "expected_row_count": summary.range_end - summary.range_start + 1,
+                "gap_after_previous": gap_after_previous,
+                "overlap_with_previous": overlap_with_previous,
+                "duplicate_transition_from_previous": duplicate_transition_from_previous,
+                "block_order_violation": block_order_violation,
+            }
+        )
+        previous_range_end = summary.range_end
+        previous_last_block = summary.last_block_number
+    return pl.DataFrame(rows) if rows else pl.DataFrame()
+
+
+def _build_summary_schema(chunk_size: int) -> pa.DataFrameSchema:
+    def _frame(data: object) -> pl.DataFrame:
+        return data.lazyframe.collect()  # type: ignore[union-attr]
+
+    return pa.DataFrameSchema(
+        {
+            "path": pa.Column(str, nullable=False, unique=True),
+            "filename_chain": pa.Column(str, nullable=False),
+            "range_start": pa.Column(pl.Int64, nullable=False),
+            "range_end": pa.Column(pl.Int64, nullable=False),
+            "row_count": pa.Column(pl.Int64, nullable=False),
+            "first_block_number": pa.Column(pl.Int64, nullable=False),
+            "last_block_number": pa.Column(pl.Int64, nullable=False),
+            "first_timestamp": pa.Column(pl.Int64, nullable=False),
+            "last_timestamp": pa.Column(pl.Int64, nullable=False),
+            "chain_id_mismatch_count": pa.Column(pl.Int64, nullable=False),
+            "duplicate_count": pa.Column(pl.Int64, nullable=False),
+            "non_sequential_transition_count": pa.Column(pl.Int64, nullable=False),
+            "below_start_count": pa.Column(pl.Int64, nullable=False),
+            "above_end_count": pa.Column(pl.Int64, nullable=False),
+            "internal_timestamp_violation": pa.Column(pl.Boolean, nullable=False),
+            "expected_row_count": pa.Column(pl.Int64, nullable=False),
+            "gap_after_previous": pa.Column(pl.Int64, nullable=False),
+            "overlap_with_previous": pa.Column(pl.Int64, nullable=False),
+            "duplicate_transition_from_previous": pa.Column(pl.Int64, nullable=False),
+            "block_order_violation": pa.Column(pl.Boolean, nullable=False),
+        },
+        strict=True,
+        checks=[
+            pa.Check(
+                lambda data: (_frame(data)["range_end"] >= _frame(data)["range_start"]).all(),
+                error="Invalid raw block filename range(s)",
+            ),
+            pa.Check(
+                lambda data: (
+                    _frame(data)["row_count"] == _frame(data)["expected_row_count"]
+                ).all(),
+                error="row_count does not match filename range size",
+            ),
+            pa.Check(
+                lambda data: (_frame(data)["row_count"] <= chunk_size).all(),
+                error="row_count exceeds configured chunk_size",
+            ),
+            pa.Check(
+                lambda data: (
+                    _frame(data)["first_block_number"] == _frame(data)["range_start"]
+                ).all(),
+                error="first block_number does not match filename start",
+            ),
+            pa.Check(
+                lambda data: (_frame(data)["last_block_number"] == _frame(data)["range_end"]).all(),
+                error="last block_number does not match filename end",
+            ),
+            pa.Check(
+                lambda data: (_frame(data)["non_sequential_transition_count"] == 0).all(),
+                error="non-sequential block transitions detected inside a file",
+            ),
+            pa.Check(
+                lambda data: (_frame(data)["chain_id_mismatch_count"] == 0).all(),
+                error="chain_id mismatch detected",
+            ),
+            pa.Check(
+                lambda data: (_frame(data)["gap_after_previous"] == 0).all(),
+                error="cross-file block-range gaps detected",
+            ),
+            pa.Check(
+                lambda data: (_frame(data)["overlap_with_previous"] == 0).all(),
+                error="cross-file block-range overlaps detected",
+            ),
+            pa.Check(
+                lambda data: (_frame(data)["duplicate_transition_from_previous"] == 0).all(),
+                error="duplicate cross-file block transitions detected",
+            ),
+            pa.Check(
+                lambda data: (~_frame(data)["block_order_violation"]).all(),
+                error="cross-file block ordering violation detected",
+            ),
+        ],
+    )
+
+
 def _merge_summary_into_report(report: RawPullValidationReport, summary: RawFileSummary) -> None:
     report.row_count += summary.row_count
     report.chain_id_mismatch_count += summary.chain_id_mismatch_count
@@ -230,41 +345,6 @@ def _merge_summary_into_report(report: RawPullValidationReport, summary: RawFile
         report.first_timestamp = summary.first_timestamp
     report.last_block_number = summary.last_block_number
     report.last_timestamp = summary.last_timestamp
-
-
-def _summary_errors(summary: RawFileSummary, chunk_size: int) -> list[str]:
-    expected_row_count = summary.range_end - summary.range_start + 1
-    errors: list[str] = []
-    if summary.row_count != expected_row_count:
-        errors.append(
-            f"{summary.path.name}: row_count={summary.row_count} does not match "
-            f"filename range size={expected_row_count}"
-        )
-    if summary.row_count > chunk_size:
-        errors.append(
-            f"{summary.path.name}: row_count={summary.row_count} exceeds chunk_size={chunk_size}"
-        )
-    if summary.non_sequential_transition_count:
-        errors.append(
-            f"{summary.path.name}: detected {summary.non_sequential_transition_count} "
-            "non-sequential block transition(s) inside the file"
-        )
-    if summary.first_block_number != summary.range_start:
-        errors.append(
-            f"{summary.path.name}: first block {summary.first_block_number} does not match "
-            f"filename start {summary.range_start}"
-        )
-    if summary.last_block_number != summary.range_end:
-        errors.append(
-            f"{summary.path.name}: last block {summary.last_block_number} does not match "
-            f"filename end {summary.range_end}"
-        )
-    if summary.internal_timestamp_violation:
-        errors.append(
-            f"{summary.path.name}: timestamps drift outside the expected window "
-            "away from dataset edges"
-        )
-    return errors
 
 
 def _finalize_timestamp_drift(report: RawPullValidationReport) -> None:
@@ -310,7 +390,14 @@ def validate_raw_pull(
     )
     chunk_size = expected_chunk_size or _read_expected_chunk_size(dataset_path, expected_chain_name)
     summaries: list[RawFileSummary] = []
-    for path in iter_block_files(dataset_path):
+    try:
+        paths = iter_block_files(dataset_path)
+    except ValueError as exc:
+        report.errors.append(str(exc))
+        _finalize_status(report)
+        return report
+
+    for path in paths:
         try:
             summaries.append(
                 _summarize_file(
@@ -326,68 +413,35 @@ def validate_raw_pull(
     summaries.sort(key=lambda item: (item.range_start, item.range_end, str(item.path)))
     report.file_count = len(summaries)
 
-    previous_summary: RawFileSummary | None = None
-    previous_last_block_number: int | None = None
+    summary_frame = _summary_frame(summaries)
+    if summary_frame.height:
+        try:
+            _build_summary_schema(chunk_size).validate(summary_frame)
+        except Exception as exc:
+            report.errors.append(str(exc))
+
     for summary in summaries:
         _merge_summary_into_report(report, summary)
-        report.errors.extend(_summary_errors(summary, chunk_size))
 
-        if previous_summary is not None:
-            if summary.range_start > previous_summary.range_end + 1:
-                report.gap_count += 1
-            elif summary.range_start <= previous_summary.range_end:
-                report.overlap_count += 1
+    if summary_frame.height:
+        report.gap_count = int(summary_frame["gap_after_previous"].gt(0).sum())
+        report.overlap_count = int(summary_frame["overlap_with_previous"].gt(0).sum())
+        report.duplicate_count += int(summary_frame["duplicate_transition_from_previous"].sum())
+        if report.gap_count:
+            report.errors.append(f"Detected {report.gap_count} block-range gap(s) across files")
+        if report.overlap_count:
+            report.errors.append(f"Detected {report.overlap_count} overlapping file-range pair(s)")
+        if int(summary_frame["block_order_violation"].sum()):
+            report.errors.append("Detected cross-file block ordering violation(s)")
 
-        if previous_last_block_number is not None:
-            if summary.first_block_number == previous_last_block_number:
-                report.duplicate_count += 1
-            elif summary.first_block_number < previous_last_block_number:
-                report.errors.append(
-                    f"{summary.path.name}: first block {summary.first_block_number} "
-                    f"is out of order after previous block {previous_last_block_number}"
-                )
-
-        previous_summary = summary
-        previous_last_block_number = summary.last_block_number
-
-    if report.gap_count:
-        report.errors.append(f"Detected {report.gap_count} block-range gap(s) across files")
-    if report.overlap_count:
-        report.errors.append(f"Detected {report.overlap_count} overlapping file-range pair(s)")
-    if report.duplicate_count:
-        report.errors.append(
-            f"Detected {report.duplicate_count} duplicate block_number transition(s)"
-        )
-    if report.chain_id_mismatch_count:
-        report.errors.append(
-            f"Detected {report.chain_id_mismatch_count} row(s) with chain_id different "
-            f"from {expected_chain_id}"
-        )
+        if int(summary_frame["non_sequential_transition_count"].sum()):
+            report.errors.append("Detected non-sequential block transition(s) inside files")
+        if report.chain_id_mismatch_count:
+            report.errors.append(
+                f"Detected {report.chain_id_mismatch_count} row(s) with chain_id different "
+                f"from {expected_chain_id}"
+            )
 
     _finalize_timestamp_drift(report)
     _finalize_status(report)
     return report
-
-
-def format_raw_pull_validation_report(report: RawPullValidationReport) -> list[str]:
-    lines = [
-        f"dataset_path={report.dataset_path}",
-        f"expected_start_timestamp={report.expected_start_timestamp}",
-        f"expected_end_timestamp={report.expected_end_timestamp}",
-        f"file_count={report.file_count}",
-        f"row_count={report.row_count}",
-        f"first_block_number={report.first_block_number}",
-        f"last_block_number={report.last_block_number}",
-        f"first_timestamp={report.first_timestamp}",
-        f"last_timestamp={report.last_timestamp}",
-        f"gap_count={report.gap_count}",
-        f"overlap_count={report.overlap_count}",
-        f"duplicate_count={report.duplicate_count}",
-        f"chain_id_mismatch_count={report.chain_id_mismatch_count}",
-        f"below_start_count={report.below_start_count}",
-        f"above_end_count={report.above_end_count}",
-        f"status={report.status}",
-    ]
-    lines.extend(f"warning={warning}" for warning in report.warnings)
-    lines.extend(f"error={error}" for error in report.errors)
-    return lines

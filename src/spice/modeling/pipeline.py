@@ -81,6 +81,7 @@ class TrainingRunResult:
     training_result: TrainingResult
     test_metrics: EpochMetrics
 
+
 def _slice_frame(frame: pl.DataFrame, selection: slice) -> pl.DataFrame:
     start = 0 if selection.start is None else selection.start
     stop = frame.height if selection.stop is None else selection.stop
@@ -182,6 +183,7 @@ def run_training(
     history_block_path: Path,
     *,
     spec: TrainingSpec,
+    artifact_dir: Path,
     reporter: Reporter | None = None,
 ) -> TrainingRunResult:
     blocks = load_enriched_block_frame(history_block_path)
@@ -194,6 +196,7 @@ def run_training(
         validation_sample_indices=prepared.split_indices.validation,
         lookback_steps=prepared.geometry.lookback_steps,
         training_config=spec.training,
+        artifact_dir=artifact_dir,
         reporter=reporter,
     )
     class_weights = build_class_weights(

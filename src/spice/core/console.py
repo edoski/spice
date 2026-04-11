@@ -1,11 +1,11 @@
-"""Rich-backed CLI logging and progress reporting."""
+"""Rich-backed logging and progress reporting."""
 
 from __future__ import annotations
 
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from rich.console import Console
 from rich.logging import RichHandler
@@ -18,9 +18,6 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
-
-if TYPE_CHECKING:
-    from ..modeling.training import EpochMetrics
 
 
 def configure_logging(console: Console) -> logging.Logger:
@@ -61,18 +58,6 @@ class Reporter(Protocol):
         total_blocks: int,
     ) -> None: ...
     def finish_enrich(self, *, output_dir: Path) -> None: ...
-    def start_training(self, *, total_epochs: int) -> None: ...
-    def training_epoch(
-        self,
-        *,
-        epoch: int,
-        total_epochs: int,
-        train_metrics: EpochMetrics,
-        validation_metrics: EpochMetrics,
-        best_epoch: int,
-        patience_left: int,
-    ) -> None: ...
-    def finish_training(self) -> None: ...
     def close(self) -> None: ...
 
 
@@ -113,24 +98,6 @@ class NullReporter:
     def finish_enrich(self, *, output_dir: Path) -> None:
         return None
 
-    def start_training(self, *, total_epochs: int) -> None:
-        return None
-
-    def training_epoch(
-        self,
-        *,
-        epoch: int,
-        total_epochs: int,
-        train_metrics: EpochMetrics,
-        validation_metrics: EpochMetrics,
-        best_epoch: int,
-        patience_left: int,
-    ) -> None:
-        return None
-
-    def finish_training(self) -> None:
-        return None
-
     def close(self) -> None:
         return None
 
@@ -156,7 +123,6 @@ class RichReporter(NullReporter):
         self._pull_task: TaskID | None = None
         self._enrich_files_task: TaskID | None = None
         self._enrich_blocks_task: TaskID | None = None
-        self._training_task: TaskID | None = None
         self._last_pull_output_at = 0.0
 
     def log(self, message: str, *, level: str = "info") -> None:
@@ -243,45 +209,11 @@ class RichReporter(NullReporter):
                     self.progress.update(self._enrich_blocks_task, completed=task_total)
         self.log(f"enrichment finished: {output_dir}")
 
-    def start_training(self, *, total_epochs: int) -> None:
-        if self.enabled:
-            self._training_task = self.progress.add_task("train epochs", total=total_epochs)
-        self.log(f"training started: total_epochs={total_epochs}")
-
-    def training_epoch(
-        self,
-        *,
-        epoch: int,
-        total_epochs: int,
-        train_metrics: EpochMetrics,
-        validation_metrics: EpochMetrics,
-        best_epoch: int,
-        patience_left: int,
-    ) -> None:
-        if self.enabled and self._training_task is not None:
-            self.progress.update(self._training_task, completed=epoch)
-        self.log(
-            "epoch "
-            f"{epoch}/{total_epochs} "
-            f"train_loss={train_metrics.total_loss:.6f} "
-            f"val_loss={validation_metrics.total_loss:.6f} "
-            f"val_accuracy={validation_metrics.accuracy:.4f} "
-            f"best_epoch={best_epoch} "
-            f"patience_left={patience_left}"
-        )
-
-    def finish_training(self) -> None:
-        if self.enabled and self._training_task is not None:
-            task_total = self.progress.tasks[self._training_task].total
-            if task_total is not None:
-                self.progress.update(self._training_task, completed=task_total)
-        self.log("training finished")
-
     def close(self) -> None:
         self.progress.stop()
 
     def __enter__(self) -> RichReporter:
         return self
 
-    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+    def __exit__(self, _exc_type: object, _exc: object, _tb: object) -> None:
         self.close()

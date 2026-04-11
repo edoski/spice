@@ -1,188 +1,146 @@
 # Architecture Guide
 
 This document describes the current `spice` architecture after the clean-break refactor.
-It is intentionally about the code that exists now, not the older shape of the repository.
+It is intentionally about the code that exists now.
 
 ## Design Goals
 
-- one installable namespace: `spice`
-- one config model: strict Pydantic
-- one runtime block format: Parquet
-- one settings model: `pydantic-settings`
-- one RPC transport: `HTTPX`
-- one console layer: `Rich` + stdlib `logging`
-- one feature/data engine: `Polars` + `NumPy`
+- one runtime configuration system: `Hydra`
+- one reproducibility layer: `DVC`
+- one run-tracking layer: `MLflow`
+- one training runtime: `Lightning`
+- one tuning engine: `Optuna`
+- one RPC transport stack: `web3.py`
+- one dataframe validation stack: `Pandera` + `Polars`
 - one ML runtime: `PyTorch`
 
-The codebase is organized to keep domain-specific logic custom while replacing infrastructure-heavy custom code with mature packages.
+The codebase stays aggressive about replacing infrastructure code and conservative
+about replacing research-specific logic.
 
 ## Top-Level Structure
 
 ```text
 src/spice/
-  api.py
-  cli.py
-  core/
   acquisition/
+  conf/
+  core/
   data/
   modeling/
+  workflows/
 tests/
-configs/
+dvc.yaml
+params.yaml
 ```
-
-`src/spice` remains the package root because `spice` is the public import namespace.
-The internal modules use relative imports so the code does not repeat the `spice.` prefix everywhere.
 
 ## Package Breakdown
 
 ### `core`
 
-`core` contains the narrow shared primitives used by the rest of the repo:
-
-- `config.py`: strict Pydantic models for experiment config
-- `settings.py`: environment-backed runtime settings via `BaseSettings`
-- `constants.py`: shared filenames and evaluation timestamps
-- `console.py`: reporter protocol, silent reporter, and Rich-backed CLI reporter
-
-This layer has no chain-specific logic and no model-specific logic.
+- [config.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/config.py): structured runtime config dataclasses plus Hydra/OmegaConf coercion and validation
+- [constants.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/constants.py): shared filenames and evaluation timestamps
+- [console.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/console.py): Rich-backed workflow reporting
+- [tracking.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/tracking.py): MLflow setup and structured logging helpers
 
 ### `acquisition`
 
-`acquisition` owns everything needed to go from provider settings to validated block datasets:
+- [cryo.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/cryo.py): cryo command planning and streamed execution
+- [provider.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/provider.py): thin provider config to `web3.py` bridge
+- [rpc.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/rpc.py): block gas-limit hydration client on top of `web3.py`
+- [enrich.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/enrich.py): canonical enrichment
+- [raw_validation.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/raw_validation.py): raw parquet pull validation, including Pandera-validated cross-file summary checks
 
-- `cryo.py`: pull planning plus streamed subprocess execution
-- `rpc_providers.py`: provider resolution and secret redaction
-- `rpc.py`: narrow batched JSON-RPC client over HTTPX
-- `enrich.py`: table-oriented `gas_limit` hydration
-- `raw_validation.py`: file-range and timestamp validation for raw pulls
-- `provenance.py`: persisted dataset source manifests
-- `snapshots.py`: snapshot paths, active-pointer metadata, and snapshot summaries
-
-Key invariants:
-
-- raw pulls and enrichment stay separate inside each named snapshot
-- validation is read-only
-- manifests are strict Pydantic payloads
-- snapshot activation is metadata-only
+This layer no longer contains snapshot registries, provenance manifests, or a custom JSON-RPC transport.
 
 ### `data`
 
-`data` owns the block-table and supervised-dataset math:
+- [io.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/data/io.py): block-dataset discovery and parquet IO contract
+- [block_schema.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/data/block_schema.py): canonical block schemas and Pandera dataframe validation
+- [features.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/data/features.py): feature engineering
+- [datasets.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/data/datasets.py): temporal geometry and store construction
+- [normalization.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/data/normalization.py): scaler fitting and transformation
 
-- `io.py`: Parquet-only dataset IO
-- `features.py`: Polars-based feature table construction
-- `datasets.py`: temporal geometry and array-backed store construction
-- `normalization.py`: overlap-aware weighted scaling using `StandardScaler`
+`io.py` stays custom because it is not just a parquet wrapper. It centralizes the
+repo’s dataset-path contract:
 
-Key invariants:
+- only parquet inputs are accepted
+- hidden metadata paths are ignored
+- dataset roots may be a file or directory
+- enriched loads always pass through canonical validation
 
-- runtime block datasets are Parquet only
-- enriched datasets are canonical model inputs with exactly six `Int64` block columns
-- duplicate block numbers are rejected
-- mixed chain IDs are rejected
-- train-only scaling is computed from overlapped window coverage
+The actual parquet engine is already delegated to `Polars`. Replacing this small
+adapter would not reduce real complexity.
 
 ### `modeling`
 
-`modeling` owns the ML and simulation runtime:
+- [models.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/models.py): custom model definitions using mature `torch.nn` layers
+- [lightning_module.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/lightning_module.py): Lightning training harness
+- [training.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/training.py): trainer assembly and evaluation helpers
+- [pipeline.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/pipeline.py): dataset preparation for training and inference
+- [inference.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/inference.py): prediction
+- [simulation.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/simulation.py): temporal-only Poisson simulation
+- [artifacts.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/artifacts.py): model persistence
+- [reporting.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/reporting.py): structured reports
 
-- `models.py`: LSTM, Transformer, and Transformer-LSTM baselines
-- `torch_datasets.py`: lazy sequence slicing into PyTorch batches
-- `_runtime.py`: device and loader helpers
-- `evaluation.py`: low-level batch metric aggregation
-- `training.py`: epoch loop and early stopping
-- `pipeline.py`: training/inference dataset preparation
-- `inference.py`: batched prediction
-- `simulation.py`: evaluation-day temporal simulation
-- `artifacts.py`: model persistence
-- `reporting.py`: structured train and simulation reports
+What stays custom here:
 
-Key invariants:
+- temporal dataset geometry
+- bounded-delay action semantics
+- dual-head model outputs
+- loss semantics
+- economic metrics
+- temporal-only Poisson evaluation logic
 
-- the task is bounded-delay block selection, not full trajectory forecasting
-- action `0` means next block
-- action `k` means wait `k` extra blocks beyond the next-block baseline
-- training, inference, and simulation all consume the same array-backed store contracts
+### `workflows`
 
-## Workflow
+- [acquire.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/acquire.py)
+- [train.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/train.py)
+- [simulate.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/simulate.py)
+- [tune.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/tune.py)
 
-The operational flow is:
+Each workflow exposes:
 
-1. acquire raw and enriched `history` + `evaluation` datasets into a named snapshot
-2. optionally activate that snapshot for later commands
-3. build feature tables and temporal stores from the active or selected snapshot
-4. fit a weighted train-only scaler
-5. train a baseline model and persist artifacts
-6. optionally run evaluation-day simulation from the persisted artifact
+- a callable `run(...)` function for direct execution and tests
+- a Hydra `main(...)` wrapper for installed entrypoints
 
-At the API/CLI boundary this is exposed as:
+## Workflow Graph
 
-- `acquire`
-- `train`
-- `simulate`
-- `datasets list`
-- `datasets show`
-- `datasets validate`
-- `datasets activate`
+DVC is the primary orchestration surface:
 
-## Why These Packages
+1. `acquire`
+2. `train`
+3. `simulate`
+4. `tune`
 
-The refactor deliberately replaced custom infrastructure code with mature packages where it was a clear simplification:
+Stage definitions live in [dvc.yaml](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/dvc.yaml), and DVC-facing run variables live in [params.yaml](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/params.yaml).
 
-- manual schema/config code -> `Pydantic v2`
-- manual `.env` loading -> `pydantic-settings`
-- mixed-format row IO -> `Polars` Parquet pipeline
-- `urllib` RPC transport -> `HTTPX`
-- custom scaler statistics -> `scikit-learn` `StandardScaler(sample_weight=...)`
-- ad hoc console output -> `Rich`
+## Why These Package Choices
 
-The research-specific logic remains custom:
+Selected:
 
-- temporal action semantics
-- dataset geometry
-- label construction
-- model definitions
-- loss and economic metrics
-- evaluation-day simulation rules
+- `Hydra`: replaces the custom YAML/settings loader with structured composition
+- `DVC`: replaces snapshot/provenance orchestration with stage-based reproducibility
+- `MLflow`: replaces ad hoc run bookkeeping
+- `Lightning` + `TorchMetrics`: replaces the handwritten training loop and standard metric plumbing
+- `Optuna`: provides a first-class HPO path
+- `web3.py`: replaces the custom RPC transport layer
+- `Pandera`: replaces bespoke dataframe validation while still allowing custom table derivation logic
 
-## Reports And Manifests
+Rejected:
 
-Persisted JSON boundary objects are strict Pydantic models:
-
-- raw source manifests
-- enriched source manifests
-- training artifact manifests
-- training run reports
-- simulation reports
-
-There is no multi-version schema handling in the codebase. The repository assumes one current schema.
+- `sklearn` as a model replacement
+- forecast-first time-series frameworks
+- `SimPy` for the current temporal-only simulator
+- `Prefect`, `Kedro`, and `Great Expectations`
 
 ## Tests
 
-The test suite is intentionally aligned to the current architecture only.
+The test suite now targets the new architecture only:
 
-It covers:
+- Hydra config composition and validation
+- provider construction and RPC adapters
+- Pandera-backed validation behavior
+- data preparation
+- acquisition, training, simulation, and tuning workflow smoke tests
+- MLflow local tracking smoke coverage
 
-- config parsing
-- provider resolution
-- Parquet IO and raw validation
-- enrichment and RPC retry behavior
-- dataset preparation
-- training/simulation workflows
-- console reporting behavior
-- CLI smoke paths
-
-The suite does not carry transition checks for removed modules or removed formats.
-
-## Extension Rules
-
-If the codebase grows, keep the same boundaries:
-
-- put shared config/settings/reporting primitives in `core`
-- keep network and dataset acquisition logic in `acquisition`
-- keep table math and dataset assembly in `data`
-- keep model/runtime logic in `modeling`
-- keep `api.py` as the supported Python façade
-- keep `cli.py` as the supported operational surface
-
-New work should fit one of those layers without reintroducing flat top-level module sprawl or parallel code paths.
+There are no transition tests for deleted legacy modules.

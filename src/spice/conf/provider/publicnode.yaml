@@ -1,0 +1,13 @@
+defaults:
+  - base
+  - _self_
+
+name: publicnode
+endpoints:
+  ethereum: https://ethereum-rpc.publicnode.com
+  polygon: https://polygon-bor-rpc.publicnode.com
+  avalanche: https://avalanche-c-chain-rpc.publicnode.com
+references:
+  ethereum: https://ethereum-rpc.publicnode.com
+  polygon: https://polygon-bor-rpc.publicnode.com
+  avalanche: https://avalanche-c-chain-rpc.publicnode.com

@@ -1,1 +1,1 @@
-"""Raw block pull, enrichment, RPC, and provenance modules."""
+"""Raw block pull, enrichment, RPC, and validation modules."""
