@@ -20,6 +20,8 @@ from spice.core.config import (
     TuningSpaceConfig,
     load_hydra_config,
 )
+from spice.data.datasets import derive_dataset_geometry
+from spice.features import feature_warmup_blocks
 from spice.modeling.registry import coerce_model_config
 
 TEST_EVALUATION_DATE = date(2025, 11, 9)
@@ -82,6 +84,16 @@ def base_overrides(tmp_path: Path) -> list[str]:
         "dataset.sampling.sample_count=48",
         "acquisition.history_sample_budget=48",
     ]
+
+
+def compute_required_history_blocks(config: ExperimentConfig) -> int:
+    geometry = derive_dataset_geometry(
+        lookback_seconds=config.dataset.temporal.lookback_seconds,
+        max_delay_seconds=config.dataset.temporal.max_delay_seconds,
+        block_time_seconds=config.chain.block_time_seconds,
+        feature_warmup_blocks=feature_warmup_blocks(tuple(config.feature_set.outputs)),
+    )
+    return geometry.required_block_count(config.effective_history_sample_budget)
 
 
 def make_feature_set_config() -> FeatureSetConfig:

@@ -7,7 +7,6 @@ import pytest
 from rich.console import Console
 
 from spice.acquisition.rpc import BlockPullPlan, BlockRange, TimestampRange
-from spice.acquisition.windowing import required_history_block_count
 from spice.core.console import NullReporter, create_reporter
 from spice.workflows.acquire import run as run_acquire
 from spice.workflows.simulate import run as run_simulate
@@ -15,6 +14,7 @@ from spice.workflows.train import run as run_train
 from spice.workflows.tune import run as run_tune
 from tests.support import (
     base_overrides,
+    compute_required_history_blocks,
     compose_experiment,
     make_block_rows,
     make_evaluation_rows,
@@ -85,7 +85,7 @@ def test_acquire_workflow_smoke(tmp_path, monkeypatch) -> None:
             "acquisition.history_sample_budget=4",
         ],
     )
-    required_history_blocks = required_history_block_count(config)
+    required_history_blocks = compute_required_history_blocks(config)
     block_time_seconds = int(config.chain.block_time_seconds)
     expected_history_start = (
         config.evaluation_window_start_timestamp - required_history_blocks * block_time_seconds

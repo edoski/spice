@@ -23,7 +23,6 @@ from spice.acquisition.rpc import (
     TimestampRange,
     Web3BlockClient,
 )
-from spice.acquisition.windowing import required_history_block_count
 from spice.core.console import NullReporter
 from spice.core.json import write_json
 from spice.data.io import load_block_frame
@@ -31,6 +30,7 @@ from spice.data.validation import validate_contiguous_block_frame
 from spice.workflows.acquire import run as run_acquire
 from tests.support import (
     base_overrides,
+    compute_required_history_blocks,
     compose_experiment,
     make_block_rows,
     write_dataset_dir,
@@ -296,7 +296,7 @@ def test_acquire_reuses_valid_canonical_blocks_across_provider_change(
             "acquisition.history_sample_budget=4",
         ],
     )
-    required_history_blocks = required_history_block_count(config)
+    required_history_blocks = compute_required_history_blocks(config)
     history_rows = make_block_rows(
         required_history_blocks,
         start_block=100,
@@ -406,7 +406,7 @@ def test_acquire_extension_appends_new_provider_once(tmp_path, monkeypatch) -> N
             "acquisition.history_sample_budget=4",
         ],
     )
-    required_history_blocks = required_history_block_count(config)
+    required_history_blocks = compute_required_history_blocks(config)
     history_rows = make_block_rows(
         required_history_blocks - 2,
         start_block=102,
@@ -530,7 +530,7 @@ def test_acquire_failure_preserves_last_good_canonical_dataset(tmp_path, monkeyp
             "acquisition.history_sample_budget=4",
         ],
     )
-    required_history_blocks = required_history_block_count(config)
+    required_history_blocks = compute_required_history_blocks(config)
     history_rows = make_block_rows(
         required_history_blocks - 2,
         start_block=102,

@@ -19,9 +19,10 @@ from ..acquisition.metadata import (
     provider_metadata,
 )
 from ..acquisition.rpc import RpcController, Web3BlockClient, evaluation_range
-from ..acquisition.windowing import required_history_block_count
 from ..core.config import ExperimentConfig
 from ..core.console import Reporter
+from ..data.datasets import derive_dataset_geometry
+from ..features import feature_warmup_blocks
 from ..core.files import promote_paths_atomic
 from ..core.json import write_json
 from ._shared import managed_workflow
@@ -101,7 +102,13 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
     metadata_path = config.paths.dataset_metadata_path
     rpc_controller = RpcController.from_config(config.acquisition)
 
-    required_history_blocks = required_history_block_count(config)
+    geometry = derive_dataset_geometry(
+        lookback_seconds=config.dataset.temporal.lookback_seconds,
+        max_delay_seconds=config.dataset.temporal.max_delay_seconds,
+        block_time_seconds=config.chain.block_time_seconds,
+        feature_warmup_blocks=feature_warmup_blocks(tuple(config.feature_set.outputs)),
+    )
+    required_history_blocks = geometry.required_block_count(config.effective_history_sample_budget)
     evaluation_window = evaluation_range(
         config.evaluation_window_start_timestamp,
         config.evaluation_window_end_timestamp,
