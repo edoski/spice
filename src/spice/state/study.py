@@ -32,7 +32,7 @@ def study_storage(db_path: Path) -> RDBStorage:
 def create_or_load_study(db_path: Path, *, config: TuneConfig) -> optuna.Study:
     ensure_state_db(db_path, root_kind=STUDY_ROOT_KIND, tables=())
     study = optuna.create_study(
-        study_name=config.study.id,
+        study_name=config.study.name,
         storage=study_storage(db_path),
         direction=config.tuning.direction,
         load_if_exists=True,
@@ -66,7 +66,7 @@ def load_best_params(
 
 
 def load_study_summary(db_path: Path, *, config: TuneConfig) -> TuningStudySummary:
-    study = load_study(db_path, study_name=config.study.id)
+    study = load_study(db_path, study_name=config.study.name)
     return build_study_summary(config, study)
 
 

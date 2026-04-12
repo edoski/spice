@@ -8,7 +8,8 @@ from ..core.constants import MODEL_STATE_FILENAME
 from ..core.files import remove_path
 from ..modeling.execution import run_persisted_training
 from ..modeling.pipeline import TrainingStageReporters
-from ..state import ARTIFACT_ROOT_KIND, STUDY_ROOT_KIND
+from ..state import ARTIFACT_ROOT_KIND
+from ..state.catalog import upsert_artifact_record
 from ._shared import (
     abort_cleanup,
     apply_study_best_params,
@@ -28,7 +29,8 @@ def _format_train_summary_sections(
         (
             "dataset",
             [
-                ("id", summary.dataset_id),
+                ("name", summary.dataset_name),
+                ("storage id", summary.dataset_id),
                 ("chain", summary.chain),
                 ("model", summary.model_id),
                 ("task", summary.task_id),
@@ -37,9 +39,9 @@ def _format_train_summary_sections(
         (
             "provenance",
             [
+                ("artifact id", summary.artifact_id),
                 ("variant", summary.variant.value),
-                *([] if summary.study is None else [("study", summary.study.id)]),
-                ("artifact", str(persisted.artifact_dir)),
+                *([] if summary.study is None else [("study", summary.study.name)]),
                 ("capability", f"{summary.max_supported_delay_seconds}s"),
             ],
         ),
@@ -85,7 +87,7 @@ def _clean_training_outputs(config: TrainConfig, *, prune_empty_root: bool) -> N
         checkpoint_dir,
         artifact_root / MODEL_STATE_FILENAME,
     ]
-    if config.artifact.variant is ArtifactVariant.BASELINE and artifact_state_db is not None:
+    if artifact_state_db is not None:
         paths.append(artifact_state_db)
     for path in paths:
         remove_path(path)
@@ -98,19 +100,18 @@ def _clean_training_outputs(config: TrainConfig, *, prune_empty_root: bool) -> N
 
 def _workflow_facts(config: TrainConfig) -> list[tuple[str, str]]:
     facts = [
-        ("dataset", config.dataset.id),
+        ("dataset", config.dataset.name),
         ("chain", config.chain.name),
         ("model", config.model.id),
         ("variant", config.artifact.variant.value),
     ]
     if config.artifact.variant is ArtifactVariant.TUNED:
-        facts.append(("study", config.study.id))
+        facts.append(("study", config.study.name))
     return facts
 
 
 def _state_root_kind(config: TrainConfig) -> str:
-    if config.artifact.variant is ArtifactVariant.TUNED:
-        return STUDY_ROOT_KIND
+    del config
     return ARTIFACT_ROOT_KIND
 
 
@@ -163,6 +164,30 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
                 write_reporter=write_reporter,
                 reporter=session.reporter,
                 state_root_kind=_state_root_kind(active_config),
+            )
+            artifact_root = active_config.paths.artifact_root
+            artifact_state_db = active_config.paths.artifact_state_db
+            artifact_id = active_config.paths.artifact_id
+            if artifact_root is None or artifact_state_db is None or artifact_id is None:
+                raise ValueError("training workflow requires artifact output paths")
+            upsert_artifact_record(
+                active_config.paths.catalog_db,
+                artifact_id=artifact_id,
+                dataset_id=active_config.paths.dataset_id,
+                dataset_name=active_config.dataset.name,
+                chain_name=active_config.chain.name,
+                feature_set_id=active_config.feature_set.id,
+                model_id=active_config.model.id,
+                task_id=active_config.task.id,
+                variant=active_config.artifact.variant.value,
+                study_id=active_config.paths.study_id,
+                study_name=(
+                    active_config.study.name
+                    if active_config.artifact.variant is ArtifactVariant.TUNED
+                    else None
+                ),
+                root_path=artifact_root,
+                state_db_path=artifact_state_db,
             )
         session.runtime.log_sectioned_summary(
             "training summary",

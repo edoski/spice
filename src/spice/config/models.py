@@ -19,6 +19,7 @@ from pydantic import (
 )
 
 from ..features import validate_feature_selection
+from ..identifiers import artifact_storage_id, dataset_storage_id, study_storage_id
 
 
 class WorkflowTask(StrEnum):
@@ -93,13 +94,13 @@ class ChainSpec(ConfigModel):
 
 
 class DatasetSpec(ConfigModel):
-    id: str
+    name: str
     evaluation_date: date
 
-    @field_validator("id")
+    @field_validator("name")
     @classmethod
-    def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="dataset.id")
+    def validate_name(cls, value: str) -> str:
+        return _validate_path_segment(value, label="dataset.name")
 
 
 class StorageSpec(ConfigModel):
@@ -227,12 +228,12 @@ class FeatureSetConfig(ConfigModel):
 
 
 class StudyConfig(ConfigModel):
-    id: str = "default"
+    name: str = "default"
 
-    @field_validator("id")
+    @field_validator("name")
     @classmethod
-    def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="study.id")
+    def validate_name(cls, value: str) -> str:
+        return _validate_path_segment(value, label="study.name")
 
 
 class ArtifactConfig(ConfigModel):
@@ -469,13 +470,17 @@ class ProviderSpec(ConfigModel):
 @dataclass(frozen=True, slots=True)
 class PathLayout:
     output_root: Path
+    catalog_db: Path
+    dataset_id: str
     dataset_root: Path
     history_dir: Path
     evaluation_dir: Path
     dataset_state_db: Path
+    artifact_id: str | None = None
     artifact_root: Path | None = None
     checkpoint_dir: Path | None = None
     artifact_state_db: Path | None = None
+    study_id: str | None = None
     study_root: Path | None = None
     study_state_db: Path | None = None
 
@@ -485,51 +490,67 @@ def build_path_layout(
     storage: StorageSpec,
     chain: ChainSpec,
     dataset: DatasetSpec,
-    feature_set_id: str | None = None,
-    model_id: str | None = None,
-    task_id: str | None = None,
+    feature_set_name: str | None = None,
+    model_name: str | None = None,
+    task_name: str | None = None,
     variant: ArtifactVariant = ArtifactVariant.BASELINE,
-    study_id: str = "default",
+    study_name: str = "default",
     include_artifacts: bool = False,
     tuning_mode: bool = False,
 ) -> PathLayout:
     output_root = storage.root
-    dataset_root = output_root / "datasets" / chain.name / dataset.id
+    catalog_db = output_root / ".spice" / "catalog.sqlite"
+    dataset_id = dataset_storage_id(chain_name=chain.name, dataset_name=dataset.name)
+    dataset_root = output_root / "datasets" / chain.name / dataset_id
+    artifact_id: str | None = None
     artifact_root: Path | None = None
     checkpoint_dir: Path | None = None
     artifact_state_db: Path | None = None
+    study_id: str | None = None
     study_root: Path | None = None
     study_state_db: Path | None = None
 
     if include_artifacts:
-        if feature_set_id is None or model_id is None or task_id is None:
-            raise ValueError("artifact paths require feature_set_id, model_id, task_id")
-        artifact_base_root = (
-            output_root
-            / "models"
-            / chain.name
-            / dataset.id
-            / feature_set_id
-            / model_id
-            / task_id
-        )
-        variant_root = artifact_base_root / variant.value / study_id
-        tuned_study_root = artifact_base_root / ArtifactVariant.TUNED.value / study_id
-        artifact_root = tuned_study_root if tuning_mode else variant_root
-        checkpoint_dir = artifact_root / "checkpoints"
-        artifact_state_db = artifact_root / ".spice" / "state.sqlite"
-        study_root = tuned_study_root
-        study_state_db = tuned_study_root / ".spice" / "state.sqlite"
+        if feature_set_name is None or model_name is None or task_name is None:
+            raise ValueError("artifact paths require feature_set_name, model_name, task_name")
+        if tuning_mode or variant is ArtifactVariant.TUNED:
+            study_id = study_storage_id(
+                chain_name=chain.name,
+                dataset_id=dataset_id,
+                feature_set_name=feature_set_name,
+                model_name=model_name,
+                task_name=task_name,
+                study_name=study_name,
+            )
+            study_root = output_root / "studies" / chain.name / study_id
+            study_state_db = study_root / ".spice" / "state.sqlite"
+        if not tuning_mode:
+            artifact_id = artifact_storage_id(
+                chain_name=chain.name,
+                dataset_id=dataset_id,
+                feature_set_name=feature_set_name,
+                model_name=model_name,
+                task_name=task_name,
+                variant=variant.value,
+                study_id=study_id if variant is ArtifactVariant.TUNED else None,
+            )
+            artifact_root = output_root / "models" / chain.name / artifact_id
+            checkpoint_dir = artifact_root / "checkpoints"
+            artifact_state_db = artifact_root / ".spice" / "state.sqlite"
 
     return PathLayout(
         output_root=output_root,
+        catalog_db=catalog_db,
+        dataset_id=dataset_id,
         dataset_root=dataset_root,
         history_dir=dataset_root / "history",
         evaluation_dir=dataset_root / "evaluation",
         dataset_state_db=dataset_root / ".spice" / "state.sqlite",
+        artifact_id=artifact_id,
         artifact_root=artifact_root,
         checkpoint_dir=checkpoint_dir,
         artifact_state_db=artifact_state_db,
+        study_id=study_id,
         study_root=study_root,
         study_state_db=study_state_db,
     )
@@ -604,11 +625,11 @@ class ModelWorkflowConfig(WorkflowConfig):
             storage=self.storage,
             chain=self.chain,
             dataset=self.dataset,
-            feature_set_id=self.feature_set.id,
-            model_id=self.model.id,
-            task_id=self.task.id,
+            feature_set_name=self.feature_set.id,
+            model_name=self.model.id,
+            task_name=self.task.id,
             variant=self.artifact.variant,
-            study_id=self.study.id,
+            study_name=self.study.name,
             include_artifacts=True,
             tuning_mode=self.workflow is WorkflowTask.TUNE,
         )

@@ -15,6 +15,7 @@ from ..core.files import remove_path
 from ..modeling.execution import run_persisted_training
 from ..modeling.pipeline import TrainingStageReporters
 from ..modeling.registry import sample_tuned_parameters
+from ..state.catalog import upsert_study_record
 from ..state.study import create_or_load_study
 from ._shared import abort_cleanup, build_training_spec, epoch_metrics_to_dict, managed_workflow
 from ._tuning import (
@@ -50,18 +51,18 @@ def _trial_stage_status(trial: FrozenTrial) -> str:
 
 def _workflow_facts(config: TuneConfig) -> list[tuple[str, str]]:
     return [
-        ("dataset", config.dataset.id),
+        ("dataset", config.dataset.name),
         ("chain", config.chain.name),
         ("task", config.task.id),
         ("feature set", config.feature_set.id),
         ("model", config.model.id),
-        ("study", config.study.id),
+        ("study", config.study.name),
     ]
 
 
-def _trial_work_dir(artifact_root: Path, trial_number: int) -> TemporaryDirectory[str]:
+def _trial_work_dir(study_root: Path, trial_number: int) -> TemporaryDirectory[str]:
     return TemporaryDirectory(
-        dir=artifact_root.parent,
+        dir=study_root.parent,
         prefix=f".trial-{trial_number:03d}.",
     )
 
@@ -70,7 +71,7 @@ def _objective(
     base_config: TuneConfig,
     trial: optuna.Trial,
     *,
-    artifact_root: Path,
+    study_root: Path,
     runtime: ConsoleRuntime,
     trial_reporter: Reporter,
 ) -> float:
@@ -86,7 +87,7 @@ def _objective(
         status="running",
         message=f"trial {trial.number + 1}/{base_config.tuning.trial_count}",
     )
-    with _trial_work_dir(artifact_root, trial.number) as temp_dir_name:
+    with _trial_work_dir(study_root, trial.number) as temp_dir_name:
         artifact_dir = Path(temp_dir_name)
         with managed_workflow(
             config,
@@ -125,9 +126,10 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
         reporter=reporter,
     ) as session:
         session.runtime.configure_workflow("tune", _workflow_facts(config))
-        artifact_root = config.paths.artifact_root
+        study_root = config.paths.study_root
         study_state_db = config.paths.study_state_db
-        if artifact_root is None or study_state_db is None:
+        study_id = config.paths.study_id
+        if study_root is None or study_state_db is None or study_id is None:
             raise ValueError("tuning workflow requires study output paths")
         study_reporter = session.runtime.stage_reporter(
             "study",
@@ -139,10 +141,10 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
         with abort_cleanup(
             session.reporter,
             label="tune",
-            cleanup=lambda: remove_path(artifact_root),
+            cleanup=lambda: remove_path(study_root),
         ):
-            if artifact_root.exists():
-                shutil.rmtree(artifact_root)
+            if study_root.exists():
+                shutil.rmtree(study_root)
             study_task = study_reporter.start_task(
                 "tune study",
                 total=config.tuning.trial_count,
@@ -168,7 +170,7 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
                     lambda trial: _objective(
                         config,
                         trial,
-                        artifact_root=artifact_root,
+                        study_root=study_root,
                         runtime=session.runtime,
                         trial_reporter=trial_reporter,
                     ),
@@ -187,6 +189,19 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
             else:
                 study_reporter.finish_task(study_task, message="no successful trials")
             summary = build_study_summary(config, study)
+            upsert_study_record(
+                config.paths.catalog_db,
+                study_id=study_id,
+                study_name=config.study.name,
+                dataset_id=config.paths.dataset_id,
+                dataset_name=config.dataset.name,
+                chain_name=config.chain.name,
+                feature_set_id=config.feature_set.id,
+                model_id=config.model.id,
+                task_id=config.task.id,
+                root_path=study_root,
+                state_db_path=study_state_db,
+            )
             best_trial = summary.best_trial
             session.runtime.log_sectioned_summary(
                 "tuning summary",
@@ -194,12 +209,13 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
                     (
                         "study",
                         [
-                            ("id", summary.study.id),
+                            ("name", summary.study.name),
+                            ("storage id", summary.study_id),
                             ("chain", summary.chain),
+                            ("dataset", summary.dataset_name),
                             ("task", summary.task_id),
                             ("model", summary.model_id),
                             ("trials", str(summary.trial_counts.total)),
-                            ("state", str(study_state_db)),
                         ],
                     ),
                     (

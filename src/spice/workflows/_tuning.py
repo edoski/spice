@@ -78,8 +78,10 @@ class TuningTrialRecord:
 @dataclass(frozen=True, slots=True)
 class TuningStudySummary:
     study: StudyConfig
+    study_id: str
     chain: str
     dataset_id: str
+    dataset_name: str
     task_id: str
     feature_set_id: str
     model_id: str
@@ -99,8 +101,11 @@ class TuningStudySummary:
 
 def study_context_payload(config: TuneConfig) -> dict[str, object]:
     return {
+        "study_id": config.paths.study_id,
+        "study_name": config.study.name,
         "chain": config.chain.name,
-        "dataset_id": config.dataset.id,
+        "dataset_id": config.paths.dataset_id,
+        "dataset_name": config.dataset.name,
         "task_id": config.task.id,
         "feature_set_id": config.feature_set.id,
         "model_id": config.model.id,
@@ -196,14 +201,18 @@ def _trial_summary(trial: FrozenTrial, *, model_id: str | None = None) -> TrialS
 
 
 def build_study_summary(config: TuneConfig, study: optuna.Study) -> TuningStudySummary:
+    if config.paths.study_id is None:
+        raise ValueError("study_id is required for tuning summaries")
     completed_trials = [trial for trial in study.trials if trial.state == TrialState.COMPLETE]
     pruned_trials = [trial for trial in study.trials if trial.state == TrialState.PRUNED]
     failed_trials = [trial for trial in study.trials if trial.state == TrialState.FAIL]
     best_trial = study.best_trial if completed_trials else None
     return TuningStudySummary(
         study=config.study,
+        study_id=config.paths.study_id,
         chain=config.chain.name,
-        dataset_id=config.dataset.id,
+        dataset_id=config.paths.dataset_id,
+        dataset_name=config.dataset.name,
         task_id=config.task.id,
         feature_set_id=config.feature_set.id,
         model_id=config.model.id,

@@ -44,12 +44,16 @@ def write_artifact_manifest(
         with engine.begin() as conn:
             values = {
                 "singleton": 1,
+                "artifact_id": manifest.artifact_id,
                 "chain_name": manifest.chain.name,
                 "chain_block_time_seconds": manifest.chain.block_time_seconds,
                 "dataset_id": manifest.dataset_id,
+                "dataset_name": manifest.dataset_name,
                 "task_id": manifest.task_id,
                 "variant": manifest.variant.value,
-                "study_id": None if manifest.study is None else manifest.study.id,
+                "study_id": manifest.study_id,
+                "study_name": None if manifest.study is None else manifest.study.name,
+                "model_id": manifest.model.id,
                 "max_supported_delay_seconds": manifest.max_supported_delay_seconds,
                 "lookback_seconds": manifest.lookback_seconds,
                 "sample_count": manifest.sample_count,
@@ -81,14 +85,17 @@ def load_artifact_manifest(db_path: Path) -> TrainingArtifactManifest:
         if row is None:
             raise ValueError(f"Missing artifact manifest: {db_path}")
         return TrainingArtifactManifest(
+            artifact_id=str(row["artifact_id"]),
             chain=ArtifactChainMetadata(
                 name=str(row["chain_name"]),
                 block_time_seconds=float(row["chain_block_time_seconds"]),
             ),
             dataset_id=str(row["dataset_id"]),
+            dataset_name=str(row["dataset_name"]),
             task_id=str(row["task_id"]),
             variant=ArtifactVariant(str(row["variant"])),
-            study=_study_config(row["study_id"]),
+            study=_study_config(row["study_name"]),
+            study_id=None if row["study_id"] is None else str(row["study_id"]),
             max_supported_delay_seconds=int(row["max_supported_delay_seconds"]),
             lookback_seconds=int(row["lookback_seconds"]),
             sample_count=int(row["sample_count"]),
@@ -115,10 +122,13 @@ def write_training_state(
         with engine.begin() as conn:
             values = {
                 "singleton": 1,
+                "artifact_id": summary.artifact_id,
                 "chain_name": summary.chain,
                 "dataset_id": summary.dataset_id,
+                "dataset_name": summary.dataset_name,
                 "variant": summary.variant.value,
-                "study_id": None if summary.study is None else summary.study.id,
+                "study_id": summary.study_id,
+                "study_name": None if summary.study is None else summary.study.name,
                 "model_id": summary.model_id,
                 "task_id": summary.task_id,
                 "max_supported_delay_seconds": summary.max_supported_delay_seconds,
@@ -173,10 +183,13 @@ def load_training_summary(db_path: Path) -> TrainingSummary | None:
         if row is None:
             return None
         return TrainingSummary(
+            artifact_id=str(row["artifact_id"]),
             chain=str(row["chain_name"]),
             dataset_id=str(row["dataset_id"]),
+            dataset_name=str(row["dataset_name"]),
             variant=ArtifactVariant(str(row["variant"])),
-            study=_study_config(row["study_id"]),
+            study=_study_config(row["study_name"]),
+            study_id=None if row["study_id"] is None else str(row["study_id"]),
             model_id=str(row["model_id"]),
             task_id=str(row["task_id"]),
             max_supported_delay_seconds=int(row["max_supported_delay_seconds"]),
@@ -226,10 +239,13 @@ def write_simulation_state(
         with engine.begin() as conn:
             values = {
                 "singleton": 1,
+                "artifact_id": summary.artifact_id,
                 "chain_name": summary.chain,
                 "dataset_id": summary.dataset_id,
+                "dataset_name": summary.dataset_name,
                 "variant": summary.variant.value,
-                "study_id": None if summary.study is None else summary.study.id,
+                "study_id": summary.study_id,
+                "study_name": None if summary.study is None else summary.study.name,
                 "model_id": summary.model_id,
                 "task_id": summary.task_id,
                 "max_supported_delay_seconds": summary.max_supported_delay_seconds,
@@ -289,10 +305,13 @@ def load_simulation_summary(db_path: Path) -> SimulationSummaryRecord | None:
             return None
         runs = list_simulation_runs(db_path)
         return SimulationSummaryRecord(
+            artifact_id=str(row["artifact_id"]),
             chain=str(row["chain_name"]),
             dataset_id=str(row["dataset_id"]),
+            dataset_name=str(row["dataset_name"]),
             variant=ArtifactVariant(str(row["variant"])),
-            study=_study_config(row["study_id"]),
+            study=_study_config(row["study_name"]),
+            study_id=None if row["study_id"] is None else str(row["study_id"]),
             model_id=str(row["model_id"]),
             task_id=str(row["task_id"]),
             max_supported_delay_seconds=int(row["max_supported_delay_seconds"]),
@@ -341,10 +360,10 @@ def list_simulation_runs(db_path: Path) -> list[SimulationRunRecord]:
         engine.dispose()
 
 
-def _study_config(study_id: object) -> StudyConfig | None:
-    if study_id is None:
+def _study_config(study_name: object) -> StudyConfig | None:
+    if study_name is None:
         return None
-    return StudyConfig(id=str(study_id))
+    return StudyConfig(name=str(study_name))
 
 
 def _metrics_from_payload(payload: object) -> MetricsSummary:

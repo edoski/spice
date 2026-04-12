@@ -13,6 +13,7 @@ def test_root_help_lists_commands() -> None:
     assert result.exit_code == 0, result.stdout
     assert "SPICE workflow CLI." in result.stdout
     assert "show" in result.stdout
+    assert "delete" in result.stdout
     assert "acquire" in result.stdout
     assert "train" in result.stdout
     assert "tune" in result.stdout

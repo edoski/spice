@@ -7,6 +7,7 @@ from pathlib import Path
 from spice.acquisition.provider import ManagedAsyncHTTPProvider
 from spice.acquisition.rpc import BlockPullPlan, BlockRange, TimestampRange
 from spice.core.console import NullReporter
+from spice.state.catalog import list_dataset_records
 from spice.state.dataset import list_acquire_runs, load_dataset_summary
 from spice.workflows.acquire import _DaemonThreadPoolExecutor
 from spice.workflows.acquire import run as run_acquire
@@ -117,6 +118,13 @@ def test_acquire_workflow_writes_canonical_dataset_and_metadata(
     assert runs[0]["required_history_blocks"] == required_blocks
     assert config.paths.history_dir.is_dir()
     assert config.paths.evaluation_dir.is_dir()
+    datasets = list_dataset_records(
+        config.paths.catalog_db,
+        chain_name=config.chain.name,
+        dataset_name=config.dataset.name,
+    )
+    assert len(datasets) == 1
+    assert datasets[0].dataset_id == config.paths.dataset_id
 
 
 def test_acquire_run_swallows_keyboard_interrupt(tmp_path, monkeypatch) -> None:

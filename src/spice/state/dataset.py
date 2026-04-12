@@ -39,6 +39,7 @@ def write_dataset_state(
             summary_values = {
                 "singleton": 1,
                 "dataset_id": summary.dataset.id,
+                "dataset_name": summary.dataset.name,
                 "chain_name": summary.chain.name,
                 "chain_id": summary.chain.chain_id,
                 "provider_name": summary.provider.name,
@@ -110,7 +111,10 @@ def load_dataset_summary(db_path: Path) -> DatasetSummary:
         if row is None:
             raise ValueError(f"Missing dataset summary: {db_path}")
         return DatasetSummary(
-            dataset=DatasetIdentity(id=str(row["dataset_id"])),
+            dataset=DatasetIdentity(
+                id=str(row["dataset_id"]),
+                name=str(row["dataset_name"]),
+            ),
             chain=ChainMetadata(
                 name=str(row["chain_name"]),
                 chain_id=int(row["chain_id"]),

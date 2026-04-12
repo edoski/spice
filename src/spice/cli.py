@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Annotated
 
@@ -15,6 +14,16 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=True,
 )
+show_app = typer.Typer(
+    help="Query stored datasets, studies, and artifacts.",
+    no_args_is_help=True,
+)
+delete_app = typer.Typer(
+    help="Delete stored datasets, studies, and artifacts.",
+    no_args_is_help=True,
+)
+app.add_typer(show_app, name="show")
+app.add_typer(delete_app, name="delete")
 
 
 def _run_acquire(
@@ -163,28 +172,20 @@ def _run_simulate(
     )
 
 
-def _run_show(
-    *,
-    root: Path,
-    detail: str | None,
-    as_json: bool,
+def _storage_root(storage_root: Path | None) -> Path:
+    return storage_root or Path("outputs")
+
+
+def _catalog_db(storage_root: Path | None) -> Path:
+    return _storage_root(storage_root) / ".spice" / "catalog.sqlite"
+
+
+def _print_sections(
+    title: str,
+    sections: list[tuple[str, list[tuple[str, str]]]],
 ) -> None:
     from .core.console import create_console_runtime
-    from .state import STATE_DB_FILENAME
-    from .state.show import describe_root, sectioned_summary
 
-    target_root = root
-    if target_root.is_file() and target_root.name == STATE_DB_FILENAME:
-        target_root = target_root.parent.parent
-    try:
-        payload = describe_root(target_root, detail=detail)
-    except (FileNotFoundError, ValueError) as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(code=1) from exc
-    if as_json:
-        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
-        return
-    title, sections = sectioned_summary(payload)
     runtime = create_console_runtime()
     try:
         with runtime.activate():
@@ -193,43 +194,517 @@ def _run_show(
         runtime.close()
 
 
-@app.command(
-    "show",
-    short_help="Inspect a dataset, artifact, or study root.",
-    help="Inspect one generated state root and print a concise summary.",
-    epilog=(
-        "Example:\n"
-        "  spice show outputs/datasets/avalanche/icdcs_2026\n"
-        "  spice show outputs/models/.../tuned/default --detail trials"
-    ),
+def _show_root_detail(root_path: Path, *, detail: str | None) -> None:
+    from .state.show import describe_root, sectioned_summary
+
+    payload = describe_root(root_path, detail=detail)
+    title, sections = sectioned_summary(payload)
+    _print_sections(title, sections)
+
+
+def _fail(message: str) -> None:
+    typer.echo(message, err=True)
+    raise typer.Exit(code=1)
+
+
+def _dataset_list_sections(records) -> list[tuple[str, list[tuple[str, str]]]]:
+    return [
+        (
+            "datasets",
+            [
+                (
+                    record.dataset_name,
+                    (
+                        f"chain={record.chain_name} "
+                        f"provider={record.provider_name} "
+                        f"id={record.dataset_id}"
+                    ),
+                )
+                for record in records
+            ],
+        )
+    ]
+
+
+def _study_list_sections(records) -> list[tuple[str, list[tuple[str, str]]]]:
+    return [
+        (
+            "studies",
+            [
+                (
+                    record.study_name,
+                    (
+                        f"chain={record.chain_name} "
+                        f"dataset={record.dataset_name} "
+                        f"feature_set={record.feature_set_id} "
+                        f"model={record.model_id} "
+                        f"task={record.task_id} "
+                        f"id={record.study_id}"
+                    ),
+                )
+                for record in records
+            ],
+        )
+    ]
+
+
+def _artifact_list_sections(records) -> list[tuple[str, list[tuple[str, str]]]]:
+    return [
+        (
+            "artifacts",
+            [
+                (
+                    record.artifact_id,
+                    (
+                        f"chain={record.chain_name} "
+                        f"dataset={record.dataset_name} "
+                        f"feature_set={record.feature_set_id} "
+                        f"model={record.model_id} "
+                        f"task={record.task_id} "
+                        f"variant={record.variant}"
+                        + (
+                            ""
+                            if record.study_name is None
+                            else f" study={record.study_name}"
+                        )
+                    ),
+                )
+                for record in records
+            ],
+        )
+    ]
+
+
+def _show_records(
+    *,
+    kind: str,
+    records,
+    has_filters: bool,
+    detail: str | None,
+    list_sections,
+) -> None:
+    if not records:
+        _fail(f"No {kind} matches found")
+    if detail is not None and len(records) != 1:
+        _print_sections(f"{kind} matches", list_sections(records))
+        _fail(f"--detail requires exactly one {kind} match")
+    if detail is not None:
+        _show_root_detail(records[0].root_path, detail=detail)
+        return
+    if not has_filters or len(records) != 1:
+        _print_sections(f"{kind} list", list_sections(records))
+        return
+    _show_root_detail(records[0].root_path, detail=None)
+
+
+def _resolve_one(
+    *,
+    kind: str,
+    records,
+    list_sections,
+) -> object:
+    if len(records) == 1:
+        return records[0]
+    if records:
+        _print_sections(f"{kind} matches", list_sections(records))
+        _fail(f"Expected exactly one {kind} match")
+    _fail(f"No {kind} matches found")
+
+
+def _delete_artifact_record(storage_root: Path, record) -> None:
+    from .core.files import prune_empty_directories, remove_path
+    from .state.catalog import delete_artifact_record
+
+    remove_path(record.root_path)
+    delete_artifact_record(_catalog_db(storage_root), artifact_id=record.artifact_id)
+    prune_empty_directories(record.root_path.parent, stop_at=storage_root / "models")
+
+
+def _delete_study_record(storage_root: Path, record) -> None:
+    from .core.files import prune_empty_directories, remove_path
+    from .state.catalog import delete_study_record
+
+    remove_path(record.root_path)
+    delete_study_record(_catalog_db(storage_root), study_id=record.study_id)
+    prune_empty_directories(record.root_path.parent, stop_at=storage_root / "studies")
+
+
+def _delete_dataset_record(storage_root: Path, record) -> None:
+    from .core.files import prune_empty_directories, remove_path
+    from .state.catalog import delete_dataset_record
+
+    remove_path(record.root_path)
+    delete_dataset_record(_catalog_db(storage_root), dataset_id=record.dataset_id)
+    prune_empty_directories(record.root_path.parent, stop_at=storage_root / "datasets")
+
+
+@show_app.command(
+    "dataset",
+    short_help="Show datasets.",
+    help="List datasets or show one dataset in detail.",
 )
-def show_command(
-    root: Annotated[
-        Path,
-        typer.Argument(
-            metavar="ROOT",
-            help="Dataset, artifact, or study root to inspect.",
-        ),
-    ],
+def show_dataset_command(
+    chain: Annotated[
+        str | None,
+        typer.Option("--chain", metavar="CHAIN", help="Filter by chain."),
+    ] = None,
+    dataset: Annotated[
+        str | None,
+        typer.Option("--dataset", metavar="DATASET", help="Filter by dataset name."),
+    ] = None,
+    storage_root: Annotated[
+        Path | None,
+        typer.Option("--storage-root", metavar="PATH", help="Read from a non-default output root."),
+    ] = None,
     detail: Annotated[
         str | None,
+        typer.Option("--detail", metavar="DETAIL", help="Show one detail table: runs."),
+    ] = None,
+) -> None:
+    from .state.catalog import list_dataset_records
+
+    records = list_dataset_records(
+        _catalog_db(storage_root),
+        chain_name=chain,
+        dataset_name=dataset,
+    )
+    _show_records(
+        kind="dataset",
+        records=records,
+        has_filters=chain is not None or dataset is not None,
+        detail=detail,
+        list_sections=_dataset_list_sections,
+    )
+
+
+@show_app.command(
+    "study",
+    short_help="Show studies.",
+    help="List studies or show one study in detail.",
+)
+def show_study_command(
+    chain: Annotated[
+        str | None,
+        typer.Option("--chain", metavar="CHAIN", help="Filter by chain."),
+    ] = None,
+    dataset: Annotated[
+        str | None,
+        typer.Option("--dataset", metavar="DATASET", help="Filter by dataset name."),
+    ] = None,
+    feature_set: Annotated[
+        str | None,
+        typer.Option("--feature-set", metavar="FEATURE_SET", help="Filter by feature set."),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option("--model", metavar="MODEL", help="Filter by model."),
+    ] = None,
+    task: Annotated[
+        str | None,
+        typer.Option("--task", metavar="TASK", help="Filter by task."),
+    ] = None,
+    study: Annotated[
+        str | None,
+        typer.Option("--study", metavar="STUDY", help="Filter by study name."),
+    ] = None,
+    storage_root: Annotated[
+        Path | None,
+        typer.Option("--storage-root", metavar="PATH", help="Read from a non-default output root."),
+    ] = None,
+    detail: Annotated[
+        str | None,
+        typer.Option("--detail", metavar="DETAIL", help="Show one detail table: trials."),
+    ] = None,
+) -> None:
+    from .state.catalog import list_study_records
+
+    records = list_study_records(
+        _catalog_db(storage_root),
+        chain_name=chain,
+        dataset_name=dataset,
+        feature_set_id=feature_set,
+        model_id=model,
+        task_id=task,
+        study_name=study,
+    )
+    _show_records(
+        kind="study",
+        records=records,
+        has_filters=any(
+            value is not None
+            for value in (chain, dataset, feature_set, model, task, study)
+        ),
+        detail=detail,
+        list_sections=_study_list_sections,
+    )
+
+
+@show_app.command(
+    "artifact",
+    short_help="Show artifacts.",
+    help="List artifacts or show one artifact in detail.",
+)
+def show_artifact_command(
+    chain: Annotated[
+        str | None,
+        typer.Option("--chain", metavar="CHAIN", help="Filter by chain."),
+    ] = None,
+    dataset: Annotated[
+        str | None,
+        typer.Option("--dataset", metavar="DATASET", help="Filter by dataset name."),
+    ] = None,
+    feature_set: Annotated[
+        str | None,
+        typer.Option("--feature-set", metavar="FEATURE_SET", help="Filter by feature set."),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option("--model", metavar="MODEL", help="Filter by model."),
+    ] = None,
+    task: Annotated[
+        str | None,
+        typer.Option("--task", metavar="TASK", help="Filter by task."),
+    ] = None,
+    variant: Annotated[
+        str | None,
+        typer.Option("--variant", metavar="VARIANT", help="Filter by artifact variant."),
+    ] = None,
+    study: Annotated[
+        str | None,
+        typer.Option("--study", metavar="STUDY", help="Filter by study name."),
+    ] = None,
+    storage_root: Annotated[
+        Path | None,
+        typer.Option("--storage-root", metavar="PATH", help="Read from a non-default output root."),
+    ] = None,
+    detail: Annotated[
+        str | None,
+        typer.Option("--detail", metavar="DETAIL", help="Show one detail table: epochs or runs."),
+    ] = None,
+) -> None:
+    from .state.catalog import list_artifact_records
+
+    records = list_artifact_records(
+        _catalog_db(storage_root),
+        chain_name=chain,
+        dataset_name=dataset,
+        feature_set_id=feature_set,
+        model_id=model,
+        task_id=task,
+        variant=variant,
+        study_name=study,
+    )
+    _show_records(
+        kind="artifact",
+        records=records,
+        has_filters=any(
+            value is not None
+            for value in (chain, dataset, feature_set, model, task, variant, study)
+        ),
+        detail=detail,
+        list_sections=_artifact_list_sections,
+    )
+
+
+@delete_app.command(
+    "artifact",
+    short_help="Delete one artifact.",
+    help="Delete exactly one artifact.",
+)
+def delete_artifact_command(
+    chain: Annotated[
+        str | None,
+        typer.Option("--chain", metavar="CHAIN", help="Filter by chain."),
+    ] = None,
+    dataset: Annotated[
+        str | None,
+        typer.Option("--dataset", metavar="DATASET", help="Filter by dataset name."),
+    ] = None,
+    feature_set: Annotated[
+        str | None,
+        typer.Option("--feature-set", metavar="FEATURE_SET", help="Filter by feature set."),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option("--model", metavar="MODEL", help="Filter by model."),
+    ] = None,
+    task: Annotated[
+        str | None,
+        typer.Option("--task", metavar="TASK", help="Filter by task."),
+    ] = None,
+    variant: Annotated[
+        str | None,
+        typer.Option("--variant", metavar="VARIANT", help="Filter by artifact variant."),
+    ] = None,
+    study: Annotated[
+        str | None,
+        typer.Option("--study", metavar="STUDY", help="Filter by study name."),
+    ] = None,
+    storage_root: Annotated[
+        Path | None,
         typer.Option(
-            "--detail",
-            metavar="DETAIL",
-            help="Show one detail table: trials, epochs, or runs.",
-            rich_help_panel="Execution",
+            "--storage-root",
+            metavar="PATH",
+            help="Delete from a non-default output root.",
         ),
     ] = None,
-    as_json: Annotated[
-        bool,
-        typer.Option(
-            "--json",
-            help="Print the inspected state as JSON to stdout.",
-            rich_help_panel="Execution",
+) -> None:
+    from .state.catalog import list_artifact_records
+
+    root = _storage_root(storage_root)
+    record = _resolve_one(
+        kind="artifact",
+        records=list_artifact_records(
+            _catalog_db(root),
+            chain_name=chain,
+            dataset_name=dataset,
+            feature_set_id=feature_set,
+            model_id=model,
+            task_id=task,
+            variant=variant,
+            study_name=study,
         ),
+        list_sections=_artifact_list_sections,
+    )
+    _delete_artifact_record(root, record)
+
+
+@delete_app.command(
+    "study",
+    short_help="Delete one study.",
+    help=(
+        "Delete exactly one study. "
+        "Use --cascade to also delete dependent tuned artifacts."
+    ),
+)
+def delete_study_command(
+    chain: Annotated[
+        str | None,
+        typer.Option("--chain", metavar="CHAIN", help="Filter by chain."),
+    ] = None,
+    dataset: Annotated[
+        str | None,
+        typer.Option("--dataset", metavar="DATASET", help="Filter by dataset name."),
+    ] = None,
+    feature_set: Annotated[
+        str | None,
+        typer.Option("--feature-set", metavar="FEATURE_SET", help="Filter by feature set."),
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option("--model", metavar="MODEL", help="Filter by model."),
+    ] = None,
+    task: Annotated[
+        str | None,
+        typer.Option("--task", metavar="TASK", help="Filter by task."),
+    ] = None,
+    study: Annotated[
+        str | None,
+        typer.Option("--study", metavar="STUDY", help="Filter by study name."),
+    ] = None,
+    storage_root: Annotated[
+        Path | None,
+        typer.Option(
+            "--storage-root",
+            metavar="PATH",
+            help="Delete from a non-default output root.",
+        ),
+    ] = None,
+    cascade: Annotated[
+        bool,
+        typer.Option("--cascade", help="Also delete dependent tuned artifacts."),
     ] = False,
 ) -> None:
-    _run_show(root=root, detail=detail, as_json=as_json)
+    from .state.catalog import list_artifacts_for_study, list_study_records
+
+    root = _storage_root(storage_root)
+    record = _resolve_one(
+        kind="study",
+        records=list_study_records(
+            _catalog_db(root),
+            chain_name=chain,
+            dataset_name=dataset,
+            feature_set_id=feature_set,
+            model_id=model,
+            task_id=task,
+            study_name=study,
+        ),
+        list_sections=_study_list_sections,
+    )
+    dependent_artifacts = list_artifacts_for_study(_catalog_db(root), study_id=record.study_id)
+    if dependent_artifacts and not cascade:
+        _print_sections("artifact matches", _artifact_list_sections(dependent_artifacts))
+        _fail("Study has dependent artifacts. Re-run with --cascade.")
+    for artifact_record in dependent_artifacts:
+        _delete_artifact_record(root, artifact_record)
+    _delete_study_record(root, record)
+
+
+@delete_app.command(
+    "dataset",
+    short_help="Delete one dataset.",
+    help=(
+        "Delete exactly one dataset. "
+        "Use --cascade to also delete dependent studies and artifacts."
+    ),
+)
+def delete_dataset_command(
+    chain: Annotated[
+        str | None,
+        typer.Option("--chain", metavar="CHAIN", help="Filter by chain."),
+    ] = None,
+    dataset: Annotated[
+        str | None,
+        typer.Option("--dataset", metavar="DATASET", help="Filter by dataset name."),
+    ] = None,
+    storage_root: Annotated[
+        Path | None,
+        typer.Option(
+            "--storage-root",
+            metavar="PATH",
+            help="Delete from a non-default output root.",
+        ),
+    ] = None,
+    cascade: Annotated[
+        bool,
+        typer.Option("--cascade", help="Also delete dependent studies and artifacts."),
+    ] = False,
+) -> None:
+    from .state.catalog import (
+        list_artifacts_for_dataset,
+        list_dataset_records,
+        list_studies_for_dataset,
+    )
+
+    root = _storage_root(storage_root)
+    record = _resolve_one(
+        kind="dataset",
+        records=list_dataset_records(
+            _catalog_db(root),
+            chain_name=chain,
+            dataset_name=dataset,
+        ),
+        list_sections=_dataset_list_sections,
+    )
+    dependent_artifacts = list_artifacts_for_dataset(
+        _catalog_db(root),
+        dataset_id=record.dataset_id,
+    )
+    dependent_studies = list_studies_for_dataset(
+        _catalog_db(root),
+        dataset_id=record.dataset_id,
+    )
+    if (dependent_artifacts or dependent_studies) and not cascade:
+        if dependent_artifacts:
+            _print_sections("artifact matches", _artifact_list_sections(dependent_artifacts))
+        if dependent_studies:
+            _print_sections("study matches", _study_list_sections(dependent_studies))
+        _fail("Dataset has dependent studies or artifacts. Re-run with --cascade.")
+    for artifact_record in dependent_artifacts:
+        _delete_artifact_record(root, artifact_record)
+    for study_record in dependent_studies:
+        _delete_study_record(root, study_record)
+    _delete_dataset_record(root, record)
 
 
 @app.command(
@@ -457,7 +932,7 @@ def train_command(
         typer.Option(
             "--study",
             metavar="STUDY",
-            help="Override the study id used for tuned artifacts.",
+            help="Override the study name used for tuned artifacts.",
             rich_help_panel="Execution",
         ),
     ] = None,
@@ -481,7 +956,7 @@ def train_command(
 @app.command(
     "tune",
     short_help="Tune model hyperparameters.",
-    help="Run Optuna tuning for a model and write the best parameter set.",
+    help="Run Optuna tuning for a model and write study state.",
     epilog="Example:\n  spice tune --preset icdcs_2026 --trial-count 20",
 )
 def tune_command(
@@ -598,7 +1073,7 @@ def tune_command(
         typer.Option(
             "--study",
             metavar="STUDY",
-            help="Override the study id.",
+            help="Override the study name.",
             rich_help_panel="Execution",
         ),
     ] = None,
@@ -751,7 +1226,7 @@ def simulate_command(
         typer.Option(
             "--study",
             metavar="STUDY",
-            help="Override the study id used for tuned artifacts.",
+            help="Override the study name used for tuned artifacts.",
             rich_help_panel="Execution",
         ),
     ] = None,

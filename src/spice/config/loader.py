@@ -284,7 +284,7 @@ def _resolve_model_workflow(
     if isinstance(study_raw, Mapping):
         study = StudyConfig.model_validate(study_raw)
     else:
-        study = StudyConfig(id=cast(str, study_raw) if isinstance(study_raw, str) else "default")
+        study = StudyConfig(name=cast(str, study_raw) if isinstance(study_raw, str) else "default")
     artifact_raw = payload.get("artifact")
     artifact = (
         ArtifactConfig.model_validate(artifact_raw)

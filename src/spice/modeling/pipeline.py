@@ -44,6 +44,8 @@ from .training import TrainingResult, evaluate_model, train_model
 class TrainingSpec:
     chain: ChainSpec
     dataset_id: str
+    dataset_name: str
+    artifact_id: str
     task: TaskSpec
     contract: ResolvedTaskContract
     feature_set: FeatureSetConfig
@@ -52,6 +54,7 @@ class TrainingSpec:
     training: TrainingConfig
     variant: ArtifactVariant = ArtifactVariant.BASELINE
     study: StudyConfig | None = None
+    study_id: str | None = None
 
 
 @dataclass(slots=True)

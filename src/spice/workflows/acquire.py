@@ -31,6 +31,7 @@ from ..config import AcquireConfig
 from ..core.console import Reporter
 from ..core.files import promote_paths_atomic, prune_empty_directories
 from ..planning.contracts import resolve_task_contract
+from ..state.catalog import upsert_dataset_record
 from ..state.dataset import write_dataset_state
 from ._shared import managed_workflow
 
@@ -100,7 +101,7 @@ def _final_window_rows(
 
 def _workflow_facts(config: AcquireConfig) -> list[tuple[str, str]]:
     return [
-        ("dataset", config.dataset.id),
+        ("dataset", config.dataset.name),
         ("chain", config.chain.name),
         ("task", config.task.id),
         ("feature set", config.feature_set.id),
@@ -263,7 +264,8 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                         (
                             "dataset",
                             [
-                                ("id", config.dataset.id),
+                                ("name", config.dataset.name),
+                                ("storage id", config.paths.dataset_id),
                                 ("chain", chain_label),
                                 ("task", config.task.id),
                                 ("feature set", config.feature_set.id),
@@ -301,7 +303,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 config.paths.dataset_root.parent.mkdir(parents=True, exist_ok=True)
                 with TemporaryDirectory(
                     dir=config.paths.dataset_root.parent,
-                    prefix=f".{config.dataset.id}.acquire.",
+                    prefix=f".{config.paths.dataset_id}.acquire.",
                 ) as temp_root_name:
                     temp_root = Path(temp_root_name)
                     history_result = await ensure_history_dataset(
@@ -366,6 +368,15 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                         promotions.append((evaluation_dir, evaluation_result.promote_dir))
                     promotions.append((state_db_path, temp_state_db))
                     promote_paths_atomic(promotions)
+                    upsert_dataset_record(
+                        config.paths.catalog_db,
+                        dataset_id=config.paths.dataset_id,
+                        dataset_name=config.dataset.name,
+                        chain_name=config.chain.name,
+                        provider_name=current_provider.name,
+                        root_path=config.paths.dataset_root,
+                        state_db_path=state_db_path,
+                    )
             except (KeyboardInterrupt, asyncio.CancelledError):
                 session.reporter.close()
                 prune_empty_directories(
@@ -390,11 +401,12 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     (
                         "dataset",
                         [
-                            ("id", config.dataset.id),
+                            ("name", config.dataset.name),
+                            ("storage id", config.paths.dataset_id),
                             ("chain", chain_label),
                             ("task", config.task.id),
                             ("feature set", config.feature_set.id),
-                            ("state", str(state_db_path)),
+                            ("provider", current_provider.name),
                         ],
                     ),
                     (

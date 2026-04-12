@@ -3,6 +3,7 @@ from __future__ import annotations
 from typer.testing import CliRunner
 
 from spice.cli import app
+from spice.identifiers import dataset_storage_id
 from tests.support import write_override
 
 runner = CliRunner()
@@ -66,10 +67,15 @@ def test_acquire_cli_loads_specs_and_applies_override_precedence(
     assert config.provider.rpc.timeout_seconds == 30.0
     assert config.provider.endpoint_for(config.chain.name) == "https://avax.example.test"
     assert config.acquisition.rpc.batch_size == 256
-    assert config.dataset.id == "icdcs_2026"
+    assert config.dataset.name == "icdcs_2026"
     assert config.task.sample_count == 640
     assert config.feature_set.id == "icdcs_2026"
     assert config.paths.output_root == tmp_path / "outputs"
     assert config.paths.history_dir == (
-        tmp_path / "outputs" / "datasets" / "avalanche" / "icdcs_2026" / "history"
+        tmp_path
+        / "outputs"
+        / "datasets"
+        / "avalanche"
+        / dataset_storage_id(chain_name="avalanche", dataset_name="icdcs_2026")
+        / "history"
     )

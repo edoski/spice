@@ -16,6 +16,7 @@ from .rpc import AcquisitionRuntimeSnapshot
 @dataclass(frozen=True, slots=True)
 class DatasetIdentity:
     id: str
+    name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,7 +228,10 @@ def build_dataset_summary(
     evaluation_validation: BlockDatasetValidationReport,
 ) -> DatasetSummary:
     return DatasetSummary(
-        dataset=DatasetIdentity(id=config.dataset.id),
+        dataset=DatasetIdentity(
+            id=config.paths.dataset_id,
+            name=config.dataset.name,
+        ),
         chain=ChainMetadata(
             name=config.chain.name,
             chain_id=config.chain.runtime.chain_id,

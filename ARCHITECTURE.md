@@ -22,7 +22,13 @@ Flow:
 3. `--config PATH` overlays plain YAML on top of that preset.
 4. Explicit CLI flags override both preset and file values.
 5. Pydantic validates the final request model.
-6. `PathLayout` derives concrete dataset and model paths from `storage.root`.
+6. `PathLayout` derives deterministic storage ids and roots from `storage.root`.
+
+Selector rules:
+
+- `dataset.name` and `study.name` are human selectors.
+- `dataset_id`, `study_id`, and `artifact_id` are deterministic storage ids.
+- Runtime commands work from selectors. Users do not need paths.
 
 Public dataset definition:
 
@@ -61,10 +67,11 @@ Rules:
 
 - `engine.py`: SQLAlchemy engine creation, SQLite PRAGMAs, root-kind bootstrap
 - `schema.py`: SPICE-owned Core table definitions
+- `catalog.py`: global selector-to-root catalog
 - `dataset.py`: dataset summary + acquire-run persistence
 - `artifact.py`: manifest, training, and simulation persistence
 - `study.py`: Optuna-backed study helpers and tuned-param loading
-- `show.py`: `spice show` inspection helpers
+- `show.py`: selector-resolved inspection helpers
 
 ### `acquisition`
 
@@ -119,15 +126,17 @@ Datasets:
 
 Models:
 
-- `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/model.pt`
-- `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/.spice/state.sqlite`
+- `outputs/models/<chain>/<artifact_id>/model.pt`
+- `outputs/models/<chain>/<artifact_id>/.spice/state.sqlite`
 
 Tuning:
 
-- `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/tuned/<study_id>/.spice/state.sqlite`
+- `outputs/studies/<chain>/<study_id>/.spice/state.sqlite`
 
 Notes:
 
+- `outputs/.spice/catalog.sqlite` is the global lookup index
 - SPICE-owned structured state lives only in `.spice/state.sqlite`
-- tuned study roots reuse the same SQLite file for both Optuna study tables and SPICE artifact/simulation tables
-- `spice show ROOT` is the human-facing inspection path; generated JSON reports/manifests are gone
+- studies and artifacts are separate roots
+- `spice show dataset|study|artifact` is the human-facing inspection path
+- `spice delete dataset|study|artifact` is the cleanup path

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import JSON, Boolean, Column, Float, Integer, MetaData, String, Table
 
-STATE_SCHEMA_VERSION = 2
+STATE_SCHEMA_VERSION = 3
 
 metadata = MetaData()
 
@@ -23,6 +23,7 @@ dataset_summary = Table(
     metadata,
     Column("singleton", Integer, primary_key=True),
     Column("dataset_id", String, nullable=False),
+    Column("dataset_name", String, nullable=False),
     Column("chain_name", String, nullable=False),
     Column("chain_id", Integer, nullable=False),
     Column("provider_name", String, nullable=False),
@@ -77,12 +78,16 @@ artifact_manifest = Table(
     "artifact_manifest",
     metadata,
     Column("singleton", Integer, primary_key=True),
+    Column("artifact_id", String, nullable=False),
     Column("chain_name", String, nullable=False),
     Column("chain_block_time_seconds", Float, nullable=False),
     Column("dataset_id", String, nullable=False),
+    Column("dataset_name", String, nullable=False),
     Column("task_id", String, nullable=False),
     Column("variant", String, nullable=False),
     Column("study_id", String),
+    Column("study_name", String),
+    Column("model_id", String, nullable=False),
     Column("max_supported_delay_seconds", Integer, nullable=False),
     Column("lookback_seconds", Integer, nullable=False),
     Column("sample_count", Integer, nullable=False),
@@ -97,10 +102,13 @@ training_summary = Table(
     "training_summary",
     metadata,
     Column("singleton", Integer, primary_key=True),
+    Column("artifact_id", String, nullable=False),
     Column("chain_name", String, nullable=False),
     Column("dataset_id", String, nullable=False),
+    Column("dataset_name", String, nullable=False),
     Column("variant", String, nullable=False),
     Column("study_id", String),
+    Column("study_name", String),
     Column("model_id", String, nullable=False),
     Column("task_id", String, nullable=False),
     Column("max_supported_delay_seconds", Integer, nullable=False),
@@ -131,10 +139,13 @@ simulation_summary = Table(
     "simulation_summary",
     metadata,
     Column("singleton", Integer, primary_key=True),
+    Column("artifact_id", String, nullable=False),
     Column("chain_name", String, nullable=False),
     Column("dataset_id", String, nullable=False),
+    Column("dataset_name", String, nullable=False),
     Column("variant", String, nullable=False),
     Column("study_id", String),
+    Column("study_name", String),
     Column("model_id", String, nullable=False),
     Column("task_id", String, nullable=False),
     Column("max_supported_delay_seconds", Integer, nullable=False),

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import signal
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-import signal
 
 from ..config import ArtifactVariant, SimulateConfig, TrainConfig, TuneConfig, WorkflowTask
 from ..core.console import ConsoleRuntime, Reporter, create_console_runtime
@@ -25,13 +25,20 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
     )
     return TrainingSpec(
         chain=config.chain,
-        dataset_id=config.dataset.id,
+        dataset_id=config.paths.dataset_id,
+        dataset_name=config.dataset.name,
+        artifact_id=(
+            config.paths.artifact_id
+            if config.paths.artifact_id is not None
+            else config.paths.study_id or "trial"
+        ),
         task=config.task,
         contract=contract,
         feature_set=config.feature_set,
         model=config.model,
         variant=variant,
         study=config.study if variant is ArtifactVariant.TUNED else None,
+        study_id=config.paths.study_id if variant is ArtifactVariant.TUNED else None,
         split=config.split,
         training=config.training,
     )
@@ -156,7 +163,7 @@ def apply_study_best_params(config: TrainConfig) -> TrainConfig:
     try:
         params = load_best_params(
             path,
-            study_name=config.study.id,
+            study_name=config.study.name,
             model_id=config.model.id,
         )
     except OSError as exc:

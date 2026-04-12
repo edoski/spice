@@ -29,10 +29,13 @@ class MetricsSummary:
 
 @dataclass(frozen=True, slots=True)
 class TrainingSummary:
+    artifact_id: str
     chain: str
     dataset_id: str
+    dataset_name: str
     variant: ArtifactVariant
     study: StudyConfig | None
+    study_id: str | None
     model_id: str
     task_id: str
     max_supported_delay_seconds: int
@@ -68,10 +71,13 @@ class SimulationRunRecord:
 
 @dataclass(frozen=True, slots=True)
 class SimulationSummaryRecord:
+    artifact_id: str
     chain: str
     dataset_id: str
+    dataset_name: str
     variant: ArtifactVariant
     study: StudyConfig | None
+    study_id: str | None
     model_id: str
     task_id: str
     max_supported_delay_seconds: int
@@ -124,10 +130,13 @@ def build_training_summary(
         result.training_result.best_epoch - 1
     ]
     return TrainingSummary(
+        artifact_id=manifest.artifact_id,
         chain=chain_name,
         dataset_id=dataset_id,
+        dataset_name=manifest.dataset_name,
         variant=manifest.variant,
         study=manifest.study,
+        study_id=manifest.study_id,
         model_id=model_id,
         task_id=manifest.task_id,
         max_supported_delay_seconds=manifest.max_supported_delay_seconds,
@@ -161,10 +170,13 @@ def build_simulation_summary_record(
 ) -> SimulationSummaryRecord:
     manifest = loaded_artifact.manifest
     return SimulationSummaryRecord(
+        artifact_id=manifest.artifact_id,
         chain=manifest.chain.name,
         dataset_id=manifest.dataset_id,
+        dataset_name=manifest.dataset_name,
         variant=manifest.variant,
         study=manifest.study,
+        study_id=manifest.study_id,
         model_id=manifest.model.id,
         task_id=manifest.task_id,
         max_supported_delay_seconds=manifest.max_supported_delay_seconds,

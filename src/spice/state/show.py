@@ -1,4 +1,4 @@
-"""Inspection helpers for `spice show`."""
+"""Inspection helpers for selector-based `spice show` commands."""
 
 from __future__ import annotations
 
@@ -22,110 +22,115 @@ from .artifact import (
     load_training_summary,
 )
 from .dataset import list_acquire_runs, load_dataset_summary
-from .engine import table_exists
-from .schema import artifact_manifest
 from .study import load_study, study_storage
 
 
 def describe_root(root: Path, *, detail: str | None = None) -> dict[str, object]:
     db_path = state_db_path(root)
     root_kind = detect_root_kind(db_path)
-    payload: dict[str, object] = {
-        "root": str(root),
-        "state_db": str(db_path),
-        "root_kind": root_kind,
-    }
     if root_kind == DATASET_ROOT_KIND:
-        payload["dataset"] = _dataset_payload(load_dataset_summary(db_path))
+        payload: dict[str, object] = {
+            "root_kind": root_kind,
+            "dataset": _dataset_payload(load_dataset_summary(db_path)),
+        }
         if detail == "runs":
             payload["runs"] = list_acquire_runs(db_path)
         return payload
     if root_kind == ARTIFACT_ROOT_KIND:
-        payload.update(_artifact_payload(db_path, detail=detail))
-        return payload
+        return {
+            "root_kind": root_kind,
+            **_artifact_payload(db_path, detail=detail),
+        }
     if root_kind == STUDY_ROOT_KIND:
-        payload.update(_study_payload(db_path, detail=detail))
-        if table_exists(db_path, artifact_manifest.name):
-            payload.update(_artifact_payload(db_path, detail=detail))
-        return payload
+        return {
+            "root_kind": root_kind,
+            **_study_payload(db_path, detail=detail),
+        }
     raise ValueError(f"Unsupported root kind: {root_kind}")
 
 
 def sectioned_summary(
     payload: dict[str, object],
 ) -> tuple[str, list[tuple[str, list[tuple[str, str]]]]]:
-    root_kind = payload["root_kind"]
+    root_kind = str(payload["root_kind"])
     if root_kind == DATASET_ROOT_KIND:
-        dataset = _mapping(payload["dataset"])
-        sections = [
-            (
-                "dataset",
-                [
-                    ("id", str(dataset["dataset_id"])),
-                    ("chain", str(dataset["chain"])),
-                    ("provider", str(dataset["provider"])),
-                    ("state", str(payload["state_db"])),
-                ],
-            ),
-            (
-                "request",
-                [
-                    ("history", _window_string(_mapping(dataset["history_request"]))),
-                    ("evaluation", _window_string(_mapping(dataset["evaluation_request"]))),
-                ],
-            ),
-            (
-                "coverage",
-                [
-                    ("history rows", str(dataset["history_rows"])),
-                    ("evaluation rows", str(dataset["evaluation_rows"])),
-                ],
-            ),
-        ]
-        runs = payload.get("runs")
-        if isinstance(runs, list):
-            sections.append(
-                (
-                    "runs",
-                    [
-                        (f"run {index}", _acquire_run_string(_mapping(run)))
-                        for index, run in enumerate(runs, start=1)
-                    ],
-                )
-            )
-        return "dataset summary", sections
+        return "dataset summary", _dataset_sections(payload)
     if root_kind == ARTIFACT_ROOT_KIND:
         return "artifact summary", _artifact_sections(payload)
     if root_kind == STUDY_ROOT_KIND:
-        sections = _study_sections(payload)
-        if "manifest" in payload:
-            sections.extend(_artifact_sections(payload))
-        return "study summary", sections
+        return "study summary", _study_sections(payload)
     raise ValueError(f"Unsupported root kind: {root_kind}")
 
 
+def _dataset_payload(summary) -> dict[str, object]:
+    return {
+        "dataset_id": summary.dataset.id,
+        "dataset_name": summary.dataset.name,
+        "chain": summary.chain.name,
+        "provider": summary.provider.name,
+        "history_request": {
+            "start_timestamp": summary.request.history.start_timestamp,
+            "end_timestamp": summary.request.history.end_timestamp,
+        },
+        "evaluation_request": {
+            "start_timestamp": summary.request.evaluation.start_timestamp,
+            "end_timestamp": summary.request.evaluation.end_timestamp,
+        },
+        "history_coverage": {
+            "start_timestamp": summary.coverage.history.start_timestamp,
+            "end_timestamp": summary.coverage.history.end_timestamp,
+        },
+        "evaluation_coverage": {
+            "start_timestamp": summary.coverage.evaluation.start_timestamp,
+            "end_timestamp": summary.coverage.evaluation.end_timestamp,
+        },
+        "history_rows": summary.validation.history.rows,
+        "evaluation_rows": summary.validation.evaluation.rows,
+    }
+
+
 def _artifact_payload(db_path: Path, *, detail: str | None) -> dict[str, object]:
-    payload: dict[str, object] = {}
     manifest = load_artifact_manifest(db_path)
     training = load_training_summary(db_path)
     simulation = load_simulation_summary(db_path)
-    payload["manifest"] = {
-        "chain": manifest.chain.name,
-        "dataset_id": manifest.dataset_id,
-        "task_id": manifest.task_id,
-        "variant": manifest.variant.value,
-        "study_id": None if manifest.study is None else manifest.study.id,
-        "model_id": manifest.model.id,
-        "max_supported_delay_seconds": manifest.max_supported_delay_seconds,
-        "lookback_seconds": manifest.lookback_seconds,
-        "sample_count": manifest.sample_count,
-        "feature_set_id": manifest.feature_set_id,
-        "feature_names": list(manifest.feature_names),
+    payload: dict[str, object] = {
+        "manifest": {
+            "artifact_id": manifest.artifact_id,
+            "chain": manifest.chain.name,
+            "dataset_id": manifest.dataset_id,
+            "dataset_name": manifest.dataset_name,
+            "task_id": manifest.task_id,
+            "variant": manifest.variant.value,
+            "study_id": manifest.study_id,
+            "study_name": None if manifest.study is None else manifest.study.name,
+            "model_id": manifest.model.id,
+            "max_supported_delay_seconds": manifest.max_supported_delay_seconds,
+            "lookback_seconds": manifest.lookback_seconds,
+            "sample_count": manifest.sample_count,
+            "feature_set_id": manifest.feature_set_id,
+            "feature_names": list(manifest.feature_names),
+        }
     }
     if training is not None:
-        payload["training"] = _training_summary_payload(training)
+        payload["training"] = {
+            "best_epoch": training.best_epoch,
+            "split": (
+                f"train={training.split_sizes.train_samples} "
+                f"validation={training.split_sizes.validation_samples} "
+                f"test={training.split_sizes.test_samples}"
+            ),
+            "best_validation_metrics": asdict(training.best_validation_metrics),
+            "test_metrics": asdict(training.test_metrics),
+        }
     if simulation is not None:
-        payload["simulation"] = _simulation_summary_payload(simulation)
+        payload["simulation"] = {
+            "requested_delay_seconds": simulation.requested_delay_seconds,
+            "simulation_window_seconds": simulation.simulation_window_seconds,
+            "repetitions": simulation.repetitions,
+            "total_events": simulation.total_events,
+            "profit_over_baseline": asdict(simulation.profit_over_baseline),
+            "cost_over_optimum": asdict(simulation.cost_over_optimum),
+        }
     if detail == "epochs":
         payload["epochs"] = list_training_epochs(db_path)
     if detail == "runs":
@@ -139,8 +144,7 @@ def _study_payload(db_path: Path, *, detail: str | None) -> dict[str, object]:
         raise ValueError(f"No Optuna study found in {db_path}")
     if len(summaries) != 1:
         raise ValueError(f"Expected exactly one study in {db_path}, found {len(summaries)}")
-    study_name = summaries[0].study_name
-    study = load_study(db_path, study_name=study_name)
+    study = load_study(db_path, study_name=summaries[0].study_name)
     context = study.user_attrs.get("spice_context")
     if not isinstance(context, dict):
         raise ValueError(f"Missing SPICE study context in {db_path}")
@@ -153,6 +157,7 @@ def _study_payload(db_path: Path, *, detail: str | None) -> dict[str, object]:
         best_trial_number = None
     payload: dict[str, object] = {
         "study": {
+            "study_id": context.get("study_id"),
             "study_name": study.study_name,
             "direction": study.direction.name,
             "best_value": best_value,
@@ -175,18 +180,65 @@ def _study_payload(db_path: Path, *, detail: str | None) -> dict[str, object]:
     return payload
 
 
+def _dataset_sections(payload: dict[str, object]) -> list[tuple[str, list[tuple[str, str]]]]:
+    dataset = _mapping(payload["dataset"])
+    sections = [
+        (
+            "dataset",
+            [
+                ("name", str(dataset["dataset_name"])),
+                ("storage id", str(dataset["dataset_id"])),
+                ("chain", str(dataset["chain"])),
+                ("provider", str(dataset["provider"])),
+            ],
+        ),
+        (
+            "request",
+            [
+                ("history", _window_string(_mapping(dataset["history_request"]))),
+                ("evaluation", _window_string(_mapping(dataset["evaluation_request"]))),
+            ],
+        ),
+        (
+            "coverage",
+            [
+                ("history", _window_string(_mapping(dataset["history_coverage"]))),
+                ("evaluation", _window_string(_mapping(dataset["evaluation_coverage"]))),
+                ("history rows", str(dataset["history_rows"])),
+                ("evaluation rows", str(dataset["evaluation_rows"])),
+            ],
+        ),
+    ]
+    runs = payload.get("runs")
+    if isinstance(runs, list):
+        sections.append(
+            (
+                "runs",
+                [
+                    (f"run {index}", _acquire_run_string(_mapping(run)))
+                    for index, run in enumerate(runs, start=1)
+                ],
+            )
+        )
+    return sections
+
+
 def _artifact_sections(payload: dict[str, object]) -> list[tuple[str, list[tuple[str, str]]]]:
     manifest = _mapping(payload["manifest"])
     sections = [
         (
             "artifact",
             [
+                ("artifact id", str(manifest["artifact_id"])),
+                ("dataset", str(manifest["dataset_name"])),
+                ("dataset id", str(manifest["dataset_id"])),
                 ("chain", str(manifest["chain"])),
-                ("dataset", str(manifest["dataset_id"])),
                 ("task", str(manifest["task_id"])),
+                ("feature set", str(manifest["feature_set_id"])),
                 ("model", str(manifest["model_id"])),
                 ("variant", str(manifest["variant"])),
-                ("study", str(manifest["study_id"] or "n/a")),
+                ("study", str(manifest["study_name"] or "n/a")),
+                ("study id", str(manifest["study_id"] or "n/a")),
                 ("capability", f"{manifest['max_supported_delay_seconds']}s"),
             ],
         ),
@@ -258,15 +310,16 @@ def _study_sections(payload: dict[str, object]) -> list[tuple[str, list[tuple[st
         (
             "study",
             [
-                ("id", str(study["study_name"])),
+                ("name", str(study["study_name"])),
+                ("storage id", str(study["study_id"])),
                 ("direction", str(study["direction"])),
                 ("chain", str(context["chain"])),
-                ("dataset", str(context["dataset_id"])),
+                ("dataset", str(context["dataset_name"])),
+                ("dataset id", str(context["dataset_id"])),
                 ("task", str(context["task_id"])),
                 ("feature set", str(context["feature_set_id"])),
                 ("model", str(context["model_id"])),
                 ("trials", str(study["trial_count"])),
-                ("state", str(payload["state_db"])),
             ],
         ),
         (
@@ -276,7 +329,7 @@ def _study_sections(payload: dict[str, object]) -> list[tuple[str, list[tuple[st
                     "number",
                     "n/a"
                     if study["best_trial_number"] is None
-                    else str(study["best_trial_number"]),
+                    else str(study["best_trial_number"] + 1),
                 ),
                 (
                     "value",
@@ -292,52 +345,10 @@ def _study_sections(payload: dict[str, object]) -> list[tuple[str, list[tuple[st
         sections.append(
             (
                 "trials",
-                [(f"trial {row['number']}", _trial_string(_mapping(row))) for row in trials],
+                [(f"trial {row['number'] + 1}", _trial_string(_mapping(row))) for row in trials],
             )
         )
     return sections
-
-
-def _dataset_payload(summary) -> dict[str, object]:
-    return {
-        "dataset_id": summary.dataset.id,
-        "chain": summary.chain.name,
-        "provider": summary.provider.name,
-        "history_request": {
-            "start_timestamp": summary.request.history.start_timestamp,
-            "end_timestamp": summary.request.history.end_timestamp,
-        },
-        "evaluation_request": {
-            "start_timestamp": summary.request.evaluation.start_timestamp,
-            "end_timestamp": summary.request.evaluation.end_timestamp,
-        },
-        "history_rows": summary.validation.history.rows,
-        "evaluation_rows": summary.validation.evaluation.rows,
-    }
-
-
-def _training_summary_payload(summary) -> dict[str, object]:
-    return {
-        "best_epoch": summary.best_epoch,
-        "split": (
-            f"train={summary.split_sizes.train_samples} "
-            f"validation={summary.split_sizes.validation_samples} "
-            f"test={summary.split_sizes.test_samples}"
-        ),
-        "best_validation_metrics": asdict(summary.best_validation_metrics),
-        "test_metrics": asdict(summary.test_metrics),
-    }
-
-
-def _simulation_summary_payload(summary) -> dict[str, object]:
-    return {
-        "requested_delay_seconds": summary.requested_delay_seconds,
-        "simulation_window_seconds": summary.simulation_window_seconds,
-        "repetitions": summary.repetitions,
-        "total_events": summary.total_events,
-        "profit_over_baseline": asdict(summary.profit_over_baseline),
-        "cost_over_optimum": asdict(summary.cost_over_optimum),
-    }
 
 
 def _window_string(window: dict[str, object]) -> str:
@@ -380,7 +391,11 @@ def _simulation_run_string(row: dict[str, object]) -> str:
 
 def _trial_string(row: dict[str, object]) -> str:
     value = "n/a" if row["value"] is None else f"{float(row['value']):.4f}"
-    return f"state={row['state']} value={value}"
+    best_epoch = row.get("best_epoch")
+    params = row.get("params")
+    params_text = "" if not isinstance(params, dict) or not params else f" params={params}"
+    epoch_text = "" if best_epoch is None else f" best_epoch={best_epoch}"
+    return f"state={row['state']} value={value}{epoch_text}{params_text}"
 
 
 def _mapping(payload: object) -> dict[str, object]:

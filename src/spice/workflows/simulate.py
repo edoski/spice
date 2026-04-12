@@ -11,14 +11,14 @@ from ..modeling.pipeline import prepare_inference_dataset
 from ..modeling.reporting import build_simulation_summary_record
 from ..modeling.simulation import run_temporal_simulation
 from ..planning.contracts import resolve_feature_contract
-from ..state import ARTIFACT_ROOT_KIND, STUDY_ROOT_KIND
+from ..state import ARTIFACT_ROOT_KIND
 from ..state.artifact import write_simulation_state
 from ._shared import abort_cleanup, managed_workflow
 
 
 def _workflow_facts(config: SimulateConfig) -> list[tuple[str, str]]:
     facts = [
-        ("dataset", config.dataset.id),
+        ("dataset", config.dataset.name),
         ("chain", config.chain.name),
         ("task", config.task.id),
         ("execution", config.execution.id),
@@ -26,13 +26,12 @@ def _workflow_facts(config: SimulateConfig) -> list[tuple[str, str]]:
         ("variant", config.artifact.variant.value),
     ]
     if config.artifact.variant.value == "tuned":
-        facts.append(("study", config.study.id))
+        facts.append(("study", config.study.name))
     return facts
 
 
 def _state_root_kind(config: SimulateConfig) -> str:
-    if config.artifact.variant.value == "tuned":
-        return STUDY_ROOT_KIND
+    del config
     return ARTIFACT_ROOT_KIND
 
 
@@ -166,7 +165,8 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                 (
                     "dataset",
                     [
-                        ("id", summary.dataset_id),
+                        ("name", summary.dataset_name),
+                        ("storage id", summary.dataset_id),
                         ("chain", summary.chain),
                         ("model", summary.model_id),
                         ("task", summary.task_id),
@@ -175,11 +175,11 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                 (
                     "provenance",
                     [
+                        ("artifact id", summary.artifact_id),
                         ("variant", summary.variant.value),
-                        *([] if summary.study is None else [("study", summary.study.id)]),
+                        *([] if summary.study is None else [("study", summary.study.name)]),
                         ("capability", f"{summary.max_supported_delay_seconds}s"),
                         ("requested", f"{summary.requested_delay_seconds}s"),
-                        ("state", str(artifact_dir / ".spice" / "state.sqlite")),
                     ],
                 ),
                 (

@@ -38,7 +38,10 @@ spice acquire --preset icdcs_2026 --chain avalanche --provider publicnode
 spice train --preset icdcs_2026 --model lstm --feature-set icdcs_2026
 spice tune --preset icdcs_2026 --model lstm --feature-set icdcs_2026 --trial-count 20
 spice simulate --preset icdcs_2026 --variant baseline
-spice show outputs/datasets/avalanche/icdcs_2026
+spice show dataset
+spice show artifact --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --variant baseline
+spice show study --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --study default
+spice delete artifact --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --variant baseline
 ```
 
 Override files stay plain YAML:
@@ -68,15 +71,18 @@ Rules:
 
 ## Output Layout
 
+- catalog: `outputs/.spice/catalog.sqlite`
 - history blocks: `outputs/datasets/<chain>/<dataset_id>/history/...`
 - evaluation blocks: `outputs/datasets/<chain>/<dataset_id>/evaluation/...`
 - dataset state: `outputs/datasets/<chain>/<dataset_id>/.spice/state.sqlite`
-- model artifacts: `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/...`
-- artifact state: `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/.spice/state.sqlite`
-- tuned study state: `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/tuned/<study_id>/.spice/state.sqlite`
+- tuned study state: `outputs/studies/<chain>/<study_id>/.spice/state.sqlite`
+- model artifacts: `outputs/models/<chain>/<artifact_id>/...`
+- artifact state: `outputs/models/<chain>/<artifact_id>/.spice/state.sqlite`
 
 `outputs/` is the default root. Override it only when you want isolation somewhere else.
 
+Users query by selectors such as `--dataset`, `--study`, `--model`, `--task`, and `--variant`.
+The filesystem ids are deterministic internal storage ids. The catalog maps selectors to roots.
 Structured state is SQLite-only. SPICE no longer persists generated JSON metadata or report files.
 
 ## Verification

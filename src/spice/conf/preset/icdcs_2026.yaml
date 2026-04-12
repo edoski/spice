@@ -9,6 +9,6 @@ split: default
 simulation: icdcs_2026
 tuning: default
 study:
-  id: default
+  name: default
 artifact:
   variant: baseline

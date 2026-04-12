@@ -37,11 +37,14 @@ class ArtifactChainMetadata:
 
 @dataclass(frozen=True, slots=True)
 class TrainingArtifactManifest:
+    artifact_id: str
     chain: ArtifactChainMetadata
     dataset_id: str
+    dataset_name: str
     task_id: str
     variant: ArtifactVariant
     study: StudyConfig | None
+    study_id: str | None
     max_supported_delay_seconds: int
     lookback_seconds: int
     sample_count: int
@@ -132,14 +135,17 @@ def build_training_artifact_manifest(
     spec: TrainingSpec,
 ) -> TrainingArtifactManifest:
     return TrainingArtifactManifest(
+        artifact_id=spec.artifact_id,
         chain=ArtifactChainMetadata(
             name=spec.chain.name,
             block_time_seconds=spec.chain.runtime.block_time_seconds,
         ),
         dataset_id=spec.dataset_id,
+        dataset_name=spec.dataset_name,
         task_id=spec.task.id,
         variant=spec.variant,
         study=spec.study,
+        study_id=spec.study_id,
         max_supported_delay_seconds=spec.task.max_supported_delay_seconds,
         lookback_seconds=spec.task.lookback_seconds,
         sample_count=spec.task.sample_count,
