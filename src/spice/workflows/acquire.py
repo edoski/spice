@@ -14,17 +14,16 @@ from ..acquisition.datasets import (
     ensure_history_dataset,
 )
 from ..acquisition.metadata import (
-    build_dataset_metadata,
-    load_dataset_metadata,
-    merge_providers,
+    build_acquire_run_record,
+    build_dataset_summary,
     provider_metadata,
 )
 from ..acquisition.rpc import RpcController, Web3BlockClient, evaluation_range
 from ..config import AcquireConfig
 from ..core.console import Reporter
 from ..core.files import promote_paths_atomic
-from ..core.json import write_json
 from ..planning.geometry import derive_dataset_geometry
+from ..state.dataset import write_dataset_state
 from ._shared import managed_workflow
 
 
@@ -106,7 +105,7 @@ def run(config: AcquireConfig, *, reporter: Reporter | None = None) -> None:
 async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None) -> None:
     history_dir = config.paths.history_dir
     evaluation_dir = config.paths.evaluation_dir
-    metadata_path = config.paths.dataset_metadata_path
+    state_db_path = config.paths.dataset_state_db
     rpc_controller = RpcController.from_config(config.acquisition)
 
     geometry = derive_dataset_geometry(
@@ -210,7 +209,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 )
                 return
 
-            existing_metadata = load_dataset_metadata(metadata_path)
+            current_provider = provider_metadata(config)
             try:
                 config.paths.dataset_root.parent.mkdir(parents=True, exist_ok=True)
                 with TemporaryDirectory(
@@ -253,41 +252,38 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                         unit="blocks",
                         message=f"{evaluation_result.file_count:,} files",
                     )
-                    providers = list(existing_metadata.providers) if existing_metadata else []
-                    current_provider = provider_metadata(config)
-                    if (
-                        not providers
-                        or history_result.pulled_blocks
-                        or evaluation_result.pulled_blocks
-                    ):
-                        providers = merge_providers(providers, current_provider)
-                    metadata = build_dataset_metadata(
+                    summary = build_dataset_summary(
                         config=config,
-                        history_dir=history_dir,
-                        evaluation_dir=evaluation_dir,
                         history_request_start_timestamp=history_plan.window.start,
                         history_request_end_timestamp=history_plan.window.end,
                         evaluation_request_start_timestamp=evaluation_window.start,
                         evaluation_request_end_timestamp=evaluation_window.end,
-                        providers=providers,
+                        provider=current_provider,
                         history_validation=history_result.validation,
                         evaluation_validation=evaluation_result.validation,
+                    )
+                    acquire_run = build_acquire_run_record(
+                        config=config,
+                        provider=current_provider,
                         acquisition_runtime=rpc_controller.snapshot(),
                     )
-                    metadata_path.parent.mkdir(parents=True, exist_ok=True)
-                    metadata_task = metadata_reporter.start_task("write dataset metadata")
-                    metadata_tmp_path = temp_root / ".spice" / "metadata.json"
-                    write_json(metadata_tmp_path, metadata)
+                    metadata_task = metadata_reporter.start_task("write dataset state")
+                    temp_state_db = temp_root / ".spice" / "state.sqlite"
+                    write_dataset_state(
+                        temp_state_db,
+                        summary=summary,
+                        acquire_run=acquire_run,
+                    )
                     promotions: list[tuple[Path, Path]] = []
                     if history_result.promote_dir is not None:
                         promotions.append((history_dir, history_result.promote_dir))
                     if evaluation_result.promote_dir is not None:
                         promotions.append((evaluation_dir, evaluation_result.promote_dir))
-                    promotions.append((metadata_path, metadata_tmp_path))
+                    promotions.append((state_db_path, temp_state_db))
                     promote_paths_atomic(promotions)
                     metadata_reporter.finish_task(
                         metadata_task,
-                        message=str(metadata_path),
+                        message=str(state_db_path),
                         silent=True,
                     )
             except KeyboardInterrupt:
@@ -310,6 +306,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                         [
                             ("id", config.dataset.id),
                             ("chain", chain_label),
+                            ("state", str(state_db_path)),
                         ],
                     ),
                     (

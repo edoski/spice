@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from spice.acquisition.metadata import load_dataset_metadata
 from spice.acquisition.rpc import BlockPullPlan, BlockRange, TimestampRange
 from spice.core.console import NullReporter
+from spice.state.dataset import list_acquire_runs, load_dataset_summary
 from spice.workflows.acquire import run as run_acquire
 from tests.support import (
     acquire_override,
@@ -101,13 +101,13 @@ def test_acquire_workflow_writes_canonical_dataset_and_metadata(
 
     run_acquire(config, reporter=NullReporter())
 
-    metadata = load_dataset_metadata(config.paths.dataset_metadata_path)
-    assert metadata is not None
-    assert metadata.paths.output_root == str(config.storage.root)
-    assert metadata.settings.history_context_blocks == config.dataset.history_context_blocks
-    assert metadata.validation.history.rows == required_blocks
-    assert metadata.validation.evaluation.rows == evaluation_plan.expected_rows
-    assert len(metadata.providers) == 1
-    assert metadata.providers[0].name == "publicnode"
+    summary = load_dataset_summary(config.paths.dataset_state_db)
+    runs = list_acquire_runs(config.paths.dataset_state_db)
+    assert config.paths.dataset_state_db.is_file()
+    assert summary.settings.history_context_blocks == config.dataset.history_context_blocks
+    assert summary.validation.history.rows == required_blocks
+    assert summary.validation.evaluation.rows == evaluation_plan.expected_rows
+    assert summary.provider.name == "publicnode"
+    assert len(runs) == 1
     assert config.paths.history_dir.is_dir()
     assert config.paths.evaluation_dir.is_dir()

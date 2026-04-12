@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import optuna
 from optuna.trial import FrozenTrial, TrialState
@@ -10,23 +12,16 @@ from optuna.trial import FrozenTrial, TrialState
 from ..config import TuneConfig
 from ..core.console import ConsoleRuntime, Reporter
 from ..core.files import remove_path
-from ..core.json import write_json
 from ..modeling.execution import run_persisted_training
 from ..modeling.pipeline import TrainingStageReporters
 from ..modeling.registry import sample_tuned_parameters
-from ._shared import (
-    abort_cleanup,
-    build_training_spec,
-    epoch_metrics_to_dict,
-    managed_workflow,
-    trial_artifact_dir,
-)
+from ..state.study import create_or_load_study
+from ._shared import abort_cleanup, build_training_spec, epoch_metrics_to_dict, managed_workflow
 from ._tuning import (
     apply_tuned_parameters,
-    build_best_params_report,
-    build_study_report,
-    build_trial_record,
+    build_study_summary,
     flatten_tuned_parameters,
+    freeze_best_epoch_for_trial,
     freeze_tuned_parameters_for_trial,
 )
 
@@ -62,10 +57,18 @@ def _workflow_facts(config: TuneConfig) -> list[tuple[str, str]]:
     ]
 
 
+def _trial_work_dir(artifact_root: Path, trial_number: int) -> TemporaryDirectory[str]:
+    return TemporaryDirectory(
+        dir=artifact_root.parent,
+        prefix=f".trial-{trial_number:03d}.",
+    )
+
+
 def _objective(
     base_config: TuneConfig,
     trial: optuna.Trial,
     *,
+    artifact_root: Path,
     runtime: ConsoleRuntime,
     trial_reporter: Reporter,
 ) -> float:
@@ -75,38 +78,38 @@ def _objective(
     config = apply_tuned_parameters(base_config, params)
 
     spec = build_training_spec(config)
-    artifact_dir = trial_artifact_dir(config, trial.number)
     history_block_path = config.paths.history_dir
     runtime.set_stage_state(
         "trial",
         status="running",
         message=f"trial {trial.number + 1}/{base_config.tuning.trial_count}",
     )
-    with managed_workflow(
-        config,
-        run_name=f"trial-{trial.number:03d}",
-        runtime=runtime,
-        reporter=trial_reporter,
-        nested=True,
-    ) as session:
-        persisted = run_persisted_training(
-            history_block_path,
-            spec=spec,
-            artifact_dir=artifact_dir,
-            report_path=artifact_dir / "train_report.json",
-            stage_reporters=TrainingStageReporters.shared(trial_reporter),
-            write_reporter=trial_reporter,
-            reporter=session.reporter,
-        )
-        metric_map = epoch_metrics_to_dict(persisted.best_validation_metrics)
-        metric_value = metric_map[config.tuning.objective_metric.metric_name]
-        trial.set_user_attr("best_epoch", persisted.training_run.training_result.best_epoch)
-        trial.set_user_attr("artifact_dir", str(artifact_dir))
-        if config.tuning.enable_pruning:
-            trial.report(metric_value, step=persisted.training_run.training_result.best_epoch)
-            if trial.should_prune():
-                raise optuna.TrialPruned()
-        return metric_value
+    with _trial_work_dir(artifact_root, trial.number) as temp_dir_name:
+        artifact_dir = Path(temp_dir_name)
+        with managed_workflow(
+            config,
+            run_name=f"trial-{trial.number:03d}",
+            runtime=runtime,
+            reporter=trial_reporter,
+            nested=True,
+        ) as session:
+            persisted = run_persisted_training(
+                history_block_path,
+                spec=spec,
+                artifact_dir=artifact_dir,
+                stage_reporters=TrainingStageReporters.shared(trial_reporter),
+                write_reporter=trial_reporter,
+                reporter=session.reporter,
+                persist_artifact=False,
+            )
+    metric_map = epoch_metrics_to_dict(persisted.best_validation_metrics)
+    metric_value = metric_map[config.tuning.objective_metric.metric_name]
+    freeze_best_epoch_for_trial(trial, persisted.training_run.training_result.best_epoch)
+    if config.tuning.enable_pruning:
+        trial.report(metric_value, step=persisted.training_run.training_result.best_epoch)
+        if trial.should_prune():
+            raise optuna.TrialPruned()
+    return metric_value
 
 
 def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
@@ -121,10 +124,9 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
     ) as session:
         session.runtime.configure_workflow("tune", _workflow_facts(config))
         artifact_root = config.paths.artifact_root
-        tuning_root = config.paths.tuning_root
-        best_params_path = config.paths.tuning_best_params_path
-        if artifact_root is None or tuning_root is None or best_params_path is None:
-            raise ValueError("tuning workflow requires artifact output paths")
+        study_state_db = config.paths.study_state_db
+        if artifact_root is None or study_state_db is None:
+            raise ValueError("tuning workflow requires study output paths")
         study_reporter = session.runtime.stage_reporter(
             "study",
             label="study",
@@ -132,11 +134,6 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
             unit="trials",
         )
         trial_reporter = session.runtime.stage_reporter("trial", label="trial")
-        write_reporter = session.runtime.stage_reporter(
-            "write",
-            label="write",
-            running_status="writing",
-        )
         with abort_cleanup(
             session.reporter,
             label="tune",
@@ -149,8 +146,10 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
                 total=config.tuning.trial_count,
                 unit="trials",
             )
+            study = create_or_load_study(study_state_db, config=config)
 
-            def on_trial_complete(study: optuna.Study, frozen_trial: FrozenTrial) -> None:
+            def on_trial_complete(active_study: optuna.Study, frozen_trial: FrozenTrial) -> None:
+                del active_study
                 study_reporter.update_task(
                     study_task,
                     completed=frozen_trial.number + 1,
@@ -163,20 +162,11 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
                 )
 
             with session.runtime.optuna_logging():
-                study = optuna.create_study(
-                    study_name=config.study.id,
-                    direction=config.tuning.direction,
-                    pruner=(
-                        optuna.pruners.MedianPruner()
-                        if config.tuning.enable_pruning
-                        else optuna.pruners.NopPruner()
-                    ),
-                    sampler=optuna.samplers.TPESampler(seed=config.tuning.sampler_seed),
-                )
                 study.optimize(
                     lambda trial: _objective(
                         config,
                         trial,
+                        artifact_root=artifact_root,
                         runtime=session.runtime,
                         trial_reporter=trial_reporter,
                     ),
@@ -184,15 +174,6 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
                     timeout=config.tuning.timeout_seconds,
                     callbacks=[on_trial_complete],
                 )
-            study_path = tuning_root / "study.json"
-            trials_path = tuning_root / "trials.json"
-            study_report = build_study_report(config, study)
-            trial_records = [build_trial_record(trial) for trial in study.trials]
-            write_task = write_reporter.start_task("write tuning summary")
-            write_json(study_path, study_report)
-            write_json(trials_path, tuple(trial_records))
-            write_json(best_params_path, build_best_params_report(config, study))
-            write_reporter.finish_task(write_task, message=str(best_params_path), silent=True)
             completed_trials = [
                 trial for trial in study.trials if trial.state == TrialState.COMPLETE
             ]
@@ -203,23 +184,25 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
                 )
             else:
                 study_reporter.finish_task(study_task, message="no successful trials")
-            best_trial = study_report.best_trial
+            summary = build_study_summary(config, study)
+            best_trial = summary.best_trial
             session.runtime.log_sectioned_summary(
                 "tuning summary",
                 [
                     (
                         "study",
                         [
-                            ("id", study_report.study.id),
-                            ("chain", study_report.chain),
-                            ("model", study_report.model_id),
-                            ("trials", str(study_report.trial_counts.total)),
+                            ("id", summary.study.id),
+                            ("chain", summary.chain),
+                            ("model", summary.model_id),
+                            ("trials", str(summary.trial_counts.total)),
+                            ("state", str(study_state_db)),
                         ],
                     ),
                     (
                         "best trial",
                         [
-                            ("objective", study_report.objective_metric.value),
+                            ("objective", summary.objective_metric.value),
                             (
                                 "value",
                                 "n/a"
@@ -236,13 +219,6 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
                                 if best_trial is None
                                 else _format_best_params(best_trial.params),
                             ),
-                        ],
-                    ),
-                    (
-                        "artifacts",
-                        [
-                            ("study", str(study_path)),
-                            ("best params", str(best_params_path)),
                         ],
                     ),
                 ],

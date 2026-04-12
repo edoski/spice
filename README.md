@@ -6,9 +6,10 @@ SPICE is a temporal fee-timing pipeline for EVM chains. It acquires canonical bl
 
 - `Typer` for the root CLI
 - `Pydantic` + `PyYAML` for explicit config loading
+- `SQLAlchemy Core` for SPICE-owned structured state
 - `sf-hamilton` for feature/dataflow execution
 - `Lightning` + `PyTorch` for training
-- `Optuna` for tuning
+- `Optuna` for tuning and study persistence
 - `web3.py` for RPC access
 - `Polars` + `Pandera` for block-table validation and dataset IO
 
@@ -33,6 +34,7 @@ Everything runs through one command with explicit flags:
 .venv/bin/spice train --preset icdcs_2026 --model lstm --feature-set icdcs_2026
 .venv/bin/spice tune --preset icdcs_2026 --model lstm --feature-set icdcs_2026 --trial-count 20
 .venv/bin/spice simulate --preset icdcs_2026 --variant baseline
+.venv/bin/spice show outputs/datasets/avalanche/icdcs_2026
 ```
 
 Override files stay plain YAML:
@@ -64,11 +66,14 @@ Rules:
 
 - history blocks: `outputs/datasets/<chain>/<dataset_id>/history/...`
 - evaluation blocks: `outputs/datasets/<chain>/<dataset_id>/evaluation/...`
-- dataset metadata: `outputs/datasets/<chain>/<dataset_id>/.spice/metadata.json`
+- dataset state: `outputs/datasets/<chain>/<dataset_id>/.spice/state.sqlite`
 - model artifacts: `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/...`
-- tuning outputs: `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/tuned/<study_id>/tuning/...`
+- artifact state: `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/.spice/state.sqlite`
+- tuned study state: `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/tuned/<study_id>/.spice/state.sqlite`
 
 `outputs/` is the default root. Override it only when you want isolation somewhere else.
+
+Structured state is SQLite-only. SPICE no longer persists generated JSON metadata or report files.
 
 ## Verification
 

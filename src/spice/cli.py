@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -148,6 +149,75 @@ def _run_simulate(
             study=study,
         )
     )
+
+
+def _run_show(
+    *,
+    root: Path,
+    detail: str | None,
+    as_json: bool,
+) -> None:
+    from .core.console import create_console_runtime
+    from .state import STATE_DB_FILENAME
+    from .state.show import describe_root, sectioned_summary
+
+    target_root = root
+    if target_root.is_file() and target_root.name == STATE_DB_FILENAME:
+        target_root = target_root.parent.parent
+    try:
+        payload = describe_root(target_root, detail=detail)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    title, sections = sectioned_summary(payload)
+    runtime = create_console_runtime()
+    try:
+        with runtime.activate():
+            runtime.log_sectioned_summary(title, sections)
+    finally:
+        runtime.close()
+
+
+@app.command(
+    "show",
+    short_help="Inspect a dataset, artifact, or study root.",
+    help="Inspect one generated state root and print a concise summary.",
+    epilog=(
+        "Example:\n"
+        "  spice show outputs/datasets/avalanche/icdcs_2026\n"
+        "  spice show outputs/models/.../tuned/default --detail trials"
+    ),
+)
+def show_command(
+    root: Annotated[
+        Path,
+        typer.Argument(
+            metavar="ROOT",
+            help="Dataset, artifact, or study root to inspect.",
+        ),
+    ],
+    detail: Annotated[
+        str | None,
+        typer.Option(
+            "--detail",
+            metavar="DETAIL",
+            help="Show one detail table: trials, epochs, or runs.",
+            rich_help_panel="Execution",
+        ),
+    ] = None,
+    as_json: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print the inspected state as JSON to stdout.",
+            rich_help_panel="Execution",
+        ),
+    ] = False,
+) -> None:
+    _run_show(root=root, detail=detail, as_json=as_json)
 
 
 @app.command(

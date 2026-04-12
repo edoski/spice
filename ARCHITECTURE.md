@@ -55,15 +55,23 @@ Rules:
 ### `core`
 
 - [console.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/console.py): workflow reporting
-- [json.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/json.py): JSON artifact writes
 - [files.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/files.py): atomic file and directory promotion helpers
+
+### `state`
+
+- `engine.py`: SQLAlchemy engine creation, SQLite PRAGMAs, root-kind bootstrap
+- `schema.py`: SPICE-owned Core table definitions
+- `dataset.py`: dataset summary + acquire-run persistence
+- `artifact.py`: manifest, training, and simulation persistence
+- `study.py`: Optuna-backed study helpers and tuned-param loading
+- `show.py`: `spice show` inspection helpers
 
 ### `acquisition`
 
 - workflow/planning derives required history length before acquisition runs
 - [rpc.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/rpc.py): block planning, RPC pulling, adaptive batching
 - [datasets.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/datasets.py): history and evaluation dataset reuse
-- [metadata.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/metadata.py): typed dataset metadata
+- [metadata.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/metadata.py): typed dataset summary builders
 
 ### `features`
 
@@ -90,12 +98,13 @@ Rules:
 - [training.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/training.py): trainer execution and metrics
 - [execution.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/execution.py): persisted training flow
 - [artifacts.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/artifacts.py): model + manifest persistence and feature validation
+- [reporting.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/reporting.py): internal summary objects
 - [simulation.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/simulation.py): Poisson-arrival simulation over evaluation examples
 
 ### `workflows`
 
 - [acquire.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/acquire.py): acquisition orchestration
-- [tune.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/tune.py): Optuna orchestration
+- [tune.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/tune.py): Optuna orchestration with `RDBStorage`
 - [train.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/train.py): artifact-producing training orchestration
 - [simulate.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/simulate.py): evaluation-day simulation orchestration
 - [_shared.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/_shared.py): shared runtime helpers
@@ -106,16 +115,19 @@ Datasets:
 
 - `outputs/datasets/<chain>/<dataset_id>/history/...`
 - `outputs/datasets/<chain>/<dataset_id>/evaluation/...`
-- `outputs/datasets/<chain>/<dataset_id>/.spice/metadata.json`
+- `outputs/datasets/<chain>/<dataset_id>/.spice/state.sqlite`
 
 Models:
 
-- `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/artifact.json`
 - `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/model.pt`
-- `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/train_report.json`
+- `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/.spice/state.sqlite`
 
 Tuning:
 
-- `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/tuned/<study_id>/tuning/study.json`
-- `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/tuned/<study_id>/tuning/trials.json`
-- `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/tuned/<study_id>/tuning/best_params.json`
+- `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/tuned/<study_id>/.spice/state.sqlite`
+
+Notes:
+
+- SPICE-owned structured state lives only in `.spice/state.sqlite`
+- tuned study roots reuse the same SQLite file for both Optuna study tables and SPICE artifact/simulation tables
+- `spice show ROOT` is the human-facing inspection path; generated JSON reports/manifests are gone

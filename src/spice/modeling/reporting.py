@@ -1,72 +1,62 @@
-"""Structured report artifacts for training and simulation runs."""
+"""Internal training and simulation summaries."""
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Literal
-
-from pydantic import BaseModel, ConfigDict
+from collections.abc import Iterator
+from dataclasses import dataclass
 
 from ..config import ArtifactVariant, StudyConfig
-from ..core.json import write_json
 from .artifacts import LoadedTrainingArtifact, TrainingArtifactManifest
-from .pipeline import (
-    PreparedInferenceDataset,
-    PreparedTrainingDataset,
-    TrainingRunResult,
-)
+from .evaluation import EpochMetrics
+from .pipeline import PreparedInferenceDataset, PreparedTrainingDataset, TrainingRunResult
 from .simulation import SimulationSummary
 
 
-class ReportModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class SplitSizes(ReportModel):
+@dataclass(frozen=True, slots=True)
+class SplitSizes:
     train_samples: int
     validation_samples: int
     test_samples: int
 
 
-class TestMetricsReport(ReportModel):
+@dataclass(frozen=True, slots=True)
+class MetricsSummary:
     total_loss: float
     accuracy: float
     mean_cost_over_optimum: float
     mean_profit_over_baseline: float
 
 
-class TrainingRunReport(ReportModel):
-    kind: Literal["training_run_report"] = "training_run_report"
-    history_block_path: Path
-    artifact_dir: Path
+@dataclass(frozen=True, slots=True)
+class TrainingSummary:
     chain: str
     dataset_id: str
     variant: ArtifactVariant
-    study: StudyConfig | None = None
+    study: StudyConfig | None
     model_id: str
-    dataset_history_context_blocks: int
+    history_context_blocks: int
     max_delay_seconds: int
-    device_requested: str
     lookback_seconds: int
-    block_time_seconds: float
     sample_count: int
     n_blocks_available: int
     n_blocks_used: int
-    lookback_steps: int
-    max_extra_wait_steps: int
-    action_count: int
-    n_features: int
     split_sizes: SplitSizes
     best_epoch: int
-    test_metrics: TestMetricsReport
+    resolved_device: str
+    resolved_precision: str
+    compiled: bool
+    best_validation_metrics: MetricsSummary
+    test_metrics: MetricsSummary
 
 
-class SimulationAggregateReport(ReportModel):
+@dataclass(frozen=True, slots=True)
+class SimulationAggregateSummary:
     mean: float
     std: float
 
 
-class SimulationRunReport(ReportModel):
+@dataclass(frozen=True, slots=True)
+class SimulationRunRecord:
     window_start_timestamp: float
     window_end_timestamp: float
     n_arrivals: int
@@ -76,138 +66,129 @@ class SimulationRunReport(ReportModel):
     baseline_cost_over_optimum: float
 
 
-class SimulationReport(ReportModel):
-    kind: Literal["simulation_report"] = "simulation_report"
-    artifact_dir: Path
-    history_block_path: Path
-    evaluation_block_path: Path
+@dataclass(frozen=True, slots=True)
+class SimulationSummaryRecord:
     chain: str
     dataset_id: str
     variant: ArtifactVariant
-    study: StudyConfig | None = None
+    study: StudyConfig | None
     model_id: str
-    dataset_history_context_blocks: int
+    history_context_blocks: int
     max_delay_seconds: int
     lookback_seconds: int
-    block_time_seconds: float
-    lookback_steps: int
-    max_extra_wait_steps: int
-    action_count: int
     simulation_window_seconds: int
     arrival_rate_per_second: float
     repetitions: int
     n_history_context_blocks: int
     n_evaluation_blocks: int
     sample_count: int
-    profit_over_baseline: SimulationAggregateReport
-    cost_over_optimum: SimulationAggregateReport
-    baseline_cost_over_optimum: SimulationAggregateReport
+    profit_over_baseline: SimulationAggregateSummary
+    cost_over_optimum: SimulationAggregateSummary
+    baseline_cost_over_optimum: SimulationAggregateSummary
     total_events: int
-    runs: list[SimulationRunReport]
+    runs: list[SimulationRunRecord]
 
 
-def build_training_run_report(
+def summarize_epoch_metrics(metrics: EpochMetrics) -> MetricsSummary:
+    return MetricsSummary(
+        total_loss=metrics.total_loss,
+        accuracy=metrics.accuracy,
+        mean_cost_over_optimum=metrics.mean_cost_over_optimum,
+        mean_profit_over_baseline=metrics.mean_profit_over_baseline,
+    )
+
+
+def iter_epoch_pairs(result: TrainingRunResult) -> Iterator[tuple[int, EpochMetrics, EpochMetrics]]:
+    for index, (train_metrics, validation_metrics) in enumerate(
+        zip(
+            result.training_result.train_history,
+            result.training_result.validation_history,
+            strict=True,
+        ),
+        start=1,
+    ):
+        yield index, train_metrics, validation_metrics
+
+
+def build_training_summary(
     result: TrainingRunResult,
     *,
     sample_count: int,
-    max_delay_seconds: int,
-    lookback_seconds: int,
     chain_name: str,
     dataset_id: str,
     model_id: str,
-    block_time_seconds: float,
     manifest: TrainingArtifactManifest,
     prepared: PreparedTrainingDataset,
-    artifact_dir: Path,
-    history_block_path: Path,
-    device_requested: str,
-) -> TrainingRunReport:
-    metrics = result.test_metrics
-    return TrainingRunReport(
-        history_block_path=history_block_path,
-        artifact_dir=artifact_dir,
+) -> TrainingSummary:
+    best_validation = result.training_result.validation_history[
+        result.training_result.best_epoch - 1
+    ]
+    return TrainingSummary(
         chain=chain_name,
         dataset_id=dataset_id,
         variant=manifest.variant,
         study=manifest.study,
         model_id=model_id,
-        dataset_history_context_blocks=manifest.history_context_blocks,
-        max_delay_seconds=max_delay_seconds,
-        device_requested=device_requested,
-        lookback_seconds=lookback_seconds,
-        block_time_seconds=block_time_seconds,
+        history_context_blocks=manifest.history_context_blocks,
+        max_delay_seconds=manifest.max_delay_seconds,
+        lookback_seconds=manifest.lookback_seconds,
         sample_count=sample_count,
         n_blocks_available=prepared.n_blocks_available,
         n_blocks_used=prepared.n_blocks_used,
-        lookback_steps=manifest.lookback_steps,
-        max_extra_wait_steps=manifest.max_extra_wait_steps,
-        action_count=manifest.action_count,
-        n_features=manifest.n_features,
         split_sizes=SplitSizes(
             train_samples=int(prepared.split_indices.train.shape[0]),
             validation_samples=int(prepared.split_indices.validation.shape[0]),
             test_samples=int(prepared.split_indices.test.shape[0]),
         ),
         best_epoch=result.training_result.best_epoch,
-        test_metrics=TestMetricsReport(
-            total_loss=metrics.total_loss,
-            accuracy=metrics.accuracy,
-            mean_cost_over_optimum=metrics.mean_cost_over_optimum,
-            mean_profit_over_baseline=metrics.mean_profit_over_baseline,
-        ),
+        resolved_device=result.training_result.resolved_device,
+        resolved_precision=result.training_result.resolved_precision,
+        compiled=result.training_result.compiled,
+        best_validation_metrics=summarize_epoch_metrics(best_validation),
+        test_metrics=summarize_epoch_metrics(result.test_metrics),
     )
 
 
-def build_simulation_report(
+def build_simulation_summary_record(
     loaded_artifact: LoadedTrainingArtifact,
     *,
-    artifact_dir: Path,
-    history_block_path: Path,
-    evaluation_block_path: Path,
     prepared: PreparedInferenceDataset,
     simulation: SimulationSummary,
     window_seconds: int,
     arrival_rate_per_second: float,
     repetitions: int,
-) -> SimulationReport:
+) -> SimulationSummaryRecord:
     manifest = loaded_artifact.manifest
-    return SimulationReport(
-        artifact_dir=artifact_dir,
-        history_block_path=history_block_path,
-        evaluation_block_path=evaluation_block_path,
+    return SimulationSummaryRecord(
         chain=manifest.chain.name,
         dataset_id=manifest.dataset_id,
         variant=manifest.variant,
         study=manifest.study,
         model_id=manifest.model.id,
-        dataset_history_context_blocks=manifest.history_context_blocks,
+        history_context_blocks=manifest.history_context_blocks,
         max_delay_seconds=manifest.max_delay_seconds,
         lookback_seconds=manifest.lookback_seconds,
-        block_time_seconds=manifest.chain.runtime.block_time_seconds,
-        lookback_steps=manifest.lookback_steps,
-        max_extra_wait_steps=manifest.max_extra_wait_steps,
-        action_count=manifest.action_count,
         simulation_window_seconds=window_seconds,
         arrival_rate_per_second=arrival_rate_per_second,
         repetitions=repetitions,
         n_history_context_blocks=prepared.n_history_context_blocks,
         n_evaluation_blocks=prepared.n_evaluation_blocks,
         sample_count=prepared.sample_count,
-        profit_over_baseline=SimulationAggregateReport(
+        profit_over_baseline=SimulationAggregateSummary(
             mean=simulation.mean_profit_over_baseline,
             std=simulation.std_profit_over_baseline,
         ),
-        cost_over_optimum=SimulationAggregateReport(
+        cost_over_optimum=SimulationAggregateSummary(
             mean=simulation.mean_cost_over_optimum,
             std=simulation.std_cost_over_optimum,
         ),
-        baseline_cost_over_optimum=SimulationAggregateReport(
+        baseline_cost_over_optimum=SimulationAggregateSummary(
             mean=simulation.mean_baseline_cost_over_optimum,
             std=simulation.std_baseline_cost_over_optimum,
         ),
         total_events=simulation.total_events,
         runs=[
-            SimulationRunReport(
+            SimulationRunRecord(
                 window_start_timestamp=run.window_start_timestamp,
                 window_end_timestamp=run.window_end_timestamp,
                 n_arrivals=run.n_arrivals,
@@ -219,7 +200,3 @@ def build_simulation_report(
             for run in simulation.runs
         ],
     )
-
-
-def write_json_report(path: Path, report: TrainingRunReport | SimulationReport) -> None:
-    write_json(path, report)

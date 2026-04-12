@@ -461,16 +461,14 @@ class ProviderSpec(ConfigModel):
 class PathLayout:
     output_root: Path
     dataset_root: Path
-    metadata_root: Path
     history_dir: Path
     evaluation_dir: Path
-    dataset_metadata_path: Path
+    dataset_state_db: Path
     artifact_root: Path | None = None
     checkpoint_dir: Path | None = None
-    train_report_path: Path | None = None
-    simulation_report_path: Path | None = None
-    tuning_root: Path | None = None
-    tuning_best_params_path: Path | None = None
+    artifact_state_db: Path | None = None
+    study_root: Path | None = None
+    study_state_db: Path | None = None
 
 
 def build_path_layout(
@@ -490,10 +488,9 @@ def build_path_layout(
     dataset_root = output_root / "datasets" / chain.name / dataset.id
     artifact_root: Path | None = None
     checkpoint_dir: Path | None = None
-    train_report_path: Path | None = None
-    simulation_report_path: Path | None = None
-    tuning_root: Path | None = None
-    tuning_best_params_path: Path | None = None
+    artifact_state_db: Path | None = None
+    study_root: Path | None = None
+    study_state_db: Path | None = None
 
     if include_artifacts:
         if feature_set_id is None or model_id is None or max_delay_seconds is None:
@@ -511,24 +508,21 @@ def build_path_layout(
         tuned_study_root = artifact_base_root / ArtifactVariant.TUNED.value / study_id
         artifact_root = tuned_study_root if tuning_mode else variant_root
         checkpoint_dir = artifact_root / "checkpoints"
-        train_report_path = artifact_root / "train_report.json"
-        simulation_report_path = artifact_root / "simulation_report.json"
-        tuning_root = tuned_study_root / "tuning"
-        tuning_best_params_path = tuning_root / "best_params.json"
+        artifact_state_db = artifact_root / ".spice" / "state.sqlite"
+        study_root = tuned_study_root
+        study_state_db = tuned_study_root / ".spice" / "state.sqlite"
 
     return PathLayout(
         output_root=output_root,
         dataset_root=dataset_root,
-        metadata_root=dataset_root / ".spice",
         history_dir=dataset_root / "history",
         evaluation_dir=dataset_root / "evaluation",
-        dataset_metadata_path=dataset_root / ".spice" / "metadata.json",
+        dataset_state_db=dataset_root / ".spice" / "state.sqlite",
         artifact_root=artifact_root,
         checkpoint_dir=checkpoint_dir,
-        train_report_path=train_report_path,
-        simulation_report_path=simulation_report_path,
-        tuning_root=tuning_root,
-        tuning_best_params_path=tuning_best_params_path,
+        artifact_state_db=artifact_state_db,
+        study_root=study_root,
+        study_state_db=study_state_db,
     )
 
 

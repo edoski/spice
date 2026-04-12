@@ -1,11 +1,10 @@
-"""Typed dataset metadata helpers for acquisition workflows."""
+"""Typed acquisition summary builders."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-
-from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ..config import AcquireConfig
 from ..data.io import iter_block_files
@@ -13,86 +12,89 @@ from ..data.validation import BlockDatasetValidationReport
 from .rpc import AcquisitionRuntimeSnapshot
 
 
-class MetadataModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DatasetIdentity(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class DatasetIdentity:
     id: str
 
 
-class ChainMetadata(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class ChainMetadata:
     name: str
     chain_id: int
 
 
-class ProviderMetadata(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class ProviderMetadata:
     name: str
     reference: str
     endpoint_fingerprint: str
 
 
-class DatasetPathsMetadata(MetadataModel):
-    output_root: str
-    history: str
-    evaluation: str
-
-
-class DatasetWindowMetadata(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class DatasetWindowMetadata:
     start_timestamp: int
     end_timestamp: int
 
 
-class DatasetRequestMetadata(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class DatasetRequestMetadata:
     history: DatasetWindowMetadata
     evaluation: DatasetWindowMetadata
 
 
-class DatasetCoverageMetadata(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class DatasetCoverageMetadata:
     history: DatasetWindowMetadata
     evaluation: DatasetWindowMetadata
 
 
-class DatasetSamplingSettings(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class DatasetSamplingSettings:
     sample_count: int
 
 
-class DatasetTemporalSettings(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class DatasetTemporalSettings:
     lookback_seconds: int
     max_delay_seconds: int
 
 
-class DatasetAcquisitionRpcSettings(MetadataModel):
-    rpc_batch_size: int
-    rpc_concurrency: int
-    rpc_min_batch_size: int
-    rpc_concurrency_rungs: list[int]
+@dataclass(frozen=True, slots=True)
+class DatasetAcquisitionRpcSettings:
+    batch_size: int
+    concurrency: int
+    min_batch_size: int
+    concurrency_rungs: list[int]
 
 
-class DatasetAcquisitionSettings(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class DatasetAcquisitionSettings:
     history_sample_budget: int
     chunk_size: int
     rpc: DatasetAcquisitionRpcSettings
 
 
-class DatasetSettingsMetadata(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class DatasetSettingsMetadata:
     history_context_blocks: int
     sampling: DatasetSamplingSettings
     temporal: DatasetTemporalSettings
-    acquisition: DatasetAcquisitionSettings
 
 
-class BlockRangeMetadata(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class BlockRangeMetadata:
     first: int | None
     last: int | None
 
 
-class TimestampRangeMetadata(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class TimestampRangeMetadata:
     first: int | None
     last: int | None
 
 
-class CompactValidationReport(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class CompactValidationReport:
     status: str
     rows: int
     block_range: BlockRangeMetadata
@@ -100,12 +102,25 @@ class CompactValidationReport(MetadataModel):
     issues: dict[str, object] | None = None
 
 
-class DatasetValidationMetadata(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class DatasetValidationMetadata:
     history: CompactValidationReport
     evaluation: CompactValidationReport
 
 
-class DatasetAcquisitionRuntimeMetadata(MetadataModel):
+@dataclass(frozen=True, slots=True)
+class DatasetSummary:
+    dataset: DatasetIdentity
+    chain: ChainMetadata
+    provider: ProviderMetadata
+    request: DatasetRequestMetadata
+    coverage: DatasetCoverageMetadata
+    settings: DatasetSettingsMetadata
+    validation: DatasetValidationMetadata
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetAcquisitionRuntimeMetadata:
     configured_batch_size: int
     final_batch_size: int
     min_batch_size: int
@@ -119,20 +134,11 @@ class DatasetAcquisitionRuntimeMetadata(MetadataModel):
     concurrency_recoveries: int
 
 
-class DatasetRuntimeMetadata(MetadataModel):
-    acquisition: DatasetAcquisitionRuntimeMetadata
-
-
-class DatasetMetadata(MetadataModel):
-    dataset: DatasetIdentity
-    chain: ChainMetadata
-    providers: list[ProviderMetadata]
-    paths: DatasetPathsMetadata
-    request: DatasetRequestMetadata
-    coverage: DatasetCoverageMetadata
-    settings: DatasetSettingsMetadata
-    validation: DatasetValidationMetadata
-    runtime: DatasetRuntimeMetadata
+@dataclass(frozen=True, slots=True)
+class AcquireRunRecord:
+    provider: ProviderMetadata
+    settings: DatasetAcquisitionSettings
+    runtime: DatasetAcquisitionRuntimeMetadata
 
 
 def has_block_files(path: Path) -> bool:
@@ -142,15 +148,6 @@ def has_block_files(path: Path) -> bool:
         return False
 
 
-def load_dataset_metadata(path: Path) -> DatasetMetadata | None:
-    if not path.is_file():
-        return None
-    try:
-        return DatasetMetadata.model_validate_json(path.read_text(encoding="utf-8"))
-    except ValidationError:
-        return None
-
-
 def provider_metadata(config: AcquireConfig) -> ProviderMetadata:
     endpoint = config.provider.endpoint_for(config.chain.name)
     return ProviderMetadata(
@@ -158,16 +155,6 @@ def provider_metadata(config: AcquireConfig) -> ProviderMetadata:
         reference=config.provider.reference_for(config.chain.name),
         endpoint_fingerprint=sha256(endpoint.encode("utf-8")).hexdigest()[:16],
     )
-
-
-def merge_providers(
-    existing: list[ProviderMetadata] | None,
-    current: ProviderMetadata,
-) -> list[ProviderMetadata]:
-    providers = list(existing or [])
-    if current not in providers:
-        providers.append(current)
-    return providers
 
 
 def compact_validation_report(report: BlockDatasetValidationReport) -> CompactValidationReport:
@@ -212,32 +199,55 @@ def _coverage_window(report: BlockDatasetValidationReport) -> DatasetWindowMetad
     )
 
 
-def build_dataset_metadata(
+def acquisition_settings(config: AcquireConfig) -> DatasetAcquisitionSettings:
+    return DatasetAcquisitionSettings(
+        history_sample_budget=config.effective_history_sample_budget,
+        chunk_size=config.acquisition.chunk_size,
+        rpc=DatasetAcquisitionRpcSettings(
+            batch_size=config.acquisition.rpc.batch_size,
+            concurrency=config.acquisition.rpc.concurrency,
+            min_batch_size=config.acquisition.rpc.min_batch_size,
+            concurrency_rungs=list(config.acquisition.rpc.concurrency_rungs),
+        ),
+    )
+
+
+def acquisition_runtime_metadata(
+    runtime: AcquisitionRuntimeSnapshot,
+) -> DatasetAcquisitionRuntimeMetadata:
+    return DatasetAcquisitionRuntimeMetadata(
+        configured_batch_size=runtime.configured_batch_size,
+        final_batch_size=runtime.final_batch_size,
+        min_batch_size=runtime.min_batch_size,
+        configured_concurrency=runtime.configured_concurrency,
+        final_concurrency=runtime.final_concurrency,
+        concurrency_rungs=list(runtime.concurrency_rungs),
+        oversize_error_count=runtime.oversize_error_count,
+        transient_error_count=runtime.transient_error_count,
+        oversize_backoffs=runtime.oversize_backoffs,
+        transient_backoffs=runtime.transient_backoffs,
+        concurrency_recoveries=runtime.concurrency_recoveries,
+    )
+
+
+def build_dataset_summary(
     *,
     config: AcquireConfig,
-    history_dir: Path,
-    evaluation_dir: Path,
     history_request_start_timestamp: int,
     history_request_end_timestamp: int,
     evaluation_request_start_timestamp: int,
     evaluation_request_end_timestamp: int,
-    providers: list[ProviderMetadata],
+    provider: ProviderMetadata,
     history_validation: BlockDatasetValidationReport,
     evaluation_validation: BlockDatasetValidationReport,
-    acquisition_runtime: AcquisitionRuntimeSnapshot,
-) -> DatasetMetadata:
-    return DatasetMetadata(
+) -> DatasetSummary:
+    return DatasetSummary(
         dataset=DatasetIdentity(id=config.dataset.id),
         chain=ChainMetadata(
             name=config.chain.name,
             chain_id=config.chain.runtime.chain_id,
         ),
-        providers=list(providers),
-        paths=DatasetPathsMetadata(
-            output_root=config.storage.root.as_posix(),
-            history=history_dir.as_posix(),
-            evaluation=evaluation_dir.as_posix(),
-        ),
+        provider=provider,
         request=DatasetRequestMetadata(
             history=DatasetWindowMetadata(
                 start_timestamp=history_request_start_timestamp,
@@ -261,34 +271,22 @@ def build_dataset_metadata(
                 lookback_seconds=config.dataset.temporal.lookback_seconds,
                 max_delay_seconds=config.dataset.temporal.max_delay_seconds,
             ),
-            acquisition=DatasetAcquisitionSettings(
-                history_sample_budget=config.effective_history_sample_budget,
-                chunk_size=config.acquisition.chunk_size,
-                rpc=DatasetAcquisitionRpcSettings(
-                    rpc_batch_size=config.acquisition.rpc.batch_size,
-                    rpc_concurrency=config.acquisition.rpc.concurrency,
-                    rpc_min_batch_size=config.acquisition.rpc.min_batch_size,
-                    rpc_concurrency_rungs=list(config.acquisition.rpc.concurrency_rungs),
-                ),
-            ),
         ),
         validation=DatasetValidationMetadata(
             history=compact_validation_report(history_validation),
             evaluation=compact_validation_report(evaluation_validation),
         ),
-        runtime=DatasetRuntimeMetadata(
-            acquisition=DatasetAcquisitionRuntimeMetadata(
-                configured_batch_size=acquisition_runtime.configured_batch_size,
-                final_batch_size=acquisition_runtime.final_batch_size,
-                min_batch_size=acquisition_runtime.min_batch_size,
-                configured_concurrency=acquisition_runtime.configured_concurrency,
-                final_concurrency=acquisition_runtime.final_concurrency,
-                concurrency_rungs=list(acquisition_runtime.concurrency_rungs),
-                oversize_error_count=acquisition_runtime.oversize_error_count,
-                transient_error_count=acquisition_runtime.transient_error_count,
-                oversize_backoffs=acquisition_runtime.oversize_backoffs,
-                transient_backoffs=acquisition_runtime.transient_backoffs,
-                concurrency_recoveries=acquisition_runtime.concurrency_recoveries,
-            )
-        ),
+    )
+
+
+def build_acquire_run_record(
+    *,
+    config: AcquireConfig,
+    provider: ProviderMetadata,
+    acquisition_runtime: AcquisitionRuntimeSnapshot,
+) -> AcquireRunRecord:
+    return AcquireRunRecord(
+        provider=provider,
+        settings=acquisition_settings(config),
+        runtime=acquisition_runtime_metadata(acquisition_runtime),
     )

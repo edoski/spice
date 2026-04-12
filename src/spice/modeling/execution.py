@@ -6,25 +6,29 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..core.console import NullReporter, Reporter
-from ..core.constants import ARTIFACT_MANIFEST_FILENAME, MODEL_STATE_FILENAME
+from ..state.artifact import write_training_state
 from .artifacts import (
     TrainingArtifactManifest,
     build_training_artifact_manifest,
-    write_training_artifact,
+    persist_training_artifact,
 )
 from .evaluation import EpochMetrics
 from .pipeline import TrainingRunResult, TrainingSpec, TrainingStageReporters, run_training
-from .reporting import TrainingRunReport, build_training_run_report, write_json_report
+from .reporting import (
+    TrainingSummary,
+    build_training_summary,
+    iter_epoch_pairs,
+    summarize_epoch_metrics,
+)
 
 
 @dataclass(slots=True)
 class PersistedTrainingRun:
     training_run: TrainingRunResult
     manifest: TrainingArtifactManifest
-    report: TrainingRunReport
+    summary: TrainingSummary
     best_validation_metrics: EpochMetrics
     artifact_dir: Path
-    report_path: Path
     artifact_paths: tuple[Path, ...]
 
 
@@ -33,10 +37,11 @@ def run_persisted_training(
     *,
     spec: TrainingSpec,
     artifact_dir: Path,
-    report_path: Path,
     stage_reporters: TrainingStageReporters | None = None,
     write_reporter: Reporter | None = None,
     reporter: Reporter | None = None,
+    persist_artifact: bool = True,
+    state_root_kind: str | None = None,
 ) -> PersistedTrainingRun:
     reporter = reporter or NullReporter()
     active_stage_reporters = stage_reporters or TrainingStageReporters.shared(reporter)
@@ -49,51 +54,60 @@ def run_persisted_training(
         reporter=reporter,
     )
     manifest = build_training_artifact_manifest(training_run.prepared, spec=spec)
-    artifact_task = active_write_reporter.start_task("write training artifact")
-    write_training_artifact(
-        artifact_dir,
-        manifest=manifest,
-        model=training_run.model,
-    )
-    active_write_reporter.finish_task(artifact_task, message=str(artifact_dir), silent=True)
-    report = build_training_run_report(
+    summary = build_training_summary(
         training_run,
         sample_count=spec.sample_count,
-        max_delay_seconds=spec.max_delay_seconds,
-        lookback_seconds=spec.lookback_seconds,
         chain_name=spec.chain.name,
         dataset_id=spec.dataset_id,
         model_id=spec.model.id,
-        block_time_seconds=spec.chain.runtime.block_time_seconds,
         manifest=manifest,
         prepared=training_run.prepared,
-        artifact_dir=artifact_dir,
-        history_block_path=history_block_path,
-        device_requested=spec.training.device,
     )
-    report_task = active_write_reporter.start_task("write training report")
-    write_json_report(report_path, report)
-    active_write_reporter.finish_task(report_task, message=str(report_path), silent=True)
 
     validation_history = training_run.training_result.validation_history
     if not validation_history:
         raise RuntimeError("Training did not produce validation metrics")
     best_validation_metrics = validation_history[training_run.training_result.best_epoch - 1]
 
-    artifact_paths = [
-        artifact_dir / ARTIFACT_MANIFEST_FILENAME,
-        artifact_dir / MODEL_STATE_FILENAME,
-        report_path,
-    ]
+    artifact_paths: list[Path] = []
+    if persist_artifact:
+        if state_root_kind is None:
+            raise ValueError("state_root_kind is required when persist_artifact is true")
+        artifact_task = active_write_reporter.start_task("write training artifact")
+        persist_training_artifact(
+            artifact_dir,
+            manifest=manifest,
+            root_kind=state_root_kind,
+            model=training_run.model,
+        )
+        write_training_state(
+            artifact_dir / ".spice" / "state.sqlite",
+            root_kind=state_root_kind,
+            summary=summary,
+            epoch_rows=[
+                (
+                    epoch,
+                    summarize_epoch_metrics(train_metrics),
+                    summarize_epoch_metrics(validation_metrics),
+                )
+                for epoch, train_metrics, validation_metrics in iter_epoch_pairs(training_run)
+            ],
+        )
+        active_write_reporter.finish_task(artifact_task, message=str(artifact_dir), silent=True)
+        artifact_paths.extend(
+            [
+                artifact_dir / ".spice" / "state.sqlite",
+                artifact_dir / "model.pt",
+            ]
+        )
     if training_run.training_result.best_checkpoint_path is not None:
         artifact_paths.append(training_run.training_result.best_checkpoint_path)
 
     return PersistedTrainingRun(
         training_run=training_run,
         manifest=manifest,
-        report=report,
+        summary=summary,
         best_validation_metrics=best_validation_metrics,
         artifact_dir=artifact_dir,
-        report_path=report_path,
         artifact_paths=tuple(artifact_paths),
     )

@@ -1,52 +1,73 @@
-"""Training artifact persistence and feature-graph validation."""
+"""Training artifact models and feature-graph validation."""
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import torch
-from pydantic import BaseModel, ConfigDict, SerializeAsAny
 
-from ..config import ArtifactVariant, ChainSpec, ModelConfig, StudyConfig
-from ..core.constants import (
-    ARTIFACT_MANIFEST_FILENAME,
-    MODEL_STATE_FILENAME,
-)
+from ..config import ArtifactVariant, ModelConfig, StudyConfig
+from ..core.constants import MODEL_STATE_FILENAME
 from ..core.files import write_path_atomic
-from ..core.json import write_json
 from ..data.normalization import ScalerStats
 from ..features import FeatureSelection, feature_graph_fingerprint, validate_feature_selection
+from ..planning.geometry import (
+    action_count_for_delay,
+    lookback_steps_for_seconds,
+    max_extra_wait_steps_for_delay,
+)
+from ..state.artifact import load_artifact_manifest, write_artifact_manifest
 from .models import TemporalModel
 from .pipeline import PreparedTrainingDataset, TrainingSpec
-from .registry import build_model, coerce_model_config
+from .registry import build_model
 
 
-class ArtifactModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+@dataclass(frozen=True, slots=True)
+class ArtifactChainMetadata:
+    name: str
+    block_time_seconds: float
 
 
-class TrainingArtifactManifest(ArtifactModel):
-    kind: Literal["training_artifact"] = "training_artifact"
-    chain: ChainSpec
+@dataclass(frozen=True, slots=True)
+class TrainingArtifactManifest:
+    chain: ArtifactChainMetadata
     dataset_id: str
     history_context_blocks: int
     variant: ArtifactVariant
-    study: StudyConfig | None = None
+    study: StudyConfig | None
     max_delay_seconds: int
     lookback_seconds: int
-    sample_count: int
-    lookback_steps: int
-    max_extra_wait_steps: int
-    action_count: int
     feature_set_id: str
-    n_features: int
     feature_names: list[str]
     feature_graph_fingerprint: str
-    model: SerializeAsAny[ModelConfig]
+    model: ModelConfig
     scaler: ScalerStats
+
+    @property
+    def n_features(self) -> int:
+        return len(self.feature_names)
+
+    @property
+    def lookback_steps(self) -> int:
+        return lookback_steps_for_seconds(
+            self.lookback_seconds,
+            self.chain.block_time_seconds,
+        )
+
+    @property
+    def max_extra_wait_steps(self) -> int:
+        return max_extra_wait_steps_for_delay(
+            self.max_delay_seconds,
+            self.chain.block_time_seconds,
+        )
+
+    @property
+    def action_count(self) -> int:
+        return action_count_for_delay(
+            self.max_delay_seconds,
+            self.chain.block_time_seconds,
+        )
 
 
 @dataclass(slots=True)
@@ -92,19 +113,17 @@ def build_training_artifact_manifest(
     spec: TrainingSpec,
 ) -> TrainingArtifactManifest:
     return TrainingArtifactManifest(
-        chain=spec.chain,
+        chain=ArtifactChainMetadata(
+            name=spec.chain.name,
+            block_time_seconds=spec.chain.runtime.block_time_seconds,
+        ),
         dataset_id=spec.dataset_id,
         history_context_blocks=spec.history_context_blocks,
         variant=spec.variant,
         study=spec.study,
         max_delay_seconds=spec.max_delay_seconds,
         lookback_seconds=spec.lookback_seconds,
-        sample_count=spec.sample_count,
-        lookback_steps=prepared.geometry.lookback_steps,
-        max_extra_wait_steps=prepared.geometry.max_extra_wait_steps,
-        action_count=prepared.geometry.action_count,
         feature_set_id=prepared.feature_set_id,
-        n_features=prepared.n_features,
         feature_names=list(prepared.feature_names),
         feature_graph_fingerprint=prepared.feature_graph_fingerprint,
         model=spec.model,
@@ -112,29 +131,31 @@ def build_training_artifact_manifest(
     )
 
 
-def write_training_artifact(
-    artifact_dir: Path,
-    *,
-    manifest: TrainingArtifactManifest,
-    model: TemporalModel,
-) -> None:
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    write_json(artifact_dir / ARTIFACT_MANIFEST_FILENAME, manifest)
-    cpu_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
-    write_path_atomic(
-        artifact_dir / MODEL_STATE_FILENAME,
-        lambda tmp_path: torch.save(cpu_state, tmp_path),
-    )
-
-
 def load_training_artifact(artifact_dir: Path) -> LoadedTrainingArtifact:
-    payload = json.loads((artifact_dir / ARTIFACT_MANIFEST_FILENAME).read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise TypeError("Training artifact manifest must be a mapping")
-    payload["model"] = coerce_model_config(payload["model"])
-    manifest = TrainingArtifactManifest.model_validate(payload)
+    manifest = load_artifact_manifest(artifact_dir / ".spice" / "state.sqlite")
     model = build_model(manifest.n_features, manifest.action_count, manifest.model)
     state_dict = torch.load(artifact_dir / MODEL_STATE_FILENAME, map_location="cpu")
     model.load_state_dict(state_dict)
     model.eval()
     return LoadedTrainingArtifact(manifest=manifest, model=model)
+
+
+def persist_training_artifact(
+    artifact_dir: Path,
+    *,
+    manifest: TrainingArtifactManifest,
+    root_kind: str,
+    model: TemporalModel,
+) -> None:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    write_artifact_manifest(
+        artifact_dir / ".spice" / "state.sqlite",
+        manifest=manifest,
+        root_kind=root_kind,
+    )
+    cpu_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+
+    def _write(tmp_path: Path) -> None:
+        torch.save(cpu_state, tmp_path)
+
+    write_path_atomic(artifact_dir / MODEL_STATE_FILENAME, _write)

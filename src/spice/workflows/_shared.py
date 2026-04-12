@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path
 
 from ..config import ArtifactVariant, SimulateConfig, TrainConfig, TuneConfig, WorkflowTask
 from ..core.console import ConsoleRuntime, Reporter, create_console_runtime
 from ..modeling.evaluation import EpochMetrics
 from ..modeling.pipeline import TrainingSpec
-from ._tuning import apply_tuned_parameters, load_tuning_best_params_report
+from ..state.study import load_best_params
+from ._tuning import apply_tuned_parameters
 
 
 def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
@@ -92,20 +92,18 @@ def managed_workflow(
             active_runtime.close()
 
 
-def trial_artifact_dir(config: TuneConfig, trial_number: int) -> Path:
-    if config.paths.tuning_root is None:
-        raise ValueError("tuning_root is required for tune")
-    return config.paths.tuning_root / "trials" / f"trial-{trial_number:03d}"
-
-
 def apply_study_best_params(config: TrainConfig) -> TrainConfig:
-    path = config.paths.tuning_best_params_path
+    path = config.paths.study_state_db
     if path is None:
-        raise ValueError("tuning_best_params_path is required for tuned artifacts")
+        raise ValueError("study_state_db is required for tuned artifacts")
     try:
-        report = load_tuning_best_params_report(path)
+        params = load_best_params(
+            path,
+            study_name=config.study.id,
+            model_id=config.model.id,
+        )
     except OSError as exc:
         raise FileNotFoundError(
             f"Best tuning params are required but missing: {path}"
         ) from exc
-    return apply_tuned_parameters(config, report.params)
+    return apply_tuned_parameters(config, params)

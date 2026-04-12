@@ -24,6 +24,7 @@ dependencies = [
   "typer>=0.16",
   "lightning>=2.6",
   "optuna>=4.8",
+  "SQLAlchemy>=2.0",
   "web3>=7.15",
   "pandera>=0.30",
 ]
