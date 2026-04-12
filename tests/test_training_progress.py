@@ -55,5 +55,5 @@ def test_reporter_progress_callback_smooths_training_loss() -> None:
         1,
     )
 
-    assert reporter.messages[0] == "epoch=1/5 train=1/10 loss=10.0000"
-    assert reporter.messages[1] == "epoch=1/5 train=2/10 loss=8.8000"
+    assert reporter.messages[0] == "epoch=1/5 batch 1/10 loss=10.0"
+    assert reporter.messages[1] == "epoch=1/5 batch 2/10 loss=8.80"

@@ -13,11 +13,11 @@ One CLI. One config system. One feature path.
 
 ## Config Flow
 
-Config loading lives in [src/spice/config](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/config).
+Config loading lives in [src/spice/config](src/spice/config).
 
 Flow:
 
-1. The loader reads named specs from [src/spice/conf](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf).
+1. The loader reads named specs from [src/spice/conf](src/spice/conf).
 2. `--preset` optionally selects a bundle of named defaults.
 3. `--config PATH` overlays plain YAML on top of that preset.
 4. Explicit CLI flags override both preset and file values.
@@ -33,7 +33,7 @@ Public dataset definition:
 
 ## Feature Architecture
 
-Feature execution lives in [src/spice/features](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/features).
+Feature execution lives in [src/spice/features](src/spice/features).
 
 Rules:
 
@@ -49,13 +49,13 @@ Rules:
 
 ### `config`
 
-- [models.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/config/models.py): typed specs, workflow request models, path layout, provider resolution
-- [loader.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/config/loader.py): named YAML loading, fixed-order merges, CLI/file override composition
+- [models.py](src/spice/config/models.py): typed specs, workflow request models, path layout, provider resolution
+- [loader.py](src/spice/config/loader.py): named YAML loading, fixed-order merges, CLI/file override composition
 
 ### `core`
 
-- [console.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/console.py): workflow reporting
-- [files.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/files.py): atomic file and directory promotion helpers
+- [console.py](src/spice/core/console.py): workflow reporting
+- [files.py](src/spice/core/files.py): atomic file and directory promotion helpers
 
 ### `state`
 
@@ -69,45 +69,45 @@ Rules:
 ### `acquisition`
 
 - workflow/planning derives required history length before acquisition runs
-- [rpc.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/rpc.py): block planning, RPC pulling, adaptive batching
-- [datasets.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/datasets.py): history and evaluation dataset reuse
-- [metadata.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/acquisition/metadata.py): typed dataset summary builders
+- [rpc.py](src/spice/acquisition/rpc.py): block planning, RPC pulling, adaptive batching
+- [datasets.py](src/spice/acquisition/datasets.py): history and evaluation dataset reuse
+- [metadata.py](src/spice/acquisition/metadata.py): typed dataset summary builders
 
 ### `features`
 
-- [engine.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/features/engine.py): Hamilton driver, feature selection, warmup, fingerprinting
-- [base.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/features/base.py): base nodes
-- [rolling.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/features/rolling.py): rolling statistics
-- [trend.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/features/trend.py): trend features
+- [engine.py](src/spice/features/engine.py): Hamilton driver, feature selection, warmup, fingerprinting
+- [base.py](src/spice/features/base.py): base nodes
+- [rolling.py](src/spice/features/rolling.py): rolling statistics
+- [trend.py](src/spice/features/trend.py): trend features
 
 ### `data`
 
-- [block_contract.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/data/block_contract.py): canonical block schema
-- [io.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/data/io.py): parquet dataset discovery and loading
-- [datasets.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/data/datasets.py): array-backed stores and split helpers
-- [normalization.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/data/normalization.py): scaler fitting and application
-- [validation.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/data/validation.py): dataset validation
+- [block_contract.py](src/spice/data/block_contract.py): canonical block schema
+- [io.py](src/spice/data/io.py): parquet dataset discovery and loading
+- [datasets.py](src/spice/data/datasets.py): array-backed stores and split helpers
+- [normalization.py](src/spice/data/normalization.py): scaler fitting and application
+- [validation.py](src/spice/data/validation.py): dataset validation
 
 ### `planning`
 
-- [geometry.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/planning/geometry.py): shared lookback, delay, action-count, and history-sizing math
+- [geometry.py](src/spice/planning/geometry.py): shared lookback, delay, action-count, and history-sizing math
 
 ### `modeling`
 
-- [pipeline.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/pipeline.py): training and inference dataset preparation
-- [training.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/training.py): trainer execution and metrics
-- [execution.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/execution.py): persisted training flow
-- [artifacts.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/artifacts.py): model + manifest persistence and feature validation
-- [reporting.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/reporting.py): internal summary objects
-- [simulation.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/modeling/simulation.py): Poisson-arrival simulation over evaluation examples
+- [pipeline.py](src/spice/modeling/pipeline.py): training and inference dataset preparation
+- [training.py](src/spice/modeling/training.py): trainer execution and metrics
+- [execution.py](src/spice/modeling/execution.py): persisted training flow
+- [artifacts.py](src/spice/modeling/artifacts.py): model + manifest persistence and feature validation
+- [reporting.py](src/spice/modeling/reporting.py): internal summary objects
+- [simulation.py](src/spice/modeling/simulation.py): Poisson-arrival simulation over evaluation examples
 
 ### `workflows`
 
-- [acquire.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/acquire.py): acquisition orchestration
-- [tune.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/tune.py): Optuna orchestration with `RDBStorage`
-- [train.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/train.py): artifact-producing training orchestration
-- [simulate.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/simulate.py): evaluation-day simulation orchestration
-- [_shared.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/workflows/_shared.py): shared runtime helpers
+- [acquire.py](src/spice/workflows/acquire.py): acquisition orchestration
+- [tune.py](src/spice/workflows/tune.py): Optuna orchestration with `RDBStorage`
+- [train.py](src/spice/workflows/train.py): artifact-producing training orchestration
+- [simulate.py](src/spice/workflows/simulate.py): evaluation-day simulation orchestration
+- [_shared.py](src/spice/workflows/_shared.py): shared runtime helpers
 
 ## Storage Layout
 

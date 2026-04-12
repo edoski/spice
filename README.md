@@ -16,8 +16,12 @@ SPICE is a temporal fee-timing pipeline for EVM chains. It acquires canonical bl
 ## Setup
 
 ```bash
-.venv/bin/pip install -e .
+brew install uv
+uv sync --extra dev
+source .venv/bin/activate
 ```
+
+`uv` manages the repo-local `.venv/`. If you do not want to activate it, prefix commands with `uv run`.
 
 Provider credentials:
 
@@ -29,25 +33,25 @@ Provider credentials:
 Everything runs through one command with explicit flags:
 
 ```bash
-.venv/bin/spice acquire --preset icdcs_2026
-.venv/bin/spice acquire --preset icdcs_2026 --chain avalanche --provider publicnode
-.venv/bin/spice train --preset icdcs_2026 --model lstm --feature-set icdcs_2026
-.venv/bin/spice tune --preset icdcs_2026 --model lstm --feature-set icdcs_2026 --trial-count 20
-.venv/bin/spice simulate --preset icdcs_2026 --variant baseline
-.venv/bin/spice show outputs/datasets/avalanche/icdcs_2026
+spice acquire --preset icdcs_2026
+spice acquire --preset icdcs_2026 --chain avalanche --provider publicnode
+spice train --preset icdcs_2026 --model lstm --feature-set icdcs_2026
+spice tune --preset icdcs_2026 --model lstm --feature-set icdcs_2026 --trial-count 20
+spice simulate --preset icdcs_2026 --variant baseline
+spice show outputs/datasets/avalanche/icdcs_2026
 ```
 
 Override files stay plain YAML:
 
 ```bash
-.venv/bin/spice train --preset icdcs_2026 --config local/train.yaml
+spice train --preset icdcs_2026 --config local/train.yaml
 ```
 
 ## Config
 
-Config loading lives in [src/spice/config](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/config).
+Config loading lives in [src/spice/config](src/spice/config).
 
-Named specs live under [src/spice/conf](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf):
+Named specs live under [src/spice/conf](src/spice/conf):
 
 - `preset/`: convenience bundles of named selectors
 - `dataset/`: dataset contracts
@@ -78,7 +82,7 @@ Structured state is SQLite-only. SPICE no longer persists generated JSON metadat
 ## Verification
 
 ```bash
-.venv/bin/ruff check src/spice tests
-.venv/bin/pyright
-.venv/bin/pytest -q
+ruff check src/spice tests
+pyright
+pytest -q
 ```

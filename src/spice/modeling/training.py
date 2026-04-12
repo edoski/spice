@@ -13,7 +13,7 @@ from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from numpy.typing import NDArray
 
 from ..config import ModelConfig, TrainingConfig
-from ..core.console import NullReporter, Reporter
+from ..core.console import NullReporter, Reporter, format_compact_number
 from ..data.datasets import TemporalDatasetStore
 from ._runtime import (
     build_sequence_loader,
@@ -85,11 +85,12 @@ class ReporterProgressCallback(L.Callback):
         loss_value = _loss_value(outputs)
         message = (
             f"epoch={trainer.current_epoch + 1}/{self._max_epochs} "
-            f"train={batch_idx + 1}/{max(1, self._train_batches_per_epoch)}"
+            "batch "
+            f"{_format_compact_progress(batch_idx + 1, max(1, self._train_batches_per_epoch))}"
         )
         if loss_value is not None:
             self._smoothed_loss = _smooth_value(self._smoothed_loss, loss_value, alpha=0.12)
-            message = f"{message} loss={self._smoothed_loss:.4f}"
+            message = f"{message} loss={format_compact_number(self._smoothed_loss)}"
         self._reporter.update_task(self._task_id, advance=1, message=message)
 
     def on_validation_epoch_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
@@ -110,8 +111,8 @@ class ReporterProgressCallback(L.Callback):
             completed=completed,
             message=(
                 f"epoch={trainer.current_epoch + 1}/{self._max_epochs} "
-                f"validation_loss={latest.total_loss:.4f} "
-                f"validation_accuracy={latest.accuracy:.3f}"
+                f"validation loss={format_compact_number(latest.total_loss)} "
+                f"acc={format_compact_number(latest.accuracy)}"
             ),
         )
 
@@ -122,7 +123,7 @@ class ReporterProgressCallback(L.Callback):
         validation_history = getattr(pl_module, "validation_history", [])
         self._reporter.finish_task(
             self._task_id,
-            message=f"best_epoch={_best_epoch(validation_history)}",
+            message=f"best epoch {_best_epoch(validation_history)}",
         )
         self._task_id = None
 
@@ -141,6 +142,22 @@ def _smooth_value(previous: float | None, current: float, *, alpha: float) -> fl
     if previous is None:
         return current
     return previous + alpha * (current - previous)
+
+
+def _format_compact_count(value: int) -> str:
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.2f}M"
+    if value >= 100_000:
+        return f"{value / 1_000:.0f}k"
+    if value >= 10_000:
+        return f"{value / 1_000:.1f}k"
+    if value >= 1_000:
+        return f"{value / 1_000:.2f}k"
+    return f"{value:,}"
+
+
+def _format_compact_progress(completed: int, total: int) -> str:
+    return f"{_format_compact_count(completed)}/{_format_compact_count(total)}"
 
 
 def _trainer_device_args(device_name: str) -> tuple[str, int | str | list[int]]:

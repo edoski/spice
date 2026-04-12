@@ -14,6 +14,7 @@ from typing import Protocol
 from rich.console import Console, Group
 from rich.live import Live
 from rich.logging import RichHandler
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.progress_bar import ProgressBar
 from rich.rule import Rule
@@ -73,6 +74,28 @@ _PROGRESS_BAR_STYLES = {
     "failed": ("grey23", "red", "red", "red"),
 }
 _DETAIL_VALUE_LABELS = frozenset({"batch", "conc"})
+_STAGE_METRIC_PRIORITY = ("epoch", "loss", "acc")
+_STAGE_METRIC_LABELS = {
+    "epoch": "epoch",
+    "loss": "loss",
+    "acc": "acc",
+}
+_STAGE_METRIC_WIDTHS = {
+    "epoch": 7,
+    "loss": 7,
+    "acc": 6,
+}
+_STAGE_METRIC_ALIASES = {
+    "epoch": "epoch",
+    "loss": "loss",
+    "validation_loss": "loss",
+    "val_loss": "loss",
+    "acc": "acc",
+    "accuracy": "acc",
+    "validation_accuracy": "acc",
+    "val_acc": "acc",
+}
+_KEY_VALUE_TOKEN_PATTERN = re.compile(r"^(?P<key>[A-Za-z][A-Za-z0-9_]*)=(?P<value>.+)$")
 _RATE_COLUMN_WIDTH = 11
 _TIME_COLUMN_WIDTH = 7
 
@@ -174,6 +197,7 @@ class _StageLayout:
     show_rate: bool
     show_eta: bool
     show_detail: bool
+    metric_columns: tuple[str, ...] = ()
 
     @property
     def progress_width(self) -> int:
@@ -720,12 +744,14 @@ class RichReporter(_BaseWorkflowReporter):
                 elements.append(Rule(style="grey35"))
             elements.append(self._render_stage_table())
         body = Group(*elements) if elements else Text("")
-        return Panel(
-            body,
-            title=Text(self._workflow_title or "", style="bold cyan"),
-            border_style="cyan",
-            padding=(0, 1),
-            expand=True,
+        return _with_top_terminal_spacer(
+            Panel(
+                body,
+                title=Text(self._workflow_title or "", style="bold cyan"),
+                border_style="cyan",
+                padding=(0, 1),
+                expand=True,
+            )
         )
 
     def _render_fact_grid(self) -> Table:
@@ -737,8 +763,17 @@ class RichReporter(_BaseWorkflowReporter):
         return facts
 
     def _render_stage_table(self) -> Table:
-        has_detail = any(stage.detail for stage in self._stages.values())
-        layout = _stage_layout(_panel_body_width(self.console), has_detail=has_detail)
+        available_width = _panel_body_width(self.console)
+        has_detail = any(_extract_stage_metrics(stage.detail)[1] for stage in self._stages.values())
+        metric_columns = _active_stage_metric_columns(
+            self._stages.values(),
+            available_width=available_width,
+        )
+        layout = _stage_layout(
+            available_width,
+            has_detail=has_detail,
+            metric_columns=metric_columns,
+        )
         table = Table(
             show_header=True,
             header_style="bold dim",
@@ -762,6 +797,13 @@ class RichReporter(_BaseWorkflowReporter):
             overflow="ellipsis",
         )
         table.add_column("progress", width=layout.progress_width, no_wrap=True)
+        for metric_key in layout.metric_columns:
+            table.add_column(
+                _STAGE_METRIC_LABELS[metric_key],
+                width=_STAGE_METRIC_WIDTHS[metric_key],
+                no_wrap=True,
+                justify="right",
+            )
         if layout.show_rate:
             table.add_column("rate", width=_RATE_COLUMN_WIDTH, no_wrap=True, justify="right")
         table.add_column("elapsed", width=_TIME_COLUMN_WIDTH, no_wrap=True, justify="right")
@@ -770,18 +812,21 @@ class RichReporter(_BaseWorkflowReporter):
         if layout.show_detail:
             table.add_column("detail", ratio=1, no_wrap=True, overflow="ellipsis")
         for stage in self._stages.values():
+            metrics, detail = _extract_stage_metrics(stage.detail)
             row = [
                 Text(stage.label, style="bold"),
                 Text(stage.status, style=_STAGE_STATUS_STYLES.get(stage.status, "")),
                 self._render_progress(stage, bar_width=layout.progress_bar_width),
-                _render_elapsed(stage),
             ]
+            for metric_key in layout.metric_columns:
+                row.append(_render_stage_metric(metrics.get(metric_key)))
             if layout.show_rate:
-                row.insert(3, _render_rate(stage))
+                row.append(_render_rate(stage))
+            row.append(_render_elapsed(stage))
             if layout.show_eta:
                 row.append(_render_eta(stage))
             if layout.show_detail:
-                row.append(_render_stage_detail(stage))
+                row.append(_render_stage_detail(detail))
             table.add_row(*row)
         return table
 
@@ -927,7 +972,9 @@ class ConsoleRuntime:
             table.add_column()
             for label, value in rows:
                 table.add_row(label, value)
-            self.console.print(Panel(table, title=title, border_style="cyan"))
+            self.console.print(
+                _with_top_terminal_spacer(Panel(table, title=title, border_style="cyan"))
+            )
             return
         self.reporter.log(title)
         for label, value in rows:
@@ -952,7 +999,9 @@ class ConsoleRuntime:
                     section.add_row(label, value)
                 body.add_row(f"[bold]{section_title}[/bold]")
                 body.add_row(section)
-            self.console.print(Panel(body, title=title, border_style="cyan"))
+            self.console.print(
+                _with_top_terminal_spacer(Panel(body, title=title, border_style="cyan"))
+            )
             return
 
         self.reporter.log(title)
@@ -1077,21 +1126,70 @@ def _panel_body_width(console: Console) -> int:
     return max(40, console.size.width - 4)
 
 
-def _stage_layout(available_width: int, *, has_detail: bool) -> _StageLayout:
+def _with_top_terminal_spacer(renderable: object) -> Padding:
+    return Padding(renderable, (1, 0, 0, 0))
+
+
+def _extract_stage_metrics(raw_detail: str | None) -> tuple[dict[str, str], str | None]:
+    if not raw_detail:
+        return {}, None
+    metrics: dict[str, str] = {}
+    detail_tokens: list[str] = []
+    for token in raw_detail.split():
+        match = _KEY_VALUE_TOKEN_PATTERN.match(token)
+        if match is None:
+            detail_tokens.append(token)
+            continue
+        metric_key = _STAGE_METRIC_ALIASES.get(match.group("key"))
+        if metric_key is None:
+            detail_tokens.append(token)
+            continue
+        metrics[metric_key] = match.group("value")
+    detail = " ".join(detail_tokens).strip() or None
+    return metrics, detail
+
+
+def _active_stage_metric_columns(
+    stages: Iterable[_StageState],
+    *,
+    available_width: int,
+) -> tuple[str, ...]:
+    active_metrics = [
+        metric_key
+        for metric_key in _STAGE_METRIC_PRIORITY
+        if any(metric_key in _extract_stage_metrics(stage.detail)[0] for stage in stages)
+    ]
+    if not active_metrics:
+        return ()
+    if available_width >= 150:
+        return tuple(active_metrics)
+    if available_width >= 138:
+        return tuple(active_metrics[:2])
+    if available_width >= 126:
+        return tuple(active_metrics[:1])
+    return ()
+
+
+def _stage_layout(
+    available_width: int,
+    *,
+    has_detail: bool,
+    metric_columns: tuple[str, ...] = (),
+) -> _StageLayout:
     if has_detail:
         if available_width >= 132:
-            return _StageLayout(10, 8, 18, True, True, True)
+            return _StageLayout(10, 8, 18, True, True, True, metric_columns)
         if available_width >= 112:
-            return _StageLayout(10, 8, 16, True, True, False)
+            return _StageLayout(10, 8, 16, True, True, False, metric_columns)
         if available_width >= 92:
-            return _StageLayout(9, 8, 14, True, False, False)
-        return _StageLayout(8, 7, 12, False, False, False)
+            return _StageLayout(9, 8, 14, True, False, False, ())
+        return _StageLayout(8, 7, 12, False, False, False, ())
 
     if available_width >= 96:
-        return _StageLayout(10, 8, 20, True, True, False)
+        return _StageLayout(10, 8, 20, True, True, False, metric_columns)
     if available_width >= 78:
-        return _StageLayout(9, 8, 16, True, False, False)
-    return _StageLayout(8, 7, 12, False, False, False)
+        return _StageLayout(9, 8, 16, True, False, False, ())
+    return _StageLayout(8, 7, 12, False, False, False, ())
 
 
 def _progress_bucket(stage: _StageState) -> int | None:
@@ -1199,19 +1297,25 @@ def _render_rate(stage: _StageState) -> Text:
     return Text(f"{value} {suffix}", style="bright_cyan")
 
 
-def _render_stage_detail(stage: _StageState) -> Text:
-    if not stage.detail:
+def _render_stage_metric(value: str | None) -> Text:
+    if not value:
+        return Text("--", style="dim")
+    return Text(value, style="bright_cyan")
+
+
+def _render_stage_detail(raw_detail: str | None) -> Text:
+    if not raw_detail:
         return Text("")
 
     detail = Text()
-    prefix, separator, remainder = stage.detail.partition(": ")
+    prefix, separator, remainder = raw_detail.partition(": ")
     if separator:
         detail.append(prefix, style="white")
         detail.append(separator, style="dim")
         _append_detail_parts(detail, remainder)
         return detail
 
-    _append_detail_parts(detail, stage.detail)
+    _append_detail_parts(detail, raw_detail)
     return detail
 
 
@@ -1237,6 +1341,9 @@ def _append_detail_fragment(detail: Text, fragment: str) -> None:
         detail.append(value, style="bright_cyan")
         return
 
+    if _append_key_value_sequence(detail, fragment):
+        return
+
     number_match = re.match(r"^(?P<number>\d[\d,]*) (?P<label>[A-Za-z].+)$", fragment)
     if number_match is not None:
         detail.append(number_match.group("number"), style="bright_white")
@@ -1247,23 +1354,47 @@ def _append_detail_fragment(detail: Text, fragment: str) -> None:
     detail.append(fragment, style="dim")
 
 
+def _append_key_value_sequence(detail: Text, fragment: str) -> bool:
+    tokens = fragment.split()
+    if not tokens:
+        return False
+    matches = [_KEY_VALUE_TOKEN_PATTERN.match(token) for token in tokens]
+    if any(match is None for match in matches):
+        return False
+    for index, match in enumerate(matches):
+        assert match is not None
+        if index > 0:
+            detail.append(" ", style="dim")
+        key = match.group("key")
+        value = match.group("value")
+        detail.append(key, style="dim")
+        detail.append("=", style="dim")
+        value_style = "bright_cyan" if key in _DETAIL_VALUE_LABELS else "bright_white"
+        detail.append(value, style=value_style)
+    return True
+
+
 def _smooth_value(previous: float | None, current: float, *, alpha: float) -> float:
     if previous is None:
         return current
     return previous + alpha * (current - previous)
 
 
+def format_compact_number(value: float) -> str:
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.2f}M"
+    if value >= 100_000:
+        return f"{value / 1_000:.0f}k"
+    if value >= 10_000:
+        return f"{value / 1_000:.1f}k"
+    if value >= 1_000:
+        return f"{value / 1_000:.2f}k"
+    if value >= 10:
+        return f"{value:.1f}"
+    if value >= 1:
+        return f"{value:.2f}"
+    return f"{value:.3f}"
+
+
 def _format_rate_value(rate: float) -> str:
-    if rate >= 1_000_000:
-        return f"{rate / 1_000_000:.2f}M"
-    if rate >= 100_000:
-        return f"{rate / 1_000:.0f}k"
-    if rate >= 10_000:
-        return f"{rate / 1_000:.1f}k"
-    if rate >= 1_000:
-        return f"{rate / 1_000:.2f}k"
-    if rate >= 10:
-        return f"{rate:.1f}"
-    if rate >= 1:
-        return f"{rate:.2f}"
-    return f"{rate:.3f}"
+    return format_compact_number(rate)

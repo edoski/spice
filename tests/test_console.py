@@ -4,7 +4,7 @@ from io import StringIO
 
 from rich.console import Console
 
-from spice.core.console import PlainReporter, RichReporter
+from spice.core.console import PlainReporter, RichReporter, _extract_stage_metrics
 
 
 def test_plain_reporter_renders_staged_workflow_lines() -> None:
@@ -81,7 +81,41 @@ def test_rich_reporter_smoke() -> None:
     reporter.close()
 
     rendered = output.getvalue()
+    lines = rendered.splitlines()
+    assert lines[0].strip() == ""
     assert "acquire" in rendered
     assert "history" in rendered
     assert "evaluation" in rendered
     assert "pulling" in rendered
+
+
+def test_extract_stage_metrics_promotes_train_metrics() -> None:
+    metrics, detail = _extract_stage_metrics(
+        "epoch=1/50 batch 12.5k/12.5k loss=1.31 acc=0.812"
+    )
+
+    assert metrics == {"epoch": "1/50", "loss": "1.31", "acc": "0.812"}
+    assert detail == "batch 12.5k/12.5k"
+
+
+def test_rich_reporter_renders_train_metrics_in_columns() -> None:
+    output = StringIO()
+    reporter = RichReporter(console=Console(file=output, force_terminal=False, width=240))
+    reporter._refresh_live = lambda: None
+
+    reporter.configure_workflow(
+        title="train",
+        facts=[("dataset", "icdcs_2026"), ("chain", "ethereum"), ("model", "lstm")],
+    )
+    fit = reporter.stage_reporter("fit", label="fit", total=100, unit="batches")
+    task_id = fit.start_task("train epochs", total=100, unit="batches")
+    fit.update_task(task_id, completed=10, message="epoch=1/50 batch 10/100 loss=1.31 acc=0.812")
+    reporter.console.print(reporter._render_stage_table())
+
+    rendered = output.getvalue()
+    assert "epoch" in rendered
+    assert "loss" in rendered
+    assert "acc" in rendered
+    assert "batch 10/100" in rendered
+    assert "epoch=1/50" not in rendered
+    assert "loss=1.31" not in rendered

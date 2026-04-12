@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+import signal
 
 from ..config import ArtifactVariant, SimulateConfig, TrainConfig, TuneConfig, WorkflowTask
 from ..core.console import ConsoleRuntime, Reporter, create_console_runtime
@@ -51,10 +52,58 @@ class WorkflowSession:
     reporter: Reporter
 
 
+@dataclass(slots=True)
+class _InterruptState:
+    interrupted: bool = False
+
+
 def selected_artifact_variant(config: TrainConfig | TuneConfig | SimulateConfig) -> ArtifactVariant:
     if config.workflow is WorkflowTask.TUNE:
         return ArtifactVariant.TUNED
     return config.artifact.variant
+
+
+@contextmanager
+def _capture_sigint() -> Iterator[_InterruptState]:
+    state = _InterruptState()
+    if not hasattr(signal, "SIGINT"):
+        yield state
+        return
+    previous_handler = signal.getsignal(signal.SIGINT)
+
+    def _handle_sigint(signum, frame) -> None:
+        state.interrupted = True
+        if previous_handler == signal.SIG_IGN:
+            return
+        if previous_handler == signal.SIG_DFL:
+            signal.default_int_handler(signum, frame)
+            return
+        if callable(previous_handler):
+            previous_handler(signum, frame)
+
+    try:
+        signal.signal(signal.SIGINT, _handle_sigint)
+    except ValueError:
+        yield state
+        return
+    try:
+        yield state
+    finally:
+        try:
+            signal.signal(signal.SIGINT, previous_handler)
+        except ValueError:
+            pass
+
+
+def _cleanup_after_interrupt(
+    reporter: Reporter,
+    *,
+    label: str,
+    cleanup: Callable[[], None],
+) -> None:
+    cleanup()
+    reporter.close()
+    reporter.log(f"{label} cancelled; partial outputs removed", level="warning")
 
 
 @contextmanager
@@ -64,13 +113,16 @@ def abort_cleanup(
     label: str,
     cleanup: Callable[[], None],
 ) -> Iterator[None]:
-    try:
-        yield
-    except KeyboardInterrupt:
-        cleanup()
-        reporter.close()
-        reporter.log(f"{label} interrupted; partial outputs removed", level="warning")
-        raise
+    with _capture_sigint() as interrupt_state:
+        try:
+            yield
+        except BaseException as exc:
+            if interrupt_state.interrupted or isinstance(exc, KeyboardInterrupt):
+                _cleanup_after_interrupt(reporter, label=label, cleanup=cleanup)
+            raise
+        if interrupt_state.interrupted:
+            _cleanup_after_interrupt(reporter, label=label, cleanup=cleanup)
+            raise KeyboardInterrupt
 
 
 @contextmanager

@@ -14,6 +14,7 @@ from .registry import resolve_auto_compile, resolve_default_precision
 from .torch_datasets import SequenceBatchLoader
 
 IntVector = NDArray[np.int64]
+_TORCHINDUCTOR_MIN_CUDA_SMS_FOR_AUTO_COMPILE = 68
 
 
 def resolve_device(device: str) -> torch.device:
@@ -65,7 +66,21 @@ def resolve_compile_enabled(
         enabled = compile_mode is CompileMode.ON
     if not enabled:
         return False
-    return resolve_auto_compile(model_config.id, device, precision)
+    if not resolve_auto_compile(model_config.id, device, precision):
+        return False
+    if compile_mode is CompileMode.AUTO and not _device_supports_auto_compile(device):
+        return False
+    return True
+
+
+def _device_supports_auto_compile(device: torch.device) -> bool:
+    if device.type != "cuda" or torch.version.hip:
+        return True
+    device_index = torch.cuda.current_device() if device.index is None else device.index
+    properties = torch.cuda.get_device_properties(device_index)
+    # Mirror TorchInductor's "big GPU" threshold so auto mode skips the path
+    # that immediately warns and falls back on smaller CUDA parts.
+    return properties.multi_processor_count >= _TORCHINDUCTOR_MIN_CUDA_SMS_FOR_AUTO_COMPILE
 
 
 def build_sequence_loader(
