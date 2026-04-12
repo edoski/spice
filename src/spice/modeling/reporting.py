@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from ..core.config import ArtifactVariant, StudyConfig
 from ..core.json import write_json
 from .artifacts import LoadedTrainingArtifact, TrainingArtifactManifest
 from .pipeline import (
@@ -40,6 +41,8 @@ class TrainingRunReport(ReportModel):
     artifact_dir: Path
     chain: str
     dataset_id: str
+    variant: ArtifactVariant
+    study: StudyConfig | None = None
     family: str
     max_delay_seconds: int
     device_requested: str
@@ -80,6 +83,8 @@ class SimulationReport(ReportModel):
     evaluation_block_path: Path
     chain: str
     dataset_id: str
+    variant: ArtifactVariant
+    study: StudyConfig | None = None
     family: str
     max_delay_seconds: int
     lookback_seconds: int
@@ -122,6 +127,8 @@ def build_training_run_report(
         artifact_dir=artifact_dir,
         chain=chain_name,
         dataset_id=dataset_id,
+        variant=manifest.variant,
+        study=manifest.study,
         family=family,
         max_delay_seconds=max_delay_seconds,
         device_requested=device_requested,
@@ -169,6 +176,8 @@ def build_simulation_report(
         evaluation_block_path=evaluation_block_path,
         chain=manifest.chain.name.value,
         dataset_id=manifest.dataset_id,
+        variant=manifest.variant,
+        study=manifest.study,
         family=manifest.model.family.value,
         max_delay_seconds=manifest.max_delay_seconds,
         lookback_seconds=manifest.lookback_seconds,

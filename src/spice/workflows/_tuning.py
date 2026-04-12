@@ -16,6 +16,7 @@ from ..core.config import (
     ChainName,
     ExperimentConfig,
     ModelFamily,
+    StudyConfig,
     StudyDirection,
     TunedModelParams,
     TunedParameterSet,
@@ -73,7 +74,7 @@ class TuningTrialRecord(TuningModel):
 
 class TuningStudyReport(TuningModel):
     kind: Literal["tuning_study"] = "tuning_study"
-    study_name: str
+    study: StudyConfig
     chain: ChainName
     dataset_id: str
     family: ModelFamily
@@ -94,7 +95,7 @@ class TuningStudyReport(TuningModel):
 
 class TuningBestParamsReport(TuningModel):
     kind: Literal["tuning_best_params"] = "tuning_best_params"
-    study_name: str
+    study: StudyConfig
     chain: ChainName
     dataset_id: str
     family: ModelFamily
@@ -251,7 +252,7 @@ def build_study_report(config: ExperimentConfig, study: optuna.Study) -> TuningS
     failed_trials = [trial for trial in study.trials if trial.state == TrialState.FAIL]
     best_trial = study.best_trial if completed_trials else None
     return TuningStudyReport(
-        study_name=config.tuning.study_name,
+        study=config.study,
         chain=config.chain.name,
         dataset_id=config.dataset.id,
         family=config.model.family,
@@ -285,7 +286,7 @@ def build_best_params_report(
         raise RuntimeError("Optuna study completed without any successful trials")
     best_trial = study.best_trial
     return TuningBestParamsReport(
-        study_name=config.tuning.study_name,
+        study=config.study,
         chain=config.chain.name,
         dataset_id=config.dataset.id,
         family=config.model.family,

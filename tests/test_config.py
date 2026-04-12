@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import pytest
+import yaml
 
-from spice.core.config import WorkflowTask
+from spice.core.config import ArtifactVariant, WorkflowTask, load_params_config
 from spice.workflows.dvc import load_stage_config
 from tests.support import (
     REPO_ROOT,
@@ -13,7 +14,7 @@ from tests.support import (
 )
 
 
-def test_hydra_train_config_composes_and_resolves_paths(tmp_path) -> None:
+def test_params_train_config_resolves_paths_after_overrides(tmp_path) -> None:
     config = compose_experiment(
         "train",
         overrides=base_overrides(tmp_path)
@@ -24,10 +25,11 @@ def test_hydra_train_config_composes_and_resolves_paths(tmp_path) -> None:
     assert config.dataset.temporal.max_delay_seconds == 24
     assert config.model.family.value == "transformer"
     assert config.dataset.id == "icdcs_2025_11_09"
-    assert config.dataset.sampling.history_anchor_count is None
+    assert config.dataset.sampling.history_anchor_count == 48
     assert config.dataset.sampling.effective_history_anchor_count == 48
+    assert config.artifact.variant is ArtifactVariant.BASELINE
     assert config.paths.artifact_root.as_posix().endswith(
-        "/ethereum/icdcs_2025_11_09/transformer/24s"
+        "/ethereum/icdcs_2025_11_09/transformer/24s/baseline/default"
     )
     assert config.paths.history_dir.as_posix().endswith(
         "/datasets/ethereum/icdcs_2025_11_09/history"
@@ -37,6 +39,24 @@ def test_hydra_train_config_composes_and_resolves_paths(tmp_path) -> None:
     )
     assert config.paths.dataset_metadata_path.as_posix().endswith(
         "/datasets/ethereum/icdcs_2025_11_09/.spice/metadata.json"
+    )
+
+
+def test_variant_paths_resolve_baseline_and_tuned_lineages(tmp_path) -> None:
+    baseline = compose_experiment("train", overrides=base_overrides(tmp_path))
+    tuned = compose_experiment(
+        "train",
+        overrides=base_overrides(tmp_path) + ["artifact.variant=tuned", "study.id=fee-sweep-a"],
+    )
+
+    assert baseline.paths.artifact_root.as_posix().endswith("/lstm/36s/baseline/default")
+    assert baseline.paths.tuning_root.as_posix().endswith("/lstm/36s/tuned/default/tuning")
+    assert tuned.paths.artifact_root.as_posix().endswith("/lstm/36s/tuned/fee-sweep-a")
+    assert tuned.paths.train_report_path.as_posix().endswith(
+        "/lstm/36s/tuned/fee-sweep-a/train_report.json"
+    )
+    assert tuned.paths.tuning_best_params_path.as_posix().endswith(
+        "/lstm/36s/tuned/fee-sweep-a/tuning/best_params.json"
     )
 
 
@@ -110,7 +130,10 @@ def test_publicnode_chain_matrix_applies_expected_chain_settings(
 
 
 def test_invalid_rpc_concurrency_config_fails_early(tmp_path) -> None:
-    with pytest.raises(ValueError, match="rpc_concurrency must be present in rpc_concurrency_rungs"):
+    with pytest.raises(
+        ValueError,
+        match="rpc_concurrency must be present in rpc_concurrency_rungs",
+    ):
         compose_experiment(
             "acquire",
             overrides=base_overrides(tmp_path) + ["acquisition.rpc_concurrency=12"],
@@ -126,11 +149,26 @@ def test_invalid_transformer_config_fails_early(tmp_path) -> None:
         )
 
 
-def test_date_window_resolves_to_half_open_utc_timestamps(tmp_path) -> None:
+def test_span_and_evaluation_duration_resolve_to_derived_windows(tmp_path) -> None:
     config = compose_experiment("simulate", overrides=base_overrides(tmp_path))
 
-    assert config.dataset.window.start_timestamp == TEST_WINDOW_START_TIMESTAMP
-    assert config.dataset.window.end_timestamp == TEST_WINDOW_END_TIMESTAMP
+    assert config.evaluation_window_start_timestamp == TEST_WINDOW_START_TIMESTAMP
+    assert config.evaluation_window_end_timestamp == TEST_WINDOW_END_TIMESTAMP
+    assert config.history_window_end_timestamp == TEST_WINDOW_START_TIMESTAMP
+
+
+def test_dvc_acquire_stage_params_are_scoped_to_acquisition_inputs() -> None:
+    payload = yaml.safe_load((REPO_ROOT / "dvc.yaml").read_text(encoding="utf-8"))
+    stages = payload["stages"]
+    acquire_params = stages["acquire"]["params"][0]["params.yaml"]
+
+    assert "training.batch_size" not in acquire_params
+    assert "tracking.enabled" not in acquire_params
+    assert "dataset.sampling.anchor_count" not in acquire_params
+    assert "dataset.sampling.history_anchor_count" in acquire_params
+    assert "dataset.span.start_date" in acquire_params
+    assert "dataset.span.end_date" in acquire_params
+    assert "evaluation.duration_days" in acquire_params
 
 
 def test_history_anchor_count_cannot_be_smaller_than_anchor_count(tmp_path) -> None:
@@ -179,11 +217,28 @@ def test_tuning_search_space_rejects_unsupported_field(tmp_path) -> None:
         )
 
 
-def test_dvc_runner_loads_generated_params_and_forces_stage_task() -> None:
+def test_dvc_runner_loads_generated_params_without_forcing_tuned_training() -> None:
     config = load_stage_config("train", REPO_ROOT / "params.yaml")
 
     assert config.task is WorkflowTask.TRAIN
-    assert config.tuning.apply_best_params is True
+    assert config.artifact.variant is ArtifactVariant.BASELINE
+    assert config.study.id == "default"
     assert config.paths.artifact_root.as_posix().endswith(
-        "/models/ethereum/icdcs_2025_11_09/lstm/36s"
+        "/models/ethereum/icdcs_2025_11_09/lstm/36s/baseline/default"
     )
+
+
+def test_direct_and_dvc_loaders_share_the_same_baseline_params() -> None:
+    direct_config = load_params_config("train", params_path=REPO_ROOT / "params.yaml")
+    dvc_config = load_stage_config("train", REPO_ROOT / "params.yaml")
+
+    assert direct_config.dataset.sampling.anchor_count == dvc_config.dataset.sampling.anchor_count
+    assert (
+        direct_config.dataset.temporal.lookback_seconds
+        == dvc_config.dataset.temporal.lookback_seconds
+    )
+    assert direct_config.training.precision == dvc_config.training.precision
+    assert direct_config.training.compile == dvc_config.training.compile
+    assert direct_config.artifact.variant == dvc_config.artifact.variant
+    assert direct_config.study == dvc_config.study
+    assert direct_config.paths.artifact_root == dvc_config.paths.artifact_root

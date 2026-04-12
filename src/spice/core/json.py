@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from .files import write_text_atomic
+
 JsonPrimitive = None | bool | int | float | str
 JsonValue = JsonPrimitive | dict[str, "JsonValue"] | list["JsonValue"]
 Jsonable = (
@@ -33,5 +35,4 @@ def _jsonable(payload: Jsonable) -> JsonValue:
 
 
 def write_json(path: Path, payload: Jsonable) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_jsonable(payload), indent=2), encoding="utf-8")
+    write_text_atomic(path, json.dumps(_jsonable(payload), indent=2), encoding="utf-8")

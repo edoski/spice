@@ -4,11 +4,16 @@ import asyncio
 from typing import Any, cast
 
 import pytest
-from web3.exceptions import Web3RPCError
 from web3.middleware import ExtraDataToPOAMiddleware
 
 from spice.acquisition.provider import build_async_web3
-from spice.acquisition.rpc import BlockPullPlan, BlockRange, RpcController, TimestampRange, Web3BlockClient
+from spice.acquisition.rpc import (
+    BlockPullPlan,
+    BlockRange,
+    RpcController,
+    TimestampRange,
+    Web3BlockClient,
+)
 from tests.support import make_chain_config, make_provider_config
 
 

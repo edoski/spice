@@ -5,7 +5,7 @@ from __future__ import annotations
 from hashlib import sha256
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ..core.config import ExperimentConfig
 from ..data.io import iter_block_files
@@ -42,7 +42,13 @@ class DatasetWindowMetadata(MetadataModel):
     end_timestamp: int
 
 
-class DatasetWindowsMetadata(MetadataModel):
+class DatasetRequestMetadata(MetadataModel):
+    span: DatasetWindowMetadata
+    history: DatasetWindowMetadata
+    evaluation: DatasetWindowMetadata
+
+
+class DatasetCoverageMetadata(MetadataModel):
     history: DatasetWindowMetadata
     evaluation: DatasetWindowMetadata
 
@@ -115,9 +121,10 @@ class DatasetRuntimeMetadata(MetadataModel):
 class DatasetMetadata(MetadataModel):
     dataset: DatasetIdentity
     chain: ChainMetadata
-    provider: ProviderMetadata
+    providers: list[ProviderMetadata]
     paths: DatasetPathsMetadata
-    windows: DatasetWindowsMetadata
+    request: DatasetRequestMetadata
+    coverage: DatasetCoverageMetadata
     settings: DatasetSettingsMetadata
     validation: DatasetValidationMetadata
     runtime: DatasetRuntimeMetadata
@@ -133,7 +140,10 @@ def has_block_files(path: Path) -> bool:
 def load_dataset_metadata(path: Path) -> DatasetMetadata | None:
     if not path.is_file():
         return None
-    return DatasetMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+    try:
+        return DatasetMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValidationError:
+        return None
 
 
 def provider_metadata(config: ExperimentConfig) -> ProviderMetadata:
@@ -145,47 +155,14 @@ def provider_metadata(config: ExperimentConfig) -> ProviderMetadata:
     )
 
 
-def check_existing_dataset_metadata(
-    *,
-    config: ExperimentConfig,
-    metadata_path: Path,
-    overwrite: bool,
-) -> DatasetMetadata | None:
-    metadata = load_dataset_metadata(metadata_path)
-    if metadata is None:
-        if not overwrite and _metadata_has_dataset_files(config):
-            raise ValueError(
-                f"Dataset files exist without canonical metadata at {metadata_path}; "
-                "rerun with acquisition.overwrite=true to replace them."
-            )
-        return None
-
-    if overwrite:
-        return metadata
-
-    expected = {
-        "dataset_id": config.dataset.id,
-        "chain_name": config.chain.name.value,
-        "chain_id": config.chain.chain_id,
-        "provider": provider_metadata(config).model_dump(mode="json"),
-        "evaluation_window": {
-            "start_timestamp": config.dataset.window.start_timestamp,
-            "end_timestamp": config.dataset.window.end_timestamp,
-        },
-    }
-    actual = {
-        "dataset_id": metadata.dataset.id,
-        "chain_name": metadata.chain.name,
-        "chain_id": metadata.chain.chain_id,
-        "provider": metadata.provider.model_dump(mode="json"),
-        "evaluation_window": metadata.windows.evaluation.model_dump(mode="json"),
-    }
-    if actual != expected:
-        raise ValueError(
-            "Existing dataset metadata does not match the requested dataset window/provider. "
-            f"Expected {expected}, got {actual}. Use acquisition.overwrite=true to replace it."
-        )
-    return metadata
+def merge_providers(
+    existing: list[ProviderMetadata] | None,
+    current: ProviderMetadata,
+) -> list[ProviderMetadata]:
+    providers = list(existing or [])
+    if current not in providers:
+        providers.append(current)
+    return providers
 
 
 def compact_validation_report(report: BlockDatasetValidationReport) -> CompactValidationReport:
@@ -221,15 +198,21 @@ def compact_validation_report(report: BlockDatasetValidationReport) -> CompactVa
     )
 
 
+def _coverage_window(report: BlockDatasetValidationReport) -> DatasetWindowMetadata:
+    if report.first_timestamp is None or report.last_timestamp is None:
+        raise ValueError("Clean dataset validation is required before building coverage metadata")
+    return DatasetWindowMetadata(
+        start_timestamp=report.first_timestamp,
+        end_timestamp=report.last_timestamp,
+    )
+
+
 def build_dataset_metadata(
     *,
     config: ExperimentConfig,
     history_dir: Path,
     evaluation_dir: Path,
-    history_window_start: int,
-    history_window_end: int,
-    evaluation_window_start: int,
-    evaluation_window_end: int,
+    providers: list[ProviderMetadata],
     history_validation: BlockDatasetValidationReport,
     evaluation_validation: BlockDatasetValidationReport,
     acquisition_runtime: AcquisitionRuntimeSnapshot,
@@ -240,20 +223,28 @@ def build_dataset_metadata(
             name=config.chain.name.value,
             chain_id=config.chain.chain_id,
         ),
-        provider=provider_metadata(config),
+        providers=list(providers),
         paths=DatasetPathsMetadata(
             history=history_dir.as_posix(),
             evaluation=evaluation_dir.as_posix(),
         ),
-        windows=DatasetWindowsMetadata(
+        request=DatasetRequestMetadata(
+            span=DatasetWindowMetadata(
+                start_timestamp=config.span_start_timestamp,
+                end_timestamp=config.span_end_timestamp,
+            ),
             history=DatasetWindowMetadata(
-                start_timestamp=history_window_start,
-                end_timestamp=history_window_end,
+                start_timestamp=config.history_window_start_timestamp,
+                end_timestamp=config.history_window_end_timestamp,
             ),
             evaluation=DatasetWindowMetadata(
-                start_timestamp=evaluation_window_start,
-                end_timestamp=evaluation_window_end,
+                start_timestamp=config.evaluation_window_start_timestamp,
+                end_timestamp=config.evaluation_window_end_timestamp,
             ),
+        ),
+        coverage=DatasetCoverageMetadata(
+            history=_coverage_window(history_validation),
+            evaluation=_coverage_window(evaluation_validation),
         ),
         settings=DatasetSettingsMetadata(
             sampling=DatasetSamplingSettings(
@@ -292,13 +283,3 @@ def build_dataset_metadata(
             )
         ),
     )
-
-
-def _metadata_has_dataset_files(config: ExperimentConfig) -> bool:
-    for candidate in (
-        config.paths.history_dir,
-        config.paths.evaluation_dir,
-    ):
-        if has_block_files(candidate):
-            return True
-    return False

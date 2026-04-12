@@ -9,9 +9,65 @@ stages:
       size: 1670
     - path: src/spice
       hash: md5
-      md5: fa9fed3d6faf4c3388b2646e3b993fd2.dir
-      size: 210226
-      nfiles: 71
+      md5: 7ae0e7fab52cee7bed28ae6afa5f5af6.dir
+      size: 250066
+      nfiles: 74
+    params:
+      params.yaml:
+        acquisition.chunk_size: 8192
+        acquisition.dry_run: false
+        acquisition.rpc_batch_size: 256
+        acquisition.rpc_concurrency: 48
+        acquisition.rpc_concurrency_rungs:
+        - 8
+        - 16
+        - 24
+        - 32
+        - 48
+        acquisition.rpc_min_batch_size: 64
+        chain.name: ethereum
+        dataset.id: icdcs_2025_11_09
+        dataset.sampling.history_anchor_count: 1000000
+        dataset.span.end_date: '2025-11-09'
+        dataset.span.start_date: '2025-07-05'
+        dataset.temporal.lookback_seconds: 600
+        dataset.temporal.max_delay_seconds: 36
+        evaluation.duration_days: 1
+        provider.name: publicnode
+        runtime.output_root: artifacts
+    outs:
+    - path: artifacts/datasets/ethereum/icdcs_2025_11_09/.spice
+      hash: md5
+      md5: 1f58a79b8399716108247c96b9eab22d.dir
+      size: 2388
+      nfiles: 1
+    - path: artifacts/datasets/ethereum/icdcs_2025_11_09/evaluation
+      hash: md5
+      md5: f5393eb2b863da304f7332bae2eafe69.dir
+      size: 73716
+      nfiles: 1
+    - path: artifacts/datasets/ethereum/icdcs_2025_11_09/history
+      hash: md5
+      md5: a4c67cd0af00edcc8456ebae7f5a3756.dir
+      size: 10891963
+      nfiles: 123
+  train:
+    cmd: ./bin/spice-awake .venv/bin/spice-dvc train
+    deps:
+    - path: artifacts/datasets/ethereum/icdcs_2025_11_09/history
+      hash: md5
+      md5: 6b9202b5c97ef068cad9cc8fc910f5ce.dir
+      size: 6000
+      nfiles: 1
+    - path: pyproject.toml
+      hash: md5
+      md5: 6ceaf8c5955c09daaf25bbf85a808016
+      size: 1670
+    - path: src/spice
+      hash: md5
+      md5: 1b68e2306145b81320007390f9a9587a.dir
+      size: 234744
+      nfiles: 73
     params:
       params.yaml:
         acquisition:
@@ -27,6 +83,8 @@ stages:
           - 24
           - 32
           - 48
+        artifact:
+          variant: baseline
         chain:
           name: ethereum
           chain_id: 1
@@ -39,9 +97,9 @@ stages:
             end_date: '2025-11-09'
           temporal:
             max_delay_seconds: 36
-            lookback_seconds: 600
+            lookback_seconds: 120
           sampling:
-            anchor_count: 1000000
+            anchor_count: 48
             history_anchor_count:
         model:
           family: lstm
@@ -63,17 +121,18 @@ stages:
             artifacts/datasets/ethereum/icdcs_2025_11_09/evaluation
           dataset_metadata_path: 
             artifacts/datasets/ethereum/icdcs_2025_11_09/.spice/metadata.json
-          artifact_root: artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s
+          artifact_root: 
+            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/baseline/default
           checkpoint_dir: 
-            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/checkpoints
+            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/baseline/default/checkpoints
           train_report_path: 
-            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/train_report.json
+            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/baseline/default/train_report.json
           simulation_report_path: 
-            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/simulation_report.json
+            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/baseline/default/simulation_report.json
           tuning_root: 
-            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/tuning
+            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/tuned/default/tuning
           tuning_best_params_path: 
-            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/tuning/best_params.json
+            artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/tuned/default/tuning/best_params.json
           mlruns_dir: artifacts/../.mlflow
         provider:
           timeout_seconds: 30.0
@@ -100,30 +159,32 @@ stages:
         split:
           train_fraction: 0.8
           validation_fraction: 0.1
+        study:
+          id: default
         task: train
         tracking:
-          enabled: true
+          enabled: false
           experiment_name: spice
           tracking_uri: ''
           tags: {}
         training:
           learning_rate: 0.0003
           weight_decay: 0.01
-          batch_size: 64
-          max_epochs: 50
+          batch_size: 8
+          max_epochs: 1
           early_stopping:
-            patience: 8
+            patience: 1
             min_delta: 0.0001
           gradient_clip_norm: 1.0
           action_loss_weight: 1.0
           fee_loss_weight: 0.25
-          device: auto
+          device: cpu
           seed: 2026
-          deterministic: true
-          log_every_n_steps: 10
+          deterministic: false
+          log_every_n_steps: 1
+          precision: auto
+          compile: auto
         tuning:
-          apply_best_params: false
-          study_name: spice-study
           direction: maximize
           trial_count: 20
           timeout_seconds:
@@ -150,18 +211,18 @@ stages:
               - 0.1
               - 0.2
     outs:
-    - path: artifacts/datasets/ethereum/icdcs_2025_11_09/.spice
+    - path: 
+        artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/baseline/default/artifact.json
       hash: md5
-      md5: b700e07098d50a1a7800d0193dc9a0e1.dir
-      size: 2064
-      nfiles: 1
-    - path: artifacts/datasets/ethereum/icdcs_2025_11_09/evaluation
+      md5: 4b4ea6a82d2f0b22db3ce7dd86880b6d
+      size: 2339
+    - path: 
+        artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/baseline/default/model.pt
       hash: md5
-      md5: f5393eb2b863da304f7332bae2eafe69.dir
-      size: 73716
-      nfiles: 1
-    - path: artifacts/datasets/ethereum/icdcs_2025_11_09/history
+      md5: 8f4733863c5e9643146f2b478af9d88c
+      size: 1141429
+    - path: 
+        artifacts/models/ethereum/icdcs_2025_11_09/lstm/36s/baseline/default/train_report.json
       hash: md5
-      md5: a4c67cd0af00edcc8456ebae7f5a3756.dir
-      size: 10891963
-      nfiles: 123
+      md5: ff705db592b3e0db3205c7dc1d0effbe
+      size: 910

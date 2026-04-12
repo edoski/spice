@@ -61,12 +61,17 @@ def compute_temporal_losses(
     class_weights: torch.Tensor,
     training_config: TrainingConfig,
 ) -> TemporalLosses:
+    logits = outputs.logits
+    fee_hat = outputs.fee_hat
     action_loss = F.cross_entropy(
-        outputs.logits,
+        logits,
         batch.class_label,
-        weight=class_weights,
+        weight=class_weights.to(dtype=logits.dtype),
     )
-    fee_loss = F.smooth_l1_loss(outputs.fee_hat, batch.target_log_fee)
+    fee_loss = F.smooth_l1_loss(
+        fee_hat,
+        batch.target_log_fee.to(dtype=fee_hat.dtype),
+    )
     total_loss = (
         training_config.action_loss_weight * action_loss
         + training_config.fee_loss_weight * fee_loss

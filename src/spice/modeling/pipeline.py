@@ -7,7 +7,14 @@ from pathlib import Path
 
 import polars as pl
 
-from ..core.config import ChainConfig, ModelConfig, SplitConfig, TrainingConfig
+from ..core.config import (
+    ArtifactVariant,
+    ChainConfig,
+    ModelConfig,
+    SplitConfig,
+    StudyConfig,
+    TrainingConfig,
+)
 from ..core.console import ConsoleRuntime, NullReporter, Reporter
 from ..data.datasets import (
     DatasetGeometry,
@@ -40,6 +47,8 @@ class TrainingSpec:
     anchor_count: int
     split: SplitConfig
     training: TrainingConfig
+    variant: ArtifactVariant = ArtifactVariant.BASELINE
+    study: StudyConfig | None = None
 
 
 @dataclass(slots=True)
@@ -207,6 +216,7 @@ def run_training(
     reporter.finish_task(build_task, message=spec.model.family.value)
     training_result = train_model(
         model,
+        model_family=spec.model.family,
         store=prepared.store,
         train_sample_indices=prepared.split_indices.train,
         validation_sample_indices=prepared.split_indices.validation,

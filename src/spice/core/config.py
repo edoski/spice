@@ -1,7 +1,8 @@
-"""Hydra-composed runtime configuration validated by Pydantic."""
+"""Runtime configuration validated by Pydantic."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
 from pathlib import Path
@@ -69,7 +70,7 @@ class ChainConfig(ConfigModel):
     uses_poa_extra_data: bool
 
 
-class DatasetWindowConfig(ConfigModel):
+class DatasetSpanConfig(ConfigModel):
     start_date: date
     end_date: date
 
@@ -82,10 +83,10 @@ class DatasetWindowConfig(ConfigModel):
         return _utc_midnight_timestamp(self.end_date + timedelta(days=1))
 
     @model_validator(mode="after")
-    def validate_window(self) -> Self:
+    def validate_span(self) -> Self:
         if self.start_date > self.end_date:
             raise ValueError(
-                "dataset.window.start_date must be on or before dataset.window.end_date"
+                "dataset.span.start_date must be on or before dataset.span.end_date"
             )
         return self
 
@@ -97,12 +98,10 @@ class DatasetTemporalConfig(ConfigModel):
 
 class DatasetSamplingConfig(ConfigModel):
     anchor_count: int = Field(gt=0)
-    history_anchor_count: int | None = Field(default=None, gt=0)
+    history_anchor_count: int = Field(gt=0)
 
     @property
     def effective_history_anchor_count(self) -> int:
-        if self.history_anchor_count is None:
-            return self.anchor_count
         return self.history_anchor_count
 
     @model_validator(mode="after")
@@ -116,7 +115,7 @@ class DatasetSamplingConfig(ConfigModel):
 
 class DatasetConfig(ConfigModel):
     id: str
-    window: DatasetWindowConfig
+    span: DatasetSpanConfig
     temporal: DatasetTemporalConfig
     sampling: DatasetSamplingConfig
 
@@ -144,6 +143,24 @@ class EarlyStoppingConfig(ConfigModel):
     min_delta: float = Field(ge=0.0)
 
 
+class TrainingPrecision(StrEnum):
+    AUTO = "auto"
+    FP32 = "fp32"
+    FP16_MIXED = "fp16-mixed"
+    BF16_MIXED = "bf16-mixed"
+
+
+class CompileMode(StrEnum):
+    AUTO = "auto"
+    OFF = "off"
+    ON = "on"
+
+
+class ArtifactVariant(StrEnum):
+    BASELINE = "baseline"
+    TUNED = "tuned"
+
+
 class TrainingConfig(ConfigModel):
     learning_rate: float = Field(gt=0.0)
     weight_decay: float = Field(ge=0.0)
@@ -157,11 +174,12 @@ class TrainingConfig(ConfigModel):
     seed: int = Field(ge=0)
     deterministic: bool
     log_every_n_steps: int = Field(gt=0)
+    precision: TrainingPrecision
+    compile: CompileMode
 
 
 class AcquisitionConfig(ConfigModel):
     dry_run: bool
-    overwrite: bool
     chunk_size: int = Field(gt=0)
     rpc_batch_size: int = Field(gt=0)
     rpc_concurrency: int = Field(gt=0)
@@ -190,6 +208,10 @@ class SimulationConfig(ConfigModel):
     seed: int = Field(ge=0)
 
 
+class EvaluationConfig(ConfigModel):
+    duration_days: int = Field(gt=0)
+
+
 class ModelConfig(ConfigModel):
     family: ModelFamily
     input_projection_dim: int = Field(gt=0)
@@ -216,6 +238,21 @@ class TrackingConfig(ConfigModel):
     experiment_name: str
     tracking_uri: str
     tags: dict[str, str]
+
+
+class StudyConfig(ConfigModel):
+    id: str
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        if not value or "/" in value or "\\" in value:
+            raise ValueError("study id must be a non-empty path segment")
+        return value
+
+
+class ArtifactConfig(ConfigModel):
+    variant: ArtifactVariant
 
 
 class TuningTrainingSearchSpace(ConfigModel):
@@ -315,8 +352,6 @@ class TunedParameterSet(ConfigModel):
 
 
 class TuningConfig(ConfigModel):
-    apply_best_params: bool
-    study_name: str
     direction: StudyDirection
     trial_count: int = Field(gt=0)
     timeout_seconds: int | None = Field(default=None, gt=0)
@@ -373,7 +408,10 @@ class ExperimentConfig(ConfigModel):
     task: WorkflowTask
     chain: ChainConfig
     dataset: DatasetConfig
+    evaluation: EvaluationConfig
+    study: StudyConfig
     model: ModelConfig
+    artifact: ArtifactConfig
     acquisition: AcquisitionConfig
     split: SplitConfig
     training: TrainingConfig
@@ -390,8 +428,44 @@ class ExperimentConfig(ConfigModel):
             self.provider.endpoint_for(self.chain.name)
         return self
 
+    @model_validator(mode="after")
+    def validate_evaluation_window(self) -> Self:
+        evaluation_seconds = self.evaluation.duration_days * 24 * 60 * 60
+        span_seconds = self.dataset.span.end_timestamp - self.dataset.span.start_timestamp
+        if evaluation_seconds >= span_seconds:
+            raise ValueError(
+                "evaluation.duration_days must be shorter than the configured dataset span"
+            )
+        return self
+
+    @property
+    def span_start_timestamp(self) -> int:
+        return self.dataset.span.start_timestamp
+
+    @property
+    def span_end_timestamp(self) -> int:
+        return self.dataset.span.end_timestamp
+
+    @property
+    def evaluation_window_start_timestamp(self) -> int:
+        return self.span_end_timestamp - self.evaluation.duration_days * 24 * 60 * 60
+
+    @property
+    def evaluation_window_end_timestamp(self) -> int:
+        return self.span_end_timestamp
+
+    @property
+    def history_window_start_timestamp(self) -> int:
+        return self.span_start_timestamp
+
+    @property
+    def history_window_end_timestamp(self) -> int:
+        return self.evaluation_window_start_timestamp
+
 
 _EXPERIMENT_CONFIG_ADAPTER = TypeAdapter(ExperimentConfig)
+_CONF_ROOT = Path(__file__).resolve().parents[1] / "conf"
+_PRESET_GROUPS = frozenset({"chain", "model", "provider"})
 
 
 def coerce_config(cfg: DictConfig, *, task: WorkflowTask | str) -> ExperimentConfig:
@@ -416,3 +490,192 @@ def config_to_dict(cfg: ExperimentConfig) -> JsonObject:
 
 def revalidate_config(cfg: ExperimentConfig) -> ExperimentConfig:
     return _EXPERIMENT_CONFIG_ADAPTER.validate_python(config_to_dict(cfg))
+
+
+def _load_mapping_config(path: Path) -> DictConfig:
+    loaded = OmegaConf.load(path)
+    if not isinstance(loaded, DictConfig):
+        raise TypeError(f"Configuration must be a mapping: {path}")
+    return loaded
+
+
+def _load_preset(group: str, name: str) -> DictConfig:
+    path = _CONF_ROOT / group / f"{name}.yaml"
+    if not path.is_file():
+        raise FileNotFoundError(f"Unknown {group} preset: {name}")
+    preset = _load_mapping_config(path)
+    if group == "provider":
+        merged = OmegaConf.merge(_load_mapping_config(_CONF_ROOT / group / "base.yaml"), preset)
+        if not isinstance(merged, DictConfig):
+            raise TypeError(f"Preset must remain a mapping after merge: {path}")
+        preset = merged
+    payload = OmegaConf.to_container(preset, resolve=False)
+    if not isinstance(payload, dict):
+        raise TypeError(f"Preset must serialize to a mapping: {path}")
+    payload.pop("defaults", None)
+    stripped = OmegaConf.create(payload)
+    if not isinstance(stripped, DictConfig):
+        raise TypeError(f"Preset must remain a mapping after defaults stripping: {path}")
+    return stripped
+
+
+def _apply_named_preset(config: DictConfig, *, group: str, name: str) -> None:
+    preset = _load_preset(group, name)
+    payload = OmegaConf.to_container(preset, resolve=False)
+    OmegaConf.update(config, group, payload, merge=False)
+
+
+def _apply_rpc_profile(config: DictConfig) -> None:
+    provider_name = OmegaConf.select(config, "provider.name")
+    chain_name = OmegaConf.select(config, "chain.name")
+    if not isinstance(provider_name, str) or not isinstance(chain_name, str):
+        return
+    path = _CONF_ROOT / "rpc_profile" / provider_name / f"{chain_name}.yaml"
+    if not path.is_file():
+        return
+    rpc_profile = _load_mapping_config(path)
+    acquisition = OmegaConf.select(config, "acquisition")
+    OmegaConf.update(
+        config,
+        "acquisition",
+        OmegaConf.to_container(
+            OmegaConf.merge(acquisition, rpc_profile),
+            resolve=False,
+        ),
+        merge=False,
+    )
+
+
+def _refresh_derived_fields(config: DictConfig, *, task: WorkflowTask | str) -> None:
+    resolved_task = WorkflowTask(task)
+    output_root = Path(str(OmegaConf.select(config, "runtime.output_root")))
+    dataset_id = str(OmegaConf.select(config, "dataset.id"))
+    study_id = str(OmegaConf.select(config, "study.id"))
+    chain_name = str(OmegaConf.select(config, "chain.name"))
+    family = str(OmegaConf.select(config, "model.family"))
+    artifact_variant = str(OmegaConf.select(config, "artifact.variant"))
+    max_delay_seconds = int(OmegaConf.select(config, "dataset.temporal.max_delay_seconds"))
+    dataset_root = output_root / "datasets" / chain_name / dataset_id
+    artifact_base_root = (
+        output_root
+        / "models"
+        / chain_name
+        / dataset_id
+        / family
+        / f"{max_delay_seconds}s"
+    )
+    variant_root = artifact_base_root / artifact_variant / study_id
+    tuned_study_root = artifact_base_root / ArtifactVariant.TUNED.value / study_id
+    if resolved_task is WorkflowTask.TUNE:
+        artifact_root = tuned_study_root
+    else:
+        artifact_root = variant_root
+    OmegaConf.update(config, "task", resolved_task.value, merge=False)
+    OmegaConf.update(
+        config,
+        "runtime.hydra_run_dir",
+        f".hydra/runs/{resolved_task.value}",
+        merge=False,
+    )
+    OmegaConf.update(
+        config,
+        "runtime.hydra_sweep_dir",
+        f".hydra/sweeps/{resolved_task.value}",
+        merge=False,
+    )
+    OmegaConf.update(config, "paths.output_root", str(output_root), merge=False)
+    OmegaConf.update(config, "paths.dataset_root", str(dataset_root), merge=False)
+    OmegaConf.update(config, "paths.metadata_root", str(dataset_root / ".spice"), merge=False)
+    OmegaConf.update(config, "paths.history_dir", str(dataset_root / "history"), merge=False)
+    OmegaConf.update(config, "paths.evaluation_dir", str(dataset_root / "evaluation"), merge=False)
+    OmegaConf.update(
+        config,
+        "paths.dataset_metadata_path",
+        str(dataset_root / ".spice" / "metadata.json"),
+        merge=False,
+    )
+    OmegaConf.update(config, "paths.artifact_root", str(artifact_root), merge=False)
+    OmegaConf.update(
+        config,
+        "paths.checkpoint_dir",
+        str(artifact_root / "checkpoints"),
+        merge=False,
+    )
+    OmegaConf.update(
+        config,
+        "paths.train_report_path",
+        str(artifact_root / "train_report.json"),
+        merge=False,
+    )
+    OmegaConf.update(
+        config,
+        "paths.simulation_report_path",
+        str(artifact_root / "simulation_report.json"),
+        merge=False,
+    )
+    OmegaConf.update(config, "paths.tuning_root", str(tuned_study_root / "tuning"), merge=False)
+    OmegaConf.update(
+        config,
+        "paths.tuning_best_params_path",
+        str(tuned_study_root / "tuning" / "best_params.json"),
+        merge=False,
+    )
+    OmegaConf.update(
+        config,
+        "paths.mlruns_dir",
+        str(output_root / ".." / ".mlflow"),
+        merge=False,
+    )
+
+
+def _normalize_runtime_fields(config: DictConfig) -> None:
+    compile_value = OmegaConf.select(config, "training.compile")
+    if isinstance(compile_value, bool):
+        OmegaConf.update(
+            config,
+            "training.compile",
+            "on" if compile_value else "off",
+            merge=False,
+        )
+def _partition_overrides(
+    overrides: Iterable[str] | None,
+) -> tuple[dict[str, str], list[str]]:
+    named: dict[str, str] = {}
+    dotlist: list[str] = []
+    for raw_override in overrides or ():
+        normalized = raw_override[1:] if raw_override.startswith("+") else raw_override
+        if "=" not in normalized:
+            raise ValueError(f"Overrides must use key=value syntax: {raw_override}")
+        key, value = normalized.split("=", 1)
+        if key in _PRESET_GROUPS:
+            named[key] = value
+            continue
+        dotlist.append(normalized)
+    return named, dotlist
+
+
+def load_params_config(
+    task: WorkflowTask | str,
+    *,
+    params_path: Path = Path("params.yaml"),
+    overrides: Iterable[str] | None = None,
+) -> ExperimentConfig:
+    created = OmegaConf.create(
+        OmegaConf.to_container(_load_mapping_config(params_path), resolve=False)
+    )
+    if not isinstance(created, DictConfig):
+        raise TypeError(f"Configuration must remain a mapping: {params_path}")
+    working = created
+    OmegaConf.set_struct(working, False)
+    named_overrides, dotlist_overrides = _partition_overrides(overrides)
+    for group, name in named_overrides.items():
+        _apply_named_preset(working, group=group, name=name)
+    _apply_rpc_profile(working)
+    if dotlist_overrides:
+        merged = OmegaConf.merge(working, OmegaConf.from_cli(dotlist_overrides))
+        if not isinstance(merged, DictConfig):
+            raise TypeError("Overrides must preserve a mapping configuration")
+        working = merged
+    _normalize_runtime_fields(working)
+    _refresh_derived_fields(working, task=task)
+    return coerce_config(working, task=task)

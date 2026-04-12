@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import numpy as np
+import pytest
 import torch
 import torch.nn.functional as F
 
+from spice.core.config import CompileMode, ModelFamily, TrainingPrecision
 from spice.core.constants import ARTIFACT_MANIFEST_FILENAME, MODEL_STATE_FILENAME
-from spice.modeling._runtime import build_sequence_loader
+from spice.core.files import write_path_atomic
+from spice.modeling._runtime import (
+    build_sequence_loader,
+    resolve_compile_enabled,
+    resolve_trainer_precision,
+)
 from spice.modeling.artifacts import load_training_artifact
 from spice.modeling.evaluation import compute_temporal_batch_metrics
 from spice.modeling.execution import run_persisted_training
@@ -12,6 +20,7 @@ from spice.modeling.models import ModelOutputs
 from spice.modeling.pipeline import TrainingSpec
 from spice.modeling.reporting import TrainingRunReport
 from spice.modeling.torch_datasets import SequenceBatch
+from spice.workflows.train import run as run_train
 from tests.support import base_overrides, compose_experiment, make_history_rows, write_dataset_dir
 
 
@@ -48,7 +57,11 @@ def test_run_persisted_training_writes_canonical_training_outputs(tmp_path) -> N
     assert report_path in persisted.artifact_paths
     assert loaded.manifest.dataset_id == config.dataset.id
     assert loaded.manifest.model.family == config.model.family
+    assert loaded.manifest.variant.value == "baseline"
+    assert loaded.manifest.study is None
     assert report.dataset_id == config.dataset.id
+    assert report.variant.value == "baseline"
+    assert report.study is None
     assert report.artifact_dir == artifact_dir
     assert report.best_epoch == persisted.training_run.training_result.best_epoch
 
@@ -88,7 +101,7 @@ def test_temporal_batch_metrics_use_shared_loss_path(tmp_path) -> None:
     assert metrics.correct_count == 2
 
 
-def test_sequence_loader_collates_to_named_tuple_batch(tmp_path) -> None:
+def test_sequence_loader_matches_manual_temporal_batch_construction(tmp_path) -> None:
     config = compose_experiment("train", overrides=base_overrides(tmp_path))
     history_dir = config.paths.history_dir
     write_dataset_dir(history_dir, make_history_rows())
@@ -113,10 +126,107 @@ def test_sequence_loader_collates_to_named_tuple_batch(tmp_path) -> None:
         persisted.training_run.prepared.split_indices.train,
         lookback_steps=persisted.training_run.prepared.geometry.lookback_steps,
         batch_size=config.training.batch_size,
-        device=torch.device("cpu"),
+        shuffle=False,
     )
     batch = next(iter(loader))
+    store = persisted.training_run.prepared.store
+    lookback_steps = persisted.training_run.prepared.geometry.lookback_steps
+    expected_sample_indices = persisted.training_run.prepared.split_indices.train[
+        : config.training.batch_size
+    ]
+    expected_inputs = []
+    for sample_index in expected_sample_indices:
+        anchor_row_index = int(store.anchor_row_indices[int(sample_index)])
+        sequence_start = anchor_row_index - lookback_steps + 1
+        expected_inputs.append(store.feature_matrix[sequence_start : anchor_row_index + 1])
+    expected_inputs_tensor = torch.from_numpy(
+        np.stack(expected_inputs).astype(np.float32, copy=False)
+    )
 
     assert isinstance(batch, SequenceBatch)
     assert batch.inputs.ndim == 3
     assert batch.class_label.ndim == 1
+    assert torch.equal(batch.inputs, expected_inputs_tensor)
+    assert torch.equal(
+        batch.class_label,
+        torch.from_numpy(store.class_labels[expected_sample_indices].astype(np.int64, copy=False)),
+    )
+
+
+def test_runtime_policy_prefers_fp32_for_lstm_on_mps_and_compile_for_mps(tmp_path) -> None:
+    if not torch.backends.mps.is_available():
+        pytest.skip("MPS is not available")
+    config = compose_experiment("train", overrides=base_overrides(tmp_path))
+    config.training.device = "mps"
+    config.training.precision = TrainingPrecision.AUTO
+    config.training.compile = CompileMode.AUTO
+    device = torch.device("mps")
+
+    assert resolve_trainer_precision(
+        config.training,
+        device=device,
+        family=ModelFamily.LSTM,
+    ) == "32-true"
+    transformer_precision = resolve_trainer_precision(
+        config.training,
+        device=device,
+        family=ModelFamily.TRANSFORMER,
+    )
+    assert resolve_trainer_precision(
+        config.training,
+        device=device,
+        family=ModelFamily.TRANSFORMER,
+    ) == "bf16-mixed"
+    assert resolve_compile_enabled(
+        config.training,
+        device=device,
+        precision="32-true",
+        family=ModelFamily.LSTM,
+    ) is True
+    assert resolve_compile_enabled(
+        config.training,
+        device=device,
+        precision=transformer_precision,
+        family=ModelFamily.TRANSFORMER,
+    ) is False
+    assert resolve_compile_enabled(
+        config.training,
+        device=device,
+        precision="32-true",
+        family=ModelFamily.TRANSFORMER,
+    ) is False
+
+
+def test_train_runs_with_compile_and_auto_precision_on_mps(tmp_path) -> None:
+    if not torch.backends.mps.is_available():
+        pytest.skip("MPS is not available")
+    config = compose_experiment(
+        "train",
+        overrides=base_overrides(tmp_path)
+        + [
+                "model=lstm",
+                "training.device=mps",
+                "training.precision=auto",
+                "training.compile=on",
+            ],
+        )
+    write_dataset_dir(config.paths.history_dir, make_history_rows())
+
+    run_train(config)
+
+    assert (config.paths.artifact_root / ARTIFACT_MANIFEST_FILENAME).is_file()
+
+
+def test_atomic_writer_preserves_previous_file_on_failure(tmp_path) -> None:
+    path = tmp_path / "report.json"
+    path.write_text("stable", encoding="utf-8")
+
+    def _failing_writer(tmp_path_arg):
+        tmp_path_arg.write_text("partial", encoding="utf-8")
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        write_path_atomic(path, _failing_writer)
+
+    assert path.read_text(encoding="utf-8") == "stable"
+    assert not list(tmp_path.glob(".*.tmp"))

@@ -9,11 +9,12 @@ from typing import Literal
 import torch
 from pydantic import BaseModel, ConfigDict
 
-from ..core.config import ChainConfig, ModelConfig
+from ..core.config import ArtifactVariant, ChainConfig, ModelConfig, StudyConfig
 from ..core.constants import (
     ARTIFACT_MANIFEST_FILENAME,
     MODEL_STATE_FILENAME,
 )
+from ..core.files import write_path_atomic
 from ..core.json import write_json
 from ..data.features import FEATURE_NAMES
 from ..data.normalization import ScalerStats
@@ -29,6 +30,8 @@ class TrainingArtifactManifest(ArtifactModel):
     kind: Literal["training_artifact"] = "training_artifact"
     chain: ChainConfig
     dataset_id: str
+    variant: ArtifactVariant
+    study: StudyConfig | None = None
     max_delay_seconds: int
     lookback_seconds: int
     anchor_count: int
@@ -55,6 +58,8 @@ def build_training_artifact_manifest(
     return TrainingArtifactManifest(
         chain=spec.chain,
         dataset_id=spec.dataset_id,
+        variant=spec.variant,
+        study=spec.study,
         max_delay_seconds=spec.max_delay_seconds,
         lookback_seconds=spec.lookback_seconds,
         anchor_count=spec.anchor_count,
@@ -77,7 +82,10 @@ def write_training_artifact(
     artifact_dir.mkdir(parents=True, exist_ok=True)
     write_json(artifact_dir / ARTIFACT_MANIFEST_FILENAME, manifest)
     cpu_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
-    torch.save(cpu_state, artifact_dir / MODEL_STATE_FILENAME)
+    write_path_atomic(
+        artifact_dir / MODEL_STATE_FILENAME,
+        lambda tmp_path: torch.save(cpu_state, tmp_path),
+    )
 
 
 def load_training_artifact(artifact_dir: Path) -> LoadedTrainingArtifact:

@@ -1,5 +1,4 @@
 dry_run: false
-overwrite: false
 chunk_size: 8192
 rpc_batch_size: 256
 rpc_concurrency: 48

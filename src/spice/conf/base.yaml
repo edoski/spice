@@ -1,6 +1,7 @@
 defaults:
   - chain: ethereum
   - dataset: default
+  - evaluation: default
   - model: lstm
   - provider: publicnode
   - acquisition: default

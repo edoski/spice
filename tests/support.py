@@ -5,36 +5,39 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 import polars as pl
-from hydra import compose, initialize_config_dir
 
 from spice.core.config import (
     ChainConfig,
     ChainName,
+    CompileMode,
     ExperimentConfig,
     ModelConfig,
     ModelFamily,
     ProviderConfig,
     RpcProviderName,
     TrainingConfig,
-    coerce_config,
+    TrainingPrecision,
+    load_params_config,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CONF_DIR = REPO_ROOT / "src" / "spice" / "conf"
-TEST_WINDOW_START_DATE = date(2025, 11, 9)
-TEST_WINDOW_END_DATE = date(2025, 11, 9)
+TEST_SPAN_START_DATE = date(2025, 11, 8)
+TEST_SPAN_END_DATE = date(2025, 11, 9)
+TEST_EVALUATION_DURATION_DAYS = 1
 TEST_WINDOW_START_TIMESTAMP = int(
-    datetime.combine(TEST_WINDOW_START_DATE, time.min, tzinfo=UTC).timestamp()
+    datetime.combine(TEST_SPAN_END_DATE, time.min, tzinfo=UTC).timestamp()
 )
 TEST_WINDOW_END_TIMESTAMP = int(
-    datetime.combine(TEST_WINDOW_END_DATE + timedelta(days=1), time.min, tzinfo=UTC).timestamp()
+    datetime.combine(TEST_SPAN_END_DATE + timedelta(days=1), time.min, tzinfo=UTC).timestamp()
 )
 
 
 def compose_experiment(config_name: str, *, overrides: list[str] | None = None) -> ExperimentConfig:
-    with initialize_config_dir(version_base=None, config_dir=str(CONF_DIR)):
-        cfg = compose(config_name=config_name, overrides=overrides or [])
-    return coerce_config(cfg, task=config_name)
+    return load_params_config(
+        config_name,
+        params_path=REPO_ROOT / "params.yaml",
+        overrides=overrides,
+    )
 
 
 def base_overrides(tmp_path: Path) -> list[str]:
@@ -50,8 +53,12 @@ def base_overrides(tmp_path: Path) -> list[str]:
         "simulation.arrival_rate_per_second=0.02",
         "simulation.repetitions=3",
         "acquisition.rpc_batch_size=256",
+        f"dataset.span.start_date={TEST_SPAN_START_DATE}",
+        f"dataset.span.end_date={TEST_SPAN_END_DATE}",
+        f"evaluation.duration_days={TEST_EVALUATION_DURATION_DAYS}",
         "dataset.temporal.lookback_seconds=120",
         "dataset.sampling.anchor_count=48",
+        "dataset.sampling.history_anchor_count=48",
     ]
 
 
@@ -109,6 +116,8 @@ def make_training_config() -> TrainingConfig:
         seed=2026,
         deterministic=True,
         log_every_n_steps=10,
+        precision=TrainingPrecision.FP32,
+        compile=CompileMode.OFF,
     )
 
 

@@ -1,4 +1,4 @@
-"""Shared exact-window validation for block datasets."""
+"""Shared validation for canonical block datasets."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from pydantic import Field
 
 from .validation_base import ValidationModel, ValidationStatus, finalize_validation_status
 
-EXACT_WINDOW_COLUMNS = ("block_number", "timestamp", "chain_id")
+VALIDATION_COLUMNS = ("block_number", "timestamp", "chain_id")
 
 
 @dataclass(slots=True)
-class ExactWindowSummary:
+class BlockFrameSummary:
     row_count: int
     first_block_number: int
     last_block_number: int
@@ -23,20 +23,24 @@ class ExactWindowSummary:
     chain_ids: tuple[int, ...]
     duplicate_count: int
     gap_count: int
+
+
+@dataclass(slots=True)
+class ExactWindowCounts:
     below_start_count: int
     above_end_count: int
 
 
 @dataclass(slots=True)
-class ExactWindowAssessment:
+class BlockFrameAssessment:
     chain_id: int | None
     errors: tuple[str, ...]
 
 
 class BlockDatasetValidationReport(ValidationModel):
     dataset_path: Path
-    expected_start_timestamp: int
-    expected_end_timestamp: int
+    expected_start_timestamp: int | None = None
+    expected_end_timestamp: int | None = None
     row_count: int = 0
     first_block_number: int | None = None
     last_block_number: int | None = None
@@ -51,8 +55,8 @@ class BlockDatasetValidationReport(ValidationModel):
     errors: list[str] = Field(default_factory=list)
 
 
-def _coerce_exact_window_frame(frame: pl.DataFrame) -> pl.DataFrame:
-    missing = [column for column in EXACT_WINDOW_COLUMNS if column not in frame.columns]
+def _coerce_validation_frame(frame: pl.DataFrame) -> pl.DataFrame:
+    missing = [column for column in VALIDATION_COLUMNS if column not in frame.columns]
     if missing:
         raise ValueError(
             "Block dataset is missing required validation columns: " + ", ".join(missing)
@@ -66,19 +70,14 @@ def _coerce_exact_window_frame(frame: pl.DataFrame) -> pl.DataFrame:
     ).sort("block_number")
 
 
-def summarize_exact_window_frame(
-    frame: pl.DataFrame,
-    *,
-    expected_start_timestamp: int,
-    expected_end_timestamp: int,
-) -> ExactWindowSummary:
-    exact_frame = _coerce_exact_window_frame(frame)
-    if exact_frame.height == 0:
+def summarize_block_frame(frame: pl.DataFrame) -> BlockFrameSummary:
+    validation_frame = _coerce_validation_frame(frame)
+    if validation_frame.height == 0:
         raise ValueError("Block dataset is empty")
 
-    block_numbers = [int(value) for value in exact_frame["block_number"].to_list()]
-    timestamps = [int(value) for value in exact_frame["timestamp"].to_list()]
-    chain_ids = tuple(sorted({int(value) for value in exact_frame["chain_id"].to_list()}))
+    block_numbers = [int(value) for value in validation_frame["block_number"].to_list()]
+    timestamps = [int(value) for value in validation_frame["timestamp"].to_list()]
+    chain_ids = tuple(sorted({int(value) for value in validation_frame["chain_id"].to_list()}))
 
     duplicate_count = 0
     gap_count = 0
@@ -88,13 +87,7 @@ def summarize_exact_window_frame(
         elif right != left + 1:
             gap_count += 1
 
-    below_start_count = sum(
-        1 for timestamp in timestamps if timestamp < expected_start_timestamp
-    )
-    above_end_count = sum(
-        1 for timestamp in timestamps if timestamp >= expected_end_timestamp
-    )
-    return ExactWindowSummary(
+    return BlockFrameSummary(
         row_count=len(block_numbers),
         first_block_number=block_numbers[0],
         last_block_number=block_numbers[-1],
@@ -103,15 +96,14 @@ def summarize_exact_window_frame(
         chain_ids=chain_ids,
         duplicate_count=duplicate_count,
         gap_count=gap_count,
-        below_start_count=below_start_count,
-        above_end_count=above_end_count,
     )
 
-def assess_exact_window_summary(
-    summary: ExactWindowSummary,
+
+def assess_block_frame_summary(
+    summary: BlockFrameSummary,
     *,
     expected_chain_id: int,
-) -> ExactWindowAssessment:
+) -> BlockFrameAssessment:
     errors: list[str] = []
     chain_id: int | None = None
     if len(summary.chain_ids) != 1:
@@ -129,17 +121,28 @@ def assess_exact_window_summary(
         )
     if summary.gap_count:
         errors.append(f"Detected {summary.gap_count} block-number gap(s)")
-    if summary.below_start_count or summary.above_end_count:
-        errors.append(
-            f"Detected out-of-range timestamps: below_start={summary.below_start_count}, "
-            f"above_end={summary.above_end_count}"
-        )
-    return ExactWindowAssessment(chain_id=chain_id, errors=tuple(errors))
+    return BlockFrameAssessment(chain_id=chain_id, errors=tuple(errors))
 
 
-def _apply_exact_window_summary(
+def exact_window_counts(
+    summary: BlockFrameSummary,
+    *,
+    frame: pl.DataFrame,
+    expected_start_timestamp: int,
+    expected_end_timestamp: int,
+) -> ExactWindowCounts:
+    timestamps = [int(value) for value in frame["timestamp"].to_list()]
+    return ExactWindowCounts(
+        below_start_count=sum(
+            1 for timestamp in timestamps if timestamp < expected_start_timestamp
+        ),
+        above_end_count=sum(1 for timestamp in timestamps if timestamp >= expected_end_timestamp),
+    )
+
+
+def _apply_summary(
     report: BlockDatasetValidationReport,
-    summary: ExactWindowSummary,
+    summary: BlockFrameSummary,
     *,
     expected_chain_id: int,
 ) -> None:
@@ -150,15 +153,32 @@ def _apply_exact_window_summary(
     report.last_timestamp = summary.last_timestamp
     report.duplicate_count = summary.duplicate_count
     report.gap_count = summary.gap_count
-    report.below_start_count = summary.below_start_count
-    report.above_end_count = summary.above_end_count
 
-    assessment = assess_exact_window_summary(
+    assessment = assess_block_frame_summary(
         summary,
         expected_chain_id=expected_chain_id,
     )
     report.chain_id = assessment.chain_id
     report.errors.extend(assessment.errors)
+
+
+def validate_contiguous_block_frame(
+    frame: pl.DataFrame,
+    *,
+    dataset_path: Path,
+    expected_chain_id: int,
+) -> BlockDatasetValidationReport:
+    report = BlockDatasetValidationReport(dataset_path=dataset_path)
+    try:
+        summary = summarize_block_frame(frame)
+    except Exception as exc:
+        report.errors.append(str(exc))
+        finalize_validation_status(report)
+        return report
+
+    _apply_summary(report, summary, expected_chain_id=expected_chain_id)
+    finalize_validation_status(report)
+    return report
 
 
 def validate_exact_window_frame(
@@ -175,20 +195,26 @@ def validate_exact_window_frame(
         expected_end_timestamp=expected_end_timestamp,
     )
     try:
-        summary = summarize_exact_window_frame(
-            frame,
-            expected_start_timestamp=expected_start_timestamp,
-            expected_end_timestamp=expected_end_timestamp,
-        )
+        validation_frame = _coerce_validation_frame(frame)
+        summary = summarize_block_frame(validation_frame)
     except Exception as exc:
         report.errors.append(str(exc))
         finalize_validation_status(report)
         return report
 
-    _apply_exact_window_summary(
-        report,
+    _apply_summary(report, summary, expected_chain_id=expected_chain_id)
+    counts = exact_window_counts(
         summary,
-        expected_chain_id=expected_chain_id,
+        frame=validation_frame,
+        expected_start_timestamp=expected_start_timestamp,
+        expected_end_timestamp=expected_end_timestamp,
     )
+    report.below_start_count = counts.below_start_count
+    report.above_end_count = counts.above_end_count
+    if report.below_start_count or report.above_end_count:
+        report.errors.append(
+            f"Detected out-of-range timestamps: below_start={report.below_start_count}, "
+            f"above_end={report.above_end_count}"
+        )
     finalize_validation_status(report)
     return report

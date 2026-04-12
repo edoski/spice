@@ -9,49 +9,159 @@ stages:
       - src/spice
     params:
       - params.yaml:
+          - chain.name
+          - provider.name
+          - dataset.id
+          - dataset.span.start_date
+          - dataset.span.end_date
+          - dataset.temporal.max_delay_seconds
+          - dataset.temporal.lookback_seconds
+          - dataset.sampling.history_anchor_count
+          - evaluation.duration_days
+          - acquisition.dry_run
+          - acquisition.chunk_size
+          - acquisition.rpc_batch_size
+          - acquisition.rpc_concurrency
+          - acquisition.rpc_min_batch_size
+          - acquisition.rpc_concurrency_rungs
+          - runtime.output_root
     outs:
-      - ${paths.history_dir}
-      - ${paths.evaluation_dir}
-      - ${paths.metadata_root}
+      - ${runtime.output_root}/datasets/${chain.name}/${dataset.id}/history:
+          persist: true
+      - ${runtime.output_root}/datasets/${chain.name}/${dataset.id}/evaluation:
+          persist: true
+      - ${runtime.output_root}/datasets/${chain.name}/${dataset.id}/.spice:
+          persist: true
 
   tune:
     cmd: ./bin/spice-awake .venv/bin/spice-dvc tune
     deps:
       - pyproject.toml
       - src/spice
-      - ${paths.history_dir}
+      - ${runtime.output_root}/datasets/${chain.name}/${dataset.id}/history
     params:
       - params.yaml:
+          - chain.name
+          - dataset.id
+          - dataset.temporal.max_delay_seconds
+          - dataset.temporal.lookback_seconds
+          - dataset.sampling.anchor_count
+          - split.train_fraction
+          - split.validation_fraction
+          - study.id
+          - model.family
+          - model.input_projection_dim
+          - model.hidden_size
+          - model.num_layers
+          - model.dropout
+          - model.d_model
+          - model.nhead
+          - model.transformer_layers
+          - model.feedforward_dim
+          - model.head_hidden_dim
+          - training.learning_rate
+          - training.weight_decay
+          - training.batch_size
+          - training.max_epochs
+          - training.early_stopping.patience
+          - training.early_stopping.min_delta
+          - training.gradient_clip_norm
+          - training.action_loss_weight
+          - training.fee_loss_weight
+          - training.device
+          - training.seed
+          - training.deterministic
+          - training.log_every_n_steps
+          - training.precision
+          - training.compile
+          - tuning.direction
+          - tuning.trial_count
+          - tuning.timeout_seconds
+          - tuning.objective_metric
+          - tuning.sampler_seed
+          - tuning.enable_pruning
+          - tuning.search_space.training.learning_rate
+          - tuning.search_space.training.weight_decay
+          - tuning.search_space.model.hidden_size
+          - tuning.search_space.model.dropout
+          - runtime.output_root
     outs:
-      - ${paths.tuning_root}/study.json
-      - ${paths.tuning_root}/trials.json
-      - ${paths.tuning_best_params_path}
-      - ${paths.tuning_root}/trials
+      - ${runtime.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${dataset.temporal.max_delay_seconds}s/tuned/${study.id}/tuning/study.json
+      - ${runtime.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${dataset.temporal.max_delay_seconds}s/tuned/${study.id}/tuning/trials.json
+      - ${runtime.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${dataset.temporal.max_delay_seconds}s/tuned/${study.id}/tuning/best_params.json
+      - ${runtime.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${dataset.temporal.max_delay_seconds}s/tuned/${study.id}/tuning/trials
 
   train:
     cmd: ./bin/spice-awake .venv/bin/spice-dvc train
     deps:
       - pyproject.toml
       - src/spice
-      - ${paths.history_dir}
-      - ${paths.tuning_best_params_path}
+      - ${runtime.output_root}/datasets/${chain.name}/${dataset.id}/history
     params:
       - params.yaml:
+          - chain.name
+          - dataset.id
+          - dataset.temporal.max_delay_seconds
+          - dataset.temporal.lookback_seconds
+          - dataset.sampling.anchor_count
+          - split.train_fraction
+          - split.validation_fraction
+          - artifact.variant
+          - study.id
+          - model.family
+          - model.input_projection_dim
+          - model.hidden_size
+          - model.num_layers
+          - model.dropout
+          - model.d_model
+          - model.nhead
+          - model.transformer_layers
+          - model.feedforward_dim
+          - model.head_hidden_dim
+          - training.learning_rate
+          - training.weight_decay
+          - training.batch_size
+          - training.max_epochs
+          - training.early_stopping.patience
+          - training.early_stopping.min_delta
+          - training.gradient_clip_norm
+          - training.action_loss_weight
+          - training.fee_loss_weight
+          - training.device
+          - training.seed
+          - training.deterministic
+          - training.log_every_n_steps
+          - training.precision
+          - training.compile
+          - runtime.output_root
     outs:
-      - ${paths.artifact_root}/artifact.json
-      - ${paths.artifact_root}/model.pt
-      - ${paths.train_report_path}
+      - ${runtime.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${dataset.temporal.max_delay_seconds}s/${artifact.variant}/${study.id}/artifact.json
+      - ${runtime.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${dataset.temporal.max_delay_seconds}s/${artifact.variant}/${study.id}/model.pt
+      - ${runtime.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${dataset.temporal.max_delay_seconds}s/${artifact.variant}/${study.id}/train_report.json
 
   simulate:
     cmd: ./bin/spice-awake .venv/bin/spice-dvc simulate
     deps:
       - pyproject.toml
       - src/spice
-      - ${paths.artifact_root}/artifact.json
-      - ${paths.artifact_root}/model.pt
-      - ${paths.history_dir}
-      - ${paths.evaluation_dir}
+      - ${runtime.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${dataset.temporal.max_delay_seconds}s/${artifact.variant}/${study.id}/artifact.json
+      - ${runtime.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${dataset.temporal.max_delay_seconds}s/${artifact.variant}/${study.id}/model.pt
+      - ${runtime.output_root}/datasets/${chain.name}/${dataset.id}/history
+      - ${runtime.output_root}/datasets/${chain.name}/${dataset.id}/evaluation
     params:
       - params.yaml:
+          - chain.name
+          - dataset.id
+          - dataset.temporal.max_delay_seconds
+          - artifact.variant
+          - study.id
+          - model.family
+          - simulation.window_seconds
+          - simulation.arrival_rate_per_second
+          - simulation.repetitions
+          - simulation.seed
+          - training.device
+          - training.batch_size
+          - runtime.output_root
     outs:
-      - ${paths.simulation_report_path}
+      - ${runtime.output_root}/models/${chain.name}/${dataset.id}/${model.family}/${dataset.temporal.max_delay_seconds}s/${artifact.variant}/${study.id}/simulation_report.json

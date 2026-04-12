@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from ..core.config import ExperimentConfig
 from ..data.datasets import derive_dataset_geometry
-from .metadata import DatasetMetadata
-from .rpc import TimestampRange
 
 
 def required_history_block_count(config: ExperimentConfig) -> int:
@@ -15,11 +13,3 @@ def required_history_block_count(config: ExperimentConfig) -> int:
         block_time_seconds=config.chain.block_time_seconds,
     )
     return geometry.required_block_count(config.dataset.sampling.effective_history_anchor_count)
-
-
-def history_range_from_metadata(metadata: DatasetMetadata) -> TimestampRange:
-    history = metadata.windows.history
-    return TimestampRange(
-        start=history.start_timestamp,
-        end=history.end_timestamp,
-    )

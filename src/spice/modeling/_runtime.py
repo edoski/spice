@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import math
 import random
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from torch.utils.data import DataLoader
 
+from ..core.config import CompileMode, ModelFamily, TrainingConfig, TrainingPrecision
 from ..data.datasets import TemporalDatasetStore
-from .torch_datasets import SequenceBatch, SequenceDataset
+from .torch_datasets import SequenceBatchLoader
 
 IntVector = NDArray[np.int64]
 
@@ -32,18 +31,51 @@ def set_global_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def choose_microbatch_size(batch_size: int, device: torch.device) -> int:
-    candidates = [batch_size, 32, 16, 8]
-    if device.type == "cpu":
-        return min(batch_size, 16)
-    for candidate in candidates:
-        if candidate <= batch_size:
-            return candidate
-    return 8
+def resolve_trainer_precision(
+    training_config: TrainingConfig,
+    *,
+    device: torch.device,
+    family: ModelFamily,
+) -> str:
+    precision = training_config.precision
+    if precision is TrainingPrecision.AUTO:
+        if device.type == "cpu":
+            precision = TrainingPrecision.FP32
+        elif device.type == "mps" and family is ModelFamily.LSTM:
+            precision = TrainingPrecision.FP32
+        elif device.type == "mps":
+            precision = TrainingPrecision.BF16_MIXED
+        elif device.type == "cuda" and torch.cuda.is_bf16_supported():
+            precision = TrainingPrecision.BF16_MIXED
+        elif device.type == "cuda":
+            precision = TrainingPrecision.FP16_MIXED
+        else:
+            precision = TrainingPrecision.FP32
+
+    if precision is TrainingPrecision.FP32:
+        return "32-true"
+    if precision is TrainingPrecision.FP16_MIXED:
+        return "16-mixed"
+    if precision is TrainingPrecision.BF16_MIXED:
+        return "bf16-mixed"
+    raise ValueError(f"Unsupported training precision: {precision}")
 
 
-def accumulation_steps(batch_size: int, microbatch_size: int) -> int:
-    return max(1, math.ceil(batch_size / microbatch_size))
+def resolve_compile_enabled(
+    training_config: TrainingConfig,
+    *,
+    device: torch.device,
+    precision: str,
+    family: ModelFamily,
+) -> bool:
+    compile_mode = training_config.compile
+    if compile_mode is CompileMode.AUTO:
+        enabled = device.type in {"mps", "cuda"}
+    else:
+        enabled = compile_mode is CompileMode.ON
+    if device.type == "mps":
+        return enabled and precision == "32-true" and family is ModelFamily.LSTM
+    return enabled
 
 
 def build_sequence_loader(
@@ -52,11 +84,12 @@ def build_sequence_loader(
     *,
     lookback_steps: int,
     batch_size: int,
-    device: torch.device,
-) -> DataLoader[SequenceBatch]:
-    microbatch_size = choose_microbatch_size(batch_size, device)
-    return DataLoader(
-        SequenceDataset(store, sample_indices, lookback_steps=lookback_steps),
-        batch_size=microbatch_size,
-        shuffle=False,
+    shuffle: bool = False,
+) -> SequenceBatchLoader:
+    return SequenceBatchLoader(
+        store,
+        sample_indices,
+        lookback_steps=lookback_steps,
+        batch_size=batch_size,
+        shuffle=shuffle,
     )

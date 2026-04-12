@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Iterator
 from typing import NamedTuple
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from torch.utils.data import Dataset
 
 from ..data.datasets import TemporalDatasetStore
 
@@ -23,8 +24,47 @@ class SequenceBatch(NamedTuple):
     optimal_log_fee: torch.Tensor
 
 
-class SequenceDataset(Dataset[SequenceBatch]):
-    """Lazy tensor adapter over an array-backed temporal dataset store."""
+def build_sequence_batch(
+    store: TemporalDatasetStore,
+    sample_indices: IntVector,
+    *,
+    sequence_view: NDArray[np.float32],
+    lookback_steps: int,
+) -> SequenceBatch:
+    if sample_indices.size == 0:
+        raise ValueError("Sequence batches require at least one sample")
+    sample_indices = sample_indices.astype(np.int64, copy=False)
+    sequence_starts = store.anchor_row_indices[sample_indices] - lookback_steps + 1
+    return SequenceBatch(
+        inputs=torch.from_numpy(np.ascontiguousarray(sequence_view[sequence_starts])),
+        class_label=torch.from_numpy(
+            np.ascontiguousarray(store.class_labels[sample_indices].astype(np.int64, copy=False))
+        ),
+        target_log_fee=torch.from_numpy(
+            np.ascontiguousarray(
+                store.target_log_fee[sample_indices].astype(np.float32, copy=False)
+            )
+        ),
+        action_log_fees=torch.from_numpy(
+            np.ascontiguousarray(
+                store.action_log_fees[sample_indices].astype(np.float32, copy=False)
+            )
+        ),
+        next_block_log_fee=torch.from_numpy(
+            np.ascontiguousarray(
+                store.next_block_log_fee[sample_indices].astype(np.float32, copy=False)
+            )
+        ),
+        optimal_log_fee=torch.from_numpy(
+            np.ascontiguousarray(
+                store.optimal_log_fee[sample_indices].astype(np.float32, copy=False)
+            )
+        ),
+    )
+
+
+class SequenceBatchLoader:
+    """Batch-native sequence loader over an array-backed temporal dataset store."""
 
     def __init__(
         self,
@@ -32,37 +72,39 @@ class SequenceDataset(Dataset[SequenceBatch]):
         sample_indices: IntVector,
         *,
         lookback_steps: int,
+        batch_size: int,
+        shuffle: bool = False,
     ) -> None:
         if sample_indices.size == 0:
-            raise ValueError("SequenceDataset requires at least one sample")
+            raise ValueError("SequenceBatchLoader requires at least one sample")
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
         self.store = store
-        self.sample_indices = sample_indices
+        self.sample_indices = sample_indices.astype(np.int64, copy=False)
         self.lookback_steps = lookback_steps
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        window_view = np.lib.stride_tricks.sliding_window_view(
+            store.feature_matrix,
+            window_shape=(lookback_steps, store.n_features),
+        )
+        self._sequence_view = window_view[:, 0].astype(np.float32, copy=False)
 
     def __len__(self) -> int:
-        return int(self.sample_indices.shape[0])
+        return math.ceil(int(self.sample_indices.shape[0]) / self.batch_size)
 
-    def __getitem__(self, index: int) -> SequenceBatch:
-        sample_index = int(self.sample_indices[index])
-        anchor_row_index = int(self.store.anchor_row_indices[sample_index])
-        sequence_start = anchor_row_index - self.lookback_steps + 1
-        inputs = torch.from_numpy(
-            self.store.feature_matrix[sequence_start : anchor_row_index + 1]
-        )
-        return SequenceBatch(
-            inputs=inputs,
-            class_label=torch.tensor(self.store.class_labels[sample_index], dtype=torch.long),
-            target_log_fee=torch.tensor(
-                self.store.target_log_fee[sample_index], dtype=torch.float32
-            ),
-            action_log_fees=torch.from_numpy(self.store.action_log_fees[sample_index]),
-            next_block_log_fee=torch.tensor(
-                self.store.next_block_log_fee[sample_index], dtype=torch.float32
-            ),
-            optimal_log_fee=torch.tensor(
-                self.store.optimal_log_fee[sample_index], dtype=torch.float32
-            ),
-        )
+    def __iter__(self) -> Iterator[SequenceBatch]:
+        order = self.sample_indices
+        if self.shuffle:
+            order = np.random.permutation(order)
+        for offset in range(0, int(order.shape[0]), self.batch_size):
+            batch_indices = order[offset : offset + self.batch_size]
+            yield build_sequence_batch(
+                self.store,
+                batch_indices,
+                sequence_view=self._sequence_view,
+                lookback_steps=self.lookback_steps,
+            )
 
 
 def move_batch_to_device(batch: SequenceBatch, device: torch.device) -> SequenceBatch:

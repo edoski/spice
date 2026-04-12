@@ -37,7 +37,6 @@ def predict_class_offsets(
         sample_indices,
         lookback_steps=lookback_steps,
         batch_size=batch_size,
-        device=resolved_device,
     )
     task_id = reporter.start_task("predict offsets", total=len(loader), unit="batches")
     predictions: list[int] = []

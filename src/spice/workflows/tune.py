@@ -1,20 +1,21 @@
-"""Hydra entrypoint for Optuna studies."""
+"""Optuna tuning workflow."""
 
 from __future__ import annotations
 
 import shutil
 
-import hydra
 import optuna
-from omegaconf import DictConfig
 from optuna.trial import FrozenTrial, TrialState
 
-from ..core.config import ExperimentConfig, coerce_config
+from ..core.config import ExperimentConfig
 from ..core.console import ConsoleRuntime, Reporter
+from ..core.files import remove_path
 from ..core.json import write_json
 from ..core.tracking import log_artifacts
 from ..modeling.execution import run_persisted_training
+from ._cli import load_cli_config
 from ._shared import (
+    abort_cleanup,
     build_training_spec,
     epoch_metrics_to_dict,
     managed_workflow,
@@ -29,6 +30,17 @@ from ._tuning import (
     freeze_tuned_parameters_for_trial,
     sample_tuned_parameters,
 )
+
+
+def _chain_label(chain_name: str) -> str:
+    return chain_name.replace("_", " ").title()
+
+
+def _format_best_params(params) -> str:
+    flattened = flatten_tuned_parameters(params)
+    if not flattened:
+        return "none"
+    return ", ".join(f"{key}={value}" for key, value in flattened.items())
 
 
 def _trial_status_message(trial: FrozenTrial) -> str:
@@ -105,83 +117,134 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         ),
         reporter=reporter,
     ) as session:
-        tuning_root = config.paths.tuning_root
-        if tuning_root.exists():
-            shutil.rmtree(tuning_root)
-        study_task = session.reporter.start_task(
-            "tune study",
-            total=config.tuning.trial_count,
-            unit="trials",
-        )
-
-        def on_trial_complete(study: optuna.Study, frozen_trial: FrozenTrial) -> None:
-            session.reporter.update_task(
-                study_task,
-                completed=frozen_trial.number + 1,
-                message=_trial_status_message(frozen_trial),
+        with abort_cleanup(
+            session.reporter,
+            label="tune",
+            cleanup=lambda: remove_path(config.paths.artifact_root),
+        ):
+            if config.paths.artifact_root.exists():
+                shutil.rmtree(config.paths.artifact_root)
+            tuning_root = config.paths.tuning_root
+            study_task = session.reporter.start_task(
+                "tune study",
+                total=config.tuning.trial_count,
+                unit="trials",
             )
 
-        with session.runtime.optuna_logging():
-            study = optuna.create_study(
-                study_name=config.tuning.study_name,
-                direction=config.tuning.direction,
-                pruner=(
-                    optuna.pruners.MedianPruner()
-                    if config.tuning.enable_pruning
-                    else optuna.pruners.NopPruner()
-                ),
-                sampler=optuna.samplers.TPESampler(seed=config.tuning.sampler_seed),
-            )
-            study.optimize(
-                lambda trial: _objective(
-                    config,
-                    trial,
-                    runtime=session.runtime,
-                    reporter=session.reporter,
-                ),
-                n_trials=config.tuning.trial_count,
-                timeout=config.tuning.timeout_seconds,
-                callbacks=[on_trial_complete],
-            )
-        study_path = tuning_root / "study.json"
-        trials_path = tuning_root / "trials.json"
-        best_params_path = config.paths.tuning_best_params_path
-        study_report = build_study_report(config, study)
-        trial_records = [build_trial_record(trial) for trial in study.trials]
-        write_task = session.reporter.start_task("write tuning summary")
-        write_json(study_path, study_report)
-        write_json(trials_path, tuple(trial_records))
-        write_json(best_params_path, build_best_params_report(config, study))
-        session.reporter.finish_task(write_task, message=str(best_params_path))
-        completed_trials = [
-            trial for trial in study.trials if trial.state == TrialState.COMPLETE
-        ]
-        if completed_trials:
-            session.reporter.finish_task(study_task, message=f"best_value={study.best_value:.4f}")
-        else:
-            session.reporter.finish_task(study_task, message="no successful trials")
-        if session.tracking_enabled:
-            import mlflow
-
-            metrics = {"study.trial_count": float(len(study.trials))}
-            if completed_trials:
-                best_trial = study_report.best_trial
-                assert best_trial is not None
-                assert best_trial.value is not None
-                metrics["study.best_value"] = best_trial.value
-                mlflow.log_params(
-                    {
-                        f"study.best_param.{key}": str(value)
-                        for key, value in flatten_tuned_parameters(best_trial.params).items()
-                    }
+            def on_trial_complete(study: optuna.Study, frozen_trial: FrozenTrial) -> None:
+                session.reporter.update_task(
+                    study_task,
+                    completed=frozen_trial.number + 1,
+                    message=_trial_status_message(frozen_trial),
                 )
-            mlflow.log_metrics(metrics)
-            log_artifacts([study_path, trials_path, best_params_path])
+
+            with session.runtime.optuna_logging():
+                study = optuna.create_study(
+                    study_name=config.study.id,
+                    direction=config.tuning.direction,
+                    pruner=(
+                        optuna.pruners.MedianPruner()
+                        if config.tuning.enable_pruning
+                        else optuna.pruners.NopPruner()
+                    ),
+                    sampler=optuna.samplers.TPESampler(seed=config.tuning.sampler_seed),
+                )
+                study.optimize(
+                    lambda trial: _objective(
+                        config,
+                        trial,
+                        runtime=session.runtime,
+                        reporter=session.reporter,
+                    ),
+                    n_trials=config.tuning.trial_count,
+                    timeout=config.tuning.timeout_seconds,
+                    callbacks=[on_trial_complete],
+                )
+            study_path = tuning_root / "study.json"
+            trials_path = tuning_root / "trials.json"
+            best_params_path = config.paths.tuning_best_params_path
+            study_report = build_study_report(config, study)
+            trial_records = [build_trial_record(trial) for trial in study.trials]
+            write_task = session.reporter.start_task("write tuning summary")
+            write_json(study_path, study_report)
+            write_json(trials_path, tuple(trial_records))
+            write_json(best_params_path, build_best_params_report(config, study))
+            session.reporter.finish_task(write_task, message=str(best_params_path), silent=True)
+            completed_trials = [
+                trial for trial in study.trials if trial.state == TrialState.COMPLETE
+            ]
+            if completed_trials:
+                session.reporter.finish_task(
+                    study_task,
+                    message=f"best_value={study.best_value:.4f}",
+                )
+            else:
+                session.reporter.finish_task(study_task, message="no successful trials")
+            best_trial = study_report.best_trial
+            session.runtime.log_sectioned_summary(
+                "tuning summary",
+                [
+                    (
+                        "study",
+                        [
+                            ("id", study_report.study.id),
+                            ("chain", _chain_label(study_report.chain.value)),
+                            ("family", study_report.family.value),
+                            ("trials", str(study_report.trial_counts.total)),
+                        ],
+                    ),
+                    (
+                        "best trial",
+                        [
+                            ("objective", study_report.objective_metric.value),
+                            (
+                                "value",
+                                "n/a"
+                                if best_trial is None or best_trial.value is None
+                                else f"{best_trial.value:.4f}",
+                            ),
+                            (
+                                "trial",
+                                "n/a" if best_trial is None else str(best_trial.number + 1),
+                            ),
+                            (
+                                "params",
+                                "n/a"
+                                if best_trial is None
+                                else _format_best_params(best_trial.params),
+                            ),
+                        ],
+                    ),
+                    (
+                        "artifacts",
+                        [
+                            ("study", str(study_path)),
+                            ("best params", str(best_params_path)),
+                        ],
+                    ),
+                ],
+            )
+            if session.tracking_enabled:
+                import mlflow
+
+                metrics = {"study.trial_count": float(len(study.trials))}
+                if completed_trials:
+                    best_trial = study_report.best_trial
+                    assert best_trial is not None
+                    assert best_trial.value is not None
+                    metrics["study.best_value"] = best_trial.value
+                    mlflow.log_params(
+                        {
+                            f"study.best_param.{key}": str(value)
+                            for key, value in flatten_tuned_parameters(best_trial.params).items()
+                        }
+                    )
+                mlflow.log_metrics(metrics)
+                log_artifacts([study_path, trials_path, best_params_path])
 
 
-@hydra.main(version_base=None, config_path="../conf", config_name="tune")
-def main(cfg: DictConfig) -> None:
-    run(coerce_config(cfg, task="tune"))
+def main(argv: list[str] | None = None) -> None:
+    run(load_cli_config("tune", prog="spice-tune", argv=argv))
 
 
 if __name__ == "__main__":

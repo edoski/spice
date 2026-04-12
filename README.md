@@ -53,9 +53,8 @@ Key runtime paths:
 - history datasets: `artifacts/datasets/<chain>/<dataset_id>/history/...`
 - evaluation datasets: `artifacts/datasets/<chain>/<dataset_id>/evaluation/...`
 - dataset metadata: `artifacts/datasets/<chain>/<dataset_id>/.spice/metadata.json`
-- model artifacts: `artifacts/models/<chain>/<dataset_id>/<family>/<delay>s/...`
-- simulation reports: `artifacts/models/<chain>/<dataset_id>/<family>/<delay>s/simulation_report.json`
-- tuning outputs: `artifacts/models/<chain>/<dataset_id>/<family>/<delay>s/tuning/...`
+- model artifacts: `artifacts/models/<chain>/<dataset_id>/<family>/<delay>s/<variant>/<study_id>/...`
+- tuning outputs: `artifacts/models/<chain>/<dataset_id>/<family>/<delay>s/tuned/<study_id>/tuning/...`
 - MLflow store: `.mlflow/`
 
 ## Setup
@@ -83,12 +82,11 @@ Use DVC as the primary surface:
 .venv/bin/dvc repro tune
 .venv/bin/dvc repro train
 .venv/bin/dvc repro simulate
+.venv/bin/dvc exp run --no-hydra -S artifact.variant=tuned -S study.id=fee-sweep-a train
 .venv/bin/dvc repro
 ```
 
-Hydra defaults live under [src/spice/conf](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf). DVC Hydra composition is enabled, and [params.yaml](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/params.yaml) is the composed baseline consumed by the DVC stages.
-
-DVC stages call `spice-dvc`, a thin runner that loads `params.yaml`, pins the requested stage task, and dispatches the same workflow `run(...)` functions used by the direct entrypoints. Direct `spice-train` keeps `tuning.apply_best_params=false`; the DVC `train` stage applies the tuned best params because it depends on the model-local `best_params.json`.
+[params.yaml](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/params.yaml) is the single editable baseline for experiment defaults. Both direct entrypoints and DVC load the same file, pin the requested task, apply any explicit CLI overrides, and validate the result through the same typed config layer. `train` and `simulate` select artifacts through `artifact.variant=baseline|tuned`. Tuned lineage selection uses `study.id`.
 
 On macOS, DVC stage commands run through `./bin/spice-awake`, which attaches `caffeinate` automatically when it is available so long `dvc repro ...` runs do not idle-sleep the machine mid-stage. Direct `spice-*` entrypoints do not use that wrapper automatically.
 
@@ -96,27 +94,36 @@ You can also run the workflow entrypoints directly:
 
 ```bash
 .venv/bin/spice-acquire chain=ethereum provider=publicnode
-.venv/bin/spice-train chain=ethereum model=lstm training.device=cpu
-.venv/bin/spice-simulate chain=ethereum model=lstm training.device=cpu
-.venv/bin/spice-tune chain=ethereum model=lstm tuning.trial_count=20
+.venv/bin/spice-train model=lstm training.device=cpu
+.venv/bin/spice-train artifact.variant=tuned study.id=fee-sweep-a
+.venv/bin/spice-simulate model=lstm training.device=cpu
+.venv/bin/spice-tune model=lstm tuning.trial_count=20
 ```
 
-The default dataset window is configured explicitly through `dataset.*` in
+The default dataset boundary is configured explicitly through `dataset.*` and
+`evaluation.*` in
 [params.yaml](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/params.yaml)
-and Hydra defaults:
+:
 
 - `dataset.id`
-- `dataset.window.start_date`
-- `dataset.window.end_date`
+- `dataset.span.start_date`
+- `dataset.span.end_date`
+- `evaluation.duration_days`
 - `dataset.temporal.max_delay_seconds`
 - `dataset.temporal.lookback_seconds`
 - `dataset.sampling.anchor_count`
 - `dataset.sampling.history_anchor_count`
 
 `dataset.sampling.anchor_count` is the training/tuning sample count.
-`dataset.sampling.history_anchor_count` is optional. When unset, it follows
-`anchor_count`, but you can raise it to keep a larger reusable history window
-for acquisition.
+`dataset.sampling.history_anchor_count` is the acquisition history budget.
+Keep it equal to `anchor_count` when you want a matched baseline, or raise it
+to keep a larger reusable history cache without coupling `acquire` to train-only
+sample-count changes.
+
+Artifact provenance is configured through:
+
+- `artifact.variant`
+- `study.id`
 
 History acquisition is block-planned, not time-estimated. The acquisition
 workflow resolves the evaluation start block, counts backward by the exact
@@ -126,22 +133,14 @@ nodes still fit through the same provider endpoint abstraction.
 
 ## Configuration
 
-Hydra config groups live under [src/spice/conf](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf):
+Optional preset fragments live under [src/spice/conf](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf):
 
-- `acquisition/`
 - `chain/`
-- `dataset/`
 - `model/`
 - `provider/`
-- `paths/`
-- `runtime/`
-- `simulation/`
-- `split/`
-- `tracking/`
-- `training/`
-- `tuning/`
+- `rpc_profile/`
 
-Runtime validation happens in [config.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/config.py). Hydra YAML owns defaults; Pydantic models enforce structural invariants, including transformer head divisibility, closed tuning search-space fields, and acquire-only provider endpoint availability.
+Use these only as explicit overrides such as `chain=polygon`, `provider=direct`, or `model=transformer`. They are not a second source of baseline defaults. Runtime validation happens in [config.py](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/core/config.py). Pydantic models enforce structural invariants, including transformer head divisibility, closed tuning search-space fields, and acquire-only provider endpoint availability.
 
 The tuning contract is explicit and closed. `tuning.search_space` is nested by subsystem, not dotted-path keyed:
 
@@ -169,7 +168,7 @@ Tuning outputs are structured JSON artifacts under `paths.tuning_root`:
 
 - `study.json`: typed study summary including the nested search space and best-trial payload
 - `trials.json`: typed per-trial records
-- `best_params.json`: nested `params.training` / `params.model` payload consumed by `train` when `tuning.apply_best_params=true`
+- `best_params.json`: nested `params.training` / `params.model` payload consumed by `train` when `artifact.variant=tuned`
 
 ## Verification
 

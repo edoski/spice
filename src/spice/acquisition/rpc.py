@@ -427,7 +427,10 @@ class Web3BlockClient:
                     except Exception as exc:
                         if self._is_oversize_error(exc):
                             next_batch_size = rpc_controller.record_oversize_failure()
-                            if next_batch_size is None or request.size <= rpc_controller.min_batch_size:
+                            if (
+                                next_batch_size is None
+                                or request.size <= rpc_controller.min_batch_size
+                            ):
                                 raise RuntimeError(
                                     "RPC batch remained too large at the configured minimum "
                                     f"batch size ({rpc_controller.min_batch_size})"

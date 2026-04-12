@@ -1,4 +1,4 @@
-"""DVC stage runner that consumes Hydra-composed params.yaml."""
+"""DVC stage runner that consumes params.yaml."""
 
 from __future__ import annotations
 
@@ -6,9 +6,7 @@ import argparse
 from importlib import import_module
 from pathlib import Path
 
-from omegaconf import DictConfig, OmegaConf
-
-from ..core.config import ExperimentConfig, WorkflowTask, coerce_config, revalidate_config
+from ..core.config import ExperimentConfig, WorkflowTask, load_params_config
 
 STAGE_MODULES: dict[str, str] = {
     "acquire": "spice.workflows.acquire",
@@ -20,14 +18,7 @@ STAGE_MODULES: dict[str, str] = {
 
 def load_stage_config(stage: WorkflowTask | str, params_path: Path) -> ExperimentConfig:
     resolved_stage = WorkflowTask(stage)
-    raw_config = OmegaConf.load(params_path)
-    if not isinstance(raw_config, DictConfig):
-        raise TypeError(f"DVC params must be a mapping: {params_path}")
-    config = coerce_config(raw_config, task=resolved_stage)
-    if resolved_stage is WorkflowTask.TRAIN:
-        config.tuning.apply_best_params = True
-        config = revalidate_config(config)
-    return config
+    return load_params_config(resolved_stage, params_path=params_path)
 
 
 def main(argv: list[str] | None = None) -> None:

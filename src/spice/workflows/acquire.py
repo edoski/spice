@@ -1,30 +1,31 @@
-"""Hydra entrypoint for canonical block dataset acquisition."""
+"""Canonical block dataset acquisition workflow."""
 
 from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-
-import hydra
-from omegaconf import DictConfig
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from ..acquisition.datasets import (
+    build_history_plan,
     ensure_evaluation_dataset,
     ensure_history_dataset,
 )
 from ..acquisition.metadata import (
     build_dataset_metadata,
-    check_existing_dataset_metadata,
+    load_dataset_metadata,
+    merge_providers,
+    provider_metadata,
 )
 from ..acquisition.rpc import RpcController, Web3BlockClient, evaluation_range
-from ..acquisition.windowing import (
-    history_range_from_metadata,
-    required_history_block_count,
-)
-from ..core.config import ExperimentConfig, coerce_config
+from ..acquisition.windowing import required_history_block_count
+from ..core.config import ExperimentConfig
 from ..core.console import Reporter
+from ..core.files import promote_paths_atomic
 from ..core.json import write_json
 from ..core.tracking import log_artifacts
+from ._cli import load_cli_config
 from ._shared import managed_workflow
 
 
@@ -81,14 +82,14 @@ def _planned_window_rows(
 def _final_window_rows(
     *,
     row_count: int,
-    expected_files: int | None,
+    file_count: int,
     reused: bool,
 ) -> list[tuple[str, str]]:
     result = _format_count(row_count, "block")
-    if expected_files is not None:
-        result = f"{result} in {_format_count(expected_files, 'file')}"
-    elif reused:
+    if reused:
         result = f"{result} reused"
+    else:
+        result = f"{result} in {_format_count(file_count, 'file')}"
     return [("result", result)]
 
 
@@ -104,8 +105,8 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
 
     required_history_blocks = required_history_block_count(config)
     evaluation_window = evaluation_range(
-        config.dataset.window.start_timestamp,
-        config.dataset.window.end_timestamp,
+        config.evaluation_window_start_timestamp,
+        config.evaluation_window_end_timestamp,
     )
     chain_label = _chain_label(config.chain.name.value)
 
@@ -120,22 +121,11 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
                 evaluation_window,
                 chunk_size=config.acquisition.chunk_size,
             )
-            existing_metadata = check_existing_dataset_metadata(
+            history_plan = await build_history_plan(
                 config=config,
-                metadata_path=metadata_path,
-                overwrite=config.acquisition.overwrite,
+                block_client=block_client,
+                required_history_blocks=required_history_blocks,
             )
-            if existing_metadata is not None and not config.acquisition.overwrite:
-                history_plan = await block_client.plan_window(
-                    history_range_from_metadata(existing_metadata),
-                    chunk_size=config.acquisition.chunk_size,
-                )
-            else:
-                history_plan = await block_client.plan_history_window(
-                    end_timestamp=config.dataset.window.start_timestamp,
-                    required_history_blocks=required_history_blocks,
-                    chunk_size=config.acquisition.chunk_size,
-                )
 
             if config.acquisition.dry_run:
                 session.runtime.log_sectioned_summary(
@@ -144,14 +134,19 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
                         (
                             "dataset",
                             [
-                                ("id", config.dataset.id),
-                                ("chain", chain_label),
-                                (
-                                    "required history",
-                                    _format_count(required_history_blocks, "block"),
-                                ),
-                            ],
-                        ),
+                            ("id", config.dataset.id),
+                            ("chain", chain_label),
+                            (
+                                "required history",
+                                _format_count(required_history_blocks, "block"),
+                            ),
+                            (
+                                "span",
+                                f"{config.dataset.span.start_date} -> "
+                                f"{config.dataset.span.end_date}",
+                            ),
+                        ],
+                    ),
                         (
                             "history",
                             _planned_window_rows(
@@ -174,42 +169,78 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
                 )
                 return
 
-            history_result, history_validation, resolved_history_plan = await ensure_history_dataset(
-                config=config,
-                block_client=block_client,
-                output_dir=history_dir,
-                history_plan=history_plan,
-                required_history_blocks=required_history_blocks,
-                rpc_controller=rpc_controller,
-                reporter=session.reporter,
-            )
-            evaluation_result, evaluation_validation = await ensure_evaluation_dataset(
-                config=config,
-                block_client=block_client,
-                output_dir=evaluation_dir,
-                evaluation_plan=evaluation_plan,
-                rpc_controller=rpc_controller,
-                reporter=session.reporter,
-            )
-            metadata = build_dataset_metadata(
-                config=config,
-                history_dir=history_dir,
-                evaluation_dir=evaluation_dir,
-                history_window_start=resolved_history_plan.window.start,
-                history_window_end=resolved_history_plan.window.end,
-                evaluation_window_start=evaluation_window.start,
-                evaluation_window_end=evaluation_window.end,
-                history_validation=history_validation,
-                evaluation_validation=evaluation_validation,
-                acquisition_runtime=rpc_controller.snapshot(),
-            )
-            metadata_task = session.reporter.start_task("write dataset metadata")
-            write_json(metadata_path, metadata)
-            session.reporter.finish_task(
-                metadata_task,
-                message=str(metadata_path),
-                silent=True,
-            )
+            existing_metadata = load_dataset_metadata(metadata_path)
+            try:
+                config.paths.dataset_root.parent.mkdir(parents=True, exist_ok=True)
+                with TemporaryDirectory(
+                    dir=config.paths.dataset_root.parent,
+                    prefix=f".{config.dataset.id}.acquire.",
+                ) as temp_root_name:
+                    temp_root = Path(temp_root_name)
+                    history_result = await ensure_history_dataset(
+                        config=config,
+                        block_client=block_client,
+                        output_dir=history_dir,
+                        working_dir=temp_root,
+                        history_plan=history_plan,
+                        required_history_blocks=required_history_blocks,
+                        rpc_controller=rpc_controller,
+                        reporter=session.reporter,
+                    )
+                    evaluation_result = await ensure_evaluation_dataset(
+                        config=config,
+                        block_client=block_client,
+                        output_dir=evaluation_dir,
+                        working_dir=temp_root,
+                        evaluation_plan=evaluation_plan,
+                        rpc_controller=rpc_controller,
+                        reporter=session.reporter,
+                    )
+                    providers = list(existing_metadata.providers) if existing_metadata else []
+                    current_provider = provider_metadata(config)
+                    if (
+                        not providers
+                        or history_result.pulled_blocks
+                        or evaluation_result.pulled_blocks
+                    ):
+                        providers = merge_providers(providers, current_provider)
+                    metadata = build_dataset_metadata(
+                        config=config,
+                        history_dir=history_dir,
+                        evaluation_dir=evaluation_dir,
+                        providers=providers,
+                        history_validation=history_result.validation,
+                        evaluation_validation=evaluation_result.validation,
+                        acquisition_runtime=rpc_controller.snapshot(),
+                    )
+                    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+                    metadata_task = session.reporter.start_task("write dataset metadata")
+                    metadata_tmp_path = temp_root / ".spice" / "metadata.json"
+                    write_json(metadata_tmp_path, metadata)
+                    promotions: list[tuple[Path, Path]] = []
+                    if history_result.promote_dir is not None:
+                        promotions.append((history_dir, history_result.promote_dir))
+                    if evaluation_result.promote_dir is not None:
+                        promotions.append((evaluation_dir, evaluation_result.promote_dir))
+                    promotions.append((metadata_path, metadata_tmp_path))
+                    promote_paths_atomic(promotions)
+                    session.reporter.finish_task(
+                        metadata_task,
+                        message=str(metadata_path),
+                        silent=True,
+                    )
+            except KeyboardInterrupt:
+                session.reporter.log(
+                    "acquire interrupted; temporary outputs removed, canonical dataset preserved",
+                    level="warning",
+                )
+                raise
+            except Exception:
+                session.reporter.log(
+                    "acquire failed; temporary outputs removed, canonical dataset preserved",
+                    level="warning",
+                )
+                raise
             session.runtime.log_sectioned_summary(
                 "acquisition summary",
                 [
@@ -223,23 +254,17 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
                     (
                         "history",
                         _final_window_rows(
-                            row_count=history_validation.row_count,
-                            expected_files=(
-                                None if history_result is None else history_result.expected_files
-                            ),
-                            reused=history_result is None,
+                            row_count=history_result.validation.row_count,
+                            file_count=history_result.file_count,
+                            reused=history_result.reused,
                         ),
                     ),
                     (
                         "evaluation",
                         _final_window_rows(
-                            row_count=evaluation_validation.row_count,
-                            expected_files=(
-                                None
-                                if evaluation_result is None
-                                else evaluation_result.expected_files
-                            ),
-                            reused=evaluation_result is None,
+                            row_count=evaluation_result.validation.row_count,
+                            file_count=evaluation_result.file_count,
+                            reused=evaluation_result.reused,
                         ),
                     ),
                 ],
@@ -249,14 +274,10 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
 
                 mlflow.log_metrics(
                     {
-                        "history_files": float(
-                            0 if history_result is None else history_result.expected_files
-                        ),
-                        "evaluation_files": float(
-                            0 if evaluation_result is None else evaluation_result.expected_files
-                        ),
-                        "history_gap_count": float(history_validation.gap_count),
-                        "evaluation_gap_count": float(evaluation_validation.gap_count),
+                        "history_files": float(history_result.file_count),
+                        "evaluation_files": float(evaluation_result.file_count),
+                        "history_gap_count": float(history_result.validation.gap_count),
+                        "evaluation_gap_count": float(evaluation_result.validation.gap_count),
                         "rpc_final_batch_size": float(rpc_controller.current_batch_size),
                         "rpc_final_concurrency": float(rpc_controller.current_concurrency),
                     }
@@ -266,9 +287,8 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
             await block_client.close()
 
 
-@hydra.main(version_base=None, config_path="../conf", config_name="acquire")
-def main(cfg: DictConfig) -> None:
-    run(coerce_config(cfg, task="acquire"))
+def main(argv: list[str] | None = None) -> None:
+    run(load_cli_config("acquire", prog="spice-acquire", argv=argv))
 
 
 if __name__ == "__main__":

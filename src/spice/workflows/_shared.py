@@ -1,4 +1,4 @@
-"""Shared helpers for Hydra workflows."""
+"""Shared workflow helpers."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..core.config import ExperimentConfig
+from ..core.config import ArtifactVariant, ExperimentConfig, WorkflowTask
 from ..core.console import ConsoleRuntime, Reporter, create_console_runtime
 from ..core.tracking import configure_mlflow, log_config
 from ..modeling.evaluation import EpochMetrics
@@ -16,10 +16,13 @@ from ._tuning import TuningBestParamsReport, apply_tuned_parameters
 
 
 def build_training_spec(config: ExperimentConfig) -> TrainingSpec:
+    variant = selected_artifact_variant(config)
     return TrainingSpec(
         chain=config.chain,
         dataset_id=config.dataset.id,
         model=config.model,
+        variant=variant,
+        study=config.study if variant is ArtifactVariant.TUNED else None,
         max_delay_seconds=config.dataset.temporal.max_delay_seconds,
         lookback_seconds=config.dataset.temporal.lookback_seconds,
         anchor_count=config.dataset.sampling.anchor_count,
@@ -42,6 +45,27 @@ class WorkflowSession:
     runtime: ConsoleRuntime
     reporter: Reporter
     tracking_enabled: bool
+
+
+def selected_artifact_variant(config: ExperimentConfig) -> ArtifactVariant:
+    if config.task is WorkflowTask.TUNE:
+        return ArtifactVariant.TUNED
+    return config.artifact.variant
+
+
+@contextmanager
+def abort_cleanup(
+    reporter: Reporter,
+    *,
+    label: str,
+    cleanup: Callable[[], None],
+) -> Iterator[None]:
+    try:
+        yield
+    except KeyboardInterrupt:
+        cleanup()
+        reporter.log(f"{label} interrupted; partial outputs removed", level="warning")
+        raise
 
 
 @contextmanager
@@ -85,7 +109,7 @@ def trial_artifact_dir(config: ExperimentConfig, trial_number: int) -> Path:
     return config.paths.tuning_root / "trials" / f"trial-{trial_number:03d}"
 
 
-def apply_best_tuning_params(config: ExperimentConfig) -> ExperimentConfig:
+def apply_study_best_params(config: ExperimentConfig) -> ExperimentConfig:
     path = config.paths.tuning_best_params_path
     try:
         report = TuningBestParamsReport.model_validate_json(path.read_text(encoding="utf-8"))

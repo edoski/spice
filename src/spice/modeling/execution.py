@@ -52,7 +52,7 @@ def run_persisted_training(
         manifest=manifest,
         model=training_run.model,
     )
-    reporter.finish_task(artifact_task, message=str(artifact_dir))
+    reporter.finish_task(artifact_task, message=str(artifact_dir), silent=True)
     report = build_training_run_report(
         training_run,
         anchor_count=spec.anchor_count,
@@ -70,7 +70,7 @@ def run_persisted_training(
     )
     report_task = reporter.start_task("write training report")
     write_json_report(report_path, report)
-    reporter.finish_task(report_task, message=str(report_path))
+    reporter.finish_task(report_task, message=str(report_path), silent=True)
 
     validation_history = training_run.training_result.validation_history
     if not validation_history:

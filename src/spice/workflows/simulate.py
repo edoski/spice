@@ -1,12 +1,10 @@
-"""Hydra entrypoint for simulation runs."""
+"""Simulation workflow."""
 
 from __future__ import annotations
 
-import hydra
-from omegaconf import DictConfig
-
-from ..core.config import ExperimentConfig, coerce_config
+from ..core.config import ExperimentConfig
 from ..core.console import Reporter
+from ..core.files import remove_path
 from ..core.tracking import log_artifacts
 from ..data.datasets import derive_dataset_geometry
 from ..data.io import load_block_frame
@@ -15,7 +13,12 @@ from ..modeling.inference import predict_class_offsets
 from ..modeling.pipeline import prepare_inference_dataset
 from ..modeling.reporting import build_simulation_report, write_json_report
 from ..modeling.simulation import run_temporal_simulation
-from ._shared import managed_workflow
+from ._cli import load_cli_config
+from ._shared import abort_cleanup, managed_workflow
+
+
+def _chain_label(chain_name: str) -> str:
+    return chain_name.replace("_", " ").title()
 
 
 def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
@@ -30,66 +33,120 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         ),
         reporter=reporter,
     ) as session:
-        load_task = session.reporter.start_task("load inference inputs")
-        loaded_artifact = load_training_artifact(artifact_dir)
-        history_blocks = load_block_frame(history_block_path)
-        evaluation_blocks = load_block_frame(evaluation_block_path)
-        session.reporter.finish_task(
-            load_task,
-            message=f"artifact={artifact_dir} evaluation={evaluation_block_path}",
+        session.reporter.log(f"variant: {config.artifact.variant.value}")
+        with abort_cleanup(
+            session.reporter,
+            label="simulate",
+            cleanup=lambda: remove_path(config.paths.simulation_report_path),
+        ):
+            load_task = session.reporter.start_task("load inference inputs")
+            loaded_artifact = load_training_artifact(artifact_dir)
+            history_blocks = load_block_frame(history_block_path)
+            evaluation_blocks = load_block_frame(evaluation_block_path)
+            session.reporter.finish_task(
+                load_task,
+                message=f"artifact={artifact_dir} evaluation={evaluation_block_path}",
+            )
+            prepare_task = session.reporter.start_task("prepare inference dataset")
+            prepared = prepare_inference_dataset(
+                history_blocks,
+                evaluation_blocks,
+                geometry=derive_dataset_geometry(
+                    lookback_seconds=loaded_artifact.manifest.lookback_seconds,
+                    max_delay_seconds=loaded_artifact.manifest.max_delay_seconds,
+                    block_time_seconds=loaded_artifact.manifest.chain.block_time_seconds,
+                ),
+                scaler=loaded_artifact.manifest.scaler,
+                window_start_timestamp=config.evaluation_window_start_timestamp,
+                window_end_timestamp=config.evaluation_window_end_timestamp,
+            )
+            session.reporter.finish_task(
+                prepare_task,
+                message=f"examples={prepared.n_examples_total}",
+            )
+            predictions = predict_class_offsets(
+                loaded_artifact.model,
+                store=prepared.store,
+                sample_indices=prepared.sample_indices,
+                lookback_steps=prepared.geometry.lookback_steps,
+                batch_size=config.training.batch_size,
+                device=config.training.device,
+                reporter=session.reporter,
+            )
+            simulation = run_temporal_simulation(
+                prepared.store,
+                predictions,
+                sample_indices=prepared.sample_indices,
+                window_seconds=config.simulation.window_seconds,
+                arrival_rate_per_second=config.simulation.arrival_rate_per_second,
+                repetitions=config.simulation.repetitions,
+                seed=config.simulation.seed,
+                reporter=session.reporter,
+            )
+            report = build_simulation_report(
+                loaded_artifact,
+                artifact_dir=artifact_dir,
+                history_block_path=history_block_path,
+                evaluation_block_path=evaluation_block_path,
+                prepared=prepared,
+                simulation=simulation,
+                window_seconds=config.simulation.window_seconds,
+                arrival_rate_per_second=config.simulation.arrival_rate_per_second,
+                repetitions=config.simulation.repetitions,
+            )
+            report_path = config.paths.simulation_report_path
+            report_task = session.reporter.start_task("write simulation report")
+            write_json_report(report_path, report)
+            session.reporter.finish_task(report_task, message=str(report_path), silent=True)
+        session.runtime.log_sectioned_summary(
+            "simulation summary",
+            [
+                (
+                    "dataset",
+                    [
+                        ("id", report.dataset_id),
+                        ("chain", _chain_label(report.chain)),
+                        ("family", report.family),
+                        ("delay", f"{report.max_delay_seconds}s"),
+                    ],
+                ),
+                (
+                    "provenance",
+                    [
+                        ("variant", report.variant.value),
+                        *([] if report.study is None else [("study", report.study.id)]),
+                        ("report", str(report_path)),
+                    ],
+                ),
+                (
+                    "simulation",
+                    [
+                        ("window", f"{report.simulation_window_seconds}s"),
+                        ("repetitions", str(report.repetitions)),
+                        ("events", f"{report.total_events:,}"),
+                    ],
+                ),
+                (
+                    "results",
+                    [
+                        (
+                            "profit over baseline",
+                            (
+                                f"{report.profit_over_baseline.mean:.4f} +/- "
+                                f"{report.profit_over_baseline.std:.4f}"
+                            ),
+                        ),
+                        (
+                            "cost over optimum",
+                            (
+                                f"{report.cost_over_optimum.mean:.4f} +/- "
+                                f"{report.cost_over_optimum.std:.4f}"
+                            ),
+                        ),
+                    ],
+                ),
+            ],
         )
-        prepare_task = session.reporter.start_task("prepare inference dataset")
-        prepared = prepare_inference_dataset(
-            history_blocks,
-            evaluation_blocks,
-            geometry=derive_dataset_geometry(
-                lookback_seconds=loaded_artifact.manifest.lookback_seconds,
-                max_delay_seconds=loaded_artifact.manifest.max_delay_seconds,
-                block_time_seconds=loaded_artifact.manifest.chain.block_time_seconds,
-            ),
-            scaler=loaded_artifact.manifest.scaler,
-            window_start_timestamp=config.dataset.window.start_timestamp,
-            window_end_timestamp=config.dataset.window.end_timestamp,
-        )
-        session.reporter.finish_task(
-            prepare_task,
-            message=f"examples={prepared.n_examples_total}",
-        )
-        predictions = predict_class_offsets(
-            loaded_artifact.model,
-            store=prepared.store,
-            sample_indices=prepared.sample_indices,
-            lookback_steps=prepared.geometry.lookback_steps,
-            batch_size=config.training.batch_size,
-            device=config.training.device,
-            reporter=session.reporter,
-        )
-        simulation = run_temporal_simulation(
-            prepared.store,
-            predictions,
-            sample_indices=prepared.sample_indices,
-            window_seconds=config.simulation.window_seconds,
-            arrival_rate_per_second=config.simulation.arrival_rate_per_second,
-            repetitions=config.simulation.repetitions,
-            seed=config.simulation.seed,
-            reporter=session.reporter,
-        )
-        report = build_simulation_report(
-            loaded_artifact,
-            artifact_dir=artifact_dir,
-            history_block_path=history_block_path,
-            evaluation_block_path=evaluation_block_path,
-            prepared=prepared,
-            simulation=simulation,
-            window_seconds=config.simulation.window_seconds,
-            arrival_rate_per_second=config.simulation.arrival_rate_per_second,
-            repetitions=config.simulation.repetitions,
-        )
-        report_path = config.paths.simulation_report_path
-        report_task = session.reporter.start_task("write simulation report")
-        write_json_report(report_path, report)
-        session.reporter.finish_task(report_task, message=str(report_path))
-        session.reporter.log(f"simulation finished: {report_path}")
 
         if session.tracking_enabled:
             import mlflow
@@ -109,9 +166,8 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             log_artifacts([report_path])
 
 
-@hydra.main(version_base=None, config_path="../conf", config_name="simulate")
-def main(cfg: DictConfig) -> None:
-    run(coerce_config(cfg, task="simulate"))
+def main(argv: list[str] | None = None) -> None:
+    run(load_cli_config("simulate", prog="spice-simulate", argv=argv))
 
 
 if __name__ == "__main__":
