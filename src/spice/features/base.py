@@ -25,8 +25,14 @@ def timestamps(sorted_blocks: pl.DataFrame) -> IntVector:
     return sorted_blocks["timestamp"].cast(pl.Int64).to_numpy().astype(np.int64, copy=False)
 
 
-def elapsed_block_indices(block_numbers: IntVector) -> FloatVector:
-    return np.arange(block_numbers.shape[0], dtype=np.float64)
+def elapsed_block_indices(
+    block_numbers: IntVector,
+    dataset_origin_block_number: int,
+) -> FloatVector:
+    return (
+        block_numbers.astype(np.float64, copy=False)
+        - float(dataset_origin_block_number)
+    )
 
 
 @tag(spice_kind="feature", spice_warmup="0")

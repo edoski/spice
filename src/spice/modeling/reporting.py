@@ -125,10 +125,9 @@ def build_training_summary(
     model_id: str,
     manifest: TrainingArtifactManifest,
     prepared: PreparedTrainingDataset,
+    best_validation_metrics: EpochMetrics,
+    test_metrics: EpochMetrics,
 ) -> TrainingSummary:
-    best_validation = result.training_result.validation_history[
-        result.training_result.best_epoch - 1
-    ]
     return TrainingSummary(
         artifact_id=manifest.artifact_id,
         chain=chain_name,
@@ -153,8 +152,8 @@ def build_training_summary(
         resolved_device=result.training_result.resolved_device,
         resolved_precision=result.training_result.resolved_precision,
         compiled=result.training_result.compiled,
-        best_validation_metrics=summarize_epoch_metrics(best_validation),
-        test_metrics=summarize_epoch_metrics(result.test_metrics),
+        best_validation_metrics=summarize_epoch_metrics(best_validation_metrics),
+        test_metrics=summarize_epoch_metrics(test_metrics),
     )
 
 

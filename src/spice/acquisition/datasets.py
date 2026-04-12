@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -43,6 +44,13 @@ class DatasetBuildResult:
     promote_dir: Path | None
     pulled_blocks: bool
     outcome: DatasetBuildOutcome
+
+
+StageUpdateCallback = Callable[[str, str | None], None]
+
+
+def _noop_stage_update(status: str, message: str | None = None) -> None:
+    del status, message
 
 
 def validate_block_dataset(
@@ -258,8 +266,11 @@ async def ensure_history_dataset(
     required_history_blocks: int,
     rpc_controller,
     reporter: Reporter,
+    stage_update: StageUpdateCallback | None = None,
 ) -> DatasetBuildResult:
     chunk_size = config.acquisition.chunk_size
+    update_stage = stage_update or _noop_stage_update
+    update_stage("planning", "checking existing dataset")
     existing = _load_existing_dataset(output_dir, expected_chain_id=config.chain.runtime.chain_id)
     if existing is not None and existing.validation.status == "clean":
         if existing.frame is None:
@@ -268,6 +279,7 @@ async def ensure_history_dataset(
         if existing_end == history_plan.block_range.end:
             existing_start = _block_range_start(existing.validation)
             if existing_start <= history_plan.block_range.start:
+                update_stage("planning", "validating cached dataset")
                 _validate_history_result(
                     existing.validation,
                     history_plan=history_plan,
@@ -291,6 +303,7 @@ async def ensure_history_dataset(
             )
             if prefix_plan is None:
                 raise RuntimeError("history prefix plan unexpectedly resolved to empty")
+            update_stage("planning", "extending cached dataset")
             prefix_frame = await _pull_plan_to_frame(
                 block_client=block_client,
                 plan=prefix_plan,
@@ -299,6 +312,7 @@ async def ensure_history_dataset(
                 rpc_controller=rpc_controller,
                 reporter=reporter,
             )
+            update_stage("planning", "writing merged dataset")
             history_frame = _combined_frame(prefix_frame, existing.frame)
             file_count = _write_block_dataset_dir(
                 working_dir / "history",
@@ -306,6 +320,7 @@ async def ensure_history_dataset(
                 chunk_size=chunk_size,
                 chain_name=config.chain.name,
             )
+            update_stage("planning", "validating dataset")
             validation = validate_block_dataset(
                 working_dir / "history",
                 expected_chain_id=config.chain.runtime.chain_id,
@@ -324,6 +339,7 @@ async def ensure_history_dataset(
                 outcome=DatasetBuildOutcome.EXTENDED,
             )
 
+    update_stage("planning", "preparing download")
     pulled_frame = await _pull_plan_to_frame(
         block_client=block_client,
         plan=history_plan,
@@ -332,6 +348,7 @@ async def ensure_history_dataset(
         rpc_controller=rpc_controller,
         reporter=reporter,
     )
+    update_stage("planning", "validating dataset")
     validation = validate_block_dataset(
         working_dir / "history",
         expected_chain_id=config.chain.runtime.chain_id,
@@ -364,8 +381,11 @@ async def ensure_evaluation_dataset(
     evaluation_plan: BlockPullPlan,
     rpc_controller,
     reporter: Reporter,
+    stage_update: StageUpdateCallback | None = None,
 ) -> DatasetBuildResult:
     chunk_size = config.acquisition.chunk_size
+    update_stage = stage_update or _noop_stage_update
+    update_stage("planning", "checking existing dataset")
     existing = _load_existing_dataset(output_dir, expected_chain_id=config.chain.runtime.chain_id)
     target_start = evaluation_plan.block_range.start
     target_end = evaluation_plan.block_range.end
@@ -377,6 +397,7 @@ async def ensure_evaluation_dataset(
         existing_end = _block_range_end(existing.validation)
         if existing_start == target_start and existing_end == target_end:
             validation = existing.validation.model_copy(deep=True)
+            update_stage("planning", "validating cached dataset")
             _validate_evaluation_result(
                 validation,
                 evaluation_dir=output_dir,
@@ -445,6 +466,8 @@ async def ensure_evaluation_dataset(
                 )
                 pulled_blocks = True
 
+            update_stage("planning", "extending cached dataset")
+            update_stage("planning", "writing merged dataset")
             evaluation_frame = _combined_frame(*frames)
             file_count = _write_block_dataset_dir(
                 working_dir / "evaluation",
@@ -452,6 +475,7 @@ async def ensure_evaluation_dataset(
                 chunk_size=chunk_size,
                 chain_name=config.chain.name,
             )
+            update_stage("planning", "validating dataset")
             validation = validate_block_dataset(
                 working_dir / "evaluation",
                 expected_chain_id=config.chain.runtime.chain_id,
@@ -471,6 +495,7 @@ async def ensure_evaluation_dataset(
                 outcome=DatasetBuildOutcome.EXTENDED,
             )
 
+    update_stage("planning", "preparing download")
     await _pull_plan_to_frame(
         block_client=block_client,
         plan=evaluation_plan,
@@ -479,6 +504,7 @@ async def ensure_evaluation_dataset(
         rpc_controller=rpc_controller,
         reporter=reporter,
     )
+    update_stage("planning", "validating dataset")
     validation = validate_block_dataset(
         working_dir / "evaluation",
         expected_chain_id=config.chain.runtime.chain_id,

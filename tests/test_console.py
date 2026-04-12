@@ -33,7 +33,7 @@ def test_plain_reporter_renders_staged_workflow_lines() -> None:
     )
 
     task_id = history.start_task("pull Avalanche blocks", total=10, unit="blocks")
-    history.update_task(task_id, completed=5, message="batch 256 | conc 8")
+    history.update_task(task_id, completed=5, message="batch=256 conc=8")
     history.finish_task(task_id, message="5 files")
     reporter.set_stage_state(
         "history",
@@ -49,7 +49,7 @@ def test_plain_reporter_renders_staged_workflow_lines() -> None:
     assert "dataset: icdcs_2026" in rendered
     assert "provider: PublicNode" in rendered
     assert "evaluation [pending] - 0/4 blocks - waiting for history" in rendered
-    assert "history [pulling] - 5/10 blocks - batch 256 | conc 8" in rendered
+    assert "history [pulling] - 5/10 blocks - batch=256 conc=8" in rendered
     assert "history [extended] - 10/10 blocks - 5 files" in rendered
 
 
@@ -119,3 +119,61 @@ def test_rich_reporter_renders_train_metrics_in_columns() -> None:
     assert "batch 10/100" in rendered
     assert "epoch=1/50" not in rendered
     assert "loss=1.31" not in rendered
+
+
+def test_rich_reporter_renders_acquire_metrics_in_columns_on_wide_terminals() -> None:
+    output = StringIO()
+    reporter = RichReporter(console=Console(file=output, force_terminal=False, width=220))
+    reporter._refresh_live = lambda: None
+
+    reporter.configure_workflow(
+        title="acquire",
+        facts=[("dataset", "icdcs_2026"), ("chain", "ethereum"), ("provider", "publicnode")],
+    )
+    history = reporter.stage_reporter(
+        "history",
+        label="history",
+        total=64,
+        unit="blocks",
+        status="pending",
+        running_status="pulling",
+    )
+    task_id = history.start_task("pull ethereum blocks", total=64, unit="blocks")
+    history.update_task(task_id, completed=32, message="batch=256 conc=8 retrying")
+    reporter.console.print(reporter._render_stage_table())
+
+    rendered = output.getvalue()
+    assert "batch" in rendered
+    assert "conc" in rendered
+    assert "256" in rendered
+    assert "8" in rendered
+    assert "retrying" in rendered
+    assert "batch=256" not in rendered
+    assert "conc=8" not in rendered
+
+
+def test_rich_reporter_keeps_hidden_acquire_metrics_in_detail_on_narrow_terminals() -> None:
+    output = StringIO()
+    reporter = RichReporter(console=Console(file=output, force_terminal=False, width=100))
+    reporter._refresh_live = lambda: None
+
+    reporter.configure_workflow(
+        title="acquire",
+        facts=[("dataset", "icdcs_2026"), ("chain", "ethereum"), ("provider", "publicnode")],
+    )
+    history = reporter.stage_reporter(
+        "history",
+        label="history",
+        total=64,
+        unit="blocks",
+        status="pending",
+        running_status="pulling",
+    )
+    task_id = history.start_task("pull ethereum blocks", total=64, unit="blocks")
+    history.update_task(task_id, completed=32, message="batch=256 conc=8 retrying")
+    reporter.console.print(reporter._render_stage_table())
+
+    rendered = output.getvalue()
+    assert "batch=256" in rendered
+    assert "conc=8" in rendered
+    assert "retrying" in rendered

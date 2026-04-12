@@ -122,6 +122,7 @@ def feature_graph_fingerprint(feature_names: tuple[str, ...]) -> str:
 def build_feature_table(
     blocks: pl.DataFrame,
     *,
+    dataset_origin_block_number: int,
     selection: FeatureSelection,
 ) -> FeatureTable:
     validate_feature_selection(selection.feature_set_id, selection.feature_names)
@@ -129,7 +130,10 @@ def build_feature_table(
     graph_fingerprint = feature_graph_fingerprint(selection.feature_names)
     result = build_feature_driver().execute(
         list(selection.feature_names) + ["block_numbers", "timestamps", "log_base_fee"],
-        inputs={"blocks": blocks},
+        inputs={
+            "blocks": blocks,
+            "dataset_origin_block_number": int(dataset_origin_block_number),
+        },
     )
     block_numbers = np.asarray(result["block_numbers"], dtype=np.int64)
     timestamps = np.asarray(result["timestamps"], dtype=np.int64)

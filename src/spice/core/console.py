@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Collection, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from io import StringIO
@@ -74,16 +74,20 @@ _PROGRESS_BAR_STYLES = {
     "failed": ("grey23", "red", "red", "red"),
 }
 _DETAIL_VALUE_LABELS = frozenset({"batch", "conc"})
-_STAGE_METRIC_PRIORITY = ("epoch", "loss", "acc")
+_STAGE_METRIC_PRIORITY = ("epoch", "loss", "acc", "batch", "conc")
 _STAGE_METRIC_LABELS = {
     "epoch": "epoch",
     "loss": "loss",
     "acc": "acc",
+    "batch": "batch",
+    "conc": "conc",
 }
 _STAGE_METRIC_WIDTHS = {
     "epoch": 7,
     "loss": 7,
     "acc": 6,
+    "batch": 7,
+    "conc": 5,
 }
 _STAGE_METRIC_ALIASES = {
     "epoch": "epoch",
@@ -94,6 +98,8 @@ _STAGE_METRIC_ALIASES = {
     "accuracy": "acc",
     "validation_accuracy": "acc",
     "val_acc": "acc",
+    "batch": "batch",
+    "conc": "conc",
 }
 _KEY_VALUE_TOKEN_PATTERN = re.compile(r"^(?P<key>[A-Za-z][A-Za-z0-9_]*)=(?P<value>.+)$")
 _RATE_COLUMN_WIDTH = 11
@@ -764,10 +770,13 @@ class RichReporter(_BaseWorkflowReporter):
 
     def _render_stage_table(self) -> Table:
         available_width = _panel_body_width(self.console)
-        has_detail = any(_extract_stage_metrics(stage.detail)[1] for stage in self._stages.values())
         metric_columns = _active_stage_metric_columns(
             self._stages.values(),
             available_width=available_width,
+        )
+        has_detail = any(
+            _extract_stage_metrics(stage.detail, visible_metrics=metric_columns)[1]
+            for stage in self._stages.values()
         )
         layout = _stage_layout(
             available_width,
@@ -812,7 +821,10 @@ class RichReporter(_BaseWorkflowReporter):
         if layout.show_detail:
             table.add_column("detail", ratio=1, no_wrap=True, overflow="ellipsis")
         for stage in self._stages.values():
-            metrics, detail = _extract_stage_metrics(stage.detail)
+            metrics, detail = _extract_stage_metrics(
+                stage.detail,
+                visible_metrics=layout.metric_columns,
+            )
             row = [
                 Text(stage.label, style="bold"),
                 Text(stage.status, style=_STAGE_STATUS_STYLES.get(stage.status, "")),
@@ -1130,11 +1142,16 @@ def _with_top_terminal_spacer(renderable: object) -> Padding:
     return Padding(renderable, (1, 0, 0, 0))
 
 
-def _extract_stage_metrics(raw_detail: str | None) -> tuple[dict[str, str], str | None]:
+def _extract_stage_metrics(
+    raw_detail: str | None,
+    *,
+    visible_metrics: Collection[str] | None = None,
+) -> tuple[dict[str, str], str | None]:
     if not raw_detail:
         return {}, None
     metrics: dict[str, str] = {}
     detail_tokens: list[str] = []
+    stripped_metrics = None if visible_metrics is None else set(visible_metrics)
     for token in raw_detail.split():
         match = _KEY_VALUE_TOKEN_PATTERN.match(token)
         if match is None:
@@ -1145,6 +1162,8 @@ def _extract_stage_metrics(raw_detail: str | None) -> tuple[dict[str, str], str 
             detail_tokens.append(token)
             continue
         metrics[metric_key] = match.group("value")
+        if stripped_metrics is not None and metric_key not in stripped_metrics:
+            detail_tokens.append(token)
     detail = " ".join(detail_tokens).strip() or None
     return metrics, detail
 
@@ -1182,7 +1201,7 @@ def _stage_layout(
         if available_width >= 112:
             return _StageLayout(10, 8, 16, True, True, False, metric_columns)
         if available_width >= 92:
-            return _StageLayout(9, 8, 14, True, False, False, ())
+            return _StageLayout(9, 8, 12, False, False, True, ())
         return _StageLayout(8, 7, 12, False, False, False, ())
 
     if available_width >= 96:

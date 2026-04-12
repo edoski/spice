@@ -119,9 +119,13 @@ def test_simulate_rejects_execution_request_above_capability(tmp_path) -> None:
 
 
 def test_show_command_smoke(tmp_path) -> None:
-    config = load_test_train_config(tmp_path, override=model_workflow_override())
-    seed_history_dataset(config)
-    run_train(config, reporter=NullReporter())
+    override = model_workflow_override()
+    train_config = load_test_train_config(tmp_path, override=override)
+    simulate_config = load_test_simulate_config(tmp_path, override=override)
+    seed_history_dataset(train_config)
+    seed_evaluation_dataset(simulate_config)
+    run_train(train_config, reporter=NullReporter())
+    run_simulate(simulate_config, reporter=NullReporter())
 
     result = runner.invoke(
         app,
@@ -129,17 +133,17 @@ def test_show_command_smoke(tmp_path) -> None:
             "show",
             "artifact",
             "--chain",
-            config.chain.name,
+            train_config.chain.name,
             "--dataset",
-            config.dataset.name,
+            train_config.dataset.name,
             "--feature-set",
-            config.feature_set.id,
+            train_config.feature_set.id,
             "--model",
-            config.model.id,
+            train_config.model.id,
             "--task",
-            config.task.id,
+            train_config.task.id,
             "--variant",
-            config.artifact.variant.value,
+            train_config.artifact.variant.value,
             "--storage-root",
             str(tmp_path / "outputs"),
         ],
@@ -147,7 +151,8 @@ def test_show_command_smoke(tmp_path) -> None:
 
     assert result.exit_code == 0, result.stdout
     assert "artifact summary" in result.stdout
-    assert config.model.id in result.stdout
+    assert train_config.model.id in result.stdout
+    assert "simulation" in result.stdout
 
 
 def test_delete_artifact_command_smoke(tmp_path) -> None:

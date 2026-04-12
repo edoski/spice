@@ -391,7 +391,14 @@ class Web3BlockClient:
         next_write_start = plan.block_range.start
 
         try:
-            reporter.update_task(task_id, completed=0)
+            reporter.update_task(
+                task_id,
+                completed=0,
+                message=self._progress_message(
+                    batch_size=rpc_controller.current_batch_size,
+                    concurrency=rpc_controller.current_concurrency,
+                ),
+            )
             while next_write_start < plan.block_range.end:
                 while len(in_flight) < rpc_controller.current_concurrency:
                     request = self._next_request(
@@ -434,6 +441,11 @@ class Web3BlockClient:
                             reporter.update_task(
                                 task_id,
                                 completed=completed,
+                                message=self._progress_message(
+                                    batch_size=next_batch_size,
+                                    concurrency=rpc_controller.current_concurrency,
+                                    note="oversize backoff",
+                                ),
                             )
                             for retry_request in self._split_request(
                                 request,
@@ -452,6 +464,11 @@ class Web3BlockClient:
                             reporter.update_task(
                                 task_id,
                                 completed=completed,
+                                message=self._progress_message(
+                                    batch_size=rpc_controller.current_batch_size,
+                                    concurrency=rpc_controller.current_concurrency,
+                                    note="transient retry",
+                                ),
                             )
                             heappush(pending_requests, request.retry())
                             continue
@@ -475,6 +492,10 @@ class Web3BlockClient:
                     reporter.update_task(
                         task_id,
                         completed=completed,
+                        message=self._progress_message(
+                            batch_size=request.size,
+                            concurrency=rpc_controller.current_concurrency,
+                        ),
                     )
 
                     while next_write_start in completed_results:
@@ -623,6 +644,18 @@ class Web3BlockClient:
         )
         write_block_file(destination, frame)
         return destination
+
+    @staticmethod
+    def _progress_message(
+        *,
+        batch_size: int,
+        concurrency: int,
+        note: str | None = None,
+    ) -> str:
+        metrics = f"batch={batch_size} conc={concurrency}"
+        if note is None:
+            return metrics
+        return f"{note} {metrics}"
 
 
 def evaluation_range(start_timestamp: int, end_timestamp: int) -> TimestampRange:

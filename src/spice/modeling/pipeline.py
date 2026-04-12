@@ -33,11 +33,9 @@ from ..data.io import load_block_frame
 from ..data.normalization import ScalerStats, fit_standard_scaler, transform_feature_matrix
 from ..features import FeatureSelection, build_feature_table, feature_warmup_blocks
 from ..planning.contracts import ResolvedTaskContract
-from .evaluation import EpochMetrics
 from .models import TemporalModel
 from .registry import build_model
-from .torch_datasets import build_class_weights
-from .training import TrainingResult, evaluate_model, train_model
+from .training import TrainingResult, train_model
 
 
 @dataclass(slots=True)
@@ -101,7 +99,6 @@ class TrainingRunResult:
     model: TemporalModel
     prepared: PreparedTrainingDataset
     training_result: TrainingResult
-    test_metrics: EpochMetrics
 
 
 @dataclass(slots=True)
@@ -145,15 +142,23 @@ def prepare_training_dataset(
             f"expected {spec.contract.feature_warmup_blocks}, got {expected_warmup}"
         )
     geometry = spec.contract.capability_geometry
+    sorted_blocks = blocks.sort("block_number")
+    if sorted_blocks.height == 0:
+        raise ValueError("Training dataset is empty")
+    dataset_origin_block_number = int(sorted_blocks["block_number"][0])
     trimmed_blocks = _slice_frame(
-        blocks.sort("block_number"),
+        sorted_blocks,
         trim_history_for_sample_count(
             blocks.height,
             sample_count=spec.task.sample_count,
             geometry=geometry,
         ),
     )
-    feature_table = build_feature_table(trimmed_blocks, selection=selection)
+    feature_table = build_feature_table(
+        trimmed_blocks,
+        dataset_origin_block_number=dataset_origin_block_number,
+        selection=selection,
+    )
     store = build_temporal_store(
         feature_table,
         lookback_steps=geometry.lookback_steps,
@@ -199,12 +204,20 @@ def prepare_inference_dataset(
     window_start_timestamp: int,
     window_end_timestamp: int,
 ) -> PreparedInferenceDataset:
+    sorted_history_blocks = history_blocks.sort("block_number")
+    if sorted_history_blocks.height == 0:
+        raise ValueError("History dataset is empty")
+    dataset_origin_block_number = int(sorted_history_blocks["block_number"][0])
     context_blocks = _slice_frame(
-        history_blocks.sort("block_number"),
+        sorted_history_blocks,
         history_context_slice(history_blocks.height, geometry=geometry),
     )
     combined_blocks = pl.concat([context_blocks, evaluation_blocks.sort("block_number")])
-    feature_table = build_feature_table(combined_blocks, selection=selection)
+    feature_table = build_feature_table(
+        combined_blocks,
+        dataset_origin_block_number=dataset_origin_block_number,
+        selection=selection,
+    )
     store = build_temporal_store(
         feature_table,
         lookback_steps=geometry.lookback_steps,
@@ -268,23 +281,8 @@ def run_training(
         artifact_dir=artifact_dir,
         reporter=active_reporters.fit,
     )
-    class_weights = build_class_weights(
-        prepared.store.class_labels,
-        prepared.split_indices.train,
-        prepared.action_count,
-    )
-    test_metrics = evaluate_model(
-        model,
-        store=prepared.store,
-        sample_indices=prepared.split_indices.test,
-        lookback_steps=prepared.geometry.lookback_steps,
-        training_config=spec.training,
-        class_weights=class_weights,
-        reporter=active_reporters.evaluate,
-    )
     return TrainingRunResult(
         model=model,
         prepared=prepared,
         training_result=training_result,
-        test_metrics=test_metrics,
     )
