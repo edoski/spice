@@ -18,11 +18,12 @@ Config loading lives in [src/spice/config](src/spice/config).
 Flow:
 
 1. The loader reads named specs from [src/spice/conf](src/spice/conf).
-2. `--preset` optionally selects a bundle of named defaults.
-3. `--config PATH` overlays plain YAML on top of that preset.
-4. Explicit CLI flags override both preset and file values.
-5. Pydantic validates the final request model.
-6. `PathLayout` derives deterministic storage ids and roots from `storage.root`.
+2. `spice config` authors repo-local YAML specs directly under that tree.
+3. `--preset` optionally selects a bundle of named defaults.
+4. `--config PATH` overlays plain YAML on top of that preset.
+5. Explicit CLI flags override both preset and file values.
+6. Pydantic validates the final request model.
+7. `PathLayout` derives deterministic storage ids and roots from `storage.root`.
 
 Selector rules:
 
@@ -57,6 +58,7 @@ Rules:
 
 - [models.py](src/spice/config/models.py): typed specs, workflow request models, path layout, provider resolution
 - [loader.py](src/spice/config/loader.py): named YAML loading, fixed-order merges, CLI/file override composition
+- `registry.py`: config group registry, canonical YAML serialization, create/update/delete helpers
 
 ### `core`
 
@@ -136,7 +138,9 @@ Tuning:
 Notes:
 
 - `outputs/.spice/catalog.sqlite` is the global lookup index
+- `src/spice/conf` is the saved spec registry
 - SPICE-owned structured state lives only in `.spice/state.sqlite`
 - studies and artifacts are separate roots
+- `spice config ...` is the human-facing config authoring path
 - `spice show dataset|study|artifact` is the human-facing inspection path
 - `spice delete dataset|study|artifact` is the cleanup path

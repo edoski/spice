@@ -12,6 +12,7 @@ def test_root_help_lists_commands() -> None:
 
     assert result.exit_code == 0, result.stdout
     assert "SPICE workflow CLI." in result.stdout
+    assert "config" in result.stdout
     assert "show" in result.stdout
     assert "delete" in result.stdout
     assert "acquire" in result.stdout
@@ -34,3 +35,14 @@ def test_acquire_help_includes_panels_and_example() -> None:
     assert "--task" in result.stdout
     assert "--feature-set" in result.stdout
     assert "--provider" in result.stdout
+
+
+def test_config_help_lists_core_authoring_commands() -> None:
+    result = runner.invoke(app, ["config", "--help"])
+
+    assert result.exit_code == 0, result.stdout
+    assert "list" in result.stdout
+    assert "show" in result.stdout
+    assert "create" in result.stdout
+    assert "update" in result.stdout
+    assert "delete" in result.stdout

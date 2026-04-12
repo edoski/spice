@@ -38,6 +38,11 @@ spice acquire --preset icdcs_2026 --chain avalanche --provider publicnode
 spice train --preset icdcs_2026 --model lstm --feature-set icdcs_2026
 spice tune --preset icdcs_2026 --model lstm --feature-set icdcs_2026 --trial-count 20
 spice simulate --preset icdcs_2026 --variant baseline
+spice config list provider
+spice config show dataset icdcs_2026
+spice config create chain my_chain --set runtime.chain_id=123 --set runtime.block_time_seconds=2.0 --set runtime.uses_poa_extra_data=false
+spice config update provider direct --set chains.my_chain.endpoint.env_var=MY_CHAIN_RPC_URL
+spice config delete preset old_preset
 spice show dataset
 spice show artifact --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --variant baseline
 spice show study --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --study default
@@ -62,9 +67,28 @@ Named specs live under [src/spice/conf](src/spice/conf):
 - `model/`, `feature_set/`: modeling choices
 - `training/`, `split/`, `simulation/`, `acquisition/`, `tuning/`, `tuning_space/`: workflow profiles
 
+Core spec authoring now goes through `spice config`:
+
+- `spice config list <group>`
+- `spice config show <group> <name>`
+- `spice config create <group> <name> --set path=value ...`
+- `spice config update <group> <name> --set path=value ... --unset path ...`
+- `spice config delete <group> <name> [--force]`
+
+Phase 2a authorable groups:
+
+- `chain`
+- `provider`
+- `dataset`
+- `task`
+- `execution`
+- `feature-set`
+- `preset`
+
 Rules:
 
 - Presets are optional. They are not the canonical schema.
+- `spice config` writes canonical YAML into `src/spice/conf/<group>/<name>.yaml`.
 - `dataset.history_context_blocks` is the dataset contract boundary for feature warmup + lookback.
 - `acquire` uses the dataset contract to fetch enough raw blocks.
 - `train` and `simulate` validate that the selected feature graph fits inside that contract.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import shutil
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
@@ -27,6 +28,7 @@ TEST_WINDOW_START_TIMESTAMP = int(
 TEST_WINDOW_END_TIMESTAMP = int(
     datetime.combine(TEST_EVALUATION_DATE + timedelta(days=1), time.min, tzinfo=UTC).timestamp()
 )
+CONF_ROOT = Path(__file__).resolve().parents[1] / "src" / "spice" / "conf"
 
 
 def deep_merge(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
@@ -49,6 +51,15 @@ def write_override(
     path = tmp_path / name
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     return path
+
+
+def isolate_conf_root(tmp_path: Path, monkeypatch) -> Path:
+    from spice.config import registry
+
+    target = tmp_path / "conf"
+    shutil.copytree(CONF_ROOT, target)
+    monkeypatch.setattr(registry, "_CONF_ROOT", target)
+    return target
 
 
 def model_workflow_override(

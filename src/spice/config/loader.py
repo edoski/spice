@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from functools import cache
 from pathlib import Path
 from typing import TypeVar, cast
-
-import yaml
 
 from ..modeling.registry import coerce_model_config, coerce_tuning_space_config
 from .models import (
@@ -35,10 +32,10 @@ from .models import (
     TuningSpaceConfig,
     apply_provider_acquisition_overrides,
 )
+from .registry import list_group_names, load_named_group, load_yaml_mapping
 
 _MODEL_GROUP = "model"
 _TUNING_SPACE_GROUP = "tuning_space"
-_CONF_ROOT = Path(__file__).resolve().parents[1] / "conf"
 _MERGEABLE_NAMED_GROUPS = {
     "dataset": "dataset",
     "task": "task",
@@ -56,28 +53,6 @@ _MERGEABLE_NAMED_GROUPS = {
 }
 
 ModelT = TypeVar("ModelT", bound=ConfigModel)
-
-
-def load_yaml_mapping(path: Path) -> dict[str, object]:
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if payload is None:
-        return {}
-    if not isinstance(payload, dict):
-        raise TypeError(f"Configuration must be a mapping: {path}")
-    return cast(dict[str, object], payload)
-
-
-def load_named_group(name: str, group: str) -> dict[str, object]:
-    path = _CONF_ROOT / group / f"{name}.yaml"
-    if not path.is_file():
-        raise FileNotFoundError(f"Unknown {group} spec: {name}")
-    return load_yaml_mapping(path)
-
-
-@cache
-def _available_group_names(group: str) -> frozenset[str]:
-    directory = _CONF_ROOT / group
-    return frozenset(path.stem for path in directory.glob("*.yaml"))
 
 
 def load_named_model(name: str) -> ModelConfig:
@@ -188,7 +163,7 @@ def _resolve_provider(payload: dict[str, object], *, chain: ChainSpec) -> Provid
         group="provider",
         model_type=ProviderSpec,
     )
-    unknown_chains = sorted(set(provider.chains) - set(_available_group_names("chain")))
+    unknown_chains = sorted(set(provider.chains) - set(list_group_names("chain")))
     if unknown_chains:
         raise ValueError(
             f"provider {provider.name} declares unknown chains: {', '.join(unknown_chains)}"
