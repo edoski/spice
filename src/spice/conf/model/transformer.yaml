@@ -1,4 +1,4 @@
-family: transformer
+id: transformer
 dropout: 0.1
 d_model: 128
 nhead: 4

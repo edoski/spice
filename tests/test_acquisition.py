@@ -289,7 +289,7 @@ def test_acquire_reuses_valid_canonical_blocks_across_provider_change(
         "acquire",
         overrides=base_overrides(tmp_path)
         + [
-            "presets.provider=alchemy",
+            "provider=alchemy",
             "dataset.temporal.lookback_seconds=24",
             "dataset.temporal.max_delay_seconds=12",
             "dataset.sampling.sample_count=4",
@@ -399,7 +399,7 @@ def test_acquire_extension_appends_new_provider_once(tmp_path, monkeypatch) -> N
         "acquire",
         overrides=base_overrides(tmp_path)
         + [
-            "presets.provider=alchemy",
+            "provider=alchemy",
             "dataset.temporal.lookback_seconds=24",
             "dataset.temporal.max_delay_seconds=12",
             "dataset.sampling.sample_count=4",

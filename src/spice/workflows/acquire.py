@@ -24,8 +24,6 @@ from ..core.config import ExperimentConfig
 from ..core.console import Reporter
 from ..core.files import promote_paths_atomic
 from ..core.json import write_json
-from ..core.tracking import log_artifacts
-from ._cli import load_cli_config
 from ._shared import managed_workflow
 
 
@@ -269,27 +267,5 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
                     ),
                 ],
             )
-            if session.tracking_enabled:
-                import mlflow
-
-                mlflow.log_metrics(
-                    {
-                        "history_files": float(history_result.file_count),
-                        "evaluation_files": float(evaluation_result.file_count),
-                        "history_gap_count": float(history_result.validation.gap_count),
-                        "evaluation_gap_count": float(evaluation_result.validation.gap_count),
-                        "rpc_final_batch_size": float(rpc_controller.current_batch_size),
-                        "rpc_final_concurrency": float(rpc_controller.current_concurrency),
-                    }
-                )
-                log_artifacts([metadata_path])
         finally:
             await block_client.close()
-
-
-def main(argv: list[str] | None = None) -> None:
-    run(load_cli_config("acquire", prog="spice-acquire", argv=argv))
-
-
-if __name__ == "__main__":
-    main()

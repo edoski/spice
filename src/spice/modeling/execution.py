@@ -60,7 +60,7 @@ def run_persisted_training(
         lookback_seconds=spec.lookback_seconds,
         chain_name=spec.chain.name.value,
         dataset_id=spec.dataset_id,
-        family=spec.model.family.value,
+        model_id=spec.model.id,
         block_time_seconds=spec.chain.block_time_seconds,
         manifest=manifest,
         prepared=training_run.prepared,

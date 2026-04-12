@@ -9,7 +9,7 @@ from typing import NamedTuple, cast
 import torch
 from torch import nn
 
-from ..core.config import ModelConfig, ModelFamily
+from ..core.config import ModelConfig
 
 
 class ModelOutputs(NamedTuple):
@@ -134,18 +134,6 @@ class TransformerLSTMBaseline(TemporalModel):
         recurrent, _ = self.lstm(encoded)
         last_state = recurrent[:, -1, :]
         return self.output_head(last_state)
-
-
-def build_model(n_features: int, action_count: int, config: ModelConfig) -> TemporalModel:
-    if config.family is ModelFamily.LSTM:
-        return LSTMBaseline(n_features, action_count, config)
-    if config.family is ModelFamily.TRANSFORMER:
-        return TransformerBaseline(n_features, action_count, config)
-    if config.family is ModelFamily.TRANSFORMER_LSTM:
-        return TransformerLSTMBaseline(n_features, action_count, config)
-    raise ValueError(f"Unsupported model family: {config.family}")
-
-
 def build_transformer_encoder(config: ModelConfig) -> nn.TransformerEncoder:
     encoder_layer = nn.TransformerEncoderLayer(
         d_model=config.d_model,

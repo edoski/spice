@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from datetime import datetime
 from enum import StrEnum
@@ -15,15 +16,18 @@ from pydantic import BaseModel, ConfigDict
 from ..core.config import (
     ChainName,
     ExperimentConfig,
-    ModelFamily,
     StudyConfig,
     StudyDirection,
-    TunedModelParams,
     TunedParameterSet,
-    TunedTrainingParams,
     TuningObjective,
-    TuningSearchSpace,
     revalidate_config,
+)
+from ..modeling.registry import (
+    apply_tuned_parameters as apply_model_tuned_parameters,
+)
+from ..modeling.registry import (
+    coerce_tuned_parameter_set,
+    flatten_tuned_model_params,
 )
 
 
@@ -77,7 +81,7 @@ class TuningStudyReport(TuningModel):
     study: StudyConfig
     chain: ChainName
     dataset_id: str
-    family: ModelFamily
+    model_id: str
     max_delay_seconds: int
     lookback_seconds: int
     sample_count: int
@@ -88,7 +92,6 @@ class TuningStudyReport(TuningModel):
     sampler: str
     sampler_seed: int
     pruner: str
-    search_space: TuningSearchSpace
     trial_counts: TrialCounts
     best_trial: TrialSummary | None
 
@@ -98,7 +101,7 @@ class TuningBestParamsReport(TuningModel):
     study: StudyConfig
     chain: ChainName
     dataset_id: str
-    family: ModelFamily
+    model_id: str
     max_delay_seconds: int
     lookback_seconds: int
     sample_count: int
@@ -127,70 +130,11 @@ def _params_from_trial(trial: FrozenTrial) -> TunedParameterSet:
     payload = trial.user_attrs.get("params")
     if not isinstance(payload, dict):
         raise ValueError(f"Trial {trial.number} is missing typed params metadata")
-    return TunedParameterSet.model_validate(payload)
+    return coerce_tuned_parameter_set(payload)
 
 
 def flatten_tuned_parameters(params: TunedParameterSet) -> dict[str, float | int]:
-    flat: dict[str, float | int] = {}
-    if params.training is not None:
-        if params.training.learning_rate is not None:
-            flat["training.learning_rate"] = params.training.learning_rate
-        if params.training.weight_decay is not None:
-            flat["training.weight_decay"] = params.training.weight_decay
-    if params.model is not None:
-        if params.model.hidden_size is not None:
-            flat["model.hidden_size"] = params.model.hidden_size
-        if params.model.dropout is not None:
-            flat["model.dropout"] = params.model.dropout
-    return flat
-
-
-def sample_tuned_parameters(
-    trial: optuna.Trial,
-    search_space: TuningSearchSpace,
-) -> TunedParameterSet:
-    training_params: TunedTrainingParams | None = None
-    model_params: TunedModelParams | None = None
-
-    if search_space.training is not None:
-        training_values: dict[str, float] = {}
-        if search_space.training.learning_rate is not None:
-            training_values["learning_rate"] = float(
-                trial.suggest_categorical(
-                    "training.learning_rate",
-                    search_space.training.learning_rate,
-                )
-            )
-        if search_space.training.weight_decay is not None:
-            training_values["weight_decay"] = float(
-                trial.suggest_categorical(
-                    "training.weight_decay",
-                    search_space.training.weight_decay,
-                )
-            )
-        if training_values:
-            training_params = TunedTrainingParams.model_validate(training_values)
-
-    if search_space.model is not None:
-        model_values: dict[str, float | int] = {}
-        if search_space.model.hidden_size is not None:
-            model_values["hidden_size"] = int(
-                trial.suggest_categorical(
-                    "model.hidden_size",
-                    search_space.model.hidden_size,
-                )
-            )
-        if search_space.model.dropout is not None:
-            model_values["dropout"] = float(
-                trial.suggest_categorical(
-                    "model.dropout",
-                    search_space.model.dropout,
-                )
-            )
-        if model_values:
-            model_params = TunedModelParams.model_validate(model_values)
-
-    return TunedParameterSet(training=training_params, model=model_params)
+    return flatten_tuned_model_params(params)
 
 
 def apply_tuned_parameters(
@@ -203,11 +147,7 @@ def apply_tuned_parameters(
             tuned_config.training.learning_rate = params.training.learning_rate
         if params.training.weight_decay is not None:
             tuned_config.training.weight_decay = params.training.weight_decay
-    if params.model is not None:
-        if params.model.hidden_size is not None:
-            tuned_config.model.hidden_size = params.model.hidden_size
-        if params.model.dropout is not None:
-            tuned_config.model.dropout = params.model.dropout
+    tuned_config.model = apply_model_tuned_parameters(tuned_config.model, params)
     return revalidate_config(tuned_config)
 
 
@@ -255,7 +195,7 @@ def build_study_report(config: ExperimentConfig, study: optuna.Study) -> TuningS
         study=config.study,
         chain=config.chain.name,
         dataset_id=config.dataset.id,
-        family=config.model.family,
+        model_id=config.model.id,
         max_delay_seconds=config.dataset.temporal.max_delay_seconds,
         lookback_seconds=config.dataset.temporal.lookback_seconds,
         sample_count=config.dataset.sampling.sample_count,
@@ -266,7 +206,6 @@ def build_study_report(config: ExperimentConfig, study: optuna.Study) -> TuningS
         sampler="TPESampler",
         sampler_seed=config.tuning.sampler_seed,
         pruner="MedianPruner" if config.tuning.enable_pruning else "NopPruner",
-        search_space=config.tuning.search_space,
         trial_counts=TrialCounts(
             total=len(study.trials),
             complete=len(completed_trials),
@@ -289,7 +228,7 @@ def build_best_params_report(
         study=config.study,
         chain=config.chain.name,
         dataset_id=config.dataset.id,
-        family=config.model.family,
+        model_id=config.model.id,
         max_delay_seconds=config.dataset.temporal.max_delay_seconds,
         lookback_seconds=config.dataset.temporal.lookback_seconds,
         sample_count=config.dataset.sampling.sample_count,
@@ -303,3 +242,14 @@ def build_best_params_report(
         ),
         params=_params_from_trial(best_trial),
     )
+
+
+def load_tuning_best_params_report(path: Path) -> TuningBestParamsReport:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise TypeError("Tuning best params report must be a mapping")
+    payload["params"] = coerce_tuned_parameter_set(
+        payload["params"],
+        model_id=str(payload["model_id"]),
+    )
+    return TuningBestParamsReport.model_validate(payload)

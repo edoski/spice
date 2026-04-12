@@ -1,3 +1,1 @@
 output_root: artifacts
-hydra_run_dir: .hydra/runs/${task}
-hydra_sweep_dir: .hydra/sweeps/${task}

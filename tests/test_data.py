@@ -7,6 +7,7 @@ from spice.data.block_contract import BLOCK_SCHEMA
 from spice.data.datasets import derive_dataset_geometry
 from spice.data.io import iter_block_files, load_block_frame, read_block_dataset
 from spice.data.validation import validate_exact_window_frame
+from spice.features import FeatureSelection, feature_warmup_blocks
 from spice.modeling.pipeline import (
     TrainingSpec,
     prepare_inference_dataset,
@@ -16,6 +17,7 @@ from tests.support import (
     TEST_WINDOW_START_TIMESTAMP,
     make_chain_config,
     make_evaluation_rows,
+    make_feature_set_config,
     make_history_rows,
     make_model_config,
     make_training_config,
@@ -153,6 +155,7 @@ def test_prepare_training_and_inference_datasets(tmp_path) -> None:
     spec = TrainingSpec(
         chain=make_chain_config(),
         dataset_id="icdcs_2025_11_09",
+        feature_set=make_feature_set_config(),
         model=make_model_config(),
         max_delay_seconds=36,
         lookback_seconds=120,
@@ -165,10 +168,15 @@ def test_prepare_training_and_inference_datasets(tmp_path) -> None:
     inference = prepare_inference_dataset(
         history_blocks,
         evaluation_blocks,
+        selection=FeatureSelection(
+            feature_set_id=spec.feature_set.id,
+            feature_names=tuple(spec.feature_set.outputs),
+        ),
         geometry=derive_dataset_geometry(
             lookback_seconds=120,
             max_delay_seconds=36,
             block_time_seconds=12.0,
+            feature_warmup_blocks=feature_warmup_blocks(tuple(spec.feature_set.outputs)),
         ),
         scaler=prepared.scaler,
         window_start_timestamp=TEST_WINDOW_START_TIMESTAMP,

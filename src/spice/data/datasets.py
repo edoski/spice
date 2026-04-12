@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..core.config import SplitConfig
-from .features import FeatureTable, feature_warmup_blocks
+from ..features import FeatureTable
 
 FloatMatrix = NDArray[np.float32]
 FloatVector = NDArray[np.float32]
@@ -86,16 +86,16 @@ def derive_dataset_geometry(
     lookback_seconds: int,
     max_delay_seconds: int,
     block_time_seconds: float,
+    feature_warmup_blocks: int,
 ) -> DatasetGeometry:
     lookback_steps = lookback_steps_for_seconds(lookback_seconds, block_time_seconds)
     max_extra_wait_steps = max_extra_wait_steps_for_delay(max_delay_seconds, block_time_seconds)
     action_count = action_count_for_delay(max_delay_seconds, block_time_seconds)
-    warmup_blocks = feature_warmup_blocks()
     return DatasetGeometry(
         lookback_steps=lookback_steps,
         max_extra_wait_steps=max_extra_wait_steps,
         action_count=action_count,
-        context_block_count=warmup_blocks + lookback_steps - 1,
+        context_block_count=feature_warmup_blocks + lookback_steps - 1,
     )
 
 

@@ -43,7 +43,7 @@ class TrainingRunReport(ReportModel):
     dataset_id: str
     variant: ArtifactVariant
     study: StudyConfig | None = None
-    family: str
+    model_id: str
     max_delay_seconds: int
     device_requested: str
     lookback_seconds: int
@@ -84,7 +84,7 @@ class SimulationReport(ReportModel):
     dataset_id: str
     variant: ArtifactVariant
     study: StudyConfig | None = None
-    family: str
+    model_id: str
     max_delay_seconds: int
     lookback_seconds: int
     block_time_seconds: float
@@ -112,7 +112,7 @@ def build_training_run_report(
     lookback_seconds: int,
     chain_name: str,
     dataset_id: str,
-    family: str,
+    model_id: str,
     block_time_seconds: float,
     manifest: TrainingArtifactManifest,
     prepared: PreparedTrainingDataset,
@@ -128,7 +128,7 @@ def build_training_run_report(
         dataset_id=dataset_id,
         variant=manifest.variant,
         study=manifest.study,
-        family=family,
+        model_id=model_id,
         max_delay_seconds=max_delay_seconds,
         device_requested=device_requested,
         lookback_seconds=lookback_seconds,
@@ -176,7 +176,7 @@ def build_simulation_report(
         dataset_id=manifest.dataset_id,
         variant=manifest.variant,
         study=manifest.study,
-        family=manifest.model.family.value,
+        model_id=manifest.model.id,
         max_delay_seconds=manifest.max_delay_seconds,
         lookback_seconds=manifest.lookback_seconds,
         block_time_seconds=manifest.chain.block_time_seconds,

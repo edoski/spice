@@ -12,7 +12,7 @@ import torch
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from numpy.typing import NDArray
 
-from ..core.config import ModelFamily, TrainingConfig
+from ..core.config import ModelConfig, TrainingConfig
 from ..core.console import ConsoleRuntime, NullReporter, Reporter
 from ..data.datasets import TemporalDatasetStore
 from ._runtime import (
@@ -157,7 +157,7 @@ def _best_epoch(validation_history: list[EpochMetrics]) -> int:
 def train_model(
     model: TemporalModel,
     *,
-    model_family: ModelFamily,
+    model_config: ModelConfig,
     store: TemporalDatasetStore,
     train_sample_indices: IntVector,
     validation_sample_indices: IntVector,
@@ -177,13 +177,13 @@ def train_model(
     precision = resolve_trainer_precision(
         training_config,
         device=device,
-        family=model_family,
+        model_config=model_config,
     )
     compile_enabled = resolve_compile_enabled(
         training_config,
         device=device,
         precision=precision,
-        family=model_family,
+        model_config=model_config,
     )
     fit_model = cast(TemporalModel, torch.compile(model) if compile_enabled else model)
 

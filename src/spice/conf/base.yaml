@@ -4,12 +4,11 @@ defaults:
   - evaluation: default
   - model: lstm
   - provider: publicnode
+  - feature_set: icdcs_2026
   - acquisition: default
-  - optional rpc_profile: ${provider}/${chain}
   - split: default
   - training: default
   - simulation: default
-  - tracking: mlflow
   - tuning: default
   - runtime: local
   - paths: default
@@ -17,10 +16,10 @@ defaults:
 
 task: train
 
-hydra:
-  job:
-    chdir: false
-  run:
-    dir: ${runtime.hydra_run_dir}
-  sweep:
-    dir: ${runtime.hydra_sweep_dir}
+study:
+  id: default
+
+artifact:
+  variant: baseline
+
+tuning_space: null

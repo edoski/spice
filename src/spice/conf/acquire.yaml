@@ -1,5 +1,6 @@
 defaults:
   - base
+  - experiment: icdcs_2025_11_09
   - _self_
 
 task: acquire

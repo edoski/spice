@@ -11,19 +11,17 @@ from spice.core.config import (
     ChainName,
     CompileMode,
     ExperimentConfig,
-    LstmModelConfig,
+    FeatureSetConfig,
     ModelConfig,
-    ModelFamily,
     ProviderConfig,
     RpcProviderName,
     TrainingConfig,
     TrainingPrecision,
-    TransformerLstmModelConfig,
-    TransformerModelConfig,
-    load_params_config,
+    TuningSpaceConfig,
+    load_hydra_config,
 )
+from spice.modeling.registry import coerce_model_config
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 TEST_EVALUATION_DATE = date(2025, 11, 9)
 TEST_WINDOW_START_TIMESTAMP = int(
     datetime.combine(TEST_EVALUATION_DATE, time.min, tzinfo=UTC).timestamp()
@@ -32,19 +30,44 @@ TEST_WINDOW_END_TIMESTAMP = int(
     datetime.combine(TEST_EVALUATION_DATE + timedelta(days=1), time.min, tzinfo=UTC).timestamp()
 )
 
+MODEL_CONFIG_PAYLOADS: dict[str, dict[str, int | float | str]] = {
+    "lstm": {
+        "id": "lstm",
+        "input_projection_dim": 128,
+        "hidden_size": 128,
+        "num_layers": 2,
+        "dropout": 0.1,
+        "head_hidden_dim": 64,
+    },
+    "transformer": {
+        "id": "transformer",
+        "dropout": 0.1,
+        "d_model": 128,
+        "nhead": 4,
+        "transformer_layers": 2,
+        "feedforward_dim": 512,
+        "head_hidden_dim": 64,
+    },
+    "transformer_lstm": {
+        "id": "transformer_lstm",
+        "hidden_size": 128,
+        "num_layers": 2,
+        "dropout": 0.1,
+        "d_model": 128,
+        "nhead": 4,
+        "transformer_layers": 2,
+        "head_hidden_dim": 64,
+    },
+}
+
 
 def compose_experiment(config_name: str, *, overrides: list[str] | None = None) -> ExperimentConfig:
-    return load_params_config(
-        config_name,
-        params_path=REPO_ROOT / "params.yaml",
-        overrides=overrides,
-    )
+    return load_hydra_config(config_name, overrides=overrides)
 
 
 def base_overrides(tmp_path: Path) -> list[str]:
     return [
         f"runtime.output_root={tmp_path / 'artifacts'}",
-        "tracking.enabled=false",
         "training.device=cpu",
         "training.max_epochs=1",
         "training.batch_size=8",
@@ -59,6 +82,14 @@ def base_overrides(tmp_path: Path) -> list[str]:
         "dataset.sampling.sample_count=48",
         "acquisition.history_sample_budget=48",
     ]
+
+
+def make_feature_set_config() -> FeatureSetConfig:
+    return compose_experiment("train").feature_set
+
+
+def make_tuning_space_config() -> TuningSpaceConfig | None:
+    return compose_experiment("tune").tuning_space
 
 
 def make_chain_config(*, uses_poa_extra_data: bool = False) -> ChainConfig:
@@ -86,36 +117,13 @@ def make_provider_config(
     )
 
 
-def make_model_config(*, family: ModelFamily = ModelFamily.LSTM) -> ModelConfig:
-    if family is ModelFamily.TRANSFORMER:
-        return TransformerModelConfig(
-            family=family,
-            dropout=0.1,
-            d_model=128,
-            nhead=4,
-            transformer_layers=2,
-            feedforward_dim=512,
-            head_hidden_dim=64,
-        )
-    if family is ModelFamily.TRANSFORMER_LSTM:
-        return TransformerLstmModelConfig(
-            family=family,
-            hidden_size=128,
-            num_layers=2,
-            dropout=0.1,
-            d_model=128,
-            nhead=4,
-            transformer_layers=2,
-            head_hidden_dim=64,
-        )
-    return LstmModelConfig(
-        family=family,
-        input_projection_dim=128,
-        hidden_size=128,
-        num_layers=2,
-        dropout=0.1,
-        head_hidden_dim=64,
-    )
+def make_model_config(*, model_id: str = "lstm") -> ModelConfig:
+    try:
+        payload = MODEL_CONFIG_PAYLOADS[model_id]
+    except KeyError as exc:
+        known = ", ".join(sorted(MODEL_CONFIG_PAYLOADS))
+        raise ValueError(f"Unknown test model id: {model_id}. Known models: {known}") from exc
+    return coerce_model_config(payload)
 
 
 def make_training_config() -> TrainingConfig:

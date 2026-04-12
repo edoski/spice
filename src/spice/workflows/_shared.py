@@ -9,10 +9,9 @@ from pathlib import Path
 
 from ..core.config import ArtifactVariant, ExperimentConfig, WorkflowTask
 from ..core.console import ConsoleRuntime, Reporter, create_console_runtime
-from ..core.tracking import configure_mlflow, log_config
 from ..modeling.evaluation import EpochMetrics
 from ..modeling.pipeline import TrainingSpec
-from ._tuning import TuningBestParamsReport, apply_tuned_parameters
+from ._tuning import apply_tuned_parameters, load_tuning_best_params_report
 
 
 def build_training_spec(config: ExperimentConfig) -> TrainingSpec:
@@ -20,6 +19,7 @@ def build_training_spec(config: ExperimentConfig) -> TrainingSpec:
     return TrainingSpec(
         chain=config.chain,
         dataset_id=config.dataset.id,
+        feature_set=config.feature_set,
         model=config.model,
         variant=variant,
         study=config.study if variant is ArtifactVariant.TUNED else None,
@@ -44,7 +44,6 @@ def epoch_metrics_to_dict(metrics: EpochMetrics) -> dict[str, float]:
 class WorkflowSession:
     runtime: ConsoleRuntime
     reporter: Reporter
-    tracking_enabled: bool
 
 
 def selected_artifact_variant(config: ExperimentConfig) -> ArtifactVariant:
@@ -78,28 +77,15 @@ def managed_workflow(
     default_runtime_factory: Callable[..., ConsoleRuntime] = create_console_runtime,
     nested: bool = False,
 ) -> Iterator[WorkflowSession]:
+    del config, run_name, nested
     active_runtime = runtime or default_runtime_factory(reporter=reporter)
     owns_runtime = runtime is None
     try:
         with active_runtime.activate():
-            if config.tracking.enabled:
-                import mlflow
-
-                configure_mlflow(config)
-                with mlflow.start_run(run_name=run_name, nested=nested):
-                    log_config(config)
-                    mlflow.set_tags(config.tracking.tags)
-                    yield WorkflowSession(
-                        runtime=active_runtime,
-                        reporter=active_runtime.reporter,
-                        tracking_enabled=True,
-                    )
-            else:
-                yield WorkflowSession(
-                    runtime=active_runtime,
-                    reporter=active_runtime.reporter,
-                    tracking_enabled=False,
-                )
+            yield WorkflowSession(
+                runtime=active_runtime,
+                reporter=active_runtime.reporter,
+            )
     finally:
         if owns_runtime:
             active_runtime.close()
@@ -112,7 +98,7 @@ def trial_artifact_dir(config: ExperimentConfig, trial_number: int) -> Path:
 def apply_study_best_params(config: ExperimentConfig) -> ExperimentConfig:
     path = config.paths.tuning_best_params_path
     try:
-        report = TuningBestParamsReport.model_validate_json(path.read_text(encoding="utf-8"))
+        report = load_tuning_best_params_report(path)
     except OSError as exc:
         raise FileNotFoundError(
             f"Best tuning params are required but missing: {path}"

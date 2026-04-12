@@ -11,9 +11,8 @@ from ..core.config import ExperimentConfig
 from ..core.console import ConsoleRuntime, Reporter
 from ..core.files import remove_path
 from ..core.json import write_json
-from ..core.tracking import log_artifacts
 from ..modeling.execution import run_persisted_training
-from ._cli import load_cli_config
+from ..modeling.registry import sample_tuned_parameters
 from ._shared import (
     abort_cleanup,
     build_training_spec,
@@ -28,7 +27,6 @@ from ._tuning import (
     build_trial_record,
     flatten_tuned_parameters,
     freeze_tuned_parameters_for_trial,
-    sample_tuned_parameters,
 )
 
 
@@ -59,7 +57,8 @@ def _objective(
     runtime: ConsoleRuntime,
     reporter: Reporter,
 ) -> float:
-    params = sample_tuned_parameters(trial, base_config.tuning.search_space)
+    assert base_config.tuning_space is not None
+    params = sample_tuned_parameters(trial, tuning_space=base_config.tuning_space)
     freeze_tuned_parameters_for_trial(trial, params)
     config = apply_tuned_parameters(base_config, params)
 
@@ -73,16 +72,6 @@ def _objective(
         reporter=reporter,
         nested=True,
     ) as session:
-        if session.tracking_enabled:
-            import mlflow
-
-            mlflow.log_params(
-                {
-                    f"trial.{key}": str(value)
-                    for key, value in flatten_tuned_parameters(params).items()
-                }
-            )
-
         persisted = run_persisted_training(
             history_block_path,
             spec=spec,
@@ -99,11 +88,6 @@ def _objective(
             trial.report(metric_value, step=persisted.training_run.training_result.best_epoch)
             if trial.should_prune():
                 raise optuna.TrialPruned()
-        if session.tracking_enabled:
-            import mlflow
-
-            mlflow.log_metrics({f"trial.{key}": value for key, value in metric_map.items()})
-            log_artifacts(persisted.artifact_paths)
         return metric_value
 
 
@@ -112,7 +96,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         config,
         run_name=(
             "study-"
-            f"{config.chain.name.value}-{config.model.family.value}-"
+            f"{config.chain.name.value}-{config.model.id}-"
             f"{config.dataset.temporal.max_delay_seconds}s"
         ),
         reporter=reporter,
@@ -189,7 +173,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                         [
                             ("id", study_report.study.id),
                             ("chain", _chain_label(study_report.chain.value)),
-                            ("family", study_report.family.value),
+                            ("model", study_report.model_id),
                             ("trials", str(study_report.trial_counts.total)),
                         ],
                     ),
@@ -224,28 +208,3 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                     ),
                 ],
             )
-            if session.tracking_enabled:
-                import mlflow
-
-                metrics = {"study.trial_count": float(len(study.trials))}
-                if completed_trials:
-                    best_trial = study_report.best_trial
-                    assert best_trial is not None
-                    assert best_trial.value is not None
-                    metrics["study.best_value"] = best_trial.value
-                    mlflow.log_params(
-                        {
-                            f"study.best_param.{key}": str(value)
-                            for key, value in flatten_tuned_parameters(best_trial.params).items()
-                        }
-                    )
-                mlflow.log_metrics(metrics)
-                log_artifacts([study_path, trials_path, best_params_path])
-
-
-def main(argv: list[str] | None = None) -> None:
-    run(load_cli_config("tune", prog="spice-tune", argv=argv))
-
-
-if __name__ == "__main__":
-    main()

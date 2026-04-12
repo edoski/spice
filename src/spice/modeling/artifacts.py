@@ -1,13 +1,14 @@
-"""Training artifact persistence."""
+"""Training artifact persistence and feature-graph validation."""
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 import torch
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SerializeAsAny
 
 from ..core.config import ArtifactVariant, ChainConfig, ModelConfig, StudyConfig
 from ..core.constants import (
@@ -16,10 +17,11 @@ from ..core.constants import (
 )
 from ..core.files import write_path_atomic
 from ..core.json import write_json
-from ..data.features import FEATURE_NAMES
 from ..data.normalization import ScalerStats
-from .models import TemporalModel, build_model
+from ..features import FeatureSelection, feature_graph_fingerprint, validate_feature_selection
+from .models import TemporalModel
 from .pipeline import PreparedTrainingDataset, TrainingSpec
+from .registry import build_model, coerce_model_config
 
 
 class ArtifactModel(BaseModel):
@@ -38,9 +40,11 @@ class TrainingArtifactManifest(ArtifactModel):
     lookback_steps: int
     max_extra_wait_steps: int
     action_count: int
+    feature_set_id: str
     n_features: int
     feature_names: list[str]
-    model: ModelConfig
+    feature_graph_fingerprint: str
+    model: SerializeAsAny[ModelConfig]
     scaler: ScalerStats
 
 
@@ -48,6 +52,37 @@ class TrainingArtifactManifest(ArtifactModel):
 class LoadedTrainingArtifact:
     manifest: TrainingArtifactManifest
     model: TemporalModel
+
+
+def feature_selection_from_manifest(manifest: TrainingArtifactManifest) -> FeatureSelection:
+    selection = FeatureSelection(
+        feature_set_id=manifest.feature_set_id,
+        feature_names=tuple(manifest.feature_names),
+    )
+    validate_feature_selection(selection.feature_set_id, selection.feature_names)
+    return selection
+
+
+def validate_artifact_feature_graph(
+    manifest: TrainingArtifactManifest,
+    *,
+    requested_feature_set_id: str | None = None,
+) -> FeatureSelection:
+    selection = feature_selection_from_manifest(manifest)
+    if (
+        requested_feature_set_id is not None
+        and requested_feature_set_id != selection.feature_set_id
+    ):
+        raise ValueError(
+            "Configured feature_set.id does not match the trained artifact: "
+            f"expected {selection.feature_set_id}, got {requested_feature_set_id}"
+        )
+    current_fingerprint = feature_graph_fingerprint(selection.feature_names)
+    if current_fingerprint != manifest.feature_graph_fingerprint:
+        raise ValueError(
+            "Current feature graph does not match the trained artifact manifest"
+        )
+    return selection
 
 
 def build_training_artifact_manifest(
@@ -66,8 +101,10 @@ def build_training_artifact_manifest(
         lookback_steps=prepared.geometry.lookback_steps,
         max_extra_wait_steps=prepared.geometry.max_extra_wait_steps,
         action_count=prepared.geometry.action_count,
+        feature_set_id=prepared.feature_set_id,
         n_features=prepared.n_features,
-        feature_names=list(FEATURE_NAMES),
+        feature_names=list(prepared.feature_names),
+        feature_graph_fingerprint=prepared.feature_graph_fingerprint,
         model=spec.model,
         scaler=prepared.scaler,
     )
@@ -89,9 +126,11 @@ def write_training_artifact(
 
 
 def load_training_artifact(artifact_dir: Path) -> LoadedTrainingArtifact:
-    manifest = TrainingArtifactManifest.model_validate_json(
-        (artifact_dir / ARTIFACT_MANIFEST_FILENAME).read_text(encoding="utf-8")
-    )
+    payload = json.loads((artifact_dir / ARTIFACT_MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise TypeError("Training artifact manifest must be a mapping")
+    payload["model"] = coerce_model_config(payload["model"])
+    manifest = TrainingArtifactManifest.model_validate(payload)
     model = build_model(manifest.n_features, manifest.action_count, manifest.model)
     state_dict = torch.load(artifact_dir / MODEL_STATE_FILENAME, map_location="cpu")
     model.load_state_dict(state_dict)

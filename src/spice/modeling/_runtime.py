@@ -8,8 +8,9 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from ..core.config import CompileMode, ModelFamily, TrainingConfig, TrainingPrecision
+from ..core.config import CompileMode, ModelConfig, TrainingConfig, TrainingPrecision
 from ..data.datasets import TemporalDatasetStore
+from .registry import resolve_auto_compile, resolve_default_precision
 from .torch_datasets import SequenceBatchLoader
 
 IntVector = NDArray[np.int64]
@@ -35,22 +36,11 @@ def resolve_trainer_precision(
     training_config: TrainingConfig,
     *,
     device: torch.device,
-    family: ModelFamily,
+    model_config: ModelConfig,
 ) -> str:
     precision = training_config.precision
     if precision is TrainingPrecision.AUTO:
-        if device.type == "cpu":
-            precision = TrainingPrecision.FP32
-        elif device.type == "mps" and family is ModelFamily.LSTM:
-            precision = TrainingPrecision.FP32
-        elif device.type == "mps":
-            precision = TrainingPrecision.BF16_MIXED
-        elif device.type == "cuda" and torch.cuda.is_bf16_supported():
-            precision = TrainingPrecision.BF16_MIXED
-        elif device.type == "cuda":
-            precision = TrainingPrecision.FP16_MIXED
-        else:
-            precision = TrainingPrecision.FP32
+        precision = resolve_default_precision(model_config.id, device)
 
     if precision is TrainingPrecision.FP32:
         return "32-true"
@@ -66,16 +56,16 @@ def resolve_compile_enabled(
     *,
     device: torch.device,
     precision: str,
-    family: ModelFamily,
+    model_config: ModelConfig,
 ) -> bool:
     compile_mode = training_config.compile
     if compile_mode is CompileMode.AUTO:
         enabled = device.type in {"mps", "cuda"}
     else:
         enabled = compile_mode is CompileMode.ON
-    if device.type == "mps":
-        return enabled and precision == "32-true" and family is ModelFamily.LSTM
-    return enabled
+    if not enabled:
+        return False
+    return resolve_auto_compile(model_config.id, device, precision)
 
 
 def build_sequence_loader(

@@ -6,11 +6,21 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal, Self, cast
+from typing import Self, cast
 
+from hydra import compose, initialize_config_module
 from omegaconf import DictConfig, OmegaConf
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializeAsAny,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 
+from ..features import validate_feature_selection
 from .json import JsonObject
 
 
@@ -18,12 +28,6 @@ class ChainName(StrEnum):
     ETHEREUM = "ethereum"
     POLYGON = "polygon"
     AVALANCHE = "avalanche"
-
-
-class ModelFamily(StrEnum):
-    LSTM = "lstm"
-    TRANSFORMER = "transformer"
-    TRANSFORMER_LSTM = "transformer_lstm"
 
 
 class RpcProviderName(StrEnum):
@@ -178,63 +182,15 @@ class EvaluationConfig(ConfigModel):
     date: date
 
 
-class BaseModelConfig(ConfigModel):
-    family: ModelFamily
-    dropout: float = Field(ge=0.0, lt=1.0)
-    head_hidden_dim: int = Field(gt=0)
+class ModelConfig(ConfigModel):
+    id: str
 
-
-class LstmModelConfig(BaseModelConfig):
-    family: Literal[ModelFamily.LSTM] = ModelFamily.LSTM
-    input_projection_dim: int = Field(gt=0)
-    hidden_size: int = Field(gt=0)
-    num_layers: int = Field(gt=0)
-
-
-class TransformerModelConfig(BaseModelConfig):
-    family: Literal[ModelFamily.TRANSFORMER] = ModelFamily.TRANSFORMER
-    d_model: int = Field(gt=0)
-    nhead: int = Field(gt=0)
-    transformer_layers: int = Field(gt=0)
-    feedforward_dim: int = Field(gt=0)
-
-    @model_validator(mode="after")
-    def validate_transformer_dimensions(self) -> Self:
-        if self.d_model % self.nhead != 0:
-            raise ValueError("d_model must be divisible by nhead")
-        if self.d_model % 2 != 0:
-            raise ValueError("d_model must be even for sinusoidal positional encodings")
-        return self
-
-
-class TransformerLstmModelConfig(BaseModelConfig):
-    family: Literal[ModelFamily.TRANSFORMER_LSTM] = ModelFamily.TRANSFORMER_LSTM
-    d_model: int = Field(gt=0)
-    nhead: int = Field(gt=0)
-    transformer_layers: int = Field(gt=0)
-    hidden_size: int = Field(gt=0)
-    num_layers: int = Field(gt=0)
-
-    @model_validator(mode="after")
-    def validate_transformer_dimensions(self) -> Self:
-        if self.d_model % self.nhead != 0:
-            raise ValueError("d_model must be divisible by nhead")
-        if self.d_model % 2 != 0:
-            raise ValueError("d_model must be even for sinusoidal positional encodings")
-        return self
-
-
-ModelConfig = Annotated[
-    LstmModelConfig | TransformerModelConfig | TransformerLstmModelConfig,
-    Field(discriminator="family"),
-]
-
-
-class TrackingConfig(ConfigModel):
-    enabled: bool
-    experiment_name: str
-    tracking_uri: str
-    tags: dict[str, str]
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        if not value or "/" in value or "\\" in value:
+            raise ValueError("model.id must be a non-empty path segment")
+        return value
 
 
 class StudyConfig(ConfigModel):
@@ -252,6 +208,25 @@ class ArtifactConfig(ConfigModel):
     variant: ArtifactVariant
 
 
+class FeatureSetConfig(ConfigModel):
+    id: str
+    outputs: list[str] = Field(min_length=1)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        if not value or "/" in value or "\\" in value:
+            raise ValueError("feature_set.id must be a non-empty path segment")
+        return value
+
+    @field_validator("outputs")
+    @classmethod
+    def validate_outputs(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("feature_set.outputs must not contain duplicates")
+        return value
+
+
 class TuningTrainingSearchSpace(ConfigModel):
     learning_rate: list[float] | None = Field(default=None, min_length=1)
     weight_decay: list[float] | None = Field(default=None, min_length=1)
@@ -260,7 +235,7 @@ class TuningTrainingSearchSpace(ConfigModel):
     @classmethod
     def validate_learning_rate_candidates(cls, values: list[float] | None) -> list[float] | None:
         if values is not None and any(value <= 0.0 for value in values):
-            raise ValueError("tuning.search_space.training.learning_rate values must be positive")
+            raise ValueError("tuning_space.training.learning_rate values must be positive")
         return values
 
     @field_validator("weight_decay")
@@ -268,51 +243,39 @@ class TuningTrainingSearchSpace(ConfigModel):
     def validate_weight_decay_candidates(cls, values: list[float] | None) -> list[float] | None:
         if values is not None and any(value < 0.0 for value in values):
             raise ValueError(
-                "tuning.search_space.training.weight_decay values must be non-negative"
+                "tuning_space.training.weight_decay values must be non-negative"
             )
         return values
 
     @model_validator(mode="after")
     def validate_non_empty_group(self) -> Self:
         if self.learning_rate is None and self.weight_decay is None:
-            raise ValueError("tuning.search_space.training must declare at least one field")
+            raise ValueError("tuning_space.training must declare at least one field")
         return self
 
 
-class TuningModelSearchSpace(ConfigModel):
-    hidden_size: list[int] | None = Field(default=None, min_length=1)
-    dropout: list[float] | None = Field(default=None, min_length=1)
+class ModelTuningSpaceConfig(ConfigModel):
+    id: str
 
-    @field_validator("hidden_size")
     @classmethod
-    def validate_hidden_size_candidates(cls, values: list[int] | None) -> list[int] | None:
-        if values is not None and any(value <= 0 for value in values):
-            raise ValueError("tuning.search_space.model.hidden_size values must be positive")
-        return values
+    def validate_id(cls, value: str) -> str:
+        if not value or "/" in value or "\\" in value:
+            raise ValueError("tuning_space.model.id must be a non-empty path segment")
+        return value
 
-    @field_validator("dropout")
+    @field_validator("id")
     @classmethod
-    def validate_dropout_candidates(cls, values: list[float] | None) -> list[float] | None:
-        if values is not None and any(value < 0.0 or value >= 1.0 for value in values):
-            raise ValueError("tuning.search_space.model.dropout values must be in [0.0, 1.0)")
-        return values
-
-    @model_validator(mode="after")
-    def validate_non_empty_group(self) -> Self:
-        if self.hidden_size is None and self.dropout is None:
-            raise ValueError("tuning.search_space.model must declare at least one field")
-        return self
+    def validate_model_id(cls, value: str) -> str:
+        return cls.validate_id(value)
 
 
-class TuningSearchSpace(ConfigModel):
+class TuningSpaceConfig(ConfigModel):
     training: TuningTrainingSearchSpace | None = None
-    model: TuningModelSearchSpace | None = None
+    model: SerializeAsAny[ModelTuningSpaceConfig]
 
-    @model_validator(mode="after")
-    def validate_non_empty_search_space(self) -> Self:
-        if self.training is None and self.model is None:
-            raise ValueError("tuning.search_space must declare at least one parameter group")
-        return self
+    def has_candidates(self) -> bool:
+        model_candidates = self.model.model_dump(exclude={"id"}, exclude_none=True)
+        return self.training is not None or bool(model_candidates)
 
 
 class TunedTrainingParams(ConfigModel):
@@ -327,19 +290,19 @@ class TunedTrainingParams(ConfigModel):
 
 
 class TunedModelParams(ConfigModel):
-    hidden_size: int | None = Field(default=None, gt=0)
-    dropout: float | None = Field(default=None, ge=0.0, lt=1.0)
+    id: str
 
-    @model_validator(mode="after")
-    def validate_non_empty_group(self) -> Self:
-        if self.hidden_size is None and self.dropout is None:
-            raise ValueError("tuned model params must declare at least one field")
-        return self
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        if not value or "/" in value or "\\" in value:
+            raise ValueError("tuned model params id must be a non-empty path segment")
+        return value
 
 
 class TunedParameterSet(ConfigModel):
     training: TunedTrainingParams | None = None
-    model: TunedModelParams | None = None
+    model: SerializeAsAny[TunedModelParams] | None = None
 
     @model_validator(mode="after")
     def validate_non_empty_param_set(self) -> Self:
@@ -355,13 +318,10 @@ class TuningConfig(ConfigModel):
     objective_metric: TuningObjective
     sampler_seed: int = Field(ge=0)
     enable_pruning: bool
-    search_space: TuningSearchSpace
 
 
 class RuntimeConfig(ConfigModel):
     output_root: Path
-    hydra_run_dir: Path
-    hydra_sweep_dir: Path
 
 
 class PathsConfig(ConfigModel):
@@ -377,7 +337,6 @@ class PathsConfig(ConfigModel):
     simulation_report_path: Path
     tuning_root: Path
     tuning_best_params_path: Path
-    mlruns_dir: Path
 
 
 class ProviderConfig(ConfigModel):
@@ -407,13 +366,14 @@ class ExperimentConfig(ConfigModel):
     dataset: DatasetConfig
     evaluation: EvaluationConfig
     study: StudyConfig
-    model: ModelConfig
+    model: SerializeAsAny[ModelConfig]
+    tuning_space: TuningSpaceConfig | None = None
     artifact: ArtifactConfig
+    feature_set: FeatureSetConfig
     acquisition: AcquisitionConfig
     split: SplitConfig
     training: TrainingConfig
     simulation: SimulationConfig
-    tracking: TrackingConfig
     tuning: TuningConfig
     runtime: RuntimeConfig
     paths: PathsConfig
@@ -434,6 +394,26 @@ class ExperimentConfig(ConfigModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_feature_selection(self) -> Self:
+        validate_feature_selection(self.feature_set.id, tuple(self.feature_set.outputs))
+        return self
+
+    @model_validator(mode="after")
+    def validate_tuning_space(self) -> Self:
+        if self.tuning_space is not None and self.tuning_space.model.id != self.model.id:
+            raise ValueError("tuning_space.model.id must match model.id")
+        if self.task is WorkflowTask.TUNE:
+            if self.tuning_space is None:
+                raise ValueError("tuning_space is required for tune")
+            if not self.tuning_space.has_candidates():
+                raise ValueError("tuning_space must declare at least one tunable parameter")
+        return self
+
+    @property
+    def model_id(self) -> str:
+        return self.model.id
+
     @property
     def evaluation_window_start_timestamp(self) -> int:
         return _utc_midnight_timestamp(self.evaluation.date)
@@ -453,80 +433,24 @@ class ExperimentConfig(ConfigModel):
         return self.acquisition.history_sample_budget
 
 
-class PresetSelections(ConfigModel):
-    chain: ChainName
-    provider: RpcProviderName
-    model: ModelFamily
-
-
-class PublicDatasetSamplingConfig(ConfigModel):
-    sample_count: int = Field(gt=0)
-
-
-class PublicDatasetConfig(ConfigModel):
-    id: str
-    temporal: DatasetTemporalConfig
-    sampling: PublicDatasetSamplingConfig
-
-
-class PublicAcquisitionConfig(ConfigModel):
-    history_sample_budget: int | None = Field(default=None, gt=0)
-
-
-class PublicTrainingConfig(ConfigModel):
-    learning_rate: float = Field(gt=0.0)
-    weight_decay: float = Field(ge=0.0)
-    batch_size: int = Field(gt=0)
-    max_epochs: int = Field(gt=0)
-    early_stopping: EarlyStoppingConfig
-    gradient_clip_norm: float = Field(gt=0.0)
-    action_loss_weight: float = Field(gt=0.0)
-    fee_loss_weight: float = Field(gt=0.0)
-
-
-class PublicSimulationConfig(ConfigModel):
-    window_seconds: int = Field(gt=0)
-    arrival_rate_per_second: float = Field(gt=0.0)
-    repetitions: int = Field(gt=0)
-
-
-class MainParamsConfig(ConfigModel):
-    presets: PresetSelections
-    dataset: PublicDatasetConfig
-    evaluation: EvaluationConfig
-    acquisition: PublicAcquisitionConfig | None = None
-    split: SplitConfig
-    training: PublicTrainingConfig
-    model: dict[str, object] = Field(min_length=1)
-    simulation: PublicSimulationConfig
-    artifact: ArtifactConfig
-    study: StudyConfig
-
-
 _EXPERIMENT_CONFIG_ADAPTER = TypeAdapter(ExperimentConfig)
-_MAIN_PARAMS_ADAPTER = TypeAdapter(MainParamsConfig)
 _CONF_ROOT = Path(__file__).resolve().parents[1] / "conf"
-_PRESET_GROUPS = frozenset({"chain", "model", "provider"})
-_PRESET_OVERRIDE_KEYS = {f"presets.{group}": group for group in _PRESET_GROUPS}
-_MODEL_OVERRIDE_FIELDS = {
-    ModelFamily.LSTM: frozenset(LstmModelConfig.model_fields) - {"family"},
-    ModelFamily.TRANSFORMER: frozenset(TransformerModelConfig.model_fields) - {"family"},
-    ModelFamily.TRANSFORMER_LSTM: (
-        frozenset(TransformerLstmModelConfig.model_fields) - {"family"}
-    ),
-}
 
 
 def coerce_config(cfg: DictConfig, *, task: WorkflowTask | str) -> ExperimentConfig:
     resolved_task = WorkflowTask(task)
     working = OmegaConf.create(OmegaConf.to_container(cfg, resolve=False))
     OmegaConf.set_struct(working, False)
+    _normalize_runtime_fields(working)
+    _apply_rpc_profile(working)
+    _refresh_derived_fields(working, task=resolved_task)
     OmegaConf.update(working, "task", resolved_task.value, merge=False)
     OmegaConf.resolve(working)
     payload = OmegaConf.to_container(working, resolve=True, enum_to_str=True)
     if not isinstance(payload, dict):
         raise TypeError("Hydra configuration did not produce a mapping payload")
     payload.pop("hydra", None)
+    _coerce_modeling_payload(payload)
     return _EXPERIMENT_CONFIG_ADAPTER.validate_python(payload)
 
 
@@ -538,7 +462,9 @@ def config_to_dict(cfg: ExperimentConfig) -> JsonObject:
 
 
 def revalidate_config(cfg: ExperimentConfig) -> ExperimentConfig:
-    return _EXPERIMENT_CONFIG_ADAPTER.validate_python(config_to_dict(cfg))
+    payload = config_to_dict(cfg)
+    _coerce_modeling_payload(payload)
+    return _EXPERIMENT_CONFIG_ADAPTER.validate_python(payload)
 
 
 def _load_mapping_config(path: Path) -> DictConfig:
@@ -546,95 +472,6 @@ def _load_mapping_config(path: Path) -> DictConfig:
     if not isinstance(loaded, DictConfig):
         raise TypeError(f"Configuration must be a mapping: {path}")
     return loaded
-
-
-def _mapping_without_defaults(config: DictConfig) -> DictConfig:
-    payload = OmegaConf.to_container(config, resolve=False)
-    if not isinstance(payload, dict):
-        raise TypeError("Configuration must serialize to a mapping payload")
-    payload.pop("defaults", None)
-    stripped = OmegaConf.create(payload)
-    if not isinstance(stripped, DictConfig):
-        raise TypeError("Configuration must remain a mapping after defaults stripping")
-    return stripped
-
-
-def _load_preset(group: str, name: str) -> DictConfig:
-    path = _CONF_ROOT / group / f"{name}.yaml"
-    if not path.is_file():
-        raise FileNotFoundError(f"Unknown {group} preset: {name}")
-    preset = _load_mapping_config(path)
-    if group == "provider":
-        merged = OmegaConf.merge(_load_mapping_config(_CONF_ROOT / group / "base.yaml"), preset)
-        if not isinstance(merged, DictConfig):
-            raise TypeError(f"Preset must remain a mapping after merge: {path}")
-        preset = merged
-    payload = OmegaConf.to_container(preset, resolve=False)
-    if not isinstance(payload, dict):
-        raise TypeError(f"Preset must serialize to a mapping: {path}")
-    payload.pop("defaults", None)
-    stripped = OmegaConf.create(payload)
-    if not isinstance(stripped, DictConfig):
-        raise TypeError(f"Preset must remain a mapping after defaults stripping: {path}")
-    return stripped
-
-
-def _compose_named_config(name: str, *, selections: dict[str, str]) -> DictConfig:
-    path = _CONF_ROOT / f"{name}.yaml"
-    if not path.is_file():
-        raise FileNotFoundError(f"Unknown config root: {name}")
-    config = _load_mapping_config(path)
-    defaults = config.get("defaults", [])
-    working = OmegaConf.create({})
-    if not isinstance(working, DictConfig):
-        raise TypeError("Root configuration must remain a mapping")
-    OmegaConf.set_struct(working, False)
-    for entry in defaults:
-        if isinstance(entry, str):
-            if entry == "_self_":
-                continue
-            merged = OmegaConf.merge(working, _compose_named_config(entry, selections=selections))
-            if not isinstance(merged, DictConfig):
-                raise TypeError("Composed root config must remain a mapping")
-            working = merged
-            continue
-
-        payload = OmegaConf.to_container(entry, resolve=False)
-        if not isinstance(payload, dict) or len(payload) != 1:
-            raise TypeError("Defaults entries must contain exactly one mapping pair")
-        raw_group, default_name = next(iter(payload.items()))
-        if not isinstance(raw_group, str) or not isinstance(default_name, str):
-            raise TypeError("Defaults group selectors must be strings")
-        if raw_group.startswith("optional "):
-            raw_group = raw_group.removeprefix("optional ")
-            optional = True
-        else:
-            optional = False
-        group, _, package = raw_group.partition("@")
-        if group == "rpc_profile":
-            continue
-        if group in _PRESET_GROUPS:
-            selected_name = selections.get(group, default_name)
-        else:
-            selected_name = default_name
-        try:
-            preset = _load_preset(group, selected_name)
-        except FileNotFoundError:
-            if optional:
-                continue
-            raise
-        preset_payload = OmegaConf.to_container(preset, resolve=False)
-        OmegaConf.update(
-            working,
-            package or group,
-            preset_payload,
-            merge=False,
-        )
-
-    merged = OmegaConf.merge(working, _mapping_without_defaults(config))
-    if not isinstance(merged, DictConfig):
-        raise TypeError("Composed config must remain a mapping")
-    return merged
 
 
 def _apply_rpc_profile(config: DictConfig) -> None:
@@ -650,21 +487,9 @@ def _apply_rpc_profile(config: DictConfig) -> None:
     OmegaConf.update(
         config,
         "acquisition",
-        OmegaConf.to_container(
-            OmegaConf.merge(acquisition, rpc_profile),
-            resolve=False,
-        ),
+        OmegaConf.to_container(OmegaConf.merge(rpc_profile, acquisition), resolve=False),
         merge=False,
     )
-
-
-def _filter_model_overrides(
-    model_payload: dict[str, object],
-    *,
-    family: str,
-) -> dict[str, object]:
-    allowed_fields = _MODEL_OVERRIDE_FIELDS[ModelFamily(family)]
-    return {key: value for key, value in model_payload.items() if key in allowed_fields}
 
 
 def _refresh_derived_fields(config: DictConfig, *, task: WorkflowTask | str) -> None:
@@ -673,8 +498,9 @@ def _refresh_derived_fields(config: DictConfig, *, task: WorkflowTask | str) -> 
     dataset_id = str(OmegaConf.select(config, "dataset.id"))
     study_id = str(OmegaConf.select(config, "study.id"))
     chain_name = str(OmegaConf.select(config, "chain.name"))
-    family = str(OmegaConf.select(config, "model.family"))
+    model_id = str(OmegaConf.select(config, "model.id"))
     artifact_variant = str(OmegaConf.select(config, "artifact.variant"))
+    feature_set_id = str(OmegaConf.select(config, "feature_set.id"))
     max_delay_seconds = int(OmegaConf.select(config, "dataset.temporal.max_delay_seconds"))
     dataset_root = output_root / "datasets" / chain_name / dataset_id
     artifact_base_root = (
@@ -682,28 +508,13 @@ def _refresh_derived_fields(config: DictConfig, *, task: WorkflowTask | str) -> 
         / "models"
         / chain_name
         / dataset_id
-        / family
+        / feature_set_id
+        / model_id
         / f"{max_delay_seconds}s"
     )
     variant_root = artifact_base_root / artifact_variant / study_id
     tuned_study_root = artifact_base_root / ArtifactVariant.TUNED.value / study_id
-    if resolved_task is WorkflowTask.TUNE:
-        artifact_root = tuned_study_root
-    else:
-        artifact_root = variant_root
-    OmegaConf.update(config, "task", resolved_task.value, merge=False)
-    OmegaConf.update(
-        config,
-        "runtime.hydra_run_dir",
-        f".hydra/runs/{resolved_task.value}",
-        merge=False,
-    )
-    OmegaConf.update(
-        config,
-        "runtime.hydra_sweep_dir",
-        f".hydra/sweeps/{resolved_task.value}",
-        merge=False,
-    )
+    artifact_root = tuned_study_root if resolved_task is WorkflowTask.TUNE else variant_root
     OmegaConf.update(config, "paths.output_root", str(output_root), merge=False)
     OmegaConf.update(config, "paths.dataset_root", str(dataset_root), merge=False)
     OmegaConf.update(config, "paths.metadata_root", str(dataset_root / ".spice"), merge=False)
@@ -741,12 +552,6 @@ def _refresh_derived_fields(config: DictConfig, *, task: WorkflowTask | str) -> 
         str(tuned_study_root / "tuning" / "best_params.json"),
         merge=False,
     )
-    OmegaConf.update(
-        config,
-        "paths.mlruns_dir",
-        str(output_root / ".." / ".mlflow"),
-        merge=False,
-    )
 
 
 def _normalize_runtime_fields(config: DictConfig) -> None:
@@ -760,61 +565,28 @@ def _normalize_runtime_fields(config: DictConfig) -> None:
         )
 
 
-def _partition_overrides(
-    overrides: Iterable[str] | None,
-) -> tuple[dict[str, str], list[str]]:
-    named: dict[str, str] = {}
-    dotlist: list[str] = []
-    for raw_override in overrides or ():
-        normalized = raw_override[1:] if raw_override.startswith("+") else raw_override
-        if "=" not in normalized:
-            raise ValueError(f"Overrides must use key=value syntax: {raw_override}")
-        key, value = normalized.split("=", 1)
-        preset_group = _PRESET_OVERRIDE_KEYS.get(key)
-        if preset_group is not None:
-            named[preset_group] = value
-            continue
-        dotlist.append(normalized)
-    return named, dotlist
+def _coerce_modeling_payload(payload: dict[str, object]) -> None:
+    from ..modeling.registry import coerce_model_config, coerce_tuning_space_config
+
+    raw_model = payload.get("model")
+    if raw_model is None:
+        raise ValueError("model config is required")
+    model_config = coerce_model_config(raw_model)
+    payload["model"] = model_config
+    payload["tuning_space"] = coerce_tuning_space_config(
+        payload.get("tuning_space"),
+        model_config=model_config,
+    )
 
 
-def load_params_config(
+def load_hydra_config(
     task: WorkflowTask | str,
     *,
-    params_path: Path = Path("params.yaml"),
     overrides: Iterable[str] | None = None,
 ) -> ExperimentConfig:
-    params_payload = OmegaConf.to_container(_load_mapping_config(params_path), resolve=True)
-    main_params = _MAIN_PARAMS_ADAPTER.validate_python(params_payload)
-    main_params_payload = _MAIN_PARAMS_ADAPTER.dump_python(main_params, mode="json")
-    if not isinstance(main_params_payload, dict):
-        raise TypeError("Main params config did not serialize to a mapping payload")
-    preset_payload = main_params_payload.pop("presets", None)
-    if not isinstance(preset_payload, dict):
-        raise TypeError("Main params config must serialize presets as a mapping")
-    selections = {key: str(value) for key, value in preset_payload.items()}
-
-    named_overrides, dotlist_overrides = _partition_overrides(overrides)
-    selections.update(named_overrides)
-    model_payload = main_params_payload.get("model")
-    if isinstance(model_payload, dict):
-        filtered_model_payload = _filter_model_overrides(model_payload, family=selections["model"])
-        if filtered_model_payload:
-            main_params_payload["model"] = filtered_model_payload
-        else:
-            main_params_payload.pop("model", None)
-
-    working = _compose_named_config(WorkflowTask(task).value, selections=selections)
-    _apply_rpc_profile(working)
-    merged = OmegaConf.merge(working, main_params_payload)
-    if not isinstance(merged, DictConfig):
-        raise TypeError("Main params overlay must preserve a mapping configuration")
-    working = merged
-    if dotlist_overrides:
-        merged = OmegaConf.merge(working, OmegaConf.from_cli(dotlist_overrides))
-        if not isinstance(merged, DictConfig):
-            raise TypeError("Overrides must preserve a mapping configuration")
-        working = merged
-    _normalize_runtime_fields(working)
-    _refresh_derived_fields(working, task=task)
-    return coerce_config(working, task=task)
+    resolved_task = WorkflowTask(task)
+    with initialize_config_module(version_base=None, config_module="spice.conf"):
+        config = compose(config_name=resolved_task.value, overrides=list(overrides or ()))
+    if not isinstance(config, DictConfig):
+        raise TypeError("Hydra compose did not produce a mapping configuration")
+    return coerce_config(config, task=resolved_task)

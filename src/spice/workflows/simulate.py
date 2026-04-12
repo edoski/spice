@@ -5,15 +5,14 @@ from __future__ import annotations
 from ..core.config import ExperimentConfig
 from ..core.console import Reporter
 from ..core.files import remove_path
-from ..core.tracking import log_artifacts
 from ..data.datasets import derive_dataset_geometry
 from ..data.io import load_block_frame
-from ..modeling.artifacts import load_training_artifact
+from ..features import feature_warmup_blocks
+from ..modeling.artifacts import load_training_artifact, validate_artifact_feature_graph
 from ..modeling.inference import predict_class_offsets
 from ..modeling.pipeline import prepare_inference_dataset
 from ..modeling.reporting import build_simulation_report, write_json_report
 from ..modeling.simulation import run_temporal_simulation
-from ._cli import load_cli_config
 from ._shared import abort_cleanup, managed_workflow
 
 
@@ -28,7 +27,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
     with managed_workflow(
         config,
         run_name=(
-            f"simulate-{config.chain.name.value}-{config.model.family.value}"
+            f"simulate-{config.chain.name.value}-{config.model.id}"
             f"-{config.dataset.temporal.max_delay_seconds}s"
         ),
         reporter=reporter,
@@ -41,6 +40,10 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         ):
             load_task = session.reporter.start_task("load inference inputs")
             loaded_artifact = load_training_artifact(artifact_dir)
+            selection = validate_artifact_feature_graph(
+                loaded_artifact.manifest,
+                requested_feature_set_id=config.feature_set.id,
+            )
             history_blocks = load_block_frame(history_block_path)
             evaluation_blocks = load_block_frame(evaluation_block_path)
             session.reporter.finish_task(
@@ -51,10 +54,12 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             prepared = prepare_inference_dataset(
                 history_blocks,
                 evaluation_blocks,
+                selection=selection,
                 geometry=derive_dataset_geometry(
                     lookback_seconds=loaded_artifact.manifest.lookback_seconds,
                     max_delay_seconds=loaded_artifact.manifest.max_delay_seconds,
                     block_time_seconds=loaded_artifact.manifest.chain.block_time_seconds,
+                    feature_warmup_blocks=feature_warmup_blocks(selection.feature_names),
                 ),
                 scaler=loaded_artifact.manifest.scaler,
                 window_start_timestamp=config.evaluation_window_start_timestamp,
@@ -106,7 +111,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                     [
                         ("id", report.dataset_id),
                         ("chain", _chain_label(report.chain)),
-                        ("family", report.family),
+                        ("model", report.model_id),
                         ("delay", f"{report.max_delay_seconds}s"),
                     ],
                 ),
@@ -147,28 +152,3 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                 ),
             ],
         )
-
-        if session.tracking_enabled:
-            import mlflow
-
-            mlflow.log_metrics(
-                {
-                    "simulation_profit_over_baseline_mean": report.profit_over_baseline.mean,
-                    "simulation_profit_over_baseline_std": report.profit_over_baseline.std,
-                    "simulation_cost_over_optimum_mean": report.cost_over_optimum.mean,
-                    "simulation_cost_over_optimum_std": report.cost_over_optimum.std,
-                    "simulation_baseline_cost_over_optimum_mean": (
-                        report.baseline_cost_over_optimum.mean
-                    ),
-                    "simulation_total_events": float(report.total_events),
-                }
-            )
-            log_artifacts([report_path])
-
-
-def main(argv: list[str] | None = None) -> None:
-    run(load_cli_config("simulate", prog="spice-simulate", argv=argv))
-
-
-if __name__ == "__main__":
-    main()

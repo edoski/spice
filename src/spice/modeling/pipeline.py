@@ -10,6 +10,7 @@ import polars as pl
 from ..core.config import (
     ArtifactVariant,
     ChainConfig,
+    FeatureSetConfig,
     ModelConfig,
     SplitConfig,
     StudyConfig,
@@ -28,11 +29,12 @@ from ..data.datasets import (
     history_context_slice,
     trim_history_for_sample_count,
 )
-from ..data.features import build_feature_table
 from ..data.io import load_block_frame
 from ..data.normalization import ScalerStats, fit_standard_scaler, transform_feature_matrix
+from ..features import FeatureSelection, build_feature_table, feature_warmup_blocks
 from .evaluation import EpochMetrics
-from .models import TemporalModel, build_model
+from .models import TemporalModel
+from .registry import build_model
 from .torch_datasets import build_class_weights
 from .training import TrainingResult, evaluate_model, train_model
 
@@ -41,6 +43,7 @@ from .training import TrainingResult, evaluate_model, train_model
 class TrainingSpec:
     chain: ChainConfig
     dataset_id: str
+    feature_set: FeatureSetConfig
     model: ModelConfig
     max_delay_seconds: int
     lookback_seconds: int
@@ -56,6 +59,9 @@ class PreparedTrainingDataset:
     n_blocks_available: int
     n_blocks_used: int
     sample_count: int
+    feature_set_id: str
+    feature_names: tuple[str, ...]
+    feature_graph_fingerprint: str
     store: TemporalDatasetStore
     split_indices: DatasetSplitIndices
     scaler: ScalerStats
@@ -75,6 +81,9 @@ class PreparedInferenceDataset:
     n_history_context_blocks: int
     n_evaluation_blocks: int
     sample_count: int
+    feature_set_id: str
+    feature_names: tuple[str, ...]
+    feature_graph_fingerprint: str
     store: TemporalDatasetStore
     sample_indices: IntVector
     geometry: DatasetGeometry
@@ -103,10 +112,15 @@ def prepare_training_dataset(
     *,
     spec: TrainingSpec,
 ) -> PreparedTrainingDataset:
+    selection = FeatureSelection(
+        feature_set_id=spec.feature_set.id,
+        feature_names=tuple(spec.feature_set.outputs),
+    )
     geometry = derive_dataset_geometry(
         lookback_seconds=spec.lookback_seconds,
         max_delay_seconds=spec.max_delay_seconds,
         block_time_seconds=spec.chain.block_time_seconds,
+        feature_warmup_blocks=feature_warmup_blocks(selection.feature_names),
     )
     trimmed_blocks = _slice_frame(
         blocks.sort("block_number"),
@@ -116,7 +130,7 @@ def prepare_training_dataset(
             geometry=geometry,
         ),
     )
-    feature_table = build_feature_table(trimmed_blocks)
+    feature_table = build_feature_table(trimmed_blocks, selection=selection)
     store = build_temporal_store(
         feature_table,
         lookback_steps=geometry.lookback_steps,
@@ -142,6 +156,9 @@ def prepare_training_dataset(
         n_blocks_available=blocks.height,
         n_blocks_used=trimmed_blocks.height,
         sample_count=store.n_samples,
+        feature_set_id=feature_table.feature_set_id,
+        feature_names=feature_table.feature_names,
+        feature_graph_fingerprint=feature_table.feature_graph_fingerprint,
         store=scaled_store,
         split_indices=split_indices,
         scaler=scaler,
@@ -153,6 +170,7 @@ def prepare_inference_dataset(
     history_blocks: pl.DataFrame,
     evaluation_blocks: pl.DataFrame,
     *,
+    selection: FeatureSelection,
     geometry: DatasetGeometry,
     scaler: ScalerStats,
     window_start_timestamp: int,
@@ -163,7 +181,7 @@ def prepare_inference_dataset(
         history_context_slice(history_blocks.height, geometry=geometry),
     )
     combined_blocks = pl.concat([context_blocks, evaluation_blocks.sort("block_number")])
-    feature_table = build_feature_table(combined_blocks)
+    feature_table = build_feature_table(combined_blocks, selection=selection)
     store = build_temporal_store(
         feature_table,
         lookback_steps=geometry.lookback_steps,
@@ -185,6 +203,9 @@ def prepare_inference_dataset(
         n_history_context_blocks=context_blocks.height,
         n_evaluation_blocks=evaluation_blocks.height,
         sample_count=int(sample_indices.shape[0]),
+        feature_set_id=feature_table.feature_set_id,
+        feature_names=feature_table.feature_names,
+        feature_graph_fingerprint=feature_table.feature_graph_fingerprint,
         store=scaled_store,
         sample_indices=sample_indices,
         geometry=geometry,
@@ -211,10 +232,10 @@ def run_training(
     )
     build_task = reporter.start_task("build model")
     model = build_model(prepared.n_features, prepared.action_count, spec.model)
-    reporter.finish_task(build_task, message=spec.model.family.value)
+    reporter.finish_task(build_task, message=spec.model.id)
     training_result = train_model(
         model,
-        model_family=spec.model.family,
+        model_config=spec.model,
         store=prepared.store,
         train_sample_indices=prepared.split_indices.train,
         validation_sample_indices=prepared.split_indices.validation,

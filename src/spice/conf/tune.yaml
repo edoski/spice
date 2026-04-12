@@ -1,5 +1,7 @@
 defaults:
   - base
+  - experiment: icdcs_2025_11_09
+  - tuning_space: lstm_default
   - _self_
 
 task: tune

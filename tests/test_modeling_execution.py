@@ -5,7 +5,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from spice.core.config import CompileMode, ModelFamily, TrainingPrecision
+from spice.core.config import CompileMode, TrainingPrecision
 from spice.core.constants import ARTIFACT_MANIFEST_FILENAME, MODEL_STATE_FILENAME
 from spice.core.files import write_path_atomic
 from spice.modeling._runtime import (
@@ -21,7 +21,12 @@ from spice.modeling.pipeline import TrainingSpec
 from spice.modeling.reporting import TrainingRunReport
 from spice.modeling.torch_datasets import SequenceBatch
 from spice.workflows.train import run as run_train
-from tests.support import base_overrides, compose_experiment, make_history_rows, write_dataset_dir
+from tests.support import (
+    base_overrides,
+    compose_experiment,
+    make_history_rows,
+    write_dataset_dir,
+)
 
 
 def test_run_persisted_training_writes_canonical_training_outputs(tmp_path) -> None:
@@ -36,6 +41,7 @@ def test_run_persisted_training_writes_canonical_training_outputs(tmp_path) -> N
         spec=TrainingSpec(
             chain=config.chain,
             dataset_id=config.dataset.id,
+            feature_set=config.feature_set,
             model=config.model,
             max_delay_seconds=config.dataset.temporal.max_delay_seconds,
             lookback_seconds=config.dataset.temporal.lookback_seconds,
@@ -56,9 +62,12 @@ def test_run_persisted_training_writes_canonical_training_outputs(tmp_path) -> N
     assert artifact_dir / MODEL_STATE_FILENAME in persisted.artifact_paths
     assert report_path in persisted.artifact_paths
     assert loaded.manifest.dataset_id == config.dataset.id
-    assert loaded.manifest.model.family == config.model.family
+    assert loaded.manifest.model.id == config.model.id
     assert loaded.manifest.variant.value == "baseline"
     assert loaded.manifest.study is None
+    assert loaded.manifest.feature_set_id == config.feature_set.id
+    assert loaded.manifest.feature_names == config.feature_set.outputs
+    assert loaded.manifest.feature_graph_fingerprint
     assert report.dataset_id == config.dataset.id
     assert report.variant.value == "baseline"
     assert report.study is None
@@ -110,6 +119,7 @@ def test_sequence_loader_matches_manual_temporal_batch_construction(tmp_path) ->
         spec=TrainingSpec(
             chain=config.chain,
             dataset_id=config.dataset.id,
+            feature_set=config.feature_set,
             model=config.model,
             max_delay_seconds=config.dataset.temporal.max_delay_seconds,
             lookback_seconds=config.dataset.temporal.lookback_seconds,
@@ -157,43 +167,50 @@ def test_runtime_policy_prefers_fp32_for_lstm_on_mps_and_compile_for_mps(tmp_pat
     if not torch.backends.mps.is_available():
         pytest.skip("MPS is not available")
     config = compose_experiment("train", overrides=base_overrides(tmp_path))
+    transformer_config = compose_experiment(
+        "train",
+        overrides=base_overrides(tmp_path) + ["model=transformer"],
+    )
     config.training.device = "mps"
     config.training.precision = TrainingPrecision.AUTO
     config.training.compile = CompileMode.AUTO
+    transformer_config.training.device = "mps"
+    transformer_config.training.precision = TrainingPrecision.AUTO
+    transformer_config.training.compile = CompileMode.AUTO
     device = torch.device("mps")
 
     assert resolve_trainer_precision(
         config.training,
         device=device,
-        family=ModelFamily.LSTM,
+        model_config=config.model,
     ) == "32-true"
     transformer_precision = resolve_trainer_precision(
-        config.training,
+        transformer_config.training,
         device=device,
-        family=ModelFamily.TRANSFORMER,
+        model_config=transformer_config.model,
     )
     assert resolve_trainer_precision(
-        config.training,
+        transformer_config.training,
         device=device,
-        family=ModelFamily.TRANSFORMER,
+        model_config=transformer_config.model,
     ) == "bf16-mixed"
     assert resolve_compile_enabled(
         config.training,
         device=device,
         precision="32-true",
-        family=ModelFamily.LSTM,
+        model_config=config.model,
     ) is True
     assert resolve_compile_enabled(
-        config.training,
+        transformer_config.training,
         device=device,
         precision=transformer_precision,
-        family=ModelFamily.TRANSFORMER,
+        model_config=transformer_config.model,
     ) is False
     assert resolve_compile_enabled(
-        config.training,
+        transformer_config.training,
         device=device,
         precision="32-true",
-        family=ModelFamily.TRANSFORMER,
+        model_config=transformer_config.model,
     ) is False
 
 
@@ -204,7 +221,7 @@ def test_train_runs_with_compile_and_auto_precision_on_mps(tmp_path) -> None:
         "train",
         overrides=base_overrides(tmp_path)
         + [
-            "presets.model=lstm",
+            "model=lstm",
             "training.device=mps",
             "training.precision=auto",
             "training.compile=on",

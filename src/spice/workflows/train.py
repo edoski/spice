@@ -6,14 +6,11 @@ from ..core.config import ArtifactVariant, ExperimentConfig
 from ..core.console import Reporter
 from ..core.constants import ARTIFACT_MANIFEST_FILENAME, MODEL_STATE_FILENAME
 from ..core.files import remove_path
-from ..core.tracking import log_artifacts, log_epoch_history
 from ..modeling.execution import run_persisted_training
-from ._cli import load_cli_config
 from ._shared import (
     abort_cleanup,
     apply_study_best_params,
     build_training_spec,
-    epoch_metrics_to_dict,
     managed_workflow,
 )
 
@@ -35,7 +32,7 @@ def _format_train_summary_sections(
             [
                 ("id", report.dataset_id),
                 ("chain", _chain_label(report.chain)),
-                ("family", report.family),
+                ("model", report.model_id),
                 ("delay", f"{report.max_delay_seconds}s"),
             ],
         ),
@@ -100,7 +97,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         config,
         run_name=(
             "train-"
-            f"{config.chain.name.value}-{config.model.family.value}-"
+            f"{config.chain.name.value}-{config.model.id}-"
             f"{config.dataset.temporal.max_delay_seconds}s"
         ),
         reporter=reporter,
@@ -131,40 +128,3 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
             "training summary",
             _format_train_summary_sections(active_config, persisted),
         )
-        if session.tracking_enabled:
-            import mlflow
-
-            mlflow.log_metrics(
-                {
-                    "test_loss": persisted.report.test_metrics.total_loss,
-                    "test_accuracy": persisted.report.test_metrics.accuracy,
-                    "test_cost_over_optimum": persisted.report.test_metrics.mean_cost_over_optimum,
-                    "test_profit_over_baseline": (
-                        persisted.report.test_metrics.mean_profit_over_baseline
-                    ),
-                    "best_epoch": float(persisted.training_run.training_result.best_epoch),
-                }
-            )
-            log_epoch_history(
-                prefix="train",
-                metrics_history=[
-                    epoch_metrics_to_dict(item)
-                    for item in persisted.training_run.training_result.train_history
-                ],
-            )
-            log_epoch_history(
-                prefix="validation",
-                metrics_history=[
-                    epoch_metrics_to_dict(item)
-                    for item in persisted.training_run.training_result.validation_history
-                ],
-            )
-            log_artifacts(persisted.artifact_paths)
-
-
-def main(argv: list[str] | None = None) -> None:
-    run(load_cli_config("train", prog="spice-train", argv=argv))
-
-
-if __name__ == "__main__":
-    main()
