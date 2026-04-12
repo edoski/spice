@@ -10,7 +10,7 @@ from typing import Literal
 import torch
 from pydantic import BaseModel, ConfigDict, SerializeAsAny
 
-from ..core.config import ArtifactVariant, ChainConfig, ModelConfig, StudyConfig
+from ..config import ArtifactVariant, ChainSpec, ModelConfig, StudyConfig
 from ..core.constants import (
     ARTIFACT_MANIFEST_FILENAME,
     MODEL_STATE_FILENAME,
@@ -30,8 +30,9 @@ class ArtifactModel(BaseModel):
 
 class TrainingArtifactManifest(ArtifactModel):
     kind: Literal["training_artifact"] = "training_artifact"
-    chain: ChainConfig
+    chain: ChainSpec
     dataset_id: str
+    history_context_blocks: int
     variant: ArtifactVariant
     study: StudyConfig | None = None
     max_delay_seconds: int
@@ -93,6 +94,7 @@ def build_training_artifact_manifest(
     return TrainingArtifactManifest(
         chain=spec.chain,
         dataset_id=spec.dataset_id,
+        history_context_blocks=spec.history_context_blocks,
         variant=spec.variant,
         study=spec.study,
         max_delay_seconds=spec.max_delay_seconds,

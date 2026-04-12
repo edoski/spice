@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from ..core.config import CompileMode, ModelConfig, TrainingConfig, TrainingPrecision
+from ..config import CompileMode, ModelConfig, TrainingConfig, TrainingPrecision
 from ..data.datasets import TemporalDatasetStore
 from .registry import resolve_auto_compile, resolve_default_precision
 from .torch_datasets import SequenceBatchLoader

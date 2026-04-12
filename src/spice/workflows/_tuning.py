@@ -13,20 +13,21 @@ import optuna
 from optuna.trial import FrozenTrial, TrialState
 from pydantic import BaseModel, ConfigDict
 
-from ..core.config import (
+from ..config import (
     ChainName,
-    ExperimentConfig,
     StudyConfig,
     StudyDirection,
+    TuneConfig,
     TunedParameterSet,
     TuningObjective,
-    revalidate_config,
 )
 from ..modeling.registry import (
     apply_tuned_parameters as apply_model_tuned_parameters,
 )
 from ..modeling.registry import (
+    coerce_model_config,
     coerce_tuned_parameter_set,
+    coerce_tuning_space_config,
     flatten_tuned_model_params,
 )
 
@@ -138,9 +139,9 @@ def flatten_tuned_parameters(params: TunedParameterSet) -> dict[str, float | int
 
 
 def apply_tuned_parameters(
-    config: ExperimentConfig,
+    config: TuneConfig,
     params: TunedParameterSet,
-) -> ExperimentConfig:
+) -> TuneConfig:
     tuned_config = deepcopy(config)
     if params.training is not None:
         if params.training.learning_rate is not None:
@@ -148,7 +149,13 @@ def apply_tuned_parameters(
         if params.training.weight_decay is not None:
             tuned_config.training.weight_decay = params.training.weight_decay
     tuned_config.model = apply_model_tuned_parameters(tuned_config.model, params)
-    return revalidate_config(tuned_config)
+    payload = tuned_config.model_dump(mode="json")
+    payload["model"] = coerce_model_config(payload["model"])
+    payload["tuning_space"] = coerce_tuning_space_config(
+        payload["tuning_space"],
+        model_config=payload["model"],
+    )
+    return TuneConfig.model_validate(payload)
 
 
 def build_trial_record(trial: FrozenTrial) -> TuningTrialRecord:
@@ -186,7 +193,7 @@ def _artifact_dir_from_trial(trial: FrozenTrial) -> Path | None:
     return Path(value) if isinstance(value, str) else None
 
 
-def build_study_report(config: ExperimentConfig, study: optuna.Study) -> TuningStudyReport:
+def build_study_report(config: TuneConfig, study: optuna.Study) -> TuningStudyReport:
     completed_trials = [trial for trial in study.trials if trial.state == TrialState.COMPLETE]
     pruned_trials = [trial for trial in study.trials if trial.state == TrialState.PRUNED]
     failed_trials = [trial for trial in study.trials if trial.state == TrialState.FAIL]
@@ -217,7 +224,7 @@ def build_study_report(config: ExperimentConfig, study: optuna.Study) -> TuningS
 
 
 def build_best_params_report(
-    config: ExperimentConfig,
+    config: TuneConfig,
     study: optuna.Study,
 ) -> TuningBestParamsReport:
     completed_trials = [trial for trial in study.trials if trial.state == TrialState.COMPLETE]

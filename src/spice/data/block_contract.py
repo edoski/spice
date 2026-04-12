@@ -10,7 +10,7 @@ import pandera.polars as pa
 import polars as pl
 from polars.datatypes.classes import DataTypeClass
 
-from ..core.config import ChainConfig
+from ..config import ChainSpec
 
 RpcBlock = Mapping[str, object]
 
@@ -92,7 +92,7 @@ def _validate_contract() -> None:
         raise RuntimeError(f"Duplicate canonical block fields are not allowed: {field_names}")
 
 
-def build_canonical_block_row(block: RpcBlock, chain: ChainConfig) -> CanonicalBlockRow:
+def build_canonical_block_row(block: RpcBlock, chain: ChainSpec) -> CanonicalBlockRow:
     try:
         return CanonicalBlockRow(
             block_number=_as_int(block["number"]),

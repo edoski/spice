@@ -1,32 +1,19 @@
-"""Dataset geometry and array-backed temporal stores."""
+"""Array-backed temporal stores and dataset slicing helpers."""
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core.config import SplitConfig
+from ..config import SplitConfig
 from ..features import FeatureTable
+from ..planning.geometry import DatasetGeometry
 
 FloatMatrix = NDArray[np.float32]
 FloatVector = NDArray[np.float32]
 IntVector = NDArray[np.int64]
-
-
-@dataclass(slots=True)
-class DatasetGeometry:
-    lookback_steps: int
-    max_extra_wait_steps: int
-    action_count: int
-    context_block_count: int
-
-    def required_block_count(self, sample_count: int) -> int:
-        if sample_count <= 0:
-            raise ValueError("sample_count must be positive")
-        return self.context_block_count + sample_count + self.action_count
 
 
 @dataclass(slots=True)
@@ -65,40 +52,6 @@ class TemporalDatasetStore:
         return int(self.action_log_fees.shape[1])
 
 
-def lookback_steps_for_seconds(lookback_seconds: int, block_time_seconds: float) -> int:
-    if block_time_seconds <= 0:
-        raise ValueError("block_time_seconds must be positive")
-    return max(1, round(lookback_seconds / block_time_seconds))
-
-
-def max_extra_wait_steps_for_delay(max_delay_seconds: int, block_time_seconds: float) -> int:
-    if block_time_seconds <= 0:
-        raise ValueError("block_time_seconds must be positive")
-    return max(1, math.floor(max_delay_seconds / block_time_seconds))
-
-
-def action_count_for_delay(max_delay_seconds: int, block_time_seconds: float) -> int:
-    return max_extra_wait_steps_for_delay(max_delay_seconds, block_time_seconds) + 1
-
-
-def derive_dataset_geometry(
-    *,
-    lookback_seconds: int,
-    max_delay_seconds: int,
-    block_time_seconds: float,
-    feature_warmup_blocks: int,
-) -> DatasetGeometry:
-    lookback_steps = lookback_steps_for_seconds(lookback_seconds, block_time_seconds)
-    max_extra_wait_steps = max_extra_wait_steps_for_delay(max_delay_seconds, block_time_seconds)
-    action_count = action_count_for_delay(max_delay_seconds, block_time_seconds)
-    return DatasetGeometry(
-        lookback_steps=lookback_steps,
-        max_extra_wait_steps=max_extra_wait_steps,
-        action_count=action_count,
-        context_block_count=feature_warmup_blocks + lookback_steps - 1,
-    )
-
-
 def trim_history_for_sample_count(
     n_blocks: int,
     *,
@@ -115,12 +68,12 @@ def trim_history_for_sample_count(
 
 
 def history_context_slice(n_blocks: int, *, geometry: DatasetGeometry) -> slice:
-    if n_blocks < geometry.context_block_count:
+    if n_blocks < geometry.history_context_blocks:
         raise ValueError(
             "History dataset is too short to provide evaluation context; "
-            f"need at least {geometry.context_block_count} blocks, got {n_blocks}"
+            f"need at least {geometry.history_context_blocks} blocks, got {n_blocks}"
         )
-    return slice(n_blocks - geometry.context_block_count, n_blocks)
+    return slice(n_blocks - geometry.history_context_blocks, n_blocks)
 
 
 def build_temporal_store(

@@ -1,0 +1,15 @@
+dataset: icdcs_2026
+chain: ethereum
+provider: publicnode
+model: lstm
+feature_set: icdcs_2026
+acquisition: default
+training: default
+split: default
+simulation: default
+tuning: default
+tuning_space: lstm_default
+study:
+  id: default
+artifact:
+  variant: baseline

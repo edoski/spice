@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn.functional as F
 
-from ..core.config import TrainingConfig
+from ..config import TrainingConfig
 from .models import ModelOutputs
 from .torch_datasets import SequenceBatch
 

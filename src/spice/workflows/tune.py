@@ -7,7 +7,7 @@ import shutil
 import optuna
 from optuna.trial import FrozenTrial, TrialState
 
-from ..core.config import ExperimentConfig
+from ..config import TuneConfig
 from ..core.console import ConsoleRuntime, Reporter
 from ..core.files import remove_path
 from ..core.json import write_json
@@ -51,7 +51,7 @@ def _trial_status_message(trial: FrozenTrial) -> str:
 
 
 def _objective(
-    base_config: ExperimentConfig,
+    base_config: TuneConfig,
     trial: optuna.Trial,
     *,
     runtime: ConsoleRuntime,
@@ -91,7 +91,7 @@ def _objective(
         return metric_value
 
 
-def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
+def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
     with managed_workflow(
         config,
         run_name=(
@@ -101,14 +101,18 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         ),
         reporter=reporter,
     ) as session:
+        artifact_root = config.paths.artifact_root
+        tuning_root = config.paths.tuning_root
+        best_params_path = config.paths.tuning_best_params_path
+        if artifact_root is None or tuning_root is None or best_params_path is None:
+            raise ValueError("tuning workflow requires artifact output paths")
         with abort_cleanup(
             session.reporter,
             label="tune",
-            cleanup=lambda: remove_path(config.paths.artifact_root),
+            cleanup=lambda: remove_path(artifact_root),
         ):
-            if config.paths.artifact_root.exists():
-                shutil.rmtree(config.paths.artifact_root)
-            tuning_root = config.paths.tuning_root
+            if artifact_root.exists():
+                shutil.rmtree(artifact_root)
             study_task = session.reporter.start_task(
                 "tune study",
                 total=config.tuning.trial_count,
@@ -146,7 +150,6 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                 )
             study_path = tuning_root / "study.json"
             trials_path = tuning_root / "trials.json"
-            best_params_path = config.paths.tuning_best_params_path
             study_report = build_study_report(config, study)
             trial_records = [build_trial_record(trial) for trial in study.trials]
             write_task = session.reporter.start_task("write tuning summary")

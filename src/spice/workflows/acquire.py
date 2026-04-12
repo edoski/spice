@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from ..acquisition.datasets import (
+    DatasetBuildOutcome,
     build_history_plan,
     ensure_evaluation_dataset,
     ensure_history_dataset,
@@ -19,12 +20,11 @@ from ..acquisition.metadata import (
     provider_metadata,
 )
 from ..acquisition.rpc import RpcController, Web3BlockClient, evaluation_range
-from ..core.config import ExperimentConfig
+from ..config import AcquireConfig
 from ..core.console import Reporter
-from ..data.datasets import derive_dataset_geometry
-from ..features import feature_warmup_blocks
 from ..core.files import promote_paths_atomic
 from ..core.json import write_json
+from ..planning.geometry import derive_dataset_geometry
 from ._shared import managed_workflow
 
 
@@ -78,25 +78,28 @@ def _planned_window_rows(
     ]
 
 
+def _format_build_outcome(outcome: DatasetBuildOutcome) -> str:
+    return outcome.value
+
+
 def _final_window_rows(
     *,
+    outcome: DatasetBuildOutcome,
     row_count: int,
     file_count: int,
-    reused: bool,
 ) -> list[tuple[str, str]]:
-    result = _format_count(row_count, "block")
-    if reused:
-        result = f"{result} reused"
-    else:
-        result = f"{result} in {_format_count(file_count, 'file')}"
-    return [("result", result)]
+    return [
+        ("status", _format_build_outcome(outcome)),
+        ("blocks", _format_count(row_count, "block")),
+        ("files", _format_count(file_count, "file")),
+    ]
 
 
-def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
+def run(config: AcquireConfig, *, reporter: Reporter | None = None) -> None:
     asyncio.run(_run_async(config, reporter=reporter))
 
 
-async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
+async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None) -> None:
     history_dir = config.paths.history_dir
     evaluation_dir = config.paths.evaluation_dir
     metadata_path = config.paths.dataset_metadata_path
@@ -106,7 +109,7 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
         lookback_seconds=config.dataset.temporal.lookback_seconds,
         max_delay_seconds=config.dataset.temporal.max_delay_seconds,
         block_time_seconds=config.chain.block_time_seconds,
-        feature_warmup_blocks=feature_warmup_blocks(tuple(config.feature_set.outputs)),
+        history_context_blocks=config.dataset.history_context_blocks,
     )
     required_history_blocks = geometry.required_block_count(config.effective_history_sample_budget)
     evaluation_window = evaluation_range(
@@ -141,7 +144,7 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
                             [
                                 ("id", config.dataset.id),
                                 ("chain", chain_label),
-                                ("evaluation date", str(config.evaluation.date)),
+                                ("evaluation date", str(config.dataset.evaluation_date)),
                                 (
                                     "required history",
                                     _format_count(required_history_blocks, "block"),
@@ -259,17 +262,17 @@ async def _run_async(config: ExperimentConfig, *, reporter: Reporter | None = No
                     (
                         "history",
                         _final_window_rows(
+                            outcome=history_result.outcome,
                             row_count=history_result.validation.row_count,
                             file_count=history_result.file_count,
-                            reused=history_result.reused,
                         ),
                     ),
                     (
                         "evaluation",
                         _final_window_rows(
+                            outcome=evaluation_result.outcome,
                             row_count=evaluation_result.validation.row_count,
                             file_count=evaluation_result.file_count,
-                            reused=evaluation_result.reused,
                         ),
                     ),
                 ],

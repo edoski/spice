@@ -4,8 +4,8 @@ SPICE is a temporal fee-timing pipeline for EVM chains. It acquires canonical bl
 
 ## Stack
 
-- `Hydra` for config composition
 - `Typer` for the root CLI
+- `Pydantic` + `PyYAML` for explicit config loading
 - `sf-hamilton` for feature/dataflow execution
 - `Lightning` + `PyTorch` for training
 - `Optuna` for tuning
@@ -25,37 +25,50 @@ Provider credentials:
 
 ## CLI
 
-Everything runs through one command:
+Everything runs through one command with explicit flags:
 
 ```bash
-.venv/bin/spice acquire experiment=icdcs_2025_11_09
-.venv/bin/spice train experiment=icdcs_2025_11_09 model=lstm feature_set=icdcs_2026
-.venv/bin/spice tune experiment=icdcs_2025_11_09 model=lstm feature_set=icdcs_2026 tuning.trial_count=20
-.venv/bin/spice simulate experiment=icdcs_2025_11_09 artifact.variant=baseline
+.venv/bin/spice acquire --preset icdcs_2026
+.venv/bin/spice acquire --preset icdcs_2026 --chain avalanche --provider publicnode
+.venv/bin/spice train --preset icdcs_2026 --model lstm --feature-set icdcs_2026
+.venv/bin/spice tune --preset icdcs_2026 --model lstm --feature-set icdcs_2026 --trial-count 20
+.venv/bin/spice simulate --preset icdcs_2026 --variant baseline
 ```
 
-Typer handles subcommands. Hydra owns all config overrides.
+Override files stay plain YAML:
+
+```bash
+.venv/bin/spice train --preset icdcs_2026 --config local/train.yaml
+```
 
 ## Config
 
-Saved experiment specs live in [src/spice/conf/experiment](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf/experiment).
+Config loading lives in [src/spice/config](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/config).
 
-Named feature sets live in [src/spice/conf/feature_set](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf/feature_set).
+Named specs live under [src/spice/conf](/Users/edo/Documents/Obsidian/the-vault/university/Thesis/spice/src/spice/conf):
+
+- `preset/`: convenience bundles of named selectors
+- `dataset/`: dataset contracts
+- `chain/`, `provider/`: chain and RPC specs
+- `model/`, `feature_set/`: modeling choices
+- `training/`, `split/`, `simulation/`, `acquisition/`, `tuning/`, `tuning_space/`: workflow profiles
 
 Rules:
 
-- YAML selects experiments and feature sets.
-- Python defines feature logic.
-- `train` and `tune` choose `feature_set=<name>`.
-- `simulate` rebuilds the feature graph from the trained artifact and fails on mismatch.
+- Presets are optional. They are not the canonical schema.
+- `dataset.history_context_blocks` is the dataset contract boundary for feature warmup + lookback.
+- `acquire` uses the dataset contract to fetch enough raw blocks.
+- `train` and `simulate` validate that the selected feature graph fits inside that contract.
 
 ## Output Layout
 
-- history blocks: `artifacts/datasets/<chain>/<dataset_id>/history/...`
-- evaluation blocks: `artifacts/datasets/<chain>/<dataset_id>/evaluation/...`
-- dataset metadata: `artifacts/datasets/<chain>/<dataset_id>/.spice/metadata.json`
-- model artifacts: `artifacts/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/...`
-- tuning outputs: `artifacts/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/tuned/<study_id>/tuning/...`
+- history blocks: `outputs/datasets/<chain>/<dataset_id>/history/...`
+- evaluation blocks: `outputs/datasets/<chain>/<dataset_id>/evaluation/...`
+- dataset metadata: `outputs/datasets/<chain>/<dataset_id>/.spice/metadata.json`
+- model artifacts: `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/<variant>/<study_id>/...`
+- tuning outputs: `outputs/models/<chain>/<dataset_id>/<feature_set>/<family>/<delay>s/tuned/<study_id>/tuning/...`
+
+`outputs/` is the default root. Override it only when you want isolation somewhere else.
 
 ## Verification
 

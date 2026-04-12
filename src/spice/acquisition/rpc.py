@@ -17,7 +17,7 @@ import polars as pl
 from web3 import AsyncWeb3
 from web3.exceptions import Web3RPCError
 
-from ..core.config import AcquisitionConfig, ChainConfig, ProviderConfig
+from ..config import AcquisitionConfig, ChainSpec, ProviderSpec
 from ..core.console import NullReporter, Reporter
 from ..data.block_contract import (
     CanonicalBlockRow,
@@ -230,8 +230,8 @@ class RpcController:
 
 @dataclass(slots=True)
 class Web3BlockClient:
-    provider: ProviderConfig
-    chain: ChainConfig
+    provider: ProviderSpec
+    chain: ChainSpec
     _web3: AsyncWeb3 = field(init=False, repr=False)
 
     def __post_init__(self) -> None:

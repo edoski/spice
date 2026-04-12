@@ -9,7 +9,7 @@ from typing import Any, Generic, TypeVar, cast
 import optuna
 import torch
 
-from ..core.config import (
+from ..config.models import (
     ModelConfig,
     ModelTuningSpaceConfig,
     TrainingPrecision,

@@ -1,1 +1,1 @@
-"""Hydra configuration package."""
+"""Named YAML specs for the explicit config loader."""

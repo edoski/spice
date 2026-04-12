@@ -12,7 +12,7 @@ import torch
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from numpy.typing import NDArray
 
-from ..core.config import ModelConfig, TrainingConfig
+from ..config import ModelConfig, TrainingConfig
 from ..core.console import ConsoleRuntime, NullReporter, Reporter
 from ..data.datasets import TemporalDatasetStore
 from ._runtime import (

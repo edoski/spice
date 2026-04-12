@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 import polars as pl
 
-from ..core.config import ExperimentConfig
+from ..config import AcquireConfig
 from ..core.console import Reporter
 from ..data.io import iter_block_files, load_block_frame, write_block_file
 from ..data.validation import (
@@ -27,6 +28,13 @@ class ExistingDatasetState:
     file_count: int
 
 
+class DatasetBuildOutcome(StrEnum):
+    CREATED = "created"
+    REUSED = "reused"
+    EXTENDED = "extended"
+    REBUILT = "rebuilt"
+
+
 @dataclass(slots=True)
 class DatasetBuildResult:
     path: Path
@@ -34,10 +42,7 @@ class DatasetBuildResult:
     file_count: int
     promote_dir: Path | None
     pulled_blocks: bool
-
-    @property
-    def reused(self) -> bool:
-        return self.promote_dir is None
+    outcome: DatasetBuildOutcome
 
 
 def validate_block_dataset(
@@ -62,7 +67,7 @@ def validate_block_dataset(
 
 async def build_history_plan(
     *,
-    config: ExperimentConfig,
+    config: AcquireConfig,
     block_client: Web3BlockClient,
     required_history_blocks: int,
 ) -> BlockPullPlan:
@@ -245,7 +250,7 @@ def _partial_plan(
 
 async def ensure_history_dataset(
     *,
-    config: ExperimentConfig,
+    config: AcquireConfig,
     block_client: Web3BlockClient,
     output_dir: Path,
     working_dir: Path,
@@ -263,7 +268,6 @@ async def ensure_history_dataset(
         if existing_end == history_plan.block_range.end:
             existing_start = _block_range_start(existing.validation)
             if existing_start <= history_plan.block_range.start:
-                reporter.log(f"reusing canonical dataset: {output_dir}")
                 _validate_history_result(
                     existing.validation,
                     history_plan=history_plan,
@@ -275,9 +279,9 @@ async def ensure_history_dataset(
                     file_count=existing.file_count,
                     promote_dir=None,
                     pulled_blocks=False,
+                    outcome=DatasetBuildOutcome.REUSED,
                 )
 
-            reporter.log(f"extending canonical dataset: {output_dir}")
             prefix_plan = _partial_plan(
                 block_client,
                 start_block=history_plan.block_range.start,
@@ -317,10 +321,8 @@ async def ensure_history_dataset(
                 file_count=file_count,
                 promote_dir=working_dir / "history",
                 pulled_blocks=True,
+                outcome=DatasetBuildOutcome.EXTENDED,
             )
-
-    if existing is not None:
-        reporter.log(f"rebuilding canonical dataset: {output_dir}", level="warning")
 
     pulled_frame = await _pull_plan_to_frame(
         block_client=block_client,
@@ -345,12 +347,17 @@ async def ensure_history_dataset(
         file_count=len(iter_block_files(working_dir / "history")),
         promote_dir=working_dir / "history",
         pulled_blocks=pulled_frame.height > 0,
+        outcome=(
+            DatasetBuildOutcome.REBUILT
+            if existing is not None
+            else DatasetBuildOutcome.CREATED
+        ),
     )
 
 
 async def ensure_evaluation_dataset(
     *,
-    config: ExperimentConfig,
+    config: AcquireConfig,
     block_client: Web3BlockClient,
     output_dir: Path,
     working_dir: Path,
@@ -369,7 +376,6 @@ async def ensure_evaluation_dataset(
         existing_start = _block_range_start(existing.validation)
         existing_end = _block_range_end(existing.validation)
         if existing_start == target_start and existing_end == target_end:
-            reporter.log(f"reusing canonical dataset: {output_dir}")
             validation = existing.validation.model_copy(deep=True)
             _validate_evaluation_result(
                 validation,
@@ -383,12 +389,12 @@ async def ensure_evaluation_dataset(
                 file_count=existing.file_count,
                 promote_dir=None,
                 pulled_blocks=False,
+                outcome=DatasetBuildOutcome.REUSED,
             )
 
         overlap_start = max(existing_start, target_start)
         overlap_end = min(existing_end, target_end)
         if overlap_end > overlap_start:
-            reporter.log(f"reusing overlapping canonical dataset: {output_dir}")
             frames: list[pl.DataFrame] = []
             pulled_blocks = False
 
@@ -462,10 +468,8 @@ async def ensure_evaluation_dataset(
                 file_count=file_count,
                 promote_dir=working_dir / "evaluation",
                 pulled_blocks=pulled_blocks,
+                outcome=DatasetBuildOutcome.EXTENDED,
             )
-
-    if existing is not None:
-        reporter.log(f"rebuilding canonical dataset: {output_dir}", level="warning")
 
     await _pull_plan_to_frame(
         block_client=block_client,
@@ -491,4 +495,9 @@ async def ensure_evaluation_dataset(
         file_count=len(iter_block_files(working_dir / "evaluation")),
         promote_dir=working_dir / "evaluation",
         pulled_blocks=True,
+        outcome=(
+            DatasetBuildOutcome.REBUILT
+            if existing is not None
+            else DatasetBuildOutcome.CREATED
+        ),
     )

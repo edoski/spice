@@ -8,7 +8,7 @@ import optuna
 import torch
 from pydantic import Field, field_validator, model_validator
 
-from ...core.config import (
+from ...config.models import (
     ModelConfig,
     ModelTuningSpaceConfig,
     TrainingPrecision,

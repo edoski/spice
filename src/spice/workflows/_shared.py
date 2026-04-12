@@ -7,14 +7,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..core.config import ArtifactVariant, ExperimentConfig, WorkflowTask
+from ..config import ArtifactVariant, SimulateConfig, TrainConfig, TuneConfig, WorkflowTask
 from ..core.console import ConsoleRuntime, Reporter, create_console_runtime
 from ..modeling.evaluation import EpochMetrics
 from ..modeling.pipeline import TrainingSpec
 from ._tuning import apply_tuned_parameters, load_tuning_best_params_report
 
 
-def build_training_spec(config: ExperimentConfig) -> TrainingSpec:
+def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
     variant = selected_artifact_variant(config)
     return TrainingSpec(
         chain=config.chain,
@@ -25,6 +25,7 @@ def build_training_spec(config: ExperimentConfig) -> TrainingSpec:
         study=config.study if variant is ArtifactVariant.TUNED else None,
         max_delay_seconds=config.dataset.temporal.max_delay_seconds,
         lookback_seconds=config.dataset.temporal.lookback_seconds,
+        history_context_blocks=config.dataset.history_context_blocks,
         sample_count=config.dataset.sampling.sample_count,
         split=config.split,
         training=config.training,
@@ -46,7 +47,7 @@ class WorkflowSession:
     reporter: Reporter
 
 
-def selected_artifact_variant(config: ExperimentConfig) -> ArtifactVariant:
+def selected_artifact_variant(config: TrainConfig | TuneConfig | SimulateConfig) -> ArtifactVariant:
     if config.task is WorkflowTask.TUNE:
         return ArtifactVariant.TUNED
     return config.artifact.variant
@@ -69,7 +70,7 @@ def abort_cleanup(
 
 @contextmanager
 def managed_workflow(
-    config: ExperimentConfig,
+    config: object,
     *,
     run_name: str,
     runtime: ConsoleRuntime | None = None,
@@ -91,12 +92,16 @@ def managed_workflow(
             active_runtime.close()
 
 
-def trial_artifact_dir(config: ExperimentConfig, trial_number: int) -> Path:
+def trial_artifact_dir(config: TuneConfig, trial_number: int) -> Path:
+    if config.paths.tuning_root is None:
+        raise ValueError("tuning_root is required for tune")
     return config.paths.tuning_root / "trials" / f"trial-{trial_number:03d}"
 
 
-def apply_study_best_params(config: ExperimentConfig) -> ExperimentConfig:
+def apply_study_best_params(config: TrainConfig) -> TrainConfig:
     path = config.paths.tuning_best_params_path
+    if path is None:
+        raise ValueError("tuning_best_params_path is required for tuned artifacts")
     try:
         report = load_tuning_best_params_report(path)
     except OSError as exc:

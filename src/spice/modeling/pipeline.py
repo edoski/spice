@@ -7,9 +7,9 @@ from pathlib import Path
 
 import polars as pl
 
-from ..core.config import (
+from ..config import (
     ArtifactVariant,
-    ChainConfig,
+    ChainSpec,
     FeatureSetConfig,
     ModelConfig,
     SplitConfig,
@@ -24,7 +24,6 @@ from ..data.datasets import (
     TemporalDatasetStore,
     build_temporal_store,
     chronological_split_indices,
-    derive_dataset_geometry,
     filter_sample_indices_by_timestamp_window,
     history_context_slice,
     trim_history_for_sample_count,
@@ -32,6 +31,7 @@ from ..data.datasets import (
 from ..data.io import load_block_frame
 from ..data.normalization import ScalerStats, fit_standard_scaler, transform_feature_matrix
 from ..features import FeatureSelection, build_feature_table, feature_warmup_blocks
+from ..planning.geometry import derive_dataset_geometry, minimum_history_context_blocks
 from .evaluation import EpochMetrics
 from .models import TemporalModel
 from .registry import build_model
@@ -41,12 +41,13 @@ from .training import TrainingResult, evaluate_model, train_model
 
 @dataclass(slots=True)
 class TrainingSpec:
-    chain: ChainConfig
+    chain: ChainSpec
     dataset_id: str
     feature_set: FeatureSetConfig
     model: ModelConfig
     max_delay_seconds: int
     lookback_seconds: int
+    history_context_blocks: int
     sample_count: int
     split: SplitConfig
     training: TrainingConfig
@@ -116,11 +117,21 @@ def prepare_training_dataset(
         feature_set_id=spec.feature_set.id,
         feature_names=tuple(spec.feature_set.outputs),
     )
+    minimum_context = minimum_history_context_blocks(
+        lookback_seconds=spec.lookback_seconds,
+        block_time_seconds=spec.chain.block_time_seconds,
+        feature_warmup_blocks=feature_warmup_blocks(selection.feature_names),
+    )
+    if minimum_context > spec.history_context_blocks:
+        raise ValueError(
+            "Configured dataset.history_context_blocks is too small for the selected feature set: "
+            f"need at least {minimum_context}, got {spec.history_context_blocks}"
+        )
     geometry = derive_dataset_geometry(
         lookback_seconds=spec.lookback_seconds,
         max_delay_seconds=spec.max_delay_seconds,
         block_time_seconds=spec.chain.block_time_seconds,
-        feature_warmup_blocks=feature_warmup_blocks(selection.feature_names),
+        history_context_blocks=minimum_context,
     )
     trimmed_blocks = _slice_frame(
         blocks.sort("block_number"),

@@ -5,25 +5,21 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 import polars as pl
+import yaml
 
-from spice.core.config import (
-    ChainConfig,
-    ChainName,
-    CompileMode,
-    ExperimentConfig,
-    FeatureSetConfig,
-    ModelConfig,
-    ProviderConfig,
-    RpcProviderName,
-    TrainingConfig,
-    TrainingPrecision,
-    TuningSpaceConfig,
-    load_hydra_config,
+from spice.config import (
+    AcquireConfig,
+    SimulateConfig,
+    TrainConfig,
+    TuneConfig,
+    load_acquire_config,
+    load_simulate_config,
+    load_train_config,
+    load_tune_config,
 )
-from spice.data.datasets import derive_dataset_geometry
-from spice.features import feature_warmup_blocks
-from spice.modeling.registry import coerce_model_config
+from spice.planning.geometry import derive_dataset_geometry
 
+PRESET = "icdcs_2026"
 TEST_EVALUATION_DATE = date(2025, 11, 9)
 TEST_WINDOW_START_TIMESTAMP = int(
     datetime.combine(TEST_EVALUATION_DATE, time.min, tzinfo=UTC).timestamp()
@@ -32,129 +28,209 @@ TEST_WINDOW_END_TIMESTAMP = int(
     datetime.combine(TEST_EVALUATION_DATE + timedelta(days=1), time.min, tzinfo=UTC).timestamp()
 )
 
-MODEL_CONFIG_PAYLOADS: dict[str, dict[str, int | float | str]] = {
-    "lstm": {
-        "id": "lstm",
-        "input_projection_dim": 128,
-        "hidden_size": 128,
-        "num_layers": 2,
-        "dropout": 0.1,
-        "head_hidden_dim": 64,
-    },
-    "transformer": {
-        "id": "transformer",
-        "dropout": 0.1,
-        "d_model": 128,
-        "nhead": 4,
-        "transformer_layers": 2,
-        "feedforward_dim": 512,
-        "head_hidden_dim": 64,
-    },
-    "transformer_lstm": {
-        "id": "transformer_lstm",
-        "hidden_size": 128,
-        "num_layers": 2,
-        "dropout": 0.1,
-        "d_model": 128,
-        "nhead": 4,
-        "transformer_layers": 2,
-        "head_hidden_dim": 64,
-    },
-}
+
+def deep_merge(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
+    merged = dict(base)
+    for key, value in override.items():
+        existing = merged.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            merged[key] = deep_merge(existing, value)
+        else:
+            merged[key] = value
+    return merged
 
 
-def compose_experiment(config_name: str, *, overrides: list[str] | None = None) -> ExperimentConfig:
-    return load_hydra_config(config_name, overrides=overrides)
+def write_override(
+    tmp_path: Path,
+    payload: dict[str, object],
+    *,
+    name: str = "override.yaml",
+) -> Path:
+    path = tmp_path / name
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return path
 
 
-def base_overrides(tmp_path: Path) -> list[str]:
-    return [
-        f"runtime.output_root={tmp_path / 'artifacts'}",
-        "training.device=cpu",
-        "training.max_epochs=1",
-        "training.batch_size=8",
-        "training.early_stopping.patience=1",
-        "training.log_every_n_steps=1",
-        "simulation.window_seconds=600",
-        "simulation.arrival_rate_per_second=0.02",
-        "simulation.repetitions=3",
-        "acquisition.rpc_batch_size=256",
-        f"evaluation.date={TEST_EVALUATION_DATE}",
-        "dataset.temporal.lookback_seconds=120",
-        "dataset.sampling.sample_count=48",
-        "acquisition.history_sample_budget=48",
-    ]
+def model_workflow_override(
+    *,
+    sample_count: int = 24,
+    lookback_seconds: int = 120,
+    max_delay_seconds: int = 36,
+    history_context_blocks: int = 220,
+) -> dict[str, object]:
+    return {
+        "dataset": {
+            "evaluation_date": TEST_EVALUATION_DATE.isoformat(),
+            "temporal": {
+                "lookback_seconds": lookback_seconds,
+                "max_delay_seconds": max_delay_seconds,
+            },
+            "sampling": {
+                "sample_count": sample_count,
+            },
+            "history_context_blocks": history_context_blocks,
+        },
+        "training": {
+            "device": "cpu",
+            "batch_size": 8,
+            "max_epochs": 1,
+            "log_every_n_steps": 1,
+            "precision": "fp32",
+            "compile": "off",
+            "early_stopping": {
+                "patience": 1,
+                "min_delta": 0.0,
+            },
+        },
+        "simulation": {
+            "window_seconds": 600,
+            "arrival_rate_per_second": 0.02,
+            "repetitions": 3,
+            "seed": 2026,
+        },
+        "tuning": {
+            "trial_count": 2,
+            "enable_pruning": False,
+        },
+    }
 
 
-def compute_required_history_blocks(config: ExperimentConfig) -> int:
+def tune_override() -> dict[str, object]:
+    return {
+        "tuning_space": {
+            "training": {
+                "learning_rate": [0.0001, 0.0003],
+                "weight_decay": [0.0, 0.01],
+            },
+            "model": {
+                "id": "lstm",
+                "hidden_size": [64, 128],
+                "dropout": [0.0, 0.1],
+            },
+        }
+    }
+
+
+def acquire_override(
+    *,
+    sample_count: int = 4,
+    lookback_seconds: int = 24,
+    max_delay_seconds: int = 12,
+    history_context_blocks: int = 8,
+) -> dict[str, object]:
+    return {
+        "dataset": {
+            "evaluation_date": TEST_EVALUATION_DATE.isoformat(),
+            "temporal": {
+                "lookback_seconds": lookback_seconds,
+                "max_delay_seconds": max_delay_seconds,
+            },
+            "sampling": {
+                "sample_count": sample_count,
+            },
+            "history_context_blocks": history_context_blocks,
+        },
+        "acquisition": {
+            "history_sample_budget": sample_count,
+            "chunk_size": 64,
+            "rpc_batch_size": 16,
+            "rpc_concurrency": 8,
+            "rpc_min_batch_size": 8,
+            "rpc_concurrency_rungs": [8],
+        },
+    }
+
+
+def load_test_acquire_config(
+    tmp_path: Path,
+    *,
+    override: dict[str, object] | None = None,
+    chain: str | None = None,
+    provider: str | None = None,
+) -> AcquireConfig:
+    config_path = (
+        None
+        if override is None
+        else write_override(tmp_path, override, name="acquire.yaml")
+    )
+    return load_acquire_config(
+        preset=PRESET,
+        config_path=config_path,
+        chain=chain,
+        provider=provider,
+        storage_root=tmp_path / "outputs",
+    )
+
+
+def load_test_train_config(
+    tmp_path: Path,
+    *,
+    override: dict[str, object] | None = None,
+) -> TrainConfig:
+    config_path = (
+        None
+        if override is None
+        else write_override(tmp_path, override, name="train.yaml")
+    )
+    return load_train_config(
+        preset=PRESET,
+        config_path=config_path,
+        storage_root=tmp_path / "outputs",
+    )
+
+
+def load_test_tune_config(
+    tmp_path: Path,
+    *,
+    override: dict[str, object] | None = None,
+) -> TuneConfig:
+    config_path = (
+        None
+        if override is None
+        else write_override(tmp_path, override, name="tune.yaml")
+    )
+    return load_tune_config(
+        preset=PRESET,
+        config_path=config_path,
+        storage_root=tmp_path / "outputs",
+    )
+
+
+def load_test_simulate_config(
+    tmp_path: Path,
+    *,
+    override: dict[str, object] | None = None,
+) -> SimulateConfig:
+    config_path = (
+        None
+        if override is None
+        else write_override(tmp_path, override, name="simulate.yaml")
+    )
+    return load_simulate_config(
+        preset=PRESET,
+        config_path=config_path,
+        storage_root=tmp_path / "outputs",
+    )
+
+
+def required_history_blocks(config: AcquireConfig) -> int:
     geometry = derive_dataset_geometry(
         lookback_seconds=config.dataset.temporal.lookback_seconds,
         max_delay_seconds=config.dataset.temporal.max_delay_seconds,
         block_time_seconds=config.chain.block_time_seconds,
-        feature_warmup_blocks=feature_warmup_blocks(tuple(config.feature_set.outputs)),
+        history_context_blocks=config.dataset.history_context_blocks,
     )
     return geometry.required_block_count(config.effective_history_sample_budget)
 
 
-def make_feature_set_config() -> FeatureSetConfig:
-    return compose_experiment("train").feature_set
-
-
-def make_tuning_space_config() -> TuningSpaceConfig | None:
-    return compose_experiment("tune").tuning_space
-
-
-def make_chain_config(*, uses_poa_extra_data: bool = False) -> ChainConfig:
-    return ChainConfig(
-        name=ChainName.ETHEREUM,
-        chain_id=1,
-        block_time_seconds=12.0,
-        uses_poa_extra_data=uses_poa_extra_data,
+def required_dataset_blocks(config: TrainConfig | TuneConfig | SimulateConfig) -> int:
+    geometry = derive_dataset_geometry(
+        lookback_seconds=config.dataset.temporal.lookback_seconds,
+        max_delay_seconds=config.dataset.temporal.max_delay_seconds,
+        block_time_seconds=config.chain.block_time_seconds,
+        history_context_blocks=config.dataset.history_context_blocks,
     )
-
-
-def make_provider_config(
-    endpoint: str = "https://rpc.example.test",
-    *,
-    name: RpcProviderName = RpcProviderName.DIRECT,
-) -> ProviderConfig:
-    reference = "$ETHEREUM_RPC_URL" if name is RpcProviderName.DIRECT else endpoint
-    return ProviderConfig(
-        name=name,
-        endpoints={ChainName.ETHEREUM: endpoint},
-        references={ChainName.ETHEREUM: reference},
-        timeout_seconds=30.0,
-        retry_count=5,
-        backoff_factor=0.125,
-    )
-
-
-def make_model_config(*, model_id: str = "lstm") -> ModelConfig:
-    try:
-        payload = MODEL_CONFIG_PAYLOADS[model_id]
-    except KeyError as exc:
-        known = ", ".join(sorted(MODEL_CONFIG_PAYLOADS))
-        raise ValueError(f"Unknown test model id: {model_id}. Known models: {known}") from exc
-    return coerce_model_config(payload)
-
-
-def make_training_config() -> TrainingConfig:
-    return TrainingConfig(
-        learning_rate=3e-4,
-        weight_decay=1e-2,
-        batch_size=8,
-        max_epochs=1,
-        early_stopping={"patience": 8, "min_delta": 1e-4},
-        gradient_clip_norm=1.0,
-        action_loss_weight=1.0,
-        fee_loss_weight=0.25,
-        device="cpu",
-        seed=2026,
-        deterministic=True,
-        log_every_n_steps=10,
-        precision=TrainingPrecision.FP32,
-        compile=CompileMode.OFF,
-    )
+    return geometry.required_block_count(config.dataset.sampling.sample_count)
 
 
 def make_block_rows(
@@ -164,60 +240,67 @@ def make_block_rows(
     start_timestamp: int,
     chain_id: int = 1,
     block_time_seconds: int = 12,
-    include_gas_limit: bool = True,
-    missing_gas_limit_blocks: set[int] | None = None,
-) -> list[dict[str, int | None]]:
-    missing_gas_limit_blocks = missing_gas_limit_blocks or set()
-    rows: list[dict[str, int | None]] = []
+) -> list[dict[str, int]]:
+    rows: list[dict[str, int]] = []
     for offset in range(count):
         block_number = start_block + offset
         timestamp = start_timestamp + offset * block_time_seconds
         base_fee = int(
             1_000_000_000
-            + 150_000_000 * math.sin(block_number / 7.0)
-            + 60_000_000 * math.cos(block_number / 3.0)
+            + 150_000_000 * math.sin(block_number / 2.0)
+            + 150_000_000 * math.cos(block_number / 2.5)
+            + 50_000_000 * math.sin(block_number / 7.0)
         )
-        gas_limit = None if block_number in missing_gas_limit_blocks else 30_000_000
-        row: dict[str, int | None] = {
-            "block_number": block_number,
-            "timestamp": timestamp,
-            "base_fee_per_gas": max(base_fee, 1),
-            "gas_used": int(18_000_000 + 2_000_000 * math.sin(block_number / 5.0)),
-            "chain_id": chain_id,
-        }
-        if include_gas_limit:
-            row["gas_limit"] = gas_limit
-        rows.append(row)
+        rows.append(
+            {
+                "block_number": block_number,
+                "timestamp": timestamp,
+                "base_fee_per_gas": max(base_fee, 1),
+                "gas_used": int(18_000_000 + 2_000_000 * math.sin(block_number / 5.0)),
+                "gas_limit": 30_000_000,
+                "chain_id": chain_id,
+            }
+        )
     return rows
 
 
-def make_history_rows(count: int = 320) -> list[dict[str, int | None]]:
+def make_history_rows(config: TrainConfig | TuneConfig | SimulateConfig) -> list[dict[str, int]]:
+    block_time_seconds = int(round(config.chain.block_time_seconds))
+    count = required_dataset_blocks(config)
     return make_block_rows(
         count,
         start_block=1,
-        start_timestamp=TEST_WINDOW_START_TIMESTAMP - count * 12,
-        include_gas_limit=True,
+        start_timestamp=config.evaluation_window_start_timestamp - count * block_time_seconds,
+        chain_id=config.chain.chain_id,
+        block_time_seconds=block_time_seconds,
     )
 
 
 def make_evaluation_rows(
-    count: int = 180,
+    config: SimulateConfig,
     *,
+    count: int = 64,
     start_block: int = 10_001,
-) -> list[dict[str, int | None]]:
+) -> list[dict[str, int]]:
     return make_block_rows(
         count,
         start_block=start_block,
-        start_timestamp=TEST_WINDOW_START_TIMESTAMP,
-        include_gas_limit=True,
+        start_timestamp=config.evaluation_window_start_timestamp,
+        chain_id=config.chain.chain_id,
+        block_time_seconds=int(round(config.chain.block_time_seconds)),
     )
 
 
-def write_parquet_rows(path: Path, rows: list[dict[str, int | None]]) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def write_dataset_dir(dataset_dir: Path, rows: list[dict[str, int]]) -> Path:
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    path = dataset_dir / "blocks.parquet"
     pl.DataFrame(rows).write_parquet(path)
     return path
 
 
-def write_dataset_dir(dataset_dir: Path, rows: list[dict[str, int | None]]) -> Path:
-    return write_parquet_rows(dataset_dir / "blocks.parquet", rows)
+def seed_history_dataset(config: TrainConfig | TuneConfig | SimulateConfig) -> Path:
+    return write_dataset_dir(config.paths.history_dir, make_history_rows(config))
+
+
+def seed_evaluation_dataset(config: SimulateConfig) -> Path:
+    return write_dataset_dir(config.paths.evaluation_dir, make_evaluation_rows(config))

@@ -9,7 +9,7 @@ from typing import NamedTuple, cast
 import torch
 from torch import nn
 
-from ..core.config import ModelConfig
+from ..config.models import ModelConfig
 
 
 class ModelOutputs(NamedTuple):

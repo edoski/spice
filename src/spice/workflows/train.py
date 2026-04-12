@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..core.config import ArtifactVariant, ExperimentConfig
+from ..config import ArtifactVariant, TrainConfig
 from ..core.console import Reporter
 from ..core.constants import ARTIFACT_MANIFEST_FILENAME, MODEL_STATE_FILENAME
 from ..core.files import remove_path
@@ -20,7 +20,7 @@ def _chain_label(chain_name: str) -> str:
 
 
 def _format_train_summary_sections(
-    config: ExperimentConfig,
+    config: TrainConfig,
     persisted,
 ) -> list[tuple[str, list[tuple[str, str]]]]:
     report = persisted.report
@@ -76,23 +76,34 @@ def _format_train_summary_sections(
     ]
 
 
-def _clean_training_outputs(config: ExperimentConfig, *, prune_empty_root: bool) -> None:
+def _clean_training_outputs(config: TrainConfig, *, prune_empty_root: bool) -> None:
+    artifact_root = config.paths.artifact_root
+    checkpoint_dir = config.paths.checkpoint_dir
+    train_report_path = config.paths.train_report_path
+    simulation_report_path = config.paths.simulation_report_path
+    if (
+        artifact_root is None
+        or checkpoint_dir is None
+        or train_report_path is None
+        or simulation_report_path is None
+    ):
+        raise ValueError("training workflow requires artifact output paths")
     for path in (
-        config.paths.checkpoint_dir,
-        config.paths.artifact_root / ARTIFACT_MANIFEST_FILENAME,
-        config.paths.artifact_root / MODEL_STATE_FILENAME,
-        config.paths.train_report_path,
-        config.paths.simulation_report_path,
+        checkpoint_dir,
+        artifact_root / ARTIFACT_MANIFEST_FILENAME,
+        artifact_root / MODEL_STATE_FILENAME,
+        train_report_path,
+        simulation_report_path,
     ):
         remove_path(path)
-    if prune_empty_root and config.paths.artifact_root.exists():
+    if prune_empty_root and artifact_root.exists():
         try:
-            next(config.paths.artifact_root.iterdir())
+            next(artifact_root.iterdir())
         except StopIteration:
-            config.paths.artifact_root.rmdir()
+            artifact_root.rmdir()
 
 
-def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
+def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
     with managed_workflow(
         config,
         run_name=(
@@ -110,6 +121,8 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         artifact_dir = active_config.paths.artifact_root
         report_path = active_config.paths.train_report_path
         history_block_path = active_config.paths.history_dir
+        if artifact_dir is None or report_path is None:
+            raise ValueError("training workflow requires artifact output paths")
         with abort_cleanup(
             session.reporter,
             label="train",

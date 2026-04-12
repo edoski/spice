@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from ..core.config import ExperimentConfig
+from ..config import AcquireConfig
 from ..data.io import iter_block_files
 from ..data.validation import BlockDatasetValidationReport
 from .rpc import AcquisitionRuntimeSnapshot
@@ -33,6 +33,7 @@ class ProviderMetadata(MetadataModel):
 
 
 class DatasetPathsMetadata(MetadataModel):
+    output_root: str
     history: str
     evaluation: str
 
@@ -71,6 +72,7 @@ class DatasetAcquisitionSettings(MetadataModel):
 
 
 class DatasetSettingsMetadata(MetadataModel):
+    history_context_blocks: int
     sampling: DatasetSamplingSettings
     temporal: DatasetTemporalSettings
     acquisition: DatasetAcquisitionSettings
@@ -145,7 +147,7 @@ def load_dataset_metadata(path: Path) -> DatasetMetadata | None:
         return None
 
 
-def provider_metadata(config: ExperimentConfig) -> ProviderMetadata:
+def provider_metadata(config: AcquireConfig) -> ProviderMetadata:
     endpoint = config.provider.endpoint_for(config.chain.name)
     return ProviderMetadata(
         name=config.provider.name.value,
@@ -208,7 +210,7 @@ def _coverage_window(report: BlockDatasetValidationReport) -> DatasetWindowMetad
 
 def build_dataset_metadata(
     *,
-    config: ExperimentConfig,
+    config: AcquireConfig,
     history_dir: Path,
     evaluation_dir: Path,
     history_request_start_timestamp: int,
@@ -228,6 +230,7 @@ def build_dataset_metadata(
         ),
         providers=list(providers),
         paths=DatasetPathsMetadata(
+            output_root=config.storage.root.as_posix(),
             history=history_dir.as_posix(),
             evaluation=evaluation_dir.as_posix(),
         ),
@@ -246,6 +249,7 @@ def build_dataset_metadata(
             evaluation=_coverage_window(evaluation_validation),
         ),
         settings=DatasetSettingsMetadata(
+            history_context_blocks=config.dataset.history_context_blocks,
             sampling=DatasetSamplingSettings(
                 sample_count=config.dataset.sampling.sample_count,
             ),

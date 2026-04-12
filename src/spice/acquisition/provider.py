@@ -12,7 +12,7 @@ from web3.providers import AsyncIPCProvider
 from web3.providers.rpc import AsyncHTTPProvider
 from web3.providers.rpc.utils import ExceptionRetryConfiguration
 
-from ..core.config import ChainConfig, ProviderConfig
+from ..config import ChainSpec, ProviderSpec
 
 
 def _ipc_path_from_endpoint(endpoint: str) -> str | None:
@@ -26,7 +26,7 @@ def _ipc_path_from_endpoint(endpoint: str) -> str | None:
     return None
 
 
-def _retry_configuration(provider: ProviderConfig) -> ExceptionRetryConfiguration:
+def _retry_configuration(provider: ProviderSpec) -> ExceptionRetryConfiguration:
     return ExceptionRetryConfiguration(
         errors=[aiohttp.ClientError, OSError, TimeoutError],
         retries=provider.retry_count,
@@ -34,7 +34,7 @@ def _retry_configuration(provider: ProviderConfig) -> ExceptionRetryConfiguratio
     )
 
 
-def build_async_web3(provider: ProviderConfig, chain: ChainConfig) -> AsyncWeb3:
+def build_async_web3(provider: ProviderSpec, chain: ChainSpec) -> AsyncWeb3:
     endpoint = provider.endpoint_for(chain.name)
 
     if endpoint.startswith(("http://", "https://")):

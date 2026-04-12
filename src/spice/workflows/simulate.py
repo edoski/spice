@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from ..core.config import ExperimentConfig
+from ..config import SimulateConfig
 from ..core.console import Reporter
 from ..core.files import remove_path
-from ..data.datasets import derive_dataset_geometry
 from ..data.io import load_block_frame
 from ..features import feature_warmup_blocks
 from ..modeling.artifacts import load_training_artifact, validate_artifact_feature_graph
@@ -13,6 +12,7 @@ from ..modeling.inference import predict_class_offsets
 from ..modeling.pipeline import prepare_inference_dataset
 from ..modeling.reporting import build_simulation_report, write_json_report
 from ..modeling.simulation import run_temporal_simulation
+from ..planning.geometry import derive_dataset_geometry, minimum_history_context_blocks
 from ._shared import abort_cleanup, managed_workflow
 
 
@@ -20,10 +20,13 @@ def _chain_label(chain_name: str) -> str:
     return chain_name.replace("_", " ").title()
 
 
-def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
+def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
     artifact_dir = config.paths.artifact_root
     history_block_path = config.paths.history_dir
     evaluation_block_path = config.paths.evaluation_dir
+    report_path = config.paths.simulation_report_path
+    if artifact_dir is None or report_path is None:
+        raise ValueError("simulation workflow requires artifact output paths")
     with managed_workflow(
         config,
         run_name=(
@@ -36,7 +39,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
         with abort_cleanup(
             session.reporter,
             label="simulate",
-            cleanup=lambda: remove_path(config.paths.simulation_report_path),
+            cleanup=lambda: remove_path(report_path),
         ):
             load_task = session.reporter.start_task("load inference inputs")
             loaded_artifact = load_training_artifact(artifact_dir)
@@ -51,6 +54,17 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                 message=f"artifact={artifact_dir} evaluation={evaluation_block_path}",
             )
             prepare_task = session.reporter.start_task("prepare inference dataset")
+            minimum_context = minimum_history_context_blocks(
+                lookback_seconds=loaded_artifact.manifest.lookback_seconds,
+                block_time_seconds=loaded_artifact.manifest.chain.block_time_seconds,
+                feature_warmup_blocks=feature_warmup_blocks(selection.feature_names),
+            )
+            if minimum_context > config.dataset.history_context_blocks:
+                raise ValueError(
+                    "Configured dataset.history_context_blocks "
+                    "is too small for the selected feature set: "
+                    f"need at least {minimum_context}, got {config.dataset.history_context_blocks}"
+                )
             prepared = prepare_inference_dataset(
                 history_blocks,
                 evaluation_blocks,
@@ -59,7 +73,7 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                     lookback_seconds=loaded_artifact.manifest.lookback_seconds,
                     max_delay_seconds=loaded_artifact.manifest.max_delay_seconds,
                     block_time_seconds=loaded_artifact.manifest.chain.block_time_seconds,
-                    feature_warmup_blocks=feature_warmup_blocks(selection.feature_names),
+                    history_context_blocks=minimum_context,
                 ),
                 scaler=loaded_artifact.manifest.scaler,
                 window_start_timestamp=config.evaluation_window_start_timestamp,
@@ -99,7 +113,6 @@ def run(config: ExperimentConfig, *, reporter: Reporter | None = None) -> None:
                 arrival_rate_per_second=config.simulation.arrival_rate_per_second,
                 repetitions=config.simulation.repetitions,
             )
-            report_path = config.paths.simulation_report_path
             report_task = session.reporter.start_task("write simulation report")
             write_json_report(report_path, report)
             session.reporter.finish_task(report_task, message=str(report_path), silent=True)

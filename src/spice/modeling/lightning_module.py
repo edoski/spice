@@ -5,7 +5,7 @@ from __future__ import annotations
 import lightning as L
 import torch
 
-from ..core.config import TrainingConfig
+from ..config import TrainingConfig
 from .evaluation import BatchMetrics, EpochMetrics, compute_temporal_batch_metrics, mean_metrics
 from .models import ModelOutputs, TemporalModel
 from .torch_datasets import SequenceBatch
