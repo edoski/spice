@@ -12,9 +12,9 @@ from ..config import (
     ChainSpec,
     FeatureSetConfig,
     ModelConfig,
+    ProblemSpec,
     SplitConfig,
     StudyConfig,
-    TaskSpec,
     TrainConfig,
     TrainingConfig,
     TuneConfig,
@@ -22,7 +22,7 @@ from ..config import (
 from ..core.reporting import NullReporter, Reporter
 from ..corpus.io import load_block_frame
 from ..features import FeatureSelection, build_feature_table, make_feature_selection
-from ..temporal.contracts import ResolvedTaskContract, resolve_task_contract
+from ..temporal.contracts import ProblemContract, resolve_problem_contract
 from ..temporal.scaling import ScalerStats, fit_standard_scaler, transform_feature_matrix
 from ..temporal.store import (
     DatasetSplitIndices,
@@ -45,8 +45,8 @@ class TrainingSpec:
     dataset_id: str
     dataset_name: str
     artifact_id: str
-    task: TaskSpec
-    contract: ResolvedTaskContract
+    problem: ProblemSpec
+    contract: ProblemContract
     feature_set: FeatureSetConfig
     model: ModelConfig
     split: SplitConfig
@@ -58,8 +58,8 @@ class TrainingSpec:
 
 def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
     variant = ArtifactVariant.TUNED if isinstance(config, TuneConfig) else config.artifact.variant
-    contract = resolve_task_contract(
-        task=config.task,
+    contract = resolve_problem_contract(
+        problem=config.problem,
         feature_set=config.feature_set,
     )
     return TrainingSpec(
@@ -71,7 +71,7 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
             if config.paths.artifact_id is not None
             else config.paths.study_id or "trial"
         ),
-        task=config.task,
+        problem=config.problem,
         contract=contract,
         feature_set=config.feature_set,
         model=config.model,
@@ -180,8 +180,8 @@ def prepare_training_dataset(
         feature_table,
         window=capability_window,
     )
-    selected_sample_indices = tail_sample_indices(store, sample_count=spec.task.sample_count)
-    split_positions = chronological_split_indices(spec.task.sample_count, spec.split)
+    selected_sample_indices = tail_sample_indices(store, sample_count=spec.problem.sample_count)
+    split_positions = chronological_split_indices(spec.problem.sample_count, spec.split)
     split_indices = DatasetSplitIndices(
         train=selected_sample_indices[split_positions.train],
         validation=selected_sample_indices[split_positions.validation],
@@ -201,7 +201,7 @@ def prepare_training_dataset(
     return PreparedTrainingDataset(
         n_rows_available=sorted_blocks.height,
         n_rows_used=used_end - used_start,
-        sample_count=spec.task.sample_count,
+        sample_count=spec.problem.sample_count,
         feature_set_id=feature_table.feature_set_id,
         feature_names=feature_table.feature_names,
         feature_graph_fingerprint=feature_table.feature_graph_fingerprint,

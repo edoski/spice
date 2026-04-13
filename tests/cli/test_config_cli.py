@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -31,6 +32,26 @@ def test_config_list_and_show_commands(tmp_path, isolate_conf_root) -> None:
         "name": "icdcs_2026",
         "evaluation_date": "2025-11-09",
     }
+
+
+def test_old_task_group_and_runtime_key_are_rejected(tmp_path, isolate_conf_root) -> None:
+    isolate_conf_root()
+
+    list_result = runner.invoke(app, ["config", "list", "task"])
+    assert list_result.exit_code != 0
+
+    config_path = tmp_path / "legacy_train.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"task": {"id": "legacy_problem"}}, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Use problem instead"):
+        load_train_config(
+            preset="icdcs_2026",
+            config_path=config_path,
+            storage_root=tmp_path / "outputs",
+        )
 
 
 def test_config_create_update_and_unset_commands(tmp_path, isolate_conf_root) -> None:
@@ -68,7 +89,7 @@ def test_config_create_update_and_unset_commands(tmp_path, isolate_conf_root) ->
             "--set",
             "dataset=icdcs_2026",
             "--set",
-            "task=icdcs_2026",
+            "problem=icdcs_2026",
             "--set",
             "execution=icdcs_2026",
             "--set",
@@ -111,7 +132,7 @@ def test_config_create_update_and_unset_commands(tmp_path, isolate_conf_root) ->
     assert update_preset.exit_code == 0, update_preset.stdout
     assert yaml.safe_load((conf_root / "preset" / "phase2_preset.yaml").read_text()) == {
         "dataset": "icdcs_2026",
-        "task": "icdcs_2026",
+        "problem": "icdcs_2026",
         "execution": "icdcs_2026",
         "chain": "ethereum",
         "provider": "publicnode",
@@ -271,7 +292,7 @@ def test_config_cli_created_specs_resolve_in_runtime_commands(
         [
             "config",
             "create",
-            "task",
+            "problem",
             "phase2_task",
             "--set",
             "lookback_seconds=120",
@@ -304,7 +325,7 @@ def test_config_cli_created_specs_resolve_in_runtime_commands(
             "--set",
             "dataset=phase2_dataset",
             "--set",
-            "task=phase2_task",
+            "problem=phase2_task",
             "--set",
             "execution=phase2_execution",
             "--set",
@@ -342,7 +363,7 @@ def test_config_cli_created_specs_resolve_in_runtime_commands(
             preset=kwargs["preset"],
             config_path=kwargs["config"],
             dataset=kwargs["dataset"],
-            task=kwargs["task"],
+            problem=kwargs["problem"],
             chain=kwargs["chain"],
             provider=kwargs["provider"],
             feature_set=kwargs["feature_set"],
@@ -356,7 +377,7 @@ def test_config_cli_created_specs_resolve_in_runtime_commands(
             preset=kwargs["preset"],
             config_path=kwargs["config"],
             dataset=kwargs["dataset"],
-            task=kwargs["task"],
+            problem=kwargs["problem"],
             chain=kwargs["chain"],
             model=kwargs["model"],
             feature_set=kwargs["feature_set"],
@@ -372,7 +393,7 @@ def test_config_cli_created_specs_resolve_in_runtime_commands(
             preset=kwargs["preset"],
             config_path=kwargs["config"],
             dataset=kwargs["dataset"],
-            task=kwargs["task"],
+            problem=kwargs["problem"],
             chain=kwargs["chain"],
             model=kwargs["model"],
             feature_set=kwargs["feature_set"],
@@ -390,7 +411,7 @@ def test_config_cli_created_specs_resolve_in_runtime_commands(
             preset=kwargs["preset"],
             config_path=kwargs["config"],
             dataset=kwargs["dataset"],
-            task=kwargs["task"],
+            problem=kwargs["problem"],
             chain=kwargs["chain"],
             model=kwargs["model"],
             feature_set=kwargs["feature_set"],
@@ -413,7 +434,7 @@ def test_config_cli_created_specs_resolve_in_runtime_commands(
     assert runner.invoke(app, ["simulate", "--preset", "phase2_preset"]).exit_code == 0
 
     assert captured["acquire"].dataset.name == "phase2_dataset"
-    assert captured["acquire"].task.id == "phase2_task"
+    assert captured["acquire"].problem.id == "phase2_task"
     assert captured["train"].feature_set.id == "phase2_feature_set"
     assert captured["train"].model.id == "lstm"
     assert captured["tune"].study.name == "default"

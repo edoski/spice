@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from spice.config import TrainConfig, load_train_config
-from spice.temporal.contracts import resolve_task_contract
+from spice.temporal.contracts import resolve_problem_contract
 
 PRESET = "icdcs_2026"
 TEST_EVALUATION_DATE = date(2025, 11, 9)
@@ -30,8 +30,8 @@ def model_workflow_override():
             "dataset": {
                 "evaluation_date": TEST_EVALUATION_DATE.isoformat(),
             },
-            "task": {
-                "id": "test_task",
+            "problem": {
+                "id": "test_problem",
                 "lookback_seconds": lookback_seconds,
                 "sample_count": sample_count,
                 "max_supported_delay_seconds": max_supported_delay_seconds,
@@ -108,8 +108,8 @@ def synthetic_block_interval_seconds(chain_name: str) -> int:
 
 
 def required_dataset_blocks(config: TrainConfig) -> int:
-    contract = resolve_task_contract(
-        task=config.task,
+    contract = resolve_problem_contract(
+        problem=config.problem,
         feature_set=config.feature_set,
     )
     block_interval_seconds = synthetic_block_interval_seconds(config.chain.name)

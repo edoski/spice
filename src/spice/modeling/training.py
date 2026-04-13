@@ -36,7 +36,7 @@ from .objective import (
     primary_validation_metric_name,
     summarize_epoch_metrics,
 )
-from .representations import SequenceEventBatch, move_batch_to_device
+from .problem_batches import TemporalProblemBatch
 
 IntVector = NDArray[np.int64]
 
@@ -342,13 +342,12 @@ def evaluate_model(
     metrics = []
     with torch.no_grad():
         for batch in loader:
-            batch = cast(SequenceEventBatch, batch)
-            device_batch = move_batch_to_device(batch, device)
-            outputs = model(device_batch.inputs, device_batch.input_mask)
+            batch = cast(TemporalProblemBatch, batch)
+            device_batch = batch.to_device(device)
+            outputs = model(**device_batch.model_kwargs())
             _, batch_metrics = compute_temporal_batch_metrics(
                 outputs.logits,
-                device_batch.candidate_log_fees,
-                device_batch.candidate_mask,
+                device_batch.objective_targets(),
             )
             metrics.append(batch_metrics)
             reporter.update_task(task_id, advance=1)

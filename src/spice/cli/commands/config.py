@@ -14,7 +14,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 _CONFIG_GROUP_HELP = (
-    "One of: chain, provider, dataset, task, execution, feature-set, preset."
+    "One of: chain, provider, dataset, problem, execution, feature-set, preset."
 )
 
 

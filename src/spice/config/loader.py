@@ -18,13 +18,13 @@ from .models import (
     FeatureSetConfig,
     ModelConfig,
     PresetSpec,
+    ProblemSpec,
     ProviderSpec,
     SimulateConfig,
     SimulationConfig,
     SplitConfig,
     StorageSpec,
     StudyConfig,
-    TaskSpec,
     TrainConfig,
     TrainingConfig,
     TuneConfig,
@@ -36,9 +36,27 @@ from .registry import list_group_names, load_named_group, load_yaml_mapping
 
 _MODEL_GROUP = "model"
 _TUNING_SPACE_GROUP = "tuning_space"
+_KNOWN_TOP_LEVEL_CONFIG_KEYS = {
+    "acquisition",
+    "artifact",
+    "chain",
+    "dataset",
+    "execution",
+    "feature_set",
+    "model",
+    "problem",
+    "provider",
+    "simulation",
+    "split",
+    "storage",
+    "study",
+    "training",
+    "tuning",
+    "tuning_space",
+}
 _MERGEABLE_NAMED_GROUPS = {
     "dataset": "dataset",
-    "task": "task",
+    "problem": "problem",
     "execution": "execution",
     "chain": "chain",
     "provider": "provider",
@@ -113,6 +131,19 @@ def compact_mapping(payload: Mapping[str, object | None]) -> dict[str, object]:
     return compacted
 
 
+def _reject_unknown_top_level_keys(
+    payload: Mapping[str, object],
+    *,
+    allowed_keys: set[str],
+) -> None:
+    unknown = sorted(set(payload) - allowed_keys)
+    if not unknown:
+        return
+    if "task" in unknown:
+        raise ValueError("Unknown top-level config field: task. Use problem instead.")
+    raise ValueError(f"Unknown top-level config fields: {', '.join(unknown)}")
+
+
 def resolve_named_or_inline(raw: object, *, group: str, model_type: type[ModelT]) -> ModelT:
     if isinstance(raw, str):
         return model_type.model_validate(load_named_group(raw, group))
@@ -177,7 +208,7 @@ def load_acquire_config(
     preset: str | None = None,
     config_path: Path | None = None,
     dataset: str | None = None,
-    task: str | None = None,
+    problem: str | None = None,
     chain: str | None = None,
     provider: str | None = None,
     feature_set: str | None = None,
@@ -191,7 +222,7 @@ def load_acquire_config(
         cli_overrides=compact_mapping(
             {
                 "dataset": dataset,
-                "task": task,
+                "problem": problem,
                 "chain": chain,
                 "provider": provider,
                 "feature_set": feature_set,
@@ -200,8 +231,16 @@ def load_acquire_config(
             }
         ),
     )
+    _reject_unknown_top_level_keys(
+        payload,
+        allowed_keys=_KNOWN_TOP_LEVEL_CONFIG_KEYS,
+    )
     dataset_spec, chain_spec, storage_spec = _resolve_common(payload)
-    task_spec = resolve_named_or_inline(payload["task"], group="task", model_type=TaskSpec)
+    problem_spec = resolve_named_or_inline(
+        payload["problem"],
+        group="problem",
+        model_type=ProblemSpec,
+    )
     provider_spec = _resolve_provider(payload, chain=chain_spec)
     feature_set_spec = resolve_named_or_inline(
         payload["feature_set"],
@@ -222,7 +261,7 @@ def load_acquire_config(
         chain=chain_spec,
         dataset=dataset_spec,
         storage=storage_spec,
-        task=task_spec,
+        problem=problem_spec,
         feature_set=feature_set_spec,
         provider=provider_spec,
         acquisition=acquisition_spec,
@@ -235,14 +274,14 @@ def _resolve_model_workflow(
     DatasetSpec,
     ChainSpec,
     StorageSpec,
-    TaskSpec,
+    ProblemSpec,
     ModelConfig,
     FeatureSetConfig,
     StudyConfig,
     ArtifactConfig,
 ]:
     dataset, chain, storage = _resolve_common(payload)
-    task = resolve_named_or_inline(payload["task"], group="task", model_type=TaskSpec)
+    problem = resolve_named_or_inline(payload["problem"], group="problem", model_type=ProblemSpec)
     model_raw = payload["model"]
     if isinstance(model_raw, str):
         model = load_named_model(model_raw)
@@ -266,7 +305,7 @@ def _resolve_model_workflow(
         if isinstance(artifact_raw, Mapping)
         else ArtifactConfig()
     )
-    return dataset, chain, storage, task, model, feature_set, study, artifact
+    return dataset, chain, storage, problem, model, feature_set, study, artifact
 
 
 def load_train_config(
@@ -274,7 +313,7 @@ def load_train_config(
     preset: str | None = None,
     config_path: Path | None = None,
     dataset: str | None = None,
-    task: str | None = None,
+    problem: str | None = None,
     chain: str | None = None,
     model: str | None = None,
     feature_set: str | None = None,
@@ -290,7 +329,7 @@ def load_train_config(
         cli_overrides=compact_mapping(
             {
                 "dataset": dataset,
-                "task": task,
+                "problem": problem,
                 "chain": chain,
                 "model": model,
                 "feature_set": feature_set,
@@ -302,11 +341,15 @@ def load_train_config(
             }
         ),
     )
+    _reject_unknown_top_level_keys(
+        payload,
+        allowed_keys=_KNOWN_TOP_LEVEL_CONFIG_KEYS,
+    )
     (
         dataset_spec,
         chain_spec,
         storage_spec,
-        task_spec,
+        problem_spec,
         model_spec,
         feature_set_spec,
         study_spec,
@@ -326,7 +369,7 @@ def load_train_config(
         chain=chain_spec,
         dataset=dataset_spec,
         storage=storage_spec,
-        task=task_spec,
+        problem=problem_spec,
         model=model_spec,
         feature_set=feature_set_spec,
         study=study_spec,
@@ -341,7 +384,7 @@ def load_tune_config(
     preset: str | None = None,
     config_path: Path | None = None,
     dataset: str | None = None,
-    task: str | None = None,
+    problem: str | None = None,
     chain: str | None = None,
     model: str | None = None,
     feature_set: str | None = None,
@@ -359,7 +402,7 @@ def load_tune_config(
         cli_overrides=compact_mapping(
             {
                 "dataset": dataset,
-                "task": task,
+                "problem": problem,
                 "chain": chain,
                 "model": model,
                 "feature_set": feature_set,
@@ -372,11 +415,15 @@ def load_tune_config(
             }
         ),
     )
+    _reject_unknown_top_level_keys(
+        payload,
+        allowed_keys=_KNOWN_TOP_LEVEL_CONFIG_KEYS,
+    )
     (
         dataset_spec,
         chain_spec,
         storage_spec,
-        task_spec,
+        problem_spec,
         model_spec,
         feature_set_spec,
         study_spec,
@@ -419,7 +466,7 @@ def load_tune_config(
         chain=chain_spec,
         dataset=dataset_spec,
         storage=storage_spec,
-        task=task_spec,
+        problem=problem_spec,
         model=model_spec,
         feature_set=feature_set_spec,
         study=study_spec,
@@ -436,7 +483,7 @@ def load_simulate_config(
     preset: str | None = None,
     config_path: Path | None = None,
     dataset: str | None = None,
-    task: str | None = None,
+    problem: str | None = None,
     chain: str | None = None,
     model: str | None = None,
     feature_set: str | None = None,
@@ -453,7 +500,7 @@ def load_simulate_config(
         cli_overrides=compact_mapping(
             {
                 "dataset": dataset,
-                "task": task,
+                "problem": problem,
                 "chain": chain,
                 "model": model,
                 "feature_set": feature_set,
@@ -466,11 +513,15 @@ def load_simulate_config(
             }
         ),
     )
+    _reject_unknown_top_level_keys(
+        payload,
+        allowed_keys=_KNOWN_TOP_LEVEL_CONFIG_KEYS,
+    )
     (
         dataset_spec,
         chain_spec,
         storage_spec,
-        task_spec,
+        problem_spec,
         model_spec,
         feature_set_spec,
         study_spec,
@@ -495,7 +546,7 @@ def load_simulate_config(
         chain=chain_spec,
         dataset=dataset_spec,
         storage=storage_spec,
-        task=task_spec,
+        problem=problem_spec,
         model=model_spec,
         feature_set=feature_set_spec,
         study=study_spec,

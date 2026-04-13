@@ -27,8 +27,8 @@ def acquire_override():
             "dataset": {
                 "evaluation_date": TEST_EVALUATION_DATE.isoformat(),
             },
-            "task": {
-                "id": "acquire_test_task",
+            "problem": {
+                "id": "acquire_test_problem",
                 "lookback_seconds": lookback_seconds,
                 "sample_count": sample_count,
                 "max_supported_delay_seconds": max_supported_delay_seconds,

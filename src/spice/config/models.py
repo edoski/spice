@@ -91,7 +91,7 @@ class StorageSpec(ConfigModel):
     root: Path = Path("outputs")
 
 
-class TaskSpec(ConfigModel):
+class ProblemSpec(ConfigModel):
     id: str
     lookback_seconds: int = Field(gt=0)
     sample_count: int = Field(gt=0)
@@ -100,7 +100,7 @@ class TaskSpec(ConfigModel):
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="task.id")
+        return _validate_path_segment(value, label="problem.id")
 
 
 class ExecutionSpec(ConfigModel):
@@ -455,7 +455,7 @@ class WorkflowConfig(ConfigModel):
 
 class AcquireConfig(WorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.ACQUIRE
-    task: TaskSpec
+    problem: ProblemSpec
     feature_set: FeatureSetConfig
     provider: ProviderSpec
     acquisition: AcquisitionConfig
@@ -473,7 +473,7 @@ class AcquireConfig(WorkflowConfig):
 
 
 class ModelWorkflowConfig(WorkflowConfig):
-    task: TaskSpec
+    problem: ProblemSpec
     model: SerializeAsAny[ModelConfig]
     feature_set: FeatureSetConfig
     study: StudyConfig = StudyConfig()
@@ -489,10 +489,10 @@ class ModelWorkflowConfig(WorkflowConfig):
             dataset=self.dataset,
             feature_set_name=self.feature_set.id,
             model_name=self.model.id,
-            task_name=self.task.id,
+            problem_name=self.problem.id,
             feature_set_payload=self.feature_set.model_dump(mode="json", exclude_none=True),
             model_payload=self.model.model_dump(mode="json", exclude_none=True),
-            task_payload=self.task.model_dump(mode="json", exclude_none=True),
+            problem_payload=self.problem.model_dump(mode="json", exclude_none=True),
             variant=self.artifact.variant,
             study_name=self.study.name,
             include_artifacts=True,
@@ -530,16 +530,16 @@ class SimulateConfig(ModelWorkflowConfig):
 
     @model_validator(mode="after")
     def validate_execution(self) -> Self:
-        if self.execution.requested_delay_seconds > self.task.max_supported_delay_seconds:
+        if self.execution.requested_delay_seconds > self.problem.max_supported_delay_seconds:
             raise ValueError(
-                "execution.requested_delay_seconds must be <= task.max_supported_delay_seconds"
+                "execution.requested_delay_seconds must be <= problem.max_supported_delay_seconds"
             )
         return self
 
 
 class PresetSpec(ConfigModel):
     dataset: str | None = None
-    task: str | None = None
+    problem: str | None = None
     execution: str | None = None
     chain: str | None = None
     provider: str | None = None

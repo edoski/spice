@@ -1,6 +1,6 @@
 """Timestamp-native sample geometry ownership."""
 
-from .contracts import ResolvedTaskContract, resolve_feature_contract, resolve_task_contract
+from .contracts import ProblemContract, resolve_feature_contract, resolve_problem_contract
 from .scaling import ScalerStats, fit_standard_scaler, transform_feature_matrix
 from .store import (
     DatasetSplitIndices,
@@ -15,7 +15,7 @@ from .window import DelayWindow
 __all__ = [
     "DatasetSplitIndices",
     "DelayWindow",
-    "ResolvedTaskContract",
+    "ProblemContract",
     "ScalerStats",
     "TemporalDatasetStore",
     "build_temporal_store",
@@ -23,7 +23,7 @@ __all__ = [
     "filter_sample_indices_by_timestamp_window",
     "fit_standard_scaler",
     "resolve_feature_contract",
-    "resolve_task_contract",
+    "resolve_problem_contract",
     "tail_sample_indices",
     "transform_feature_matrix",
 ]

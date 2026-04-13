@@ -7,13 +7,13 @@ from datetime import UTC, datetime
 from ..acquisition.rpc import BlockPullPlan
 from ..config import AcquireConfig
 from ..corpus.builders import DatasetBuildOutcome
-from ..temporal.contracts import ResolvedTaskContract
+from ..temporal.contracts import ProblemContract
 
 
 def acquire_dry_run_sections(
     config: AcquireConfig,
     *,
-    contract: ResolvedTaskContract,
+    contract: ProblemContract,
     history_window_seconds: int,
     history_plan: BlockPullPlan,
     evaluation_plan: BlockPullPlan,
@@ -25,7 +25,7 @@ def acquire_dry_run_sections(
                 ("name", config.dataset.name),
                 ("storage id", config.paths.corpus_id),
                 ("chain", config.chain.name),
-                ("task", config.task.id),
+                ("problem", config.problem.id),
                 ("feature set", config.feature_set.id),
                 ("evaluation date", str(config.dataset.evaluation_date)),
                 ("feature history", f"{contract.feature_history_seconds}s"),
@@ -72,7 +72,7 @@ def acquisition_summary_sections(
                 ("name", config.dataset.name),
                 ("storage id", config.paths.corpus_id),
                 ("chain", config.chain.name),
-                ("task", config.task.id),
+                ("problem", config.problem.id),
                 ("feature set", config.feature_set.id),
                 ("provider", provider_name),
             ],

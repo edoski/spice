@@ -1,5 +1,5 @@
 dataset: icdcs_2026
-task: icdcs_2026
+problem: icdcs_2026
 execution: icdcs_2026
 provider: publicnode
 feature_set: icdcs_2026

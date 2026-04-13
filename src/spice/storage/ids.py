@@ -29,7 +29,7 @@ def study_storage_id(
     objective_id: str,
     feature_set: Mapping[str, object],
     model: Mapping[str, object],
-    task: Mapping[str, object],
+    problem: Mapping[str, object],
     study_name: str,
 ) -> str:
     return _stable_id(
@@ -39,7 +39,7 @@ def study_storage_id(
         objective_id,
         _canonical_payload(feature_set),
         _canonical_payload(model),
-        _canonical_payload(task),
+        _canonical_payload(problem),
         study_name,
     )
 
@@ -51,7 +51,7 @@ def artifact_storage_id(
     objective_id: str,
     feature_set: Mapping[str, object],
     model: Mapping[str, object],
-    task: Mapping[str, object],
+    problem: Mapping[str, object],
     variant: str,
     study_id: str | None = None,
 ) -> str:
@@ -62,7 +62,7 @@ def artifact_storage_id(
         objective_id,
         _canonical_payload(feature_set),
         _canonical_payload(model),
-        _canonical_payload(task),
+        _canonical_payload(problem),
         variant,
         "" if study_id is None else study_id,
     )

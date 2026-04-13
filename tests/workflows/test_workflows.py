@@ -30,7 +30,7 @@ def test_train_workflow_smoke(
         dataset_name=config.dataset.name,
         feature_set_id=config.feature_set.id,
         model_id=config.model.id,
-        task_id=config.task.id,
+        problem_id=config.problem.id,
         variant=config.artifact.variant.value,
     )
     assert len(artifacts) == 1
@@ -63,7 +63,7 @@ def test_tune_then_train_tuned_smoke(
         dataset_name=config.dataset.name,
         feature_set_id=config.feature_set.id,
         model_id=config.model.id,
-        task_id=config.task.id,
+        problem_id=config.problem.id,
         study_name=config.study.name,
     )
     assert len(studies) == 1
@@ -179,7 +179,7 @@ def test_tune_rejects_study_definition_drift(
         run_tune(drifted_config, reporter=NullReporter())
 
 
-def test_train_tuned_rejects_task_drift_from_study(
+def test_train_tuned_rejects_problem_drift_from_study(
     tmp_path,
     deep_merge,
     load_test_tune_config,
@@ -206,7 +206,7 @@ def test_train_tuned_rejects_task_drift_from_study(
         ),
     )
 
-    with pytest.raises(ValueError, match="task"):
+    with pytest.raises(ValueError, match="problem"):
         run_train(tuned_train_config, reporter=NullReporter())
 
 

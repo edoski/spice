@@ -25,9 +25,9 @@ ModelFilterOption = Annotated[
     str | None,
     typer.Option("--model", metavar="MODEL", help="Filter by model."),
 ]
-TaskFilterOption = Annotated[
+ProblemFilterOption = Annotated[
     str | None,
-    typer.Option("--task", metavar="TASK", help="Filter by task."),
+    typer.Option("--problem", metavar="PROBLEM", help="Filter by problem."),
 ]
 StudyFilterOption = Annotated[
     str | None,

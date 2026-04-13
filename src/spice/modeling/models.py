@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 import torch
@@ -81,9 +81,7 @@ def packed_lstm_last_state_reference(
 
 
 class TemporalModel(nn.Module, ABC):
-    @abstractmethod
-    def forward(self, inputs: torch.Tensor, input_mask: torch.Tensor) -> ModelOutputs:
-        raise NotImplementedError
+    """Base class for models that solve the temporal candidate-choice problem."""
 
 
 class TemporalOutputHead(nn.Module):

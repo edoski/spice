@@ -13,11 +13,11 @@ from .objective import (
     compute_temporal_batch_metrics,
     summarize_epoch_metrics,
 )
-from .representations import SequenceEventBatch
+from .problem_batches import TemporalProblemBatch
 
 
 class TemporalLightningModule(L.LightningModule):
-    """Training harness that keeps the project-specific task semantics custom."""
+    """Training harness for the temporal candidate-choice problem."""
 
     def __init__(
         self,
@@ -33,8 +33,8 @@ class TemporalLightningModule(L.LightningModule):
         self._train_batches: list[BatchMetrics] = []
         self._validation_batches: list[BatchMetrics] = []
 
-    def forward(self, inputs: torch.Tensor, input_mask: torch.Tensor) -> ModelOutputs:
-        return self.model(inputs, input_mask)
+    def forward(self, **model_kwargs: torch.Tensor) -> ModelOutputs:
+        return self.model(**model_kwargs)
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         return torch.optim.AdamW(
@@ -49,12 +49,11 @@ class TemporalLightningModule(L.LightningModule):
     def on_validation_epoch_start(self) -> None:
         self._validation_batches = []
 
-    def _shared_step(self, batch: SequenceEventBatch, *, stage: str) -> torch.Tensor:
-        outputs = self.model(batch.inputs, batch.input_mask)
+    def _shared_step(self, batch: TemporalProblemBatch, *, stage: str) -> torch.Tensor:
+        outputs = self.model(**batch.model_kwargs())
         objective_loss, metrics = compute_temporal_batch_metrics(
             outputs.logits,
-            batch.candidate_log_fees,
-            batch.candidate_mask,
+            batch.objective_targets(),
         )
         self.log(
             f"{stage}/objective_loss",
@@ -91,10 +90,10 @@ class TemporalLightningModule(L.LightningModule):
             self._validation_batches.append(metrics)
         return objective_loss
 
-    def training_step(self, batch: SequenceEventBatch, _batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: TemporalProblemBatch, _batch_idx: int) -> torch.Tensor:
         return self._shared_step(batch, stage="train")
 
-    def validation_step(self, batch: SequenceEventBatch, _batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch: TemporalProblemBatch, _batch_idx: int) -> torch.Tensor:
         return self._shared_step(batch, stage="validation")
 
     def on_train_epoch_end(self) -> None:

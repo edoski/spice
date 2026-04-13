@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import torch
 
+from ..problem_batches import CandidateChoiceTargets
 from .loss import compute_objective_loss
 from .references import candidate_reference_tensors
 
@@ -47,23 +48,18 @@ class WindowMetricSummary:
 
 def compute_temporal_batch_metrics(
     logits: torch.Tensor,
-    candidate_log_fees: torch.Tensor,
-    candidate_mask: torch.Tensor,
+    targets: CandidateChoiceTargets,
 ) -> tuple[torch.Tensor, BatchMetrics]:
-    objective_loss = compute_objective_loss(
-        logits,
-        candidate_log_fees,
-        candidate_mask,
-    )
+    objective_loss = compute_objective_loss(logits, targets)
     references = candidate_reference_tensors(
         logits.detach(),
-        candidate_log_fees.detach(),
-        candidate_mask.detach(),
+        targets.candidate_log_fees.detach(),
+        targets.candidate_mask.detach(),
     )
     realized_fee = torch.exp(references.realized_log_fee)
     baseline_fee = torch.exp(references.baseline_log_fee)
     optimum_fee = torch.exp(references.optimal_log_fee)
-    count = int(candidate_log_fees.shape[0])
+    count = int(targets.candidate_log_fees.shape[0])
     return objective_loss, BatchMetrics(
         count=count,
         objective_loss_sum=float(objective_loss.detach().item()) * count,

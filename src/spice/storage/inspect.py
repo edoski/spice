@@ -88,7 +88,7 @@ def study_list_sections(
                         f"dataset={record.dataset_name} "
                         f"feature_set={record.feature_set_id} "
                         f"model={record.model_id} "
-                        f"task={record.task_id} "
+                        f"problem={record.problem_id} "
                         f"id={record.study_id}"
                     ),
                 )
@@ -112,7 +112,7 @@ def artifact_list_sections(
                         f"dataset={record.dataset_name} "
                         f"feature_set={record.feature_set_id} "
                         f"model={record.model_id} "
-                        f"task={record.task_id} "
+                        f"problem={record.problem_id} "
                         f"variant={record.variant}"
                         + (
                             ""
@@ -221,7 +221,7 @@ def _artifact_sections(
                 ("dataset", manifest.dataset_name),
                 ("dataset id", manifest.dataset_id),
                 ("chain", manifest.chain.name),
-                ("task", manifest.task_id),
+                ("problem", manifest.problem_id),
                 ("feature set", manifest.feature_set_id),
                 ("model", manifest.model.id),
                 ("variant", manifest.variant.value),
@@ -324,7 +324,7 @@ def _study_sections(
                 ("chain", manifest.chain_name),
                 ("dataset", manifest.dataset_name),
                 ("dataset id", manifest.dataset_id),
-                ("task", manifest.task_id),
+                ("problem", manifest.problem_id),
                 ("feature set", manifest.feature_set_id),
                 ("model", manifest.model_id),
                 ("sampler", f"{manifest.sampler_name} seed={manifest.sampler_seed}"),
@@ -353,7 +353,7 @@ def _study_sections(
     if description.include_config:
         sections.extend(
             [
-                ("task config", _mapping_fields(manifest.task.model_dump(mode="json"))),
+                ("problem config", _mapping_fields(manifest.problem.model_dump(mode="json"))),
                 (
                     "feature set config",
                     _mapping_fields(manifest.feature_set.model_dump(mode="json")),
@@ -405,9 +405,9 @@ def _window_string(window) -> str:
 
 def _acquire_run_string(run: AcquireRunRecord) -> str:
     return (
-        f"task={run.task.task_id} feature_set={run.task.feature_set_id} "
-        f"history={run.task.acquired_history_window_seconds}s "
-        f"anchors={run.task.valid_anchor_samples}"
+        f"problem={run.problem.problem_id} feature_set={run.problem.feature_set_id} "
+        f"history={run.problem.acquired_history_window_seconds}s "
+        f"anchors={run.problem.valid_anchor_samples}"
     )
 
 

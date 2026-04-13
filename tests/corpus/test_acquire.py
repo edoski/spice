@@ -21,7 +21,7 @@ from spice.acquisition.rpc import (
 from spice.core.reporting import NullReporter, PlainReporter
 from spice.storage.catalog import list_dataset_records
 from spice.storage.corpus import list_acquire_runs, load_dataset_summary
-from spice.temporal.contracts import resolve_task_contract
+from spice.temporal.contracts import resolve_problem_contract
 from spice.workflows.acquire import _DaemonThreadPoolExecutor
 from spice.workflows.acquire import run as run_acquire
 
@@ -42,13 +42,13 @@ class CaptureReporter(NullReporter):
 
     def update_task(
         self,
-        task_id: int,
+        problem_id: int,
         *,
         completed: int | None = None,
         advance: int | None = None,
         message: str | None = None,
     ) -> None:
-        del task_id, completed, advance
+        del problem_id, completed, advance
         self.messages.append(message)
 
 
@@ -82,8 +82,8 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     write_dataset_dir,
 ) -> None:
     config = load_test_acquire_config(tmp_path, override=acquire_override())
-    contract = resolve_task_contract(
-        task=config.task,
+    contract = resolve_problem_contract(
+        problem=config.problem,
         feature_set=config.feature_set,
     )
     evaluation_plan = _plan_for_window(
@@ -161,12 +161,12 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     assert summary.validation.evaluation.rows == evaluation_plan.expected_rows
     assert summary.provider.name == "publicnode"
     assert len(runs) == 1
-    assert runs[0].task.task_id == config.task.id
-    assert runs[0].task.feature_set_id == config.feature_set.id
-    assert runs[0].task.feature_history_seconds == contract.feature_history_seconds
-    assert runs[0].task.required_history_seconds == contract.required_history_seconds
-    assert runs[0].task.valid_anchor_samples >= config.task.sample_count
-    assert runs[0].task.acquired_history_window_seconds >= contract.required_history_seconds
+    assert runs[0].problem.problem_id == config.problem.id
+    assert runs[0].problem.feature_set_id == config.feature_set.id
+    assert runs[0].problem.feature_history_seconds == contract.feature_history_seconds
+    assert runs[0].problem.required_history_seconds == contract.required_history_seconds
+    assert runs[0].problem.valid_anchor_samples >= config.problem.sample_count
+    assert runs[0].problem.acquired_history_window_seconds >= contract.required_history_seconds
     assert config.paths.history_dir.is_dir()
     assert config.paths.evaluation_dir.is_dir()
     datasets = list_dataset_records(
@@ -212,11 +212,11 @@ def test_acquire_cancellation_during_planning_logs_warning(
     monkeypatch.setattr("spice.workflows.acquire.Web3BlockClient", FakeAcquireClient)
 
     async def _exercise() -> None:
-        task = asyncio.create_task(acquire_workflow._run_async(config, reporter=reporter))
+        problem = asyncio.create_task(acquire_workflow._run_async(config, reporter=reporter))
         await asyncio.sleep(0.05)
-        task.cancel()
+        problem.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await task
+            await problem
 
     asyncio.run(_exercise())
 

@@ -21,7 +21,7 @@ def _workflow_facts(config: SimulateConfig) -> list[tuple[str, str]]:
     facts = [
         ("dataset", config.dataset.name),
         ("chain", config.chain.name),
-        ("task", config.task.id),
+        ("problem", config.problem.id),
         ("execution", config.execution.id),
         ("model", config.model.id),
         ("variant", config.artifact.variant.value),
@@ -46,7 +46,7 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
         config,
         run_name=(
             f"simulate-{config.chain.name}-{config.model.id}"
-            f"-{config.task.id}-{config.execution.id}"
+            f"-{config.problem.id}-{config.execution.id}"
         ),
         reporter=reporter,
     ) as session:
@@ -78,26 +78,26 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                 message=f"artifact={artifact_dir} evaluation={evaluation_block_path}",
             )
             prepare_task = prepare_reporter.start_task("prepare inference dataset")
-            if loaded_artifact.manifest.task_id != config.task.id:
+            if loaded_artifact.manifest.problem_id != config.problem.id:
                 raise ValueError(
-                    "Configured task.id does not match the trained artifact: "
-                    f"expected {loaded_artifact.manifest.task_id}, got {config.task.id}"
+                    "Configured problem.id does not match the trained artifact: "
+                    f"expected {loaded_artifact.manifest.problem_id}, got {config.problem.id}"
                 )
             if (
                 loaded_artifact.manifest.max_supported_delay_seconds
-                != config.task.max_supported_delay_seconds
+                != config.problem.max_supported_delay_seconds
             ):
                 raise ValueError(
-                    "Configured task.max_supported_delay_seconds does not match "
+                    "Configured problem.max_supported_delay_seconds does not match "
                     "the trained artifact"
                 )
             if (
-                loaded_artifact.manifest.lookback_seconds != config.task.lookback_seconds
-                or loaded_artifact.manifest.sample_count != config.task.sample_count
+                loaded_artifact.manifest.lookback_seconds != config.problem.lookback_seconds
+                or loaded_artifact.manifest.sample_count != config.problem.sample_count
             ):
-                raise ValueError("Configured task does not match the trained artifact contract")
+                raise ValueError("Configured problem does not match the trained artifact contract")
             contract = resolve_feature_contract(
-                task=config.task,
+                problem=config.problem,
                 feature_set_id=selection.feature_set_id,
                 feature_names=selection.feature_names,
             )

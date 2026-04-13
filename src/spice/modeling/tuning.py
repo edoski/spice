@@ -47,7 +47,15 @@ def apply_study_best_params(config: TrainConfig) -> TrainConfig:
     path = config.paths.study_state_db
     if path is None:
         raise ValueError("study_state_db is required for tuned artifacts")
-    manifest = load_study_manifest(path)
+    try:
+        manifest = load_study_manifest(path)
+    except ValueError as exc:
+        if str(exc).startswith("Missing study manifest:"):
+            raise ValueError(
+                "Configured tuned study does not match the current problem, feature set, "
+                "model, or study selection"
+            ) from exc
+        raise
     validate_tuned_train_request(config, manifest=manifest)
     try:
         params = load_best_params(path, study_name=config.study.name)

@@ -12,6 +12,7 @@ import torch
 from numpy.typing import NDArray
 
 from ..temporal.store import TemporalDatasetStore
+from .problem_batches import CandidateChoiceTargets, TemporalProblemBatch
 
 IntVector = NDArray[np.int64]
 _MAX_AUTOMATIC_MATERIALIZATION_BYTES = 8 * 1024**3
@@ -23,6 +24,27 @@ class SequenceEventBatch(NamedTuple):
     input_mask: torch.Tensor
     candidate_log_fees: torch.Tensor
     candidate_mask: torch.Tensor
+
+    def to_device(self, device: torch.device) -> SequenceEventBatch:
+        return SequenceEventBatch(
+            sample_positions=self.sample_positions,
+            inputs=self.inputs.to(device),
+            input_mask=self.input_mask.to(device),
+            candidate_log_fees=self.candidate_log_fees.to(device),
+            candidate_mask=self.candidate_mask.to(device),
+        )
+
+    def model_kwargs(self) -> dict[str, torch.Tensor]:
+        return {
+            "inputs": self.inputs,
+            "input_mask": self.input_mask,
+        }
+
+    def objective_targets(self) -> CandidateChoiceTargets:
+        return CandidateChoiceTargets(
+            candidate_log_fees=self.candidate_log_fees,
+            candidate_mask=self.candidate_mask,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +67,7 @@ class PreparedRepresentation(Protocol):
         epoch: int,
         seed: int,
         shuffle: bool,
-    ) -> Iterator[SequenceEventBatch]: ...
+    ) -> Iterator[TemporalProblemBatch]: ...
 
 
 class RepresentationLoader(Protocol):
@@ -53,7 +75,7 @@ class RepresentationLoader(Protocol):
     storage_mode_id: str
     batch_planner_id: str
 
-    def __iter__(self) -> Iterator[SequenceEventBatch]: ...
+    def __iter__(self) -> Iterator[TemporalProblemBatch]: ...
 
     def __len__(self) -> int: ...
 
@@ -92,7 +114,7 @@ class PreparedRepresentationLoader:
     def __len__(self) -> int:
         return len(self.prepared)
 
-    def __iter__(self) -> Iterator[SequenceEventBatch]:
+    def __iter__(self) -> Iterator[TemporalProblemBatch]:
         epoch = self._epoch if self.shuffle else 0
         iterator = self.prepared.iter_batches(
             epoch=epoch,
@@ -223,20 +245,6 @@ def build_sequence_event_batch(
         candidate_mask=torch.from_numpy(candidate_mask),
     )
 
-
-def move_batch_to_device(
-    batch: SequenceEventBatch,
-    device: torch.device,
-) -> SequenceEventBatch:
-    return SequenceEventBatch(
-        sample_positions=batch.sample_positions,
-        inputs=batch.inputs.to(device),
-        input_mask=batch.input_mask.to(device),
-        candidate_log_fees=batch.candidate_log_fees.to(device),
-        candidate_mask=batch.candidate_mask.to(device),
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class _SequenceEventLayout:
     sample_indices: IntVector
@@ -264,7 +272,7 @@ class _StreamingSequenceEventRepresentation:
         epoch: int,
         seed: int,
         shuffle: bool,
-    ) -> Iterator[SequenceEventBatch]:
+    ) -> Iterator[TemporalProblemBatch]:
         order = _sequence_event_order(
             self.layout,
             epoch=epoch,
@@ -304,7 +312,7 @@ class _MaterializedSequenceEventRepresentation:
         epoch: int,
         seed: int,
         shuffle: bool,
-    ) -> Iterator[SequenceEventBatch]:
+    ) -> Iterator[TemporalProblemBatch]:
         order = _sequence_event_order(
             self.layout,
             epoch=epoch,

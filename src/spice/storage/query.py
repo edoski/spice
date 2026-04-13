@@ -80,7 +80,7 @@ class StudySelector:
     dataset_name: str | None = None
     feature_set_id: str | None = None
     model_id: str | None = None
-    task_id: str | None = None
+    problem_id: str | None = None
     study_name: str | None = None
 
 
@@ -90,7 +90,7 @@ class ArtifactSelector:
     dataset_name: str | None = None
     feature_set_id: str | None = None
     model_id: str | None = None
-    task_id: str | None = None
+    problem_id: str | None = None
     variant: str | None = None
     study_name: str | None = None
 
@@ -120,7 +120,7 @@ def list_study_records(
         dataset_name=selector.dataset_name,
         feature_set_id=selector.feature_set_id,
         model_id=selector.model_id,
-        task_id=selector.task_id,
+        problem_id=selector.problem_id,
         study_name=selector.study_name,
     )
 
@@ -137,7 +137,7 @@ def list_artifact_records(
         dataset_name=selector.dataset_name,
         feature_set_id=selector.feature_set_id,
         model_id=selector.model_id,
-        task_id=selector.task_id,
+        problem_id=selector.problem_id,
         variant=selector.variant,
         study_name=selector.study_name,
     )

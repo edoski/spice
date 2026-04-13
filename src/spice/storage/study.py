@@ -16,8 +16,8 @@ from sqlalchemy import select
 from ..config import (
     FeatureSetConfig,
     ModelConfig,
+    ProblemSpec,
     SplitConfig,
-    TaskSpec,
     TrainConfig,
     TrainingConfig,
     TuneConfig,
@@ -54,7 +54,7 @@ class StudyManifest:
     chain_name: str
     dataset_id: str
     dataset_name: str
-    task: TaskSpec
+    problem: ProblemSpec
     feature_set: FeatureSetConfig
     model: ModelConfig
     split: SplitConfig
@@ -66,8 +66,8 @@ class StudyManifest:
     tuning_space: TuningSpaceConfig
 
     @property
-    def task_id(self) -> str:
-        return self.task.id
+    def problem_id(self) -> str:
+        return self.problem.id
 
     @property
     def feature_set_id(self) -> str:
@@ -138,7 +138,7 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
         chain_name=config.chain.name,
         dataset_id=config.paths.corpus_id,
         dataset_name=config.dataset.name,
-        task=config.task,
+        problem=config.problem,
         feature_set=config.feature_set,
         model=config.model,
         split=config.split,
@@ -180,7 +180,7 @@ def load_study_manifest(db_path: Path) -> StudyManifest:
             chain_name=str(row["chain_name"]),
             dataset_id=str(row["dataset_id"]),
             dataset_name=str(row["dataset_name"]),
-            task=TaskSpec.model_validate(_mapping(row["task"])),
+            problem=ProblemSpec.model_validate(_mapping(row["problem"])),
             feature_set=FeatureSetConfig.model_validate(_mapping(row["feature_set"])),
             model=model,
             split=SplitConfig.model_validate(_mapping(row["split"])),
@@ -330,7 +330,7 @@ def study_summary_sections(
                 ("storage id", summary.manifest.study_id),
                 ("chain", summary.manifest.chain_name),
                 ("dataset", summary.manifest.dataset_name),
-                ("task", summary.manifest.task_id),
+                ("problem", summary.manifest.problem_id),
                 ("model", summary.manifest.model_id),
                 ("trials", str(summary.trial_counts.total)),
             ],
@@ -375,7 +375,7 @@ def validate_tuned_train_request(config: TrainConfig, *, manifest: StudyManifest
         "chain_name": manifest.chain_name,
         "dataset_id": manifest.dataset_id,
         "dataset_name": manifest.dataset_name,
-        "task": manifest.task.model_dump(mode="json"),
+        "problem": manifest.problem.model_dump(mode="json"),
         "feature_set": manifest.feature_set.model_dump(mode="json"),
         "model": manifest.model.model_dump(mode="json", exclude_none=True),
     }
@@ -386,7 +386,7 @@ def validate_tuned_train_request(config: TrainConfig, *, manifest: StudyManifest
         "chain_name": config.chain.name,
         "dataset_id": config.paths.corpus_id,
         "dataset_name": config.dataset.name,
-        "task": config.task.model_dump(mode="json"),
+        "problem": config.problem.model_dump(mode="json"),
         "feature_set": config.feature_set.model_dump(mode="json"),
         "model": config.model.model_dump(mode="json", exclude_none=True),
     }
@@ -484,10 +484,10 @@ def _manifest_values(manifest: StudyManifest) -> dict[str, object]:
         "chain_name": manifest.chain_name,
         "dataset_id": manifest.dataset_id,
         "dataset_name": manifest.dataset_name,
-        "task_id": manifest.task_id,
+        "problem_id": manifest.problem_id,
         "feature_set_id": manifest.feature_set_id,
         "model_id": manifest.model_id,
-        "task": manifest.task.model_dump(mode="json"),
+        "problem": manifest.problem.model_dump(mode="json"),
         "feature_set": manifest.feature_set.model_dump(mode="json"),
         "model": manifest.model.model_dump(mode="json", exclude_none=True),
         "split": manifest.split.model_dump(mode="json"),
@@ -510,7 +510,7 @@ def _study_semantics_payload(manifest: StudyManifest) -> dict[str, object]:
         "chain_name": manifest.chain_name,
         "dataset_id": manifest.dataset_id,
         "dataset_name": manifest.dataset_name,
-        "task": manifest.task.model_dump(mode="json"),
+        "problem": manifest.problem.model_dump(mode="json"),
         "feature_set": manifest.feature_set.model_dump(mode="json"),
         "model": manifest.model.model_dump(mode="json", exclude_none=True),
         "split": manifest.split.model_dump(mode="json"),

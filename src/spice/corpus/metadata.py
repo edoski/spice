@@ -10,7 +10,7 @@ from ..acquisition.rpc import AcquisitionRuntimeSnapshot
 from ..config import AcquireConfig
 from ..corpus.io import iter_block_files
 from ..corpus.validation import BlockDatasetValidationReport
-from ..temporal.contracts import ResolvedTaskContract
+from ..temporal.contracts import ProblemContract
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,8 +97,8 @@ class AcquisitionConfigSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
-class TaskContractSnapshot:
-    task_id: str
+class ProblemContractSnapshot:
+    problem_id: str
     feature_set_id: str
     lookback_seconds: int
     sample_count: int
@@ -127,7 +127,7 @@ class DatasetAcquisitionRuntimeMetadata:
 @dataclass(frozen=True, slots=True)
 class AcquireRunRecord:
     provider: ProviderMetadata
-    task: TaskContractSnapshot
+    problem: ProblemContractSnapshot
     settings: AcquisitionConfigSnapshot
     runtime: DatasetAcquisitionRuntimeMetadata
 
@@ -264,15 +264,15 @@ def build_acquire_run_record(
     *,
     config: AcquireConfig,
     provider: ProviderMetadata,
-    contract: ResolvedTaskContract,
+    contract: ProblemContract,
     acquisition_runtime: AcquisitionRuntimeSnapshot,
     acquired_history_window_seconds: int,
     valid_anchor_samples: int,
 ) -> AcquireRunRecord:
     return AcquireRunRecord(
         provider=provider,
-        task=TaskContractSnapshot(
-            task_id=config.task.id,
+        problem=ProblemContractSnapshot(
+            problem_id=config.problem.id,
             feature_set_id=config.feature_set.id,
             lookback_seconds=contract.lookback_seconds,
             sample_count=contract.sample_count,

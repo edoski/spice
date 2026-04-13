@@ -16,6 +16,7 @@ from spice.modeling.objective import (
     optuna_direction,
     primary_validation_metric_name,
 )
+from spice.modeling.problem_batches import CandidateChoiceTargets
 from spice.modeling.simulation import run_temporal_simulation
 from spice.temporal.store import build_temporal_store
 from spice.temporal.window import DelayWindow
@@ -56,8 +57,13 @@ def test_objective_loss_prefers_cheaper_candidates_and_ignores_masked_slots() ->
     logits_bad = torch.tensor([[4.0, -4.0, 100.0]], dtype=torch.float32)
     logits_good = torch.tensor([[-4.0, 4.0, 100.0]], dtype=torch.float32)
 
-    bad_loss = compute_objective_loss(logits_bad, candidate_log_fees, candidate_mask)
-    good_loss = compute_objective_loss(logits_good, candidate_log_fees, candidate_mask)
+    targets = CandidateChoiceTargets(
+        candidate_log_fees=candidate_log_fees,
+        candidate_mask=candidate_mask,
+    )
+
+    bad_loss = compute_objective_loss(logits_bad, targets)
+    good_loss = compute_objective_loss(logits_good, targets)
 
     assert good_loss.item() < bad_loss.item()
 

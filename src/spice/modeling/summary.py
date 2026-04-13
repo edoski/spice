@@ -16,7 +16,7 @@ def training_summary_sections(
                 ("storage id", summary.dataset_id),
                 ("chain", summary.chain),
                 ("model", summary.model_id),
-                ("task", summary.task_id),
+                ("problem", summary.problem_id),
             ],
         ),
         (
@@ -81,7 +81,7 @@ def simulation_summary_sections(
                 ("storage id", summary.dataset_id),
                 ("chain", summary.chain),
                 ("model", summary.model_id),
-                ("task", summary.task_id),
+                ("problem", summary.problem_id),
             ],
         ),
         (

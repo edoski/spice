@@ -44,10 +44,10 @@ def build_path_layout(
     dataset: DatasetSpec,
     feature_set_name: str | None = None,
     model_name: str | None = None,
-    task_name: str | None = None,
+    problem_name: str | None = None,
     feature_set_payload: dict[str, object] | None = None,
     model_payload: dict[str, object] | None = None,
-    task_payload: dict[str, object] | None = None,
+    problem_payload: dict[str, object] | None = None,
     variant: ArtifactVariant | None = None,
     study_name: str = "default",
     include_artifacts: bool = False,
@@ -69,11 +69,11 @@ def build_path_layout(
     study_state_db: Path | None = None
 
     if include_artifacts:
-        if feature_set_name is None or model_name is None or task_name is None:
-            raise ValueError("artifact paths require feature_set_name, model_name, task_name")
-        if feature_set_payload is None or model_payload is None or task_payload is None:
+        if feature_set_name is None or model_name is None or problem_name is None:
+            raise ValueError("artifact paths require feature_set_name, model_name, problem_name")
+        if feature_set_payload is None or model_payload is None or problem_payload is None:
             raise ValueError(
-                "artifact paths require feature_set_payload, model_payload, task_payload"
+                "artifact paths require feature_set_payload, model_payload, problem_payload"
             )
         if tuning_mode or resolved_variant is ArtifactVariant.TUNED:
             study_id = study_storage_id(
@@ -82,7 +82,7 @@ def build_path_layout(
                 objective_id=active_objective().objective_id,
                 feature_set=feature_set_payload,
                 model=model_payload,
-                task=task_payload,
+                problem=problem_payload,
                 study_name=study_name,
             )
             study_root = output_root / "studies" / chain.name / study_id
@@ -94,7 +94,7 @@ def build_path_layout(
                 objective_id=active_objective().objective_id,
                 feature_set=feature_set_payload,
                 model=model_payload,
-                task=task_payload,
+                problem=problem_payload,
                 variant=resolved_variant.value,
                 study_id=study_id if resolved_variant is ArtifactVariant.TUNED else None,
             )

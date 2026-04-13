@@ -24,7 +24,7 @@ class TrainingArtifactManifest:
     chain: ArtifactChainMetadata
     dataset_id: str
     dataset_name: str
-    task_id: str
+    problem_id: str
     variant: ArtifactVariant
     study: StudyConfig | None
     study_id: str | None
@@ -62,7 +62,7 @@ class TrainingSummary:
     study: StudyConfig | None
     study_id: str | None
     model_id: str
-    task_id: str
+    problem_id: str
     max_supported_delay_seconds: int
     lookback_seconds: int
     feature_history_seconds: int
@@ -101,7 +101,7 @@ class SimulationSummaryRecord:
     study: StudyConfig | None
     study_id: str | None
     model_id: str
-    task_id: str
+    problem_id: str
     max_supported_delay_seconds: int
     requested_delay_seconds: int
     lookback_seconds: int
@@ -163,7 +163,7 @@ def build_training_summary(
         study=manifest.study,
         study_id=manifest.study_id,
         model_id=model_id,
-        task_id=manifest.task_id,
+        problem_id=manifest.problem_id,
         max_supported_delay_seconds=manifest.max_supported_delay_seconds,
         lookback_seconds=manifest.lookback_seconds,
         feature_history_seconds=manifest.feature_history_seconds,
@@ -209,7 +209,7 @@ def build_simulation_summary_record(
         study=manifest.study,
         study_id=manifest.study_id,
         model_id=manifest.model.id,
-        task_id=manifest.task_id,
+        problem_id=manifest.problem_id,
         max_supported_delay_seconds=manifest.max_supported_delay_seconds,
         requested_delay_seconds=requested_delay_seconds,
         lookback_seconds=manifest.lookback_seconds,

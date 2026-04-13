@@ -40,6 +40,7 @@ def _workflow_facts(config: TrainConfig) -> list[tuple[str, str]]:
     facts = [
         ("dataset", config.dataset.name),
         ("chain", config.chain.name),
+        ("problem", config.problem.id),
         ("model", config.model.id),
         ("variant", config.artifact.variant.value),
     ]
@@ -59,7 +60,7 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
         run_name=(
             "train-"
             f"{config.chain.name}-{config.model.id}-"
-            f"{config.task.id}"
+            f"{config.problem.id}"
         ),
         reporter=reporter,
     ) as session:
@@ -116,7 +117,7 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
                 chain_name=active_config.chain.name,
                 feature_set_id=active_config.feature_set.id,
                 model_id=active_config.model.id,
-                task_id=active_config.task.id,
+                problem_id=active_config.problem.id,
                 variant=active_config.artifact.variant.value,
                 study_id=active_config.paths.study_id,
                 study_name=(

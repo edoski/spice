@@ -35,10 +35,10 @@ from ..options import (
     DatasetFilterOption,
     FeatureSetFilterOption,
     ModelFilterOption,
+    ProblemFilterOption,
     StorageRootDeleteOption,
     StorageRootReadOption,
     StudyFilterOption,
-    TaskFilterOption,
     VariantFilterOption,
     fail,
     print_sections,
@@ -138,7 +138,7 @@ def show_study_command(
     dataset: DatasetFilterOption = None,
     feature_set: FeatureSetFilterOption = None,
     model: ModelFilterOption = None,
-    task: TaskFilterOption = None,
+    problem: ProblemFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootReadOption = None,
     detail: str | None = typer.Option(
@@ -155,7 +155,7 @@ def show_study_command(
             dataset_name=dataset,
             feature_set_id=feature_set,
             model_id=model,
-            task_id=task,
+            problem_id=problem,
             study_name=study,
         ),
     )
@@ -163,7 +163,7 @@ def show_study_command(
         kind="study",
         records=records,
         has_filters=any(
-            value is not None for value in (chain, dataset, feature_set, model, task, study)
+            value is not None for value in (chain, dataset, feature_set, model, problem, study)
         ),
         detail=detail,
         list_sections=study_list_sections,
@@ -180,7 +180,7 @@ def show_artifact_command(
     dataset: DatasetFilterOption = None,
     feature_set: FeatureSetFilterOption = None,
     model: ModelFilterOption = None,
-    task: TaskFilterOption = None,
+    problem: ProblemFilterOption = None,
     variant: VariantFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootReadOption = None,
@@ -198,7 +198,7 @@ def show_artifact_command(
             dataset_name=dataset,
             feature_set_id=feature_set,
             model_id=model,
-            task_id=task,
+            problem_id=problem,
             variant=variant,
             study_name=study,
         ),
@@ -208,7 +208,7 @@ def show_artifact_command(
         records=records,
         has_filters=any(
             value is not None
-            for value in (chain, dataset, feature_set, model, task, variant, study)
+            for value in (chain, dataset, feature_set, model, problem, variant, study)
         ),
         detail=detail,
         list_sections=artifact_list_sections,
@@ -225,7 +225,7 @@ def delete_artifact_command(
     dataset: DatasetFilterOption = None,
     feature_set: FeatureSetFilterOption = None,
     model: ModelFilterOption = None,
-    task: TaskFilterOption = None,
+    problem: ProblemFilterOption = None,
     variant: VariantFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootDeleteOption = None,
@@ -236,7 +236,7 @@ def delete_artifact_command(
         dataset_name=dataset,
         feature_set_id=feature_set,
         model_id=model,
-        task_id=task,
+        problem_id=problem,
         variant=variant,
         study_name=study,
     )
@@ -258,7 +258,7 @@ def delete_study_command(
     dataset: DatasetFilterOption = None,
     feature_set: FeatureSetFilterOption = None,
     model: ModelFilterOption = None,
-    task: TaskFilterOption = None,
+    problem: ProblemFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootDeleteOption = None,
     cascade: Annotated[
@@ -272,7 +272,7 @@ def delete_study_command(
         dataset_name=dataset,
         feature_set_id=feature_set,
         model_id=model,
-        task_id=task,
+        problem_id=problem,
         study_name=study,
     )
     try:

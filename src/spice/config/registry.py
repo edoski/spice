@@ -17,8 +17,8 @@ from .models import (
     ExecutionSpec,
     FeatureSetConfig,
     PresetSpec,
+    ProblemSpec,
     ProviderSpec,
-    TaskSpec,
 )
 
 _CONF_ROOT = Path(__file__).resolve().parents[1] / "conf"
@@ -28,7 +28,7 @@ class ConfigGroup(StrEnum):
     CHAIN = "chain"
     PROVIDER = "provider"
     DATASET = "dataset"
-    TASK = "task"
+    PROBLEM = "problem"
     EXECUTION = "execution"
     FEATURE_SET = "feature-set"
     PRESET = "preset"
@@ -66,9 +66,9 @@ _GROUP_DEFINITIONS = (
         authorable=True,
     ),
     ConfigGroupDefinition(
-        token=ConfigGroup.TASK.value,
-        directory="task",
-        model_type=TaskSpec,
+        token=ConfigGroup.PROBLEM.value,
+        directory="problem",
+        model_type=ProblemSpec,
         identity_field="id",
         authorable=True,
     ),
@@ -107,7 +107,7 @@ _KNOWN_GROUP_DIRECTORIES = frozenset(
         "provider",
         "simulation",
         "split",
-        "task",
+        "problem",
         "training",
         "tuning",
         "tuning_space",
@@ -115,7 +115,7 @@ _KNOWN_GROUP_DIRECTORIES = frozenset(
 )
 _PRESET_REFERENCE_GROUPS = {
     "dataset": "dataset",
-    "task": "task",
+    "problem": "problem",
     "execution": "execution",
     "chain": "chain",
     "provider": "provider",
@@ -311,14 +311,14 @@ def dependent_specs(*, group_token: str, name: str) -> list[str]:
     if group_token in {
         ConfigGroup.PROVIDER.value,
         ConfigGroup.DATASET.value,
-        ConfigGroup.TASK.value,
+        ConfigGroup.PROBLEM.value,
         ConfigGroup.EXECUTION.value,
         ConfigGroup.FEATURE_SET.value,
     }:
         preset_field = {
             ConfigGroup.PROVIDER.value: "provider",
             ConfigGroup.DATASET.value: "dataset",
-            ConfigGroup.TASK.value: "task",
+            ConfigGroup.PROBLEM.value: "problem",
             ConfigGroup.EXECUTION.value: "execution",
             ConfigGroup.FEATURE_SET.value: "feature_set",
         }[group_token]

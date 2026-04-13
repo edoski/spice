@@ -16,7 +16,7 @@ from ._runtime import (
     resolve_device,
 )
 from .models import TemporalModel
-from .representations import SequenceEventBatch, move_batch_to_device
+from .problem_batches import TemporalProblemBatch
 
 IntVector = NDArray[np.int64]
 
@@ -53,12 +53,13 @@ def predict_candidate_offsets(
     predictions = [0] * int(sample_indices.shape[0])
     with torch.no_grad():
         for batch in loader:
-            batch = cast(SequenceEventBatch, batch)
+            batch = cast(TemporalProblemBatch, batch)
             sample_positions = batch.sample_positions.tolist()
-            device_batch = move_batch_to_device(batch, resolved_device)
-            logits = model(device_batch.inputs, device_batch.input_mask).logits
+            device_batch = batch.to_device(resolved_device)
+            logits = model(**device_batch.model_kwargs()).logits
+            targets = device_batch.objective_targets()
             logits = logits.masked_fill(
-                ~device_batch.candidate_mask,
+                ~targets.candidate_mask,
                 torch.finfo(logits.dtype).min,
             )
             batch_predictions = logits.argmax(dim=-1).cpu().tolist()

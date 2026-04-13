@@ -37,7 +37,7 @@ study_index = Table(
     Column("chain_name", String, nullable=False),
     Column("feature_set_id", String, nullable=False),
     Column("model_id", String, nullable=False),
-    Column("task_id", String, nullable=False),
+    Column("problem_id", String, nullable=False),
     Column("root_path", String, nullable=False),
     Column("state_db_path", String, nullable=False),
     Column("created_at", Integer, nullable=False),
@@ -53,7 +53,7 @@ artifact_index = Table(
     Column("chain_name", String, nullable=False),
     Column("feature_set_id", String, nullable=False),
     Column("model_id", String, nullable=False),
-    Column("task_id", String, nullable=False),
+    Column("problem_id", String, nullable=False),
     Column("variant", String, nullable=False),
     Column("study_id", String),
     Column("study_name", String),
@@ -83,7 +83,7 @@ class CatalogStudyRecord:
     chain_name: str
     feature_set_id: str
     model_id: str
-    task_id: str
+    problem_id: str
     root_path: Path
     state_db_path: Path
 
@@ -96,7 +96,7 @@ class CatalogArtifactRecord:
     chain_name: str
     feature_set_id: str
     model_id: str
-    task_id: str
+    problem_id: str
     variant: str
     study_id: str | None
     study_name: str | None
@@ -146,7 +146,7 @@ def upsert_study_record(
     chain_name: str,
     feature_set_id: str,
     model_id: str,
-    task_id: str,
+    problem_id: str,
     root_path: Path,
     state_db_path: Path,
 ) -> None:
@@ -159,7 +159,7 @@ def upsert_study_record(
         "chain_name": chain_name,
         "feature_set_id": feature_set_id,
         "model_id": model_id,
-        "task_id": task_id,
+        "problem_id": problem_id,
         "root_path": str(root_path),
         "state_db_path": str(state_db_path),
         "created_at": now,
@@ -177,7 +177,7 @@ def upsert_artifact_record(
     chain_name: str,
     feature_set_id: str,
     model_id: str,
-    task_id: str,
+    problem_id: str,
     variant: str,
     study_id: str | None,
     study_name: str | None,
@@ -192,7 +192,7 @@ def upsert_artifact_record(
         "chain_name": chain_name,
         "feature_set_id": feature_set_id,
         "model_id": model_id,
-        "task_id": task_id,
+        "problem_id": problem_id,
         "variant": variant,
         "study_id": study_id,
         "study_name": study_name,
@@ -238,7 +238,7 @@ def list_study_records(
     dataset_name: str | None = None,
     feature_set_id: str | None = None,
     model_id: str | None = None,
-    task_id: str | None = None,
+    problem_id: str | None = None,
     study_name: str | None = None,
 ) -> list[CatalogStudyRecord]:
     return [
@@ -250,7 +250,7 @@ def list_study_records(
             chain_name=str(row["chain_name"]),
             feature_set_id=str(row["feature_set_id"]),
             model_id=str(row["model_id"]),
-            task_id=str(row["task_id"]),
+            problem_id=str(row["problem_id"]),
             root_path=Path(str(row["root_path"])),
             state_db_path=Path(str(row["state_db_path"])),
         )
@@ -262,7 +262,7 @@ def list_study_records(
                 _eq(study_index.c.dataset_name, dataset_name),
                 _eq(study_index.c.feature_set_id, feature_set_id),
                 _eq(study_index.c.model_id, model_id),
-                _eq(study_index.c.task_id, task_id),
+                _eq(study_index.c.problem_id, problem_id),
                 _eq(study_index.c.study_name, study_name),
             ],
             order_by=[
@@ -270,7 +270,7 @@ def list_study_records(
                 study_index.c.dataset_name,
                 study_index.c.feature_set_id,
                 study_index.c.model_id,
-                study_index.c.task_id,
+                study_index.c.problem_id,
                 study_index.c.study_name,
             ],
         )
@@ -284,7 +284,7 @@ def list_artifact_records(
     dataset_name: str | None = None,
     feature_set_id: str | None = None,
     model_id: str | None = None,
-    task_id: str | None = None,
+    problem_id: str | None = None,
     variant: str | None = None,
     study_name: str | None = None,
 ) -> list[CatalogArtifactRecord]:
@@ -296,7 +296,7 @@ def list_artifact_records(
             chain_name=str(row["chain_name"]),
             feature_set_id=str(row["feature_set_id"]),
             model_id=str(row["model_id"]),
-            task_id=str(row["task_id"]),
+            problem_id=str(row["problem_id"]),
             variant=str(row["variant"]),
             study_id=None if row["study_id"] is None else str(row["study_id"]),
             study_name=None if row["study_name"] is None else str(row["study_name"]),
@@ -311,7 +311,7 @@ def list_artifact_records(
                 _eq(artifact_index.c.dataset_name, dataset_name),
                 _eq(artifact_index.c.feature_set_id, feature_set_id),
                 _eq(artifact_index.c.model_id, model_id),
-                _eq(artifact_index.c.task_id, task_id),
+                _eq(artifact_index.c.problem_id, problem_id),
                 _eq(artifact_index.c.variant, variant),
                 _eq(artifact_index.c.study_name, study_name),
             ],
@@ -320,7 +320,7 @@ def list_artifact_records(
                 artifact_index.c.dataset_name,
                 artifact_index.c.feature_set_id,
                 artifact_index.c.model_id,
-                artifact_index.c.task_id,
+                artifact_index.c.problem_id,
                 artifact_index.c.variant,
             ],
         )
@@ -354,7 +354,7 @@ def list_studies_for_dataset(path: Path, *, dataset_id: str) -> list[CatalogStud
             chain_name=str(row["chain_name"]),
             feature_set_id=str(row["feature_set_id"]),
             model_id=str(row["model_id"]),
-            task_id=str(row["task_id"]),
+            problem_id=str(row["problem_id"]),
             root_path=Path(str(row["root_path"])),
             state_db_path=Path(str(row["state_db_path"])),
         )
@@ -376,7 +376,7 @@ def list_artifacts_for_dataset(path: Path, *, dataset_id: str) -> list[CatalogAr
             chain_name=str(row["chain_name"]),
             feature_set_id=str(row["feature_set_id"]),
             model_id=str(row["model_id"]),
-            task_id=str(row["task_id"]),
+            problem_id=str(row["problem_id"]),
             variant=str(row["variant"]),
             study_id=None if row["study_id"] is None else str(row["study_id"]),
             study_name=None if row["study_name"] is None else str(row["study_name"]),
@@ -401,7 +401,7 @@ def list_artifacts_for_study(path: Path, *, study_id: str) -> list[CatalogArtifa
             chain_name=str(row["chain_name"]),
             feature_set_id=str(row["feature_set_id"]),
             model_id=str(row["model_id"]),
-            task_id=str(row["task_id"]),
+            problem_id=str(row["problem_id"]),
             variant=str(row["variant"]),
             study_id=None if row["study_id"] is None else str(row["study_id"]),
             study_name=None if row["study_name"] is None else str(row["study_name"]),

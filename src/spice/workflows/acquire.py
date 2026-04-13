@@ -33,7 +33,7 @@ from ..corpus.summary import acquire_dry_run_sections, acquisition_summary_secti
 from ..features import FeatureSelection, build_feature_table, make_feature_selection
 from ..storage.catalog import upsert_dataset_record
 from ..storage.corpus import write_dataset_state
-from ..temporal.contracts import resolve_task_contract
+from ..temporal.contracts import resolve_problem_contract
 from ..temporal.store import build_temporal_store
 from ..temporal.window import DelayWindow
 from ._shared import managed_workflow
@@ -43,7 +43,7 @@ def _workflow_facts(config: AcquireConfig) -> list[tuple[str, str]]:
     return [
         ("dataset", config.dataset.name),
         ("chain", config.chain.name),
-        ("task", config.task.id),
+        ("problem", config.problem.id),
         ("feature set", config.feature_set.id),
         ("provider", config.provider.name),
     ]
@@ -170,8 +170,8 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
     evaluation_dir = config.paths.evaluation_dir
     state_db_path = config.paths.corpus_state_db
     rpc_controller = RpcController.from_config(config.acquisition)
-    contract = resolve_task_contract(
-        task=config.task,
+    contract = resolve_problem_contract(
+        problem=config.problem,
         feature_set=config.feature_set,
     )
     selection = make_feature_selection(
@@ -185,7 +185,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
 
     with managed_workflow(
         config,
-        run_name=f"acquire-{config.chain.name}-{config.task.id}-{config.provider.name}",
+        run_name=f"acquire-{config.chain.name}-{config.problem.id}-{config.provider.name}",
         reporter=reporter,
     ) as session:
         session.runtime.configure_workflow("acquire", _workflow_facts(config))
