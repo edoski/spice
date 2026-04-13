@@ -1,5 +1,6 @@
 """Public configuration API."""
 
+from ..storage.layout import PathLayout, build_path_layout
 from .loader import (
     load_acquire_config,
     load_named_group,
@@ -21,7 +22,6 @@ from .models import (
     FeatureSetConfig,
     ModelConfig,
     ModelTuningSpaceConfig,
-    PathLayout,
     PresetSpec,
     ProviderSpec,
     SimulateConfig,
@@ -42,7 +42,6 @@ from .models import (
     TuningTrainingSearchSpace,
     WorkflowTask,
     apply_provider_acquisition_overrides,
-    build_path_layout,
 )
 
 __all__ = [

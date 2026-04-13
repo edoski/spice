@@ -15,10 +15,16 @@ from ..config import (
     SplitConfig,
     StudyConfig,
     TaskSpec,
+    TrainConfig,
     TrainingConfig,
+    TuneConfig,
 )
-from ..core.console import NullReporter, Reporter
-from ..data.datasets import (
+from ..core.reporting import NullReporter, Reporter
+from ..corpus.io import load_block_frame
+from ..features import FeatureSelection, build_feature_table, make_feature_selection
+from ..temporal.contracts import ResolvedTaskContract, resolve_task_contract
+from ..temporal.scaling import ScalerStats, fit_standard_scaler, transform_feature_matrix
+from ..temporal.store import (
     DatasetSplitIndices,
     IntVector,
     TemporalDatasetStore,
@@ -27,13 +33,9 @@ from ..data.datasets import (
     filter_sample_indices_by_timestamp_window,
     tail_sample_indices,
 )
-from ..data.io import load_block_frame
-from ..data.normalization import ScalerStats, fit_standard_scaler, transform_feature_matrix
-from ..features import FeatureSelection, build_feature_table, make_feature_selection
-from ..planning.contracts import ResolvedTaskContract
-from ..planning.geometry import DelayWindow
+from ..temporal.window import DelayWindow
+from .families.registry import build_model
 from .models import TemporalModel
-from .registry import build_model
 from .training import TrainingResult, train_model
 
 
@@ -52,6 +54,33 @@ class TrainingSpec:
     variant: ArtifactVariant = ArtifactVariant.BASELINE
     study: StudyConfig | None = None
     study_id: str | None = None
+
+
+def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
+    variant = ArtifactVariant.TUNED if isinstance(config, TuneConfig) else config.artifact.variant
+    contract = resolve_task_contract(
+        task=config.task,
+        feature_set=config.feature_set,
+    )
+    return TrainingSpec(
+        chain=config.chain,
+        dataset_id=config.paths.corpus_id,
+        dataset_name=config.dataset.name,
+        artifact_id=(
+            config.paths.artifact_id
+            if config.paths.artifact_id is not None
+            else config.paths.study_id or "trial"
+        ),
+        task=config.task,
+        contract=contract,
+        feature_set=config.feature_set,
+        model=config.model,
+        variant=variant,
+        study=config.study if variant is ArtifactVariant.TUNED else None,
+        study_id=config.paths.study_id if variant is ArtifactVariant.TUNED else None,
+        split=config.split,
+        training=config.training,
+    )
 
 
 @dataclass(slots=True)

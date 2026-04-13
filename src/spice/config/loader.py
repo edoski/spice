@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TypeVar, cast
 
-from ..modeling.registry import coerce_model_config, coerce_tuning_space_config
+from ..modeling.families.registry import coerce_model_config, coerce_tuning_space_config
 from .models import (
     AcquireConfig,
     AcquisitionConfig,
@@ -399,16 +399,20 @@ def load_tune_config(
         model_type=TuningConfig,
     )
     tuning_space_raw = payload.get("tuning_space")
+    tuning_space_spec: TuningSpaceConfig
     if tuning_space_raw is None:
         default_name = f"{model_spec.id}_default"
         tuning_space_spec = load_named_tuning_space(default_name, model_config=model_spec)
     elif isinstance(tuning_space_raw, str):
         tuning_space_spec = load_named_tuning_space(tuning_space_raw, model_config=model_spec)
     elif isinstance(tuning_space_raw, Mapping):
-        tuning_space = coerce_tuning_space_config(dict(tuning_space_raw), model_config=model_spec)
-        if tuning_space is None:
+        resolved_tuning_space = coerce_tuning_space_config(
+            dict(tuning_space_raw),
+            model_config=model_spec,
+        )
+        if resolved_tuning_space is None:
             raise ValueError("tuning_space is required for tune")
-        tuning_space_spec = tuning_space
+        tuning_space_spec = resolved_tuning_space
     else:
         raise ValueError("tuning_space must be provided as a spec name or mapping")
     return TuneConfig(

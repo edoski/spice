@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from ..config import SimulateConfig
-from ..core.console import Reporter
-from ..data.io import load_block_frame
+from ..core.reporting import Reporter
+from ..corpus.io import load_block_frame
 from ..modeling.artifacts import load_training_artifact, validate_artifact_feature_graph
 from ..modeling.inference import predict_candidate_offsets
 from ..modeling.pipeline import prepare_inference_dataset
-from ..modeling.reporting import build_simulation_summary_record
+from ..modeling.results import build_simulation_summary_record
 from ..modeling.simulation import run_temporal_simulation
-from ..planning.contracts import resolve_feature_contract
-from ..state import ARTIFACT_ROOT_KIND, RootKind
-from ..state.artifact import write_simulation_state
+from ..modeling.summary import simulation_summary_sections
+from ..storage import ARTIFACT_ROOT_KIND, RootKind
+from ..storage.artifact import write_simulation_state
+from ..temporal.contracts import resolve_feature_contract
 from ._shared import abort_cleanup, managed_workflow
 
 
@@ -143,7 +144,7 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                 reporter=simulation_reporter,
             )
             summary = build_simulation_summary_record(
-                loaded_artifact,
+                loaded_artifact.manifest,
                 prepared=prepared,
                 simulation=simulation,
                 requested_delay_seconds=config.execution.requested_delay_seconds,
@@ -160,47 +161,5 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
             write_reporter.finish_task(report_task, message=str(artifact_dir), silent=True)
         session.runtime.log_sectioned_summary(
             "simulation summary",
-            [
-                (
-                    "dataset",
-                    [
-                        ("name", summary.dataset_name),
-                        ("storage id", summary.dataset_id),
-                        ("chain", summary.chain),
-                        ("model", summary.model_id),
-                        ("task", summary.task_id),
-                    ],
-                ),
-                (
-                    "provenance",
-                    [
-                        ("artifact id", summary.artifact_id),
-                        ("variant", summary.variant.value),
-                        *([] if summary.study is None else [("study", summary.study.name)]),
-                        ("capability", f"{summary.max_supported_delay_seconds}s"),
-                        ("requested", f"{summary.requested_delay_seconds}s"),
-                    ],
-                ),
-                (
-                    "simulation",
-                    [
-                        ("window", f"{summary.simulation_window_seconds}s"),
-                        ("repetitions", str(summary.repetitions)),
-                        ("events", f"{summary.total_events:,}"),
-                    ],
-                ),
-                (
-                    "results",
-                    [
-                        (
-                            "profit over baseline",
-                            f"{summary.profit_over_baseline:.4f}",
-                        ),
-                        (
-                            "cost over optimum",
-                            f"{summary.cost_over_optimum:.4f}",
-                        ),
-                    ],
-                ),
-            ],
+            simulation_summary_sections(summary),
         )

@@ -3,78 +3,16 @@
 from __future__ import annotations
 
 from ..config import ArtifactVariant, TrainConfig
-from ..core.console import Reporter
 from ..core.constants import MODEL_STATE_FILENAME
 from ..core.files import remove_path
+from ..core.reporting import Reporter
 from ..modeling.execution import run_persisted_training
-from ..modeling.pipeline import TrainingStageReporters
-from ..state import ARTIFACT_ROOT_KIND, RootKind
-from ..state.catalog import upsert_artifact_record
-from ._shared import (
-    abort_cleanup,
-    apply_study_best_params,
-    build_training_spec,
-    managed_workflow,
-)
-
-
-def _format_train_summary_sections(
-    config: TrainConfig,
-    persisted,
-) -> list[tuple[str, list[tuple[str, str]]]]:
-    summary = persisted.summary
-    result = persisted.training_run.training_result
-    best_validation = persisted.best_validation_metrics
-    return [
-        (
-            "dataset",
-            [
-                ("name", summary.dataset_name),
-                ("storage id", summary.dataset_id),
-                ("chain", summary.chain),
-                ("model", summary.model_id),
-                ("task", summary.task_id),
-            ],
-        ),
-        (
-            "provenance",
-            [
-                ("artifact id", summary.artifact_id),
-                ("variant", summary.variant.value),
-                *([] if summary.study is None else [("study", summary.study.name)]),
-                ("capability", f"{summary.max_supported_delay_seconds}s"),
-            ],
-        ),
-        (
-            "runtime",
-            [
-                ("lookback", f"{summary.lookback_seconds}s"),
-                ("best epoch", str(summary.best_epoch)),
-                ("device", result.resolved_device),
-                ("precision", result.resolved_precision),
-                ("compile", "on" if result.compiled else "off"),
-            ],
-        ),
-        (
-            "metrics",
-            [
-                (
-                    "split sizes",
-                    (
-                        f"train={summary.split_sizes.train_samples:,} "
-                        f"validation={summary.split_sizes.validation_samples:,} "
-                        f"test={summary.split_sizes.test_samples:,}"
-                    ),
-                ),
-                ("validation profit", f"{best_validation.profit_over_baseline:.4f}"),
-                ("validation cost", f"{best_validation.cost_over_optimum:.4f}"),
-                (
-                    "test profit over baseline",
-                    f"{summary.test_metrics.profit_over_baseline:.4f}",
-                ),
-            ],
-        ),
-    ]
+from ..modeling.pipeline import TrainingStageReporters, build_training_spec
+from ..modeling.summary import training_summary_sections
+from ..modeling.tuning import apply_study_best_params
+from ..storage import ARTIFACT_ROOT_KIND, RootKind
+from ..storage.catalog import upsert_artifact_record
+from ._shared import abort_cleanup, managed_workflow
 
 
 def _clean_training_outputs(config: TrainConfig, *, prune_empty_root: bool) -> None:
@@ -191,5 +129,5 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
             )
         session.runtime.log_sectioned_summary(
             "training summary",
-            _format_train_summary_sections(active_config, persisted),
+            training_summary_sections(persisted.summary),
         )

@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from pydantic import (
-    BaseModel,
-    ConfigDict,
     Field,
     SerializeAsAny,
     field_validator,
@@ -19,7 +16,15 @@ from pydantic import (
 )
 
 from ..features import validate_feature_selection
-from ..identifiers import artifact_storage_id, corpus_storage_id, study_storage_id
+from ..modeling.families.base import (
+    ConfigModel,
+    ModelConfig,
+    ModelTuningSpaceConfig,
+    TunedModelParams,
+)
+
+if TYPE_CHECKING:
+    from ..storage.layout import PathLayout
 
 
 class WorkflowTask(StrEnum):
@@ -45,10 +50,6 @@ class CompileMode(StrEnum):
 class ArtifactVariant(StrEnum):
     BASELINE = "baseline"
     TUNED = "tuned"
-
-
-class ConfigModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
 def _validate_path_segment(value: str, *, label: str) -> str:
@@ -177,15 +178,6 @@ class SimulationConfig(ConfigModel):
     seed: int = Field(ge=0)
 
 
-class ModelConfig(ConfigModel):
-    id: str
-
-    @field_validator("id")
-    @classmethod
-    def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="model.id")
-
-
 class FeatureSetConfig(ConfigModel):
     id: str
     outputs: list[str] = Field(min_length=1)
@@ -236,9 +228,7 @@ class TuningTrainingSearchSpace(ConfigModel):
     @classmethod
     def validate_weight_decay_candidates(cls, values: list[float] | None) -> list[float] | None:
         if values is not None and any(value < 0.0 for value in values):
-            raise ValueError(
-                "tuning_space.training.weight_decay values must be non-negative"
-            )
+            raise ValueError("tuning_space.training.weight_decay values must be non-negative")
         return values
 
     @model_validator(mode="after")
@@ -246,15 +236,6 @@ class TuningTrainingSearchSpace(ConfigModel):
         if self.learning_rate is None and self.weight_decay is None:
             raise ValueError("tuning_space.training must declare at least one field")
         return self
-
-
-class ModelTuningSpaceConfig(ConfigModel):
-    id: str
-
-    @field_validator("id")
-    @classmethod
-    def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="tuning_space.model.id")
 
 
 class TuningSpaceConfig(ConfigModel):
@@ -275,15 +256,6 @@ class TunedTrainingParams(ConfigModel):
         if self.learning_rate is None and self.weight_decay is None:
             raise ValueError("tuned training params must declare at least one field")
         return self
-
-
-class TunedModelParams(ConfigModel):
-    id: str
-
-    @field_validator("id")
-    @classmethod
-    def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="tuned model params id")
 
 
 class TunedParameterSet(ConfigModel):
@@ -322,8 +294,7 @@ class ProviderEndpointSpec(ConfigModel):
             )
         if self.reference is not None and self.reference_template is not None:
             raise ValueError(
-                "provider endpoint spec cannot declare both reference and "
-                "reference_template"
+                "provider endpoint spec cannot declare both reference and reference_template"
             )
         return self
 
@@ -386,10 +357,7 @@ class ProviderAcquisitionRpcOverrides(ConfigModel):
                 raise ValueError(
                     "provider acquisition rpc override concurrency_rungs values must be positive"
                 )
-            if (
-                self.concurrency is not None
-                and self.concurrency not in self.concurrency_rungs
-            ):
+            if self.concurrency is not None and self.concurrency not in self.concurrency_rungs:
                 raise ValueError(
                     "provider acquisition rpc override "
                     "concurrency must be present in concurrency_rungs"
@@ -446,109 +414,6 @@ class ProviderSpec(ConfigModel):
         return reference
 
 
-@dataclass(frozen=True, slots=True)
-class PathLayout:
-    output_root: Path
-    catalog_db: Path
-    corpus_id: str
-    corpus_root: Path
-    history_dir: Path
-    evaluation_dir: Path
-    corpus_state_db: Path
-    artifact_id: str | None = None
-    artifact_root: Path | None = None
-    checkpoint_dir: Path | None = None
-    artifact_state_db: Path | None = None
-    study_id: str | None = None
-    study_root: Path | None = None
-    study_state_db: Path | None = None
-
-
-def build_path_layout(
-    *,
-    storage: StorageSpec,
-    chain: ChainSpec,
-    dataset: DatasetSpec,
-    feature_set_name: str | None = None,
-    model_name: str | None = None,
-    task_name: str | None = None,
-    feature_set_payload: dict[str, object] | None = None,
-    model_payload: dict[str, object] | None = None,
-    task_payload: dict[str, object] | None = None,
-    variant: ArtifactVariant = ArtifactVariant.BASELINE,
-    study_name: str = "default",
-    include_artifacts: bool = False,
-    tuning_mode: bool = False,
-) -> PathLayout:
-    from ..modeling.objective import active_objective
-
-    output_root = storage.root
-    catalog_db = output_root / ".spice" / "catalog.sqlite"
-    corpus_id = corpus_storage_id(chain_name=chain.name, dataset_name=dataset.name)
-    corpus_root = output_root / "corpora" / chain.name / corpus_id
-    artifact_id: str | None = None
-    artifact_root: Path | None = None
-    checkpoint_dir: Path | None = None
-    artifact_state_db: Path | None = None
-    study_id: str | None = None
-    study_root: Path | None = None
-    study_state_db: Path | None = None
-
-    if include_artifacts:
-        if feature_set_name is None or model_name is None or task_name is None:
-            raise ValueError("artifact paths require feature_set_name, model_name, task_name")
-        if feature_set_payload is None or model_payload is None or task_payload is None:
-            raise ValueError(
-                "artifact paths require feature_set_payload, model_payload, task_payload"
-            )
-        resolved_feature_set_payload = feature_set_payload
-        resolved_model_payload = model_payload
-        resolved_task_payload = task_payload
-        if tuning_mode or variant is ArtifactVariant.TUNED:
-            study_id = study_storage_id(
-                chain_name=chain.name,
-                corpus_id=corpus_id,
-                objective_id=active_objective().objective_id,
-                feature_set=resolved_feature_set_payload,
-                model=resolved_model_payload,
-                task=resolved_task_payload,
-                study_name=study_name,
-            )
-            study_root = output_root / "studies" / chain.name / study_id
-            study_state_db = study_root / ".spice" / "state.sqlite"
-        if not tuning_mode:
-            artifact_id = artifact_storage_id(
-                chain_name=chain.name,
-                corpus_id=corpus_id,
-                objective_id=active_objective().objective_id,
-                feature_set=resolved_feature_set_payload,
-                model=resolved_model_payload,
-                task=resolved_task_payload,
-                variant=variant.value,
-                study_id=study_id if variant is ArtifactVariant.TUNED else None,
-            )
-            artifact_root = output_root / "artifacts" / chain.name / artifact_id
-            checkpoint_dir = artifact_root / "checkpoints"
-            artifact_state_db = artifact_root / ".spice" / "state.sqlite"
-
-    return PathLayout(
-        output_root=output_root,
-        catalog_db=catalog_db,
-        corpus_id=corpus_id,
-        corpus_root=corpus_root,
-        history_dir=corpus_root / "history",
-        evaluation_dir=corpus_root / "evaluation",
-        corpus_state_db=corpus_root / ".spice" / "state.sqlite",
-        artifact_id=artifact_id,
-        artifact_root=artifact_root,
-        checkpoint_dir=checkpoint_dir,
-        artifact_state_db=artifact_state_db,
-        study_id=study_id,
-        study_root=study_root,
-        study_state_db=study_state_db,
-    )
-
-
 def apply_provider_acquisition_overrides(
     *,
     provider: ProviderSpec,
@@ -602,6 +467,8 @@ class AcquireConfig(WorkflowConfig):
 
     @property
     def paths(self) -> PathLayout:
+        from ..storage.layout import build_path_layout
+
         return build_path_layout(storage=self.storage, chain=self.chain, dataset=self.dataset)
 
 
@@ -614,6 +481,8 @@ class ModelWorkflowConfig(WorkflowConfig):
 
     @property
     def paths(self) -> PathLayout:
+        from ..storage.layout import build_path_layout
+
         return build_path_layout(
             storage=self.storage,
             chain=self.chain,
@@ -663,8 +532,7 @@ class SimulateConfig(ModelWorkflowConfig):
     def validate_execution(self) -> Self:
         if self.execution.requested_delay_seconds > self.task.max_supported_delay_seconds:
             raise ValueError(
-                "execution.requested_delay_seconds must be <= "
-                "task.max_supported_delay_seconds"
+                "execution.requested_delay_seconds must be <= task.max_supported_delay_seconds"
             )
         return self
 

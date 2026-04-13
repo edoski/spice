@@ -7,8 +7,8 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core.console import NullReporter, Reporter
-from ..data.datasets import TemporalDatasetStore
+from ..core.reporting import NullReporter, Reporter
+from ..temporal.store import TemporalDatasetStore
 from .objective import WindowMetricSummary, summarize_simulation_primary, summarize_window_metric
 
 IntVector = NDArray[np.int64]

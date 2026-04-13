@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import cast
 
 from ..config import TrainConfig, TuneConfig, TunedParameterSet
-from .registry import (
+from ..storage.study import load_best_params, load_study_manifest, validate_tuned_train_request
+from .families.registry import (
     apply_tuned_parameters as apply_model_tuned_parameters,
 )
-from .registry import (
+from .families.registry import (
     coerce_model_config,
     coerce_tuning_space_config,
     flatten_tuned_model_params,
@@ -39,3 +41,18 @@ def apply_tuned_parameters(
             model_config=payload["model"],
         )
     return model_type.model_validate(payload)
+
+
+def apply_study_best_params(config: TrainConfig) -> TrainConfig:
+    path = config.paths.study_state_db
+    if path is None:
+        raise ValueError("study_state_db is required for tuned artifacts")
+    manifest = load_study_manifest(path)
+    validate_tuned_train_request(config, manifest=manifest)
+    try:
+        params = load_best_params(path, study_name=config.study.name)
+    except OSError as exc:
+        raise FileNotFoundError(
+            f"Best tuning params are required but missing: {path}"
+        ) from exc
+    return cast(TrainConfig, apply_tuned_parameters(config, params))

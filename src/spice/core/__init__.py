@@ -1,1 +1,1 @@
-"""Core serialization, console, and file primitives."""
+"""Core runtime, reporting, and file primitives."""

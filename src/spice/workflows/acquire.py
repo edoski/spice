@@ -10,97 +10,33 @@ from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures.thread import _worker
 from contextlib import suppress
-from datetime import UTC, datetime
 from math import ceil
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, cast
 
-from ..acquisition.datasets import (
-    DatasetBuildOutcome,
+from ..acquisition.rpc import RpcController, TimestampRange, Web3BlockClient, evaluation_range
+from ..config import AcquireConfig
+from ..core.files import promote_paths_atomic, prune_empty_directories
+from ..core.reporting import Reporter
+from ..corpus.builders import (
     ensure_evaluation_dataset,
     ensure_history_dataset,
 )
-from ..acquisition.metadata import (
+from ..corpus.io import load_block_frame
+from ..corpus.metadata import (
     build_acquire_run_record,
     build_dataset_summary,
     provider_metadata,
 )
-from ..acquisition.rpc import RpcController, TimestampRange, Web3BlockClient, evaluation_range
-from ..config import AcquireConfig
-from ..core.console import Reporter
-from ..core.files import promote_paths_atomic, prune_empty_directories
-from ..data.datasets import build_temporal_store
-from ..data.io import load_block_frame
+from ..corpus.summary import acquire_dry_run_sections, acquisition_summary_sections
 from ..features import FeatureSelection, build_feature_table, make_feature_selection
-from ..planning.contracts import resolve_task_contract
-from ..planning.geometry import DelayWindow
-from ..state.catalog import upsert_dataset_record
-from ..state.dataset import write_dataset_state
+from ..storage.catalog import upsert_dataset_record
+from ..storage.corpus import write_dataset_state
+from ..temporal.contracts import resolve_task_contract
+from ..temporal.store import build_temporal_store
+from ..temporal.window import DelayWindow
 from ._shared import managed_workflow
-
-
-def _format_timestamp(value: int) -> str:
-    return datetime.fromtimestamp(value, tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
-
-
-def _format_duration(start_timestamp: int, end_timestamp: int) -> str:
-    remaining = max(0, end_timestamp - start_timestamp)
-    units = (
-        ("d", 24 * 60 * 60),
-        ("h", 60 * 60),
-        ("m", 60),
-        ("s", 1),
-    )
-    parts: list[str] = []
-    for suffix, size in units:
-        if remaining < size and parts:
-            continue
-        value, remaining = divmod(remaining, size)
-        if value > 0 or not parts:
-            parts.append(f"{value}{suffix}")
-        if len(parts) == 2:
-            break
-    return " ".join(parts)
-
-
-def _format_count(value: int, singular: str, plural: str | None = None) -> str:
-    unit = singular if value == 1 else (plural or f"{singular}s")
-    return f"{value:,} {unit}"
-
-
-def _planned_window_rows(
-    *,
-    start_timestamp: int,
-    end_timestamp: int,
-    expected_rows: int,
-    expected_files: int,
-) -> list[tuple[str, str]]:
-    return [
-        ("window", f"{_format_timestamp(start_timestamp)} -> {_format_timestamp(end_timestamp)}"),
-        ("duration", _format_duration(start_timestamp, end_timestamp)),
-        (
-            "planned",
-            f"{_format_count(expected_rows, 'block')} in {_format_count(expected_files, 'file')}",
-        ),
-    ]
-
-
-def _format_build_outcome(outcome: DatasetBuildOutcome) -> str:
-    return outcome.value
-
-
-def _final_window_rows(
-    *,
-    outcome: DatasetBuildOutcome,
-    row_count: int,
-    file_count: int,
-) -> list[tuple[str, str]]:
-    return [
-        ("status", _format_build_outcome(outcome)),
-        ("blocks", _format_count(row_count, "block")),
-        ("files", _format_count(file_count, "file")),
-    ]
 
 
 def _workflow_facts(config: AcquireConfig) -> list[tuple[str, str]]:
@@ -148,7 +84,7 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
             return
 
         def weakref_cb(_, q=self._work_queue):
-            q.put(None)
+            cast(Any, q).put(None)
 
         num_threads = len(self._threads)
         if num_threads >= self._max_workers:
@@ -166,7 +102,7 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
         )
         thread.daemon = True
         thread.start()
-        self._threads.add(thread)
+        cast(set[threading.Thread], self._threads).add(thread)
         # Skip concurrent.futures' global exit registry so a cancelled acquire
         # doesn't hang in interpreter shutdown waiting for RPC worker threads.
 
@@ -246,7 +182,6 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
         config.evaluation_window_start_timestamp,
         config.evaluation_window_end_timestamp,
     )
-    chain_label = config.chain.name
 
     with managed_workflow(
         config,
@@ -322,40 +257,13 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
             if config.acquisition.dry_run:
                 session.runtime.log_sectioned_summary(
                     "acquire dry run",
-                    [
-                        (
-                            "dataset",
-                            [
-                                ("name", config.dataset.name),
-                                ("storage id", config.paths.corpus_id),
-                                ("chain", chain_label),
-                                ("task", config.task.id),
-                                ("feature set", config.feature_set.id),
-                                ("evaluation date", str(config.dataset.evaluation_date)),
-                                ("feature history", f"{contract.feature_history_seconds}s"),
-                                ("lookback", f"{contract.lookback_seconds}s"),
-                                ("history window", f"{history_window_seconds}s"),
-                            ],
-                        ),
-                        (
-                            "history",
-                            _planned_window_rows(
-                                start_timestamp=history_plan.window.start,
-                                end_timestamp=history_plan.window.end,
-                                expected_rows=history_plan.expected_rows,
-                                expected_files=history_plan.expected_files,
-                            ),
-                        ),
-                        (
-                            "evaluation",
-                            _planned_window_rows(
-                                start_timestamp=evaluation_window.start,
-                                end_timestamp=evaluation_window.end,
-                                expected_rows=evaluation_plan.expected_rows,
-                                expected_files=evaluation_plan.expected_files,
-                            ),
-                        ),
-                    ],
+                    acquire_dry_run_sections(
+                        config,
+                        contract=contract,
+                        history_window_seconds=history_window_seconds,
+                        history_plan=history_plan,
+                        evaluation_plan=evaluation_plan,
+                    ),
                 )
                 return
 
@@ -467,35 +375,16 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 )
             session.runtime.log_sectioned_summary(
                 "acquisition summary",
-                [
-                    (
-                        "dataset",
-                        [
-                            ("name", config.dataset.name),
-                            ("storage id", config.paths.corpus_id),
-                            ("chain", chain_label),
-                            ("task", config.task.id),
-                            ("feature set", config.feature_set.id),
-                            ("provider", current_provider.name),
-                        ],
-                    ),
-                    (
-                        "history",
-                        _final_window_rows(
-                            outcome=history_result.outcome,
-                            row_count=history_result.validation.row_count,
-                            file_count=history_result.file_count,
-                        ),
-                    ),
-                    (
-                        "evaluation",
-                        _final_window_rows(
-                            outcome=evaluation_result.outcome,
-                            row_count=evaluation_result.validation.row_count,
-                            file_count=evaluation_result.file_count,
-                        ),
-                    ),
-                ],
+                acquisition_summary_sections(
+                    config,
+                    provider_name=current_provider.name,
+                    history_outcome=history_result.outcome,
+                    history_row_count=history_result.validation.row_count,
+                    history_file_count=history_result.file_count,
+                    evaluation_outcome=evaluation_result.outcome,
+                    evaluation_row_count=evaluation_result.validation.row_count,
+                    evaluation_file_count=evaluation_result.file_count,
+                ),
             )
         except (KeyboardInterrupt, asyncio.CancelledError):
             session.reporter.close()

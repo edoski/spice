@@ -8,17 +8,13 @@ import optuna
 import torch
 from pydantic import Field, field_validator, model_validator
 
-from ...config.models import (
-    ModelConfig,
-    ModelTuningSpaceConfig,
-    TrainingPrecision,
-    TunedModelParams,
-)
+from ...config.models import TrainingPrecision
 from ..models import TemporalModel, TransformerBaseline
-from ..registry import ModelSpec, register_model_spec
+from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
+from .registry import ModelSpec, register_model_spec
 
 
-class TransformerModelConfig(ModelConfig):
+class TransformerModelConfig(ModelConfig[Literal["transformer"]]):
     id: Literal["transformer"] = "transformer"
     dropout: float = Field(ge=0.0, lt=1.0)
     d_model: int = Field(gt=0)
@@ -36,7 +32,7 @@ class TransformerModelConfig(ModelConfig):
         return self
 
 
-class TransformerTuningSpaceModelConfig(ModelTuningSpaceConfig):
+class TransformerTuningSpaceModelConfig(ModelTuningSpaceConfig[Literal["transformer"]]):
     id: Literal["transformer"] = "transformer"
     d_model: list[int] | None = Field(default=None, min_length=1)
     transformer_layers: list[int] | None = Field(default=None, min_length=1)
@@ -64,7 +60,7 @@ class TransformerTuningSpaceModelConfig(ModelTuningSpaceConfig):
         return values
 
 
-class TransformerTunedModelParams(TunedModelParams):
+class TransformerTunedModelParams(TunedModelParams[Literal["transformer"]]):
     id: Literal["transformer"] = "transformer"
     d_model: int | None = Field(default=None, gt=0)
     transformer_layers: int | None = Field(default=None, gt=0)
@@ -129,9 +125,7 @@ def _sample_model_params(
             )
         )
     if tuning_space.dropout is not None:
-        values["dropout"] = float(
-            trial.suggest_categorical("model.dropout", tuning_space.dropout)
-        )
+        values["dropout"] = float(trial.suggest_categorical("model.dropout", tuning_space.dropout))
     if not values:
         return None
     return TransformerTunedModelParams.model_validate({"id": "transformer", **values})

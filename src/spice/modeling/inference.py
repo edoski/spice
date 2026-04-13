@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from ..core.console import NullReporter, Reporter
-from ..data.datasets import TemporalDatasetStore
+from ..core.reporting import NullReporter, Reporter
+from ..temporal.store import TemporalDatasetStore
 from ._runtime import build_model_loader, resolve_device
 from .models import TemporalModel
-from .torch_datasets import move_batch_to_device
+from .representations import SequenceEventBatch, move_batch_to_device
 
 IntVector = NDArray[np.int64]
 
@@ -42,6 +44,7 @@ def predict_candidate_offsets(
     predictions: list[int] = []
     with torch.no_grad():
         for batch in loader:
+            batch = cast(SequenceEventBatch, batch)
             device_batch = move_batch_to_device(batch, resolved_device)
             logits = model(device_batch.inputs, device_batch.input_mask).logits
             logits = logits.masked_fill(

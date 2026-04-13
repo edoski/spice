@@ -18,14 +18,14 @@ from web3 import AsyncWeb3
 from web3.exceptions import Web3RPCError
 
 from ..config import AcquisitionConfig, ChainSpec, ProviderSpec
-from ..core.console import NullReporter, Reporter
-from ..data.block_contract import (
+from ..core.reporting import NullReporter, Reporter
+from ..corpus.contract import (
     CanonicalBlockRow,
     RpcBlock,
     build_canonical_block_row,
     canonicalize_block_frame,
 )
-from ..data.io import write_block_file
+from ..corpus.io import write_block_file
 from .provider import build_async_web3
 
 MAX_RPC_ATTEMPTS_PER_RANGE = 8

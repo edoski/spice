@@ -4,18 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urlparse
 
 import aiohttp
 from web3 import AsyncWeb3
+from web3._utils.batching import sort_batch_response_by_response_ids
 from web3.middleware import ExtraDataToPOAMiddleware
 from web3.providers import AsyncIPCProvider
 from web3.providers.rpc import AsyncHTTPProvider
-from web3.providers.rpc.async_rpc import (
-    check_if_retry_on_failure,
-    sort_batch_response_by_response_ids,
-)
-from web3.providers.rpc.utils import ExceptionRetryConfiguration
+from web3.providers.rpc.utils import ExceptionRetryConfiguration, check_if_retry_on_failure
 
 from ..config import ChainSpec, ProviderSpec
 
@@ -87,9 +85,16 @@ class _ManagedAsyncSessionManager:
 class ManagedAsyncHTTPProvider(AsyncHTTPProvider):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        legacy_manager = self._request_session_manager
-        legacy_manager.session_pool.shutdown(wait=False, cancel_futures=True)
         self._request_session_manager = _ManagedAsyncSessionManager()
+
+    def _request_kwargs_mapping(self) -> dict[str, Any]:
+        return dict(self.get_request_kwargs())
+
+    def _endpoint_uri(self) -> str:
+        endpoint_uri = self.endpoint_uri
+        if endpoint_uri is None:
+            raise ValueError("ManagedAsyncHTTPProvider requires an endpoint URI")
+        return str(endpoint_uri)
 
     async def _make_request(self, method, request_data: bytes) -> bytes:
         if (
@@ -102,9 +107,9 @@ class ManagedAsyncHTTPProvider(AsyncHTTPProvider):
             for attempt in range(self.exception_retry_configuration.retries):
                 try:
                     return await self._request_session_manager.async_make_post_request(
-                        self.endpoint_uri,
+                        self._endpoint_uri(),
                         request_data,
-                        **self.get_request_kwargs(),
+                        **self._request_kwargs_mapping(),
                     )
                 except tuple(self.exception_retry_configuration.errors):
                     if attempt < self.exception_retry_configuration.retries - 1:
@@ -115,17 +120,17 @@ class ManagedAsyncHTTPProvider(AsyncHTTPProvider):
                     raise
             return b""
         return await self._request_session_manager.async_make_post_request(
-            self.endpoint_uri,
+            self._endpoint_uri(),
             request_data,
-            **self.get_request_kwargs(),
+            **self._request_kwargs_mapping(),
         )
 
     async def make_batch_request(self, batch_requests):
         request_data = self.encode_batch_rpc_request(batch_requests)
         raw_response = await self._request_session_manager.async_make_post_request(
-            self.endpoint_uri,
+            self._endpoint_uri(),
             request_data,
-            **self.get_request_kwargs(),
+            **self._request_kwargs_mapping(),
         )
         response = self.decode_rpc_response(raw_response)
         if not isinstance(response, list):

@@ -13,8 +13,8 @@ from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from numpy.typing import NDArray
 
 from ..config import ModelConfig, TrainingConfig
-from ..core.console import NullReporter, Reporter, format_compact_number
-from ..data.datasets import TemporalDatasetStore
+from ..core.reporting import NullReporter, Reporter, format_compact_number
+from ..temporal.store import TemporalDatasetStore
 from ._runtime import (
     build_model_loader,
     resolve_compile_enabled,
@@ -33,7 +33,7 @@ from .objective import (
     primary_validation_metric_name,
     summarize_epoch_metrics,
 )
-from .torch_datasets import move_batch_to_device
+from .representations import SequenceEventBatch, move_batch_to_device
 
 IntVector = NDArray[np.int64]
 
@@ -312,6 +312,7 @@ def evaluate_model(
     metrics = []
     with torch.no_grad():
         for batch in loader:
+            batch = cast(SequenceEventBatch, batch)
             device_batch = move_batch_to_device(batch, device)
             outputs = model(device_batch.inputs, device_batch.input_mask)
             _, batch_metrics = compute_temporal_batch_metrics(

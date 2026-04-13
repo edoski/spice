@@ -1,4 +1,4 @@
-"""Training artifact models and feature-graph validation."""
+"""Training artifact runtime helpers and feature-graph validation."""
 
 from __future__ import annotations
 
@@ -7,49 +7,16 @@ from pathlib import Path
 
 import torch
 
-from ..config import ArtifactVariant, ModelConfig, StudyConfig
 from ..core.constants import MODEL_STATE_FILENAME
 from ..core.files import write_path_atomic
-from ..data.normalization import ScalerStats
 from ..features import FeatureSelection, feature_graph_fingerprint, make_feature_selection
-from ..state.artifact import load_artifact_manifest, write_artifact_manifest
-from ..state.engine import RootKind
+from ..storage.artifact import load_artifact_manifest, write_artifact_manifest
+from ..storage.engine import RootKind
+from .families.registry import build_model
 from .models import TemporalModel
 from .objective import active_objective
 from .pipeline import PreparedTrainingDataset, TrainingSpec
-from .registry import build_model
-
-
-@dataclass(frozen=True, slots=True)
-class ArtifactChainMetadata:
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
-class TrainingArtifactManifest:
-    artifact_id: str
-    objective_id: str
-    chain: ArtifactChainMetadata
-    dataset_id: str
-    dataset_name: str
-    task_id: str
-    variant: ArtifactVariant
-    study: StudyConfig | None
-    study_id: str | None
-    max_supported_delay_seconds: int
-    lookback_seconds: int
-    sample_count: int
-    feature_history_seconds: int
-    max_candidate_slots: int
-    feature_set_id: str
-    feature_names: list[str]
-    feature_graph_fingerprint: str
-    model: ModelConfig
-    scaler: ScalerStats
-
-    @property
-    def n_features(self) -> int:
-        return len(self.feature_names)
+from .results import ArtifactChainMetadata, TrainingArtifactManifest
 
 
 @dataclass(slots=True)

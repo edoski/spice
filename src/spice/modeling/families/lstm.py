@@ -8,17 +8,13 @@ import optuna
 import torch
 from pydantic import Field, field_validator, model_validator
 
-from ...config.models import (
-    ModelConfig,
-    ModelTuningSpaceConfig,
-    TrainingPrecision,
-    TunedModelParams,
-)
+from ...config.models import TrainingPrecision
 from ..models import LSTMBaseline, TemporalModel
-from ..registry import ModelSpec, register_model_spec
+from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
+from .registry import ModelSpec, register_model_spec
 
 
-class LstmModelConfig(ModelConfig):
+class LstmModelConfig(ModelConfig[Literal["lstm"]]):
     id: Literal["lstm"] = "lstm"
     input_projection_dim: int = Field(gt=0)
     hidden_size: int = Field(gt=0)
@@ -27,7 +23,7 @@ class LstmModelConfig(ModelConfig):
     head_hidden_dim: int = Field(gt=0)
 
 
-class LstmTuningSpaceModelConfig(ModelTuningSpaceConfig):
+class LstmTuningSpaceModelConfig(ModelTuningSpaceConfig[Literal["lstm"]]):
     id: Literal["lstm"] = "lstm"
     hidden_size: list[int] | None = Field(default=None, min_length=1)
     dropout: list[float] | None = Field(default=None, min_length=1)
@@ -47,7 +43,7 @@ class LstmTuningSpaceModelConfig(ModelTuningSpaceConfig):
         return values
 
 
-class LstmTunedModelParams(TunedModelParams):
+class LstmTunedModelParams(TunedModelParams[Literal["lstm"]]):
     id: Literal["lstm"] = "lstm"
     hidden_size: int | None = Field(default=None, gt=0)
     dropout: float | None = Field(default=None, ge=0.0, lt=1.0)
@@ -102,9 +98,7 @@ def _sample_model_params(
             trial.suggest_categorical("model.hidden_size", tuning_space.hidden_size)
         )
     if tuning_space.dropout is not None:
-        values["dropout"] = float(
-            trial.suggest_categorical("model.dropout", tuning_space.dropout)
-        )
+        values["dropout"] = float(trial.suggest_categorical("model.dropout", tuning_space.dropout))
     if not values:
         return None
     return LstmTunedModelParams.model_validate({"id": "lstm", **values})

@@ -4,32 +4,28 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 
 import optuna
 from optuna.trial import FrozenTrial, TrialState
 
 from ..config import TuneConfig
-from ..core.console import ConsoleRuntime, Reporter
+from ..core.reporting import Reporter
+from ..core.runtime import ConsoleRuntime
 from ..modeling.execution import run_persisted_training
+from ..modeling.families.registry import sample_tuned_parameters
 from ..modeling.objective import active_objective, objective_value
-from ..modeling.pipeline import TrainingStageReporters
-from ..modeling.registry import sample_tuned_parameters
-from ..modeling.tuning import apply_tuned_parameters, flatten_tuned_parameters
-from ..state.catalog import upsert_study_record
-from ..state.study import (
+from ..modeling.pipeline import TrainingStageReporters, build_training_spec
+from ..modeling.tuning import apply_tuned_parameters
+from ..storage.catalog import upsert_study_record
+from ..storage.study import (
     build_study_summary,
     open_tuning_study,
     record_trial_best_epoch,
     record_trial_params,
+    study_summary_sections,
 )
-from ._shared import build_training_spec, managed_workflow
-
-
-def _format_best_params(params) -> str:
-    flattened = flatten_tuned_parameters(params)
-    if not flattened:
-        return "none"
-    return ", ".join(f"{key}={value}" for key, value in flattened.items())
+from ._shared import managed_workflow
 
 
 def _trial_status_message(trial: FrozenTrial) -> str:
@@ -76,7 +72,7 @@ def _objective(
     assert base_config.tuning_space is not None
     params = sample_tuned_parameters(trial, tuning_space=base_config.tuning_space)
     record_trial_params(trial, params)
-    config = apply_tuned_parameters(base_config, params)
+    config = cast(TuneConfig, apply_tuned_parameters(base_config, params))
 
     spec = build_training_spec(config)
     history_block_path = config.paths.history_dir
@@ -204,43 +200,7 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
             root_path=study_root,
             state_db_path=study_state_db,
         )
-        best_trial = summary.best_trial
         session.runtime.log_sectioned_summary(
             "tuning summary",
-            [
-                (
-                    "study",
-                    [
-                        ("name", summary.manifest.study_name),
-                        ("storage id", summary.manifest.study_id),
-                        ("chain", summary.manifest.chain_name),
-                        ("dataset", summary.manifest.dataset_name),
-                        ("task", summary.manifest.task_id),
-                        ("model", summary.manifest.model_id),
-                        ("trials", str(summary.trial_counts.total)),
-                    ],
-                ),
-                (
-                    "best trial",
-                    [
-                        ("objective", summary.manifest.objective_id),
-                        (
-                            "value",
-                            "n/a"
-                            if best_trial is None or best_trial.value is None
-                            else f"{best_trial.value:.4f}",
-                        ),
-                        (
-                            "trial",
-                            "n/a" if best_trial is None else str(best_trial.number + 1),
-                        ),
-                        (
-                            "params",
-                            "n/a"
-                            if best_trial is None
-                            else _format_best_params(best_trial.params),
-                        ),
-                    ],
-                ),
-            ],
+            study_summary_sections(summary),
         )

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
-from typing import NamedTuple, cast
+from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 import torch
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
 
-from ..config.models import ModelConfig
+if TYPE_CHECKING:
+    from .families.lstm import LstmModelConfig
+    from .families.transformer import TransformerModelConfig
+    from .families.transformer_lstm import TransformerLstmModelConfig
 
 
 class ModelOutputs(NamedTuple):
@@ -82,7 +85,7 @@ class TemporalOutputHead(nn.Module):
 
 
 class LSTMBaseline(TemporalModel):
-    def __init__(self, n_features: int, n_candidate_slots: int, config: ModelConfig) -> None:
+    def __init__(self, n_features: int, n_candidate_slots: int, config: LstmModelConfig) -> None:
         super().__init__()
         self.input_projection = nn.Linear(n_features, config.input_projection_dim)
         self.backbone = nn.LSTM(
@@ -113,7 +116,12 @@ class LSTMBaseline(TemporalModel):
 
 
 class TransformerBaseline(TemporalModel):
-    def __init__(self, n_features: int, n_candidate_slots: int, config: ModelConfig) -> None:
+    def __init__(
+        self,
+        n_features: int,
+        n_candidate_slots: int,
+        config: TransformerModelConfig,
+    ) -> None:
         super().__init__()
         self.input_projection = nn.Linear(n_features, config.d_model)
         self.position_encoding = SinusoidalPositionalEncoding(config.d_model)
@@ -134,7 +142,12 @@ class TransformerBaseline(TemporalModel):
 
 
 class TransformerLSTMBaseline(TemporalModel):
-    def __init__(self, n_features: int, n_candidate_slots: int, config: ModelConfig) -> None:
+    def __init__(
+        self,
+        n_features: int,
+        n_candidate_slots: int,
+        config: TransformerLstmModelConfig,
+    ) -> None:
         super().__init__()
         self.input_projection = nn.Linear(n_features, config.d_model)
         self.position_encoding = SinusoidalPositionalEncoding(config.d_model)
@@ -169,7 +182,15 @@ class TransformerLSTMBaseline(TemporalModel):
         return self.output_head(hidden_state[-1])
 
 
-def build_transformer_encoder(config: ModelConfig) -> nn.TransformerEncoder:
+class TransformerEncoderConfig(Protocol):
+    d_model: int
+    nhead: int
+    feedforward_dim: int
+    dropout: float
+    transformer_layers: int
+
+
+def build_transformer_encoder(config: TransformerEncoderConfig) -> nn.TransformerEncoder:
     encoder_layer = nn.TransformerEncoderLayer(
         d_model=config.d_model,
         nhead=config.nhead,

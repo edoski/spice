@@ -8,17 +8,13 @@ import optuna
 import torch
 from pydantic import Field, field_validator, model_validator
 
-from ...config.models import (
-    ModelConfig,
-    ModelTuningSpaceConfig,
-    TrainingPrecision,
-    TunedModelParams,
-)
+from ...config.models import TrainingPrecision
 from ..models import TemporalModel, TransformerLSTMBaseline
-from ..registry import ModelSpec, register_model_spec
+from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
+from .registry import ModelSpec, register_model_spec
 
 
-class TransformerLstmModelConfig(ModelConfig):
+class TransformerLstmModelConfig(ModelConfig[Literal["transformer_lstm"]]):
     id: Literal["transformer_lstm"] = "transformer_lstm"
     hidden_size: int = Field(gt=0)
     num_layers: int = Field(gt=0)
@@ -38,7 +34,7 @@ class TransformerLstmModelConfig(ModelConfig):
         return self
 
 
-class TransformerLstmTuningSpaceModelConfig(ModelTuningSpaceConfig):
+class TransformerLstmTuningSpaceModelConfig(ModelTuningSpaceConfig[Literal["transformer_lstm"]]):
     id: Literal["transformer_lstm"] = "transformer_lstm"
     hidden_size: list[int] | None = Field(default=None, min_length=1)
     d_model: list[int] | None = Field(default=None, min_length=1)
@@ -59,7 +55,7 @@ class TransformerLstmTuningSpaceModelConfig(ModelTuningSpaceConfig):
         return values
 
 
-class TransformerLstmTunedModelParams(TunedModelParams):
+class TransformerLstmTunedModelParams(TunedModelParams[Literal["transformer_lstm"]]):
     id: Literal["transformer_lstm"] = "transformer_lstm"
     hidden_size: int | None = Field(default=None, gt=0)
     d_model: int | None = Field(default=None, gt=0)
@@ -121,9 +117,7 @@ def _sample_model_params(
     if tuning_space.d_model is not None:
         values["d_model"] = int(trial.suggest_categorical("model.d_model", tuning_space.d_model))
     if tuning_space.dropout is not None:
-        values["dropout"] = float(
-            trial.suggest_categorical("model.dropout", tuning_space.dropout)
-        )
+        values["dropout"] = float(trial.suggest_categorical("model.dropout", tuning_space.dropout))
     if not values:
         return None
     return TransformerLstmTunedModelParams.model_validate({"id": "transformer_lstm", **values})

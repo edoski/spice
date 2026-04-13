@@ -13,7 +13,7 @@ from .objective import (
     compute_temporal_batch_metrics,
     summarize_epoch_metrics,
 )
-from .torch_datasets import SequenceEventBatch
+from .representations import SequenceEventBatch
 
 
 class TemporalLightningModule(L.LightningModule):

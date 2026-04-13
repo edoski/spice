@@ -6,6 +6,7 @@ import inspect
 from dataclasses import dataclass
 from functools import lru_cache
 from hashlib import sha256
+from typing import Any, cast
 
 import numpy as np
 import polars as pl
@@ -90,9 +91,13 @@ def validate_feature_selection(feature_set_id: str, feature_names: tuple[str, ..
 def feature_history_seconds(feature_names: tuple[str, ...]) -> int:
     validate_feature_selection("validated", feature_names)
     return max(
-        int(feature_node_map()[name].tags[FEATURE_HISTORY_SECONDS_TAG])
+        _tagged_history_seconds(feature_node_map()[name].tags[FEATURE_HISTORY_SECONDS_TAG])
         for name in feature_names
     )
+
+
+def _tagged_history_seconds(raw_value: str | list[str]) -> int:
+    return int(raw_value[0] if isinstance(raw_value, list) else raw_value)
 
 
 def _dependency_closure(feature_names: tuple[str, ...]) -> list[HamiltonNode]:
@@ -123,7 +128,7 @@ def feature_graph_fingerprint(feature_names: tuple[str, ...]) -> str:
         digest.update(b"\0")
         if node.is_external_input:
             continue
-        for function in node.originating_functions:
+        for function in node.originating_functions or ():
             digest.update(function.__module__.encode("utf-8"))
             digest.update(b"\0")
             digest.update(function.__qualname__.encode("utf-8"))
@@ -141,8 +146,9 @@ def build_feature_table(
     validate_feature_selection(selection.feature_set_id, selection.feature_names)
     required_history_seconds = feature_history_seconds(selection.feature_names)
     graph_fingerprint = feature_graph_fingerprint(selection.feature_names)
+    final_vars = cast(Any, [*selection.feature_names, "timestamps", "log_base_fee"])
     result = build_feature_driver().execute(
-        list(selection.feature_names) + ["timestamps", "log_base_fee"],
+        final_vars,
         inputs={
             "blocks": blocks,
         },

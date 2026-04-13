@@ -6,7 +6,7 @@ import lightning as L
 import numpy as np
 from numpy.typing import NDArray
 
-from ..data.datasets import TemporalDatasetStore
+from ..temporal.store import TemporalDatasetStore
 from ._runtime import build_model_loader
 from .representations import RepresentationLoader
 

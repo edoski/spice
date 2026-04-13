@@ -9,9 +9,12 @@ import torch
 from numpy.typing import NDArray
 
 from ..config import CompileMode, ModelConfig, TrainingConfig, TrainingPrecision
-from ..data.datasets import TemporalDatasetStore
-from . import torch_datasets as _torch_datasets  # noqa: F401
-from .registry import resolve_auto_compile, resolve_default_precision, resolve_input_representation
+from ..temporal.store import TemporalDatasetStore
+from .families.registry import (
+    resolve_auto_compile,
+    resolve_default_precision,
+    resolve_input_representation,
+)
 from .representations import RepresentationLoader, build_representation_loader
 
 IntVector = NDArray[np.int64]
@@ -92,7 +95,6 @@ def build_model_loader(
     batch_size: int,
     shuffle: bool = False,
 ) -> RepresentationLoader:
-    _ = _torch_datasets
     return build_representation_loader(
         resolve_input_representation(model_id),
         store,
