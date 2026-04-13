@@ -40,8 +40,8 @@ def test_reporter_progress_callback_smooths_training_loss() -> None:
     reporter = CaptureReporter()
     prediction = coerce_prediction_config(
         {
-            "id": "candidate_slate_current",
-            "family": {"id": "candidate_slate_current"},
+            "id": "candidate_offset_selection",
+            "family": {"id": "candidate_offset_selection"},
         }
     )
     callback = ReporterProgressCallback(

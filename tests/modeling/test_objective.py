@@ -11,13 +11,13 @@ from spice.config import coerce_problem_spec
 from spice.core.reporting import NullReporter
 from spice.features import FeatureSelection, build_feature_table
 from spice.prediction import MetricSet
-from spice.prediction.families.candidate_slate_current.batch import CandidateSlateTargetBatch
-from spice.prediction.families.candidate_slate_current.loss import compute_objective_loss
-from spice.prediction.families.candidate_slate_current.metrics import (
+from spice.prediction.families.candidate_offset_selection.batch import CandidateSlateTargetBatch
+from spice.prediction.families.candidate_offset_selection.loss import compute_objective_loss
+from spice.prediction.families.candidate_offset_selection.metrics import (
     best_epoch,
     objective_value,
 )
-from spice.prediction.families.candidate_slate_current.replay import run_replay
+from spice.prediction.families.candidate_offset_selection.replay import run_replay
 from spice.temporal.contracts import resolve_feature_contract
 
 

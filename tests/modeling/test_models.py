@@ -12,7 +12,7 @@ from spice.modeling.models import (
     take_last_valid,
 )
 from spice.modeling.representations import build_sequence_input_batch
-from spice.prediction.families.candidate_slate_current.outputs import (
+from spice.prediction.families.candidate_offset_selection.outputs import (
     CANDIDATE_LOGITS_HEAD_ID,
     build_output_spec,
 )

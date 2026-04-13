@@ -34,9 +34,9 @@ from spice.temporal.scaling import ScalerStats
 def _prediction_config():
     return coerce_prediction_config(
         {
-            "id": "candidate_slate_current",
+            "id": "candidate_offset_selection",
             "family": {
-                "id": "candidate_slate_current",
+                "id": "candidate_offset_selection",
             },
         }
     )
@@ -203,8 +203,8 @@ def test_simulation_artifact_summary_round_trip(tmp_path) -> None:
     summary = SimulationSummaryRecord(
         artifact_id="artifact-1",
         objective_id=contract.objective_id,
-        prediction_id="candidate_slate_current",
-        prediction_family_id="candidate_slate_current",
+        prediction_id="candidate_offset_selection",
+        prediction_family_id="candidate_offset_selection",
         metric_descriptors=list(contract.metric_descriptors),
         chain="ethereum",
         dataset_id="icdcs_2026",

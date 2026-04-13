@@ -12,7 +12,7 @@ from spice.modeling.representations import (
     prepare_representation,
 )
 from spice.prediction import compile_prediction_contract
-from spice.prediction.families.candidate_slate_current.outputs import (
+from spice.prediction.families.candidate_offset_selection.outputs import (
     CANDIDATE_LOGITS_HEAD_ID,
 )
 from spice.temporal.problem_store import CompiledProblemStore
@@ -50,9 +50,9 @@ def _test_store() -> CompiledProblemStore:
 def _prediction_contract():
     prediction = coerce_prediction_config(
         {
-            "id": "candidate_slate_current",
+            "id": "candidate_offset_selection",
             "family": {
-                "id": "candidate_slate_current",
+                "id": "candidate_offset_selection",
             },
         }
     )

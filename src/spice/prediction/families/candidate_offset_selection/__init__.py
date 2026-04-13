@@ -1,10 +1,10 @@
-"""Current candidate-slate prediction family."""
+"""Candidate-offset selection prediction family."""
 
 from __future__ import annotations
 
 from ...contracts import CompiledPredictionContract
 from ...registry import PredictionFamilySpec, register_prediction_family_spec
-from .config import CandidateSlateCurrentFamilyConfig
+from .config import CandidateOffsetSelectionFamilyConfig
 from .metrics import (
     METRIC_DESCRIPTORS,
     best_epoch,
@@ -19,12 +19,12 @@ from .targets import prepare_candidate_slate_targets
 
 def _compile(
     prediction_id: str,
-    family: CandidateSlateCurrentFamilyConfig,
+    family: CandidateOffsetSelectionFamilyConfig,
 ) -> CompiledPredictionContract:
     del family
     return CompiledPredictionContract(
         prediction_id=prediction_id,
-        prediction_family_id="candidate_slate_current",
+        prediction_family_id="candidate_offset_selection",
         objective_id="profit_over_baseline",
         metric_descriptors=METRIC_DESCRIPTORS,
         primary_metric_id="profit_over_baseline",
@@ -53,8 +53,8 @@ def _compile(
 
 register_prediction_family_spec(
     PredictionFamilySpec(
-        id="candidate_slate_current",
-        config_type=CandidateSlateCurrentFamilyConfig,
+        id="candidate_offset_selection",
+        config_type=CandidateOffsetSelectionFamilyConfig,
         compile=_compile,
     )
 )

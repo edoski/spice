@@ -29,7 +29,7 @@ def decode_into(
     targets: CandidateSlateTargetBatch,
 ) -> None:
     if not isinstance(predictions, list):
-        raise TypeError("candidate_slate_current prediction buffer must be a list")
+        raise TypeError("candidate_offset_selection prediction buffer must be a list")
     logits = masked_candidate_logits(candidate_logits(outputs), targets.candidate_mask)
     decoded = logits.argmax(dim=-1).cpu().tolist()
     positions = sample_positions.tolist()
@@ -126,7 +126,7 @@ def run_replay(
 ) -> PredictionSimulationSummary:
     reporter = reporter or NullReporter()
     if not isinstance(predicted_offsets, list):
-        raise TypeError("candidate_slate_current prediction buffer must be a list")
+        raise TypeError("candidate_offset_selection prediction buffer must be a list")
     if len(predicted_offsets) != int(sample_indices.shape[0]):
         raise ValueError("predicted_offsets must align with sample_indices")
     if repetitions <= 0:
