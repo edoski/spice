@@ -30,6 +30,7 @@ Selector rules:
 - `dataset.name` and `study.name` are human selectors.
 - `dataset_id`, `study_id`, and `artifact_id` are deterministic storage ids.
 - Runtime commands work from selectors. Users do not need paths.
+- Reusing a study selector resumes the same stored study definition. Semantic drift is rejected.
 
 Public dataset definition:
 
@@ -140,6 +141,7 @@ Notes:
 - `outputs/.spice/catalog.sqlite` is the global lookup index
 - `src/spice/conf` is the saved spec registry
 - SPICE-owned structured state lives only in `.spice/state.sqlite`
+- study roots persist a typed study manifest plus Optuna state
 - studies and artifacts are separate roots
 - `spice config ...` is the human-facing config authoring path
 - `spice show dataset|study|artifact` is the human-facing inspection path

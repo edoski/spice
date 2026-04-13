@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 
-import optuna
-
 from . import (
     ARTIFACT_ROOT_KIND,
     DATASET_ROOT_KIND,
@@ -22,7 +20,7 @@ from .artifact import (
     load_training_summary,
 )
 from .dataset import list_acquire_runs, load_dataset_summary
-from .study import load_study, study_storage
+from .study import describe_study
 
 
 def describe_root(root: Path, *, detail: str | None = None) -> dict[str, object]:
@@ -44,7 +42,7 @@ def describe_root(root: Path, *, detail: str | None = None) -> dict[str, object]
     if root_kind == STUDY_ROOT_KIND:
         return {
             "root_kind": root_kind,
-            **_study_payload(db_path, detail=detail),
+            **describe_study(db_path, detail=detail),
         }
     raise ValueError(f"Unsupported root kind: {root_kind}")
 
@@ -135,48 +133,6 @@ def _artifact_payload(db_path: Path, *, detail: str | None) -> dict[str, object]
         payload["epochs"] = list_training_epochs(db_path)
     if detail == "runs":
         payload["runs"] = [asdict(run) for run in list_simulation_runs(db_path)]
-    return payload
-
-
-def _study_payload(db_path: Path, *, detail: str | None) -> dict[str, object]:
-    summaries = optuna.get_all_study_summaries(storage=study_storage(db_path))
-    if not summaries:
-        raise ValueError(f"No Optuna study found in {db_path}")
-    if len(summaries) != 1:
-        raise ValueError(f"Expected exactly one study in {db_path}, found {len(summaries)}")
-    study = load_study(db_path, study_name=summaries[0].study_name)
-    context = study.user_attrs.get("spice_context")
-    if not isinstance(context, dict):
-        raise ValueError(f"Missing SPICE study context in {db_path}")
-    try:
-        best_trial = study.best_trial
-        best_value = study.best_value
-        best_trial_number = best_trial.number
-    except ValueError:
-        best_value = None
-        best_trial_number = None
-    payload: dict[str, object] = {
-        "study": {
-            "study_id": context.get("study_id"),
-            "study_name": study.study_name,
-            "direction": study.direction.name,
-            "best_value": best_value,
-            "best_trial_number": best_trial_number,
-            "trial_count": len(study.trials),
-            "context": dict(context),
-        }
-    }
-    if detail == "trials":
-        payload["trials"] = [
-            {
-                "number": trial.number,
-                "state": trial.state.name,
-                "value": trial.value,
-                "best_epoch": trial.user_attrs.get("spice_best_epoch"),
-                "params": trial.user_attrs.get("spice_params"),
-            }
-            for trial in study.trials
-        ]
     return payload
 
 
@@ -305,7 +261,6 @@ def _artifact_sections(payload: dict[str, object]) -> list[tuple[str, list[tuple
 
 def _study_sections(payload: dict[str, object]) -> list[tuple[str, list[tuple[str, str]]]]:
     study = _mapping(payload["study"])
-    context = _mapping(study["context"])
     sections = [
         (
             "study",
@@ -313,12 +268,18 @@ def _study_sections(payload: dict[str, object]) -> list[tuple[str, list[tuple[st
                 ("name", str(study["study_name"])),
                 ("storage id", str(study["study_id"])),
                 ("direction", str(study["direction"])),
-                ("chain", str(context["chain"])),
-                ("dataset", str(context["dataset_name"])),
-                ("dataset id", str(context["dataset_id"])),
-                ("task", str(context["task_id"])),
-                ("feature set", str(context["feature_set_id"])),
-                ("model", str(context["model_id"])),
+                ("objective", str(study["objective_metric"])),
+                ("chain", str(study["chain_name"])),
+                ("dataset", str(study["dataset_name"])),
+                ("dataset id", str(study["dataset_id"])),
+                ("task", str(study["task_id"])),
+                ("feature set", str(study["feature_set_id"])),
+                ("model", str(study["model_id"])),
+                (
+                    "sampler",
+                    f"{study['sampler_name']} seed={study['sampler_seed']}",
+                ),
+                ("pruner", str(study["pruner_name"])),
                 ("trials", str(study["trial_count"])),
             ],
         ),
@@ -340,6 +301,20 @@ def _study_sections(payload: dict[str, object]) -> list[tuple[str, list[tuple[st
             ],
         ),
     ]
+    config = payload.get("config")
+    if isinstance(config, dict):
+        config_mapping = _mapping(config)
+        sections.extend(
+            [
+                ("task config", _mapping_fields(_mapping(config_mapping["task"]))),
+                ("feature set config", _mapping_fields(_mapping(config_mapping["feature_set"]))),
+                ("model config", _mapping_fields(_mapping(config_mapping["model"]))),
+                ("split config", _mapping_fields(_mapping(config_mapping["split"]))),
+                ("training config", _mapping_fields(_mapping(config_mapping["training"]))),
+                ("tuning config", _mapping_fields(_mapping(config_mapping["tuning"]))),
+                ("tuning space", _mapping_fields(_mapping(config_mapping["tuning_space"]))),
+            ]
+        )
     trials = payload.get("trials")
     if isinstance(trials, list):
         sections.append(
@@ -402,3 +377,16 @@ def _mapping(payload: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise TypeError("Expected mapping payload")
     return dict(payload)
+
+
+def _mapping_fields(payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        (str(key).replace("_", " "), _value_string(value))
+        for key, value in payload.items()
+    ]
+
+
+def _value_string(value: object) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return str(value)

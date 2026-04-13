@@ -423,7 +423,7 @@ def show_study_command(
     ] = None,
     detail: Annotated[
         str | None,
-        typer.Option("--detail", metavar="DETAIL", help="Show one detail table: trials."),
+        typer.Option("--detail", metavar="DETAIL", help="Show one detail table: trials or config."),
     ] = None,
 ) -> None:
     from .state.catalog import list_study_records

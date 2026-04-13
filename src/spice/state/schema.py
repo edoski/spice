@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from sqlalchemy import JSON, Boolean, Column, Float, Integer, MetaData, String, Table
 
-STATE_SCHEMA_VERSION = 3
-
 metadata = MetaData()
 
 spice_meta = Table(
@@ -13,7 +11,6 @@ spice_meta = Table(
     metadata,
     Column("singleton", Integer, primary_key=True),
     Column("root_kind", String, nullable=False),
-    Column("schema_version", Integer, nullable=False),
     Column("created_at", Integer, nullable=False),
     Column("updated_at", Integer, nullable=False),
 )
@@ -176,7 +173,36 @@ simulation_runs = Table(
     Column("baseline_cost_over_optimum", Float, nullable=False),
 )
 
+study_manifest = Table(
+    "study_manifest",
+    metadata,
+    Column("singleton", Integer, primary_key=True),
+    Column("study_id", String, nullable=False),
+    Column("study_name", String, nullable=False),
+    Column("chain_name", String, nullable=False),
+    Column("dataset_id", String, nullable=False),
+    Column("dataset_name", String, nullable=False),
+    Column("task_id", String, nullable=False),
+    Column("feature_set_id", String, nullable=False),
+    Column("model_id", String, nullable=False),
+    Column("task", JSON, nullable=False),
+    Column("feature_set", JSON, nullable=False),
+    Column("model", JSON, nullable=False),
+    Column("split", JSON, nullable=False),
+    Column("training", JSON, nullable=False),
+    Column("objective_metric", String, nullable=False),
+    Column("direction", String, nullable=False),
+    Column("sampler_name", String, nullable=False),
+    Column("sampler_seed", Integer, nullable=False),
+    Column("pruner_name", String, nullable=False),
+    Column("enable_pruning", Boolean, nullable=False),
+    Column("tuning_space", JSON, nullable=False),
+    Column("created_at", Integer, nullable=False),
+    Column("updated_at", Integer, nullable=False),
+)
+
 DATASET_TABLES = (dataset_summary, acquire_runs)
+STUDY_TABLES = (study_manifest,)
 ARTIFACT_TABLES = (
     artifact_manifest,
     training_summary,

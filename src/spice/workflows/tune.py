@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -11,20 +10,18 @@ from optuna.trial import FrozenTrial, TrialState
 
 from ..config import TuneConfig
 from ..core.console import ConsoleRuntime, Reporter
-from ..core.files import remove_path
 from ..modeling.execution import run_persisted_training
 from ..modeling.pipeline import TrainingStageReporters
 from ..modeling.registry import sample_tuned_parameters
+from ..modeling.tuning import apply_tuned_parameters, flatten_tuned_parameters
 from ..state.catalog import upsert_study_record
-from ..state.study import create_or_load_study
-from ._shared import abort_cleanup, build_training_spec, epoch_metrics_to_dict, managed_workflow
-from ._tuning import (
-    apply_tuned_parameters,
+from ..state.study import (
     build_study_summary,
-    flatten_tuned_parameters,
-    freeze_best_epoch_for_trial,
-    freeze_tuned_parameters_for_trial,
+    open_tuning_study,
+    record_trial_best_epoch,
+    record_trial_params,
 )
+from ._shared import build_training_spec, epoch_metrics_to_dict, managed_workflow
 
 
 def _format_best_params(params) -> str:
@@ -77,7 +74,7 @@ def _objective(
 ) -> float:
     assert base_config.tuning_space is not None
     params = sample_tuned_parameters(trial, tuning_space=base_config.tuning_space)
-    freeze_tuned_parameters_for_trial(trial, params)
+    record_trial_params(trial, params)
     config = apply_tuned_parameters(base_config, params)
 
     spec = build_training_spec(config)
@@ -107,7 +104,7 @@ def _objective(
             )
     metric_map = epoch_metrics_to_dict(persisted.best_validation_metrics)
     metric_value = metric_map[config.tuning.objective_metric.metric_name]
-    freeze_best_epoch_for_trial(trial, persisted.training_run.training_result.best_epoch)
+    record_trial_best_epoch(trial, persisted.training_run.training_result.best_epoch)
     if config.tuning.enable_pruning:
         trial.report(metric_value, step=persisted.training_run.training_result.best_epoch)
         if trial.should_prune():
@@ -138,33 +135,40 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
             unit="trials",
         )
         trial_reporter = session.runtime.stage_reporter("trial", label="trial")
-        with abort_cleanup(
-            session.reporter,
-            label="tune",
-            cleanup=lambda: remove_path(study_root),
-        ):
-            if study_root.exists():
-                shutil.rmtree(study_root)
-            study_task = study_reporter.start_task(
-                "tune study",
-                total=config.tuning.trial_count,
-                unit="trials",
+        study_access = open_tuning_study(study_state_db, config=config)
+        study_task = study_reporter.start_task(
+            "tune study",
+            total=study_access.target_trial_count,
+            unit="trials",
+        )
+        if study_access.existing_trial_count:
+            study_reporter.update_task(
+                study_task,
+                completed=study_access.existing_trial_count,
+                message=f"resuming from trial {study_access.existing_trial_count}",
             )
-            study = create_or_load_study(study_state_db, config=config)
+        study = study_access.study
 
-            def on_trial_complete(active_study: optuna.Study, frozen_trial: FrozenTrial) -> None:
-                del active_study
-                study_reporter.update_task(
-                    study_task,
-                    completed=frozen_trial.number + 1,
-                    message=_trial_status_message(frozen_trial),
-                )
-                session.runtime.set_stage_state(
-                    "trial",
-                    status=_trial_stage_status(frozen_trial),
-                    message=_trial_status_message(frozen_trial),
-                )
+        def on_trial_complete(active_study: optuna.Study, frozen_trial: FrozenTrial) -> None:
+            del active_study
+            study_reporter.update_task(
+                study_task,
+                completed=frozen_trial.number + 1,
+                message=_trial_status_message(frozen_trial),
+            )
+            session.runtime.set_stage_state(
+                "trial",
+                status=_trial_stage_status(frozen_trial),
+                message=_trial_status_message(frozen_trial),
+            )
 
+        if study_access.remaining_trial_count == 0:
+            session.runtime.set_stage_state(
+                "trial",
+                status="done",
+                message="study already at requested trial count",
+            )
+        else:
             with session.runtime.optuna_logging():
                 study.optimize(
                     lambda trial: _objective(
@@ -174,71 +178,69 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
                         runtime=session.runtime,
                         trial_reporter=trial_reporter,
                     ),
-                    n_trials=config.tuning.trial_count,
+                    n_trials=study_access.remaining_trial_count,
                     timeout=config.tuning.timeout_seconds,
                     callbacks=[on_trial_complete],
                 )
-            completed_trials = [
-                trial for trial in study.trials if trial.state == TrialState.COMPLETE
-            ]
-            if completed_trials:
-                study_reporter.finish_task(
-                    study_task,
-                    message=f"best_value={study.best_value:.4f}",
-                )
-            else:
-                study_reporter.finish_task(study_task, message="no successful trials")
-            summary = build_study_summary(config, study)
-            upsert_study_record(
-                config.paths.catalog_db,
-                study_id=study_id,
-                study_name=config.study.name,
-                dataset_id=config.paths.dataset_id,
-                dataset_name=config.dataset.name,
-                chain_name=config.chain.name,
-                feature_set_id=config.feature_set.id,
-                model_id=config.model.id,
-                task_id=config.task.id,
-                root_path=study_root,
-                state_db_path=study_state_db,
+        completed_trials = [trial for trial in study.trials if trial.state == TrialState.COMPLETE]
+        if completed_trials:
+            study_reporter.finish_task(
+                study_task,
+                message=f"best_value={study.best_value:.4f}",
             )
-            best_trial = summary.best_trial
-            session.runtime.log_sectioned_summary(
-                "tuning summary",
-                [
-                    (
-                        "study",
-                        [
-                            ("name", summary.study.name),
-                            ("storage id", summary.study_id),
-                            ("chain", summary.chain),
-                            ("dataset", summary.dataset_name),
-                            ("task", summary.task_id),
-                            ("model", summary.model_id),
-                            ("trials", str(summary.trial_counts.total)),
-                        ],
-                    ),
-                    (
-                        "best trial",
-                        [
-                            ("objective", summary.objective_metric.value),
-                            (
-                                "value",
-                                "n/a"
-                                if best_trial is None or best_trial.value is None
-                                else f"{best_trial.value:.4f}",
-                            ),
-                            (
-                                "trial",
-                                "n/a" if best_trial is None else str(best_trial.number + 1),
-                            ),
-                            (
-                                "params",
-                                "n/a"
-                                if best_trial is None
-                                else _format_best_params(best_trial.params),
-                            ),
-                        ],
-                    ),
-                ],
-            )
+        else:
+            study_reporter.finish_task(study_task, message="no successful trials")
+        summary = build_study_summary(study_access.manifest, study)
+        upsert_study_record(
+            config.paths.catalog_db,
+            study_id=study_id,
+            study_name=config.study.name,
+            dataset_id=config.paths.dataset_id,
+            dataset_name=config.dataset.name,
+            chain_name=config.chain.name,
+            feature_set_id=config.feature_set.id,
+            model_id=config.model.id,
+            task_id=config.task.id,
+            root_path=study_root,
+            state_db_path=study_state_db,
+        )
+        best_trial = summary.best_trial
+        session.runtime.log_sectioned_summary(
+            "tuning summary",
+            [
+                (
+                    "study",
+                    [
+                        ("name", summary.manifest.study_name),
+                        ("storage id", summary.manifest.study_id),
+                        ("chain", summary.manifest.chain_name),
+                        ("dataset", summary.manifest.dataset_name),
+                        ("task", summary.manifest.task_id),
+                        ("model", summary.manifest.model_id),
+                        ("trials", str(summary.trial_counts.total)),
+                    ],
+                ),
+                (
+                    "best trial",
+                    [
+                        ("objective", summary.manifest.objective_metric.value),
+                        (
+                            "value",
+                            "n/a"
+                            if best_trial is None or best_trial.value is None
+                            else f"{best_trial.value:.4f}",
+                        ),
+                        (
+                            "trial",
+                            "n/a" if best_trial is None else str(best_trial.number + 1),
+                        ),
+                        (
+                            "params",
+                            "n/a"
+                            if best_trial is None
+                            else _format_best_params(best_trial.params),
+                        ),
+                    ],
+                ),
+            ],
+        )

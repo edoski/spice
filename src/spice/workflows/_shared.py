@@ -11,9 +11,9 @@ from ..config import ArtifactVariant, SimulateConfig, TrainConfig, TuneConfig, W
 from ..core.console import ConsoleRuntime, Reporter, create_console_runtime
 from ..modeling.evaluation import EpochMetrics
 from ..modeling.pipeline import TrainingSpec
+from ..modeling.tuning import apply_tuned_parameters
 from ..planning.contracts import resolve_task_contract
-from ..state.study import load_best_params
-from ._tuning import apply_tuned_parameters
+from ..state.study import load_best_params, load_study_manifest, validate_tuned_train_request
 
 
 def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
@@ -160,12 +160,10 @@ def apply_study_best_params(config: TrainConfig) -> TrainConfig:
     path = config.paths.study_state_db
     if path is None:
         raise ValueError("study_state_db is required for tuned artifacts")
+    manifest = load_study_manifest(path)
+    validate_tuned_train_request(config, manifest=manifest)
     try:
-        params = load_best_params(
-            path,
-            study_name=config.study.name,
-            model_id=config.model.id,
-        )
+        params = load_best_params(path, study_name=config.study.name)
     except OSError as exc:
         raise FileNotFoundError(
             f"Best tuning params are required but missing: {path}"

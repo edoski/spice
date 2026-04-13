@@ -46,6 +46,7 @@ spice config delete preset old_preset
 spice show dataset
 spice show artifact --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --variant baseline
 spice show study --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --study default
+spice show study --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --study default --detail config
 spice delete artifact --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --variant baseline
 ```
 
@@ -108,6 +109,7 @@ Rules:
 Users query by selectors such as `--dataset`, `--study`, `--model`, `--task`, and `--variant`.
 The filesystem ids are deterministic internal storage ids. The catalog maps selectors to roots.
 Structured state is SQLite-only. SPICE no longer persists generated JSON metadata or report files.
+Re-running `spice tune` with the same study resumes that study up to the requested total `--trial-count`.
 
 ## Verification
 

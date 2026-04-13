@@ -87,6 +87,102 @@ def test_tune_then_train_tuned_smoke(tmp_path) -> None:
     assert (tuned_train_config.paths.artifact_root / "model.pt").is_file()
 
 
+def test_tune_resume_same_study_tops_up_to_target(tmp_path) -> None:
+    initial_config = load_test_tune_config(
+        tmp_path,
+        override=deep_merge(model_workflow_override(), tune_override()),
+    )
+    seed_history_dataset(initial_config)
+
+    run_tune(initial_config, reporter=NullReporter())
+
+    resumed_override = deep_merge(
+        deep_merge(model_workflow_override(), tune_override()),
+        {"tuning": {"trial_count": 4, "enable_pruning": False}},
+    )
+    resumed_config = load_test_tune_config(tmp_path, override=resumed_override)
+
+    run_tune(resumed_config, reporter=NullReporter())
+
+    study = load_study(resumed_config.paths.study_state_db, study_name=resumed_config.study.name)
+    assert len(study.trials) == 4
+
+
+def test_tune_rejects_lower_requested_trial_budget(tmp_path) -> None:
+    config = load_test_tune_config(
+        tmp_path,
+        override=deep_merge(model_workflow_override(), tune_override()),
+    )
+    seed_history_dataset(config)
+
+    run_tune(config, reporter=NullReporter())
+
+    lower_budget_config = load_test_tune_config(
+        tmp_path,
+        override=deep_merge(
+            deep_merge(model_workflow_override(), tune_override()),
+            {"tuning": {"trial_count": 1, "enable_pruning": False}},
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Requested trial_count is lower than existing study size"):
+        run_tune(lower_budget_config, reporter=NullReporter())
+
+
+def test_tune_rejects_study_definition_drift(tmp_path) -> None:
+    config = load_test_tune_config(
+        tmp_path,
+        override=deep_merge(model_workflow_override(), tune_override()),
+    )
+    seed_history_dataset(config)
+
+    run_tune(config, reporter=NullReporter())
+
+    drifted_override = deep_merge(
+        deep_merge(model_workflow_override(), tune_override()),
+        {
+            "tuning_space": {
+                "training": {
+                    "learning_rate": [0.0001, 0.001],
+                    "weight_decay": [0.0, 0.01],
+                },
+                "model": {
+                    "id": "lstm",
+                    "hidden_size": [64, 128],
+                    "dropout": [0.0, 0.1],
+                },
+            }
+        },
+    )
+    drifted_config = load_test_tune_config(tmp_path, override=drifted_override)
+
+    with pytest.raises(ValueError, match="tuning_space"):
+        run_tune(drifted_config, reporter=NullReporter())
+
+
+def test_train_tuned_rejects_task_drift_from_study(tmp_path) -> None:
+    tune_config = load_test_tune_config(
+        tmp_path,
+        override=deep_merge(model_workflow_override(), tune_override()),
+    )
+    seed_history_dataset(tune_config)
+    run_tune(tune_config, reporter=NullReporter())
+
+    tuned_train_config = load_test_train_config(
+        tmp_path,
+        override=deep_merge(
+            model_workflow_override(lookback_seconds=240),
+            {
+                "artifact": {"variant": "tuned"},
+                "study": tune_config.study.name,
+            },
+        ),
+    )
+
+    with pytest.raises(ValueError, match="task"):
+        run_train(tuned_train_config, reporter=NullReporter())
+
+
 def test_simulate_workflow_smoke(tmp_path) -> None:
     override = model_workflow_override()
     train_config = load_test_train_config(tmp_path, override=override)
@@ -153,6 +249,44 @@ def test_show_command_smoke(tmp_path) -> None:
     assert "artifact summary" in result.stdout
     assert train_config.model.id in result.stdout
     assert "simulation" in result.stdout
+
+
+def test_show_study_config_detail_smoke(tmp_path) -> None:
+    config = load_test_tune_config(
+        tmp_path,
+        override=deep_merge(model_workflow_override(), tune_override()),
+    )
+    seed_history_dataset(config)
+    run_tune(config, reporter=NullReporter())
+
+    result = runner.invoke(
+        app,
+        [
+            "show",
+            "study",
+            "--chain",
+            config.chain.name,
+            "--dataset",
+            config.dataset.name,
+            "--feature-set",
+            config.feature_set.id,
+            "--model",
+            config.model.id,
+            "--task",
+            config.task.id,
+            "--study",
+            config.study.name,
+            "--storage-root",
+            str(tmp_path / "outputs"),
+            "--detail",
+            "config",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "study summary" in result.stdout
+    assert "tuning space" in result.stdout
+    assert "learning rate" in result.stdout
 
 
 def test_delete_artifact_command_smoke(tmp_path) -> None:
