@@ -10,6 +10,7 @@ Runtime commands:
 4. `spice simulate`
 
 One CLI. One config system. One canonical temporal semantics model.
+One canonical objective semantics layer.
 
 ## Core Model
 
@@ -17,7 +18,8 @@ SPICE has one architectural hierarchy:
 
 1. canonical domain truth
 2. model-input compilation
-3. model family
+3. objective semantics
+4. model family
 
 Canonical domain truth is:
 
@@ -30,6 +32,16 @@ Model-input compilation is a separate layer:
 - current sequence families use the shared `sequence_event` representation
 - future families may register a different representation if they need genuinely different input semantics
 
+Objective semantics is another separate layer:
+
+- one active `objective_id`
+- one differentiable training surrogate
+- one primary validation and tuning metric
+- one simulation primary aggregation rule
+- one reporting order for metrics
+
+This layer is code-defined in `modeling/objective/`.
+
 Model family stays below that boundary:
 
 - `lstm`
@@ -37,6 +49,7 @@ Model family stays below that boundary:
 - `transformer_lstm`
 
 This keeps domain semantics stable while allowing future model growth.
+It also keeps objective changes orthogonal to corpus storage and model-input representation.
 
 ## Config Flow
 
@@ -68,6 +81,7 @@ Public temporal contract:
 - `execution.requested_delay_seconds` defines the runtime deadline inside that capability.
 
 No config field encodes nominal block time.
+No public config field selects objective semantics yet.
 
 ## Temporal Semantics
 
@@ -81,6 +95,29 @@ For anchor block `i` at timestamp `t_i`:
 - baseline = next block
 
 This semantics is shared by acquisition sufficiency checks, training, inference, and simulation.
+
+## Objective Semantics
+
+SPICE currently ships one objective family:
+
+- `objective_id = profit_over_baseline`
+
+This objective package owns:
+
+- candidate-slate reference derivation
+- direct economic training loss
+- epoch/test metrics
+- checkpoint and early-stop selection semantics
+- Optuna direction and reported value
+- simulation totals-based primary aggregation
+
+Metric roles are:
+
+- primary: `profit_over_baseline`
+- secondary: `cost_over_optimum`
+- diagnostics: `objective_loss`, `exact_optimum_hit_rate`
+
+The current loss is a direct economic surrogate over valid candidate fees. Models emit candidate logits only.
 
 ## Feature Architecture
 
@@ -112,7 +149,6 @@ Derived learning data is not stored as fixed block windows. Instead SPICE builds
 - `anchor_row`
 - `context_start_row`
 - `candidate_end_row`
-- `class_label`
 
 Padding is not domain truth. Padding exists only in the collate path for model execution.
 
@@ -124,14 +160,14 @@ Shared batch semantics:
 
 - `inputs`
 - `input_mask`
-- candidate fee tensor
+- `candidate_log_fees`
 - `candidate_mask`
-- labels, fee targets, baselines
 
 Important distinction:
 
 - `input_mask` is batch transport logic
 - `candidate_mask` is task semantics because valid future actions truly vary by sample
+- optimum index, baseline fee, and realized fee are derived from the candidate slate by the objective package
 
 The compiler seam is keyed by input representation semantics, not model family name.
 
@@ -146,6 +182,30 @@ Future examples:
 - `time_grid`
 - `graph`
 - `point_process`
+
+## CLI Shape
+
+SPICE CLI commands fall into three categories:
+
+1. workflow commands
+2. config authoring commands
+3. state query and deletion commands
+
+Workflow commands:
+
+- `acquire`
+- `tune`
+- `train`
+- `simulate`
+
+These follow the full config-loading path and then delegate to workflow modules.
+
+Query and deletion commands:
+
+- `show dataset|study|artifact`
+- `delete dataset|study|artifact`
+
+These are selector-driven commands over existing state. They do not use workflow request models. `show` resolves catalog matches, loads typed state summaries, builds typed root descriptions, and renders console sections.
 
 ## Package Roles
 
@@ -162,13 +222,14 @@ Future examples:
 
 ### `state`
 
-- `engine.py`: SQLAlchemy engine creation, SQLite PRAGMAs, root-kind bootstrap
+- `engine.py`: SQLAlchemy engine creation, SQLite PRAGMAs, `RootKind`, root-kind bootstrap
 - `schema.py`: SPICE-owned Core table definitions
 - `catalog.py`: global selector-to-root catalog
 - `dataset.py`: corpus summary + acquire-run persistence
-- `artifact.py`: manifest, training, and simulation persistence
+- `artifact.py`: manifest, training, and simulation table I/O
+- `codecs.py`: typed payload codecs between runtime dataclasses and SQLite JSON fields
 - `study.py`: Optuna-backed study helpers and tuned-param loading
-- `show.py`: selector-resolved inspection helpers
+- `show.py`: typed root descriptions and section rendering for `spice show`
 
 ### `acquisition`
 
@@ -205,8 +266,9 @@ Future examples:
 - [training.py](src/spice/modeling/training.py): trainer execution and metrics
 - [execution.py](src/spice/modeling/execution.py): persisted training flow
 - [artifacts.py](src/spice/modeling/artifacts.py): model + manifest persistence and feature validation
-- [reporting.py](src/spice/modeling/reporting.py): internal summary objects
+- [reporting.py](src/spice/modeling/reporting.py): typed training and simulation summary envelopes
 - [simulation.py](src/spice/modeling/simulation.py): Poisson-arrival simulation over evaluation examples
+- `objective/`: objective spec, references, loss, metrics, and selection
 
 ### `workflows`
 
@@ -238,6 +300,7 @@ Notes:
 - `outputs/.spice/catalog.sqlite` is the global lookup index
 - `src/spice/conf` is the saved spec registry
 - SPICE-owned structured state lives only in `.spice/state.sqlite`
+- root identity is typed internally as `RootKind` with values `corpus`, `study`, `artifact`
 - study roots persist a typed study manifest plus Optuna state
 - studies and artifacts are separate roots
 - `spice config ...` is the human-facing config authoring path

@@ -163,12 +163,12 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     assert summary.validation.evaluation.rows == evaluation_plan.expected_rows
     assert summary.provider.name == "publicnode"
     assert len(runs) == 1
-    assert runs[0]["task_id"] == config.task.id
-    assert runs[0]["feature_set_id"] == config.feature_set.id
-    assert runs[0]["feature_history_seconds"] == contract.feature_history_seconds
-    assert runs[0]["required_history_seconds"] == contract.required_history_seconds
-    assert runs[0]["valid_anchor_samples"] >= config.task.sample_count
-    assert runs[0]["acquired_history_window_seconds"] >= contract.required_history_seconds
+    assert runs[0].task.task_id == config.task.id
+    assert runs[0].task.feature_set_id == config.feature_set.id
+    assert runs[0].task.feature_history_seconds == contract.feature_history_seconds
+    assert runs[0].task.required_history_seconds == contract.required_history_seconds
+    assert runs[0].task.valid_anchor_samples >= config.task.sample_count
+    assert runs[0].task.acquired_history_window_seconds >= contract.required_history_seconds
     assert config.paths.history_dir.is_dir()
     assert config.paths.evaluation_dir.is_dir()
     datasets = list_dataset_records(

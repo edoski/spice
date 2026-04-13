@@ -1,6 +1,6 @@
 # SPICE
 
-SPICE is a temporal fee-timing pipeline for EVM chains. It acquires canonical block corpora, builds timestamp-native feature tables, tunes models, trains artifacts, and runs evaluation-day simulations.
+SPICE is a temporal fee-timing pipeline for EVM chains. It acquires canonical block corpora, builds timestamp-native feature tables, tunes models, trains artifacts, and runs evaluation-day simulations under real delay budgets.
 
 ## Stack
 
@@ -85,6 +85,7 @@ Rules:
 - Feature history is derived from the selected feature graph in seconds.
 - `acquire` expands raw history until the selected task and feature graph produce enough valid anchor samples.
 - `train` and `simulate` validate that the selected feature graph matches the trained artifact.
+- Objective selection is internal for now. SPICE ships one code-defined objective: `profit_over_baseline`.
 
 ## Temporal Semantics
 
@@ -101,6 +102,19 @@ Internal semantics are timestamp-native:
 - labels = cheapest valid future block under that real deadline
 
 SPICE does not convert seconds into nominal block counts anymore.
+
+## Objective Semantics
+
+SPICE trains and evaluates against one canonical economic objective:
+
+- primary objective: `profit_over_baseline`
+- first-class secondary metric: `cost_over_optimum`
+- diagnostics: `objective_loss`, `exact_optimum_hit_rate`
+
+The objective is code-defined and centralized under `src/spice/modeling/objective/`.
+Training, tuning, checkpoint selection, study manifests, artifact manifests, and simulation summaries all follow the same `objective_id`.
+
+Current training uses a direct economic surrogate over the valid future candidate slate, not classification cross-entropy plus auxiliary fee regression.
 
 ## Output Layout
 
@@ -119,6 +133,7 @@ Users query by selectors such as `--dataset`, `--study`, `--model`, `--task`, an
 Storage ids are deterministic internal ids. The catalog maps selectors to roots.
 Structured state is SQLite-only. SPICE does not persist generated JSON metadata or report files.
 Re-running `spice tune` with the same study resumes that study up to the requested total `--trial-count`.
+Study and artifact identity include the active `objective_id`, so changing objective semantics produces distinct stored outputs.
 
 ## Current Model Boundary
 
@@ -135,7 +150,26 @@ Current sequence families share one semantic input representation:
 - `transformer_lstm`
 
 That shared representation is compiled into a masked/padded batch only at the model boundary.
+The current shared sequence batch contains:
+
+- `inputs`
+- `input_mask`
+- `candidate_log_fees`
+- `candidate_mask`
+
+Economic references such as optimum index, baseline fee, and realized fee are derived by the objective package from that candidate slate. They are not persisted as separate batch payload.
+
 Future model families can register a different input representation without changing corpus storage, task semantics, or workflow interfaces.
+
+## Inspection and State
+
+`spice show` is a read-only query command over stored state roots:
+
+- catalog lookup resolves selectors to one or more roots
+- typed state loaders reconstruct corpus, study, or artifact summaries
+- typed root descriptions are rendered into console sections
+
+SPICE does not route `show` through workflow config loading. It is a selector-driven inspection path over already-materialized state.
 
 ## Verification
 

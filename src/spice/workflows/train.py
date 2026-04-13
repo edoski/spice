@@ -8,7 +8,7 @@ from ..core.constants import MODEL_STATE_FILENAME
 from ..core.files import remove_path
 from ..modeling.execution import run_persisted_training
 from ..modeling.pipeline import TrainingStageReporters
-from ..state import ARTIFACT_ROOT_KIND
+from ..state import ARTIFACT_ROOT_KIND, RootKind
 from ..state.catalog import upsert_artifact_record
 from ._shared import (
     abort_cleanup,
@@ -66,11 +66,11 @@ def _format_train_summary_sections(
                         f"test={summary.split_sizes.test_samples:,}"
                     ),
                 ),
-                ("validation loss", f"{best_validation.total_loss:.4f}"),
-                ("validation accuracy", f"{best_validation.accuracy:.3f}"),
+                ("validation profit", f"{best_validation.profit_over_baseline:.4f}"),
+                ("validation cost", f"{best_validation.cost_over_optimum:.4f}"),
                 (
                     "test profit over baseline",
-                    f"{summary.test_metrics.mean_profit_over_baseline:.4f}",
+                    f"{summary.test_metrics.profit_over_baseline:.4f}",
                 ),
             ],
         ),
@@ -110,7 +110,7 @@ def _workflow_facts(config: TrainConfig) -> list[tuple[str, str]]:
     return facts
 
 
-def _state_root_kind(config: TrainConfig) -> str:
+def _state_root_kind(config: TrainConfig) -> RootKind:
     del config
     return ARTIFACT_ROOT_KIND
 

@@ -7,21 +7,20 @@ from pathlib import Path
 
 from ..core.console import NullReporter, Reporter
 from ..state.artifact import write_training_state
+from ..state.engine import RootKind
 from .artifacts import (
     TrainingArtifactManifest,
     build_training_artifact_manifest,
     load_training_artifact,
     persist_training_artifact,
 )
-from .evaluation import EpochMetrics
+from .objective import EpochMetrics
 from .pipeline import TrainingRunResult, TrainingSpec, TrainingStageReporters, run_training
 from .reporting import (
     TrainingSummary,
     build_training_summary,
-    iter_epoch_pairs,
-    summarize_epoch_metrics,
+    iter_epoch_records,
 )
-from .torch_datasets import build_class_weights
 from .training import evaluate_model
 
 
@@ -43,18 +42,12 @@ def _replay_split_metrics(
     reporter: Reporter,
 ) -> tuple[EpochMetrics, EpochMetrics]:
     prepared = training_run.prepared
-    class_weights = build_class_weights(
-        prepared.store.class_labels,
-        prepared.split_indices.train,
-        prepared.max_candidate_slots,
-    )
     best_validation_metrics = evaluate_model(
         model,
         model_id=spec.model.id,
         store=prepared.store,
         sample_indices=prepared.split_indices.validation,
         training_config=spec.training,
-        class_weights=class_weights,
         reporter=reporter,
     )
     test_metrics = evaluate_model(
@@ -63,7 +56,6 @@ def _replay_split_metrics(
         store=prepared.store,
         sample_indices=prepared.split_indices.test,
         training_config=spec.training,
-        class_weights=class_weights,
         reporter=reporter,
     )
     return best_validation_metrics, test_metrics
@@ -78,7 +70,7 @@ def run_persisted_training(
     write_reporter: Reporter | None = None,
     reporter: Reporter | None = None,
     persist_artifact: bool = True,
-    state_root_kind: str | None = None,
+    state_root_kind: RootKind | None = None,
 ) -> PersistedTrainingRun:
     reporter = reporter or NullReporter()
     active_stage_reporters = stage_reporters or TrainingStageReporters.shared(reporter)
@@ -124,14 +116,7 @@ def run_persisted_training(
             artifact_dir / ".spice" / "state.sqlite",
             root_kind=state_root_kind,
             summary=summary,
-            epoch_rows=[
-                (
-                    epoch,
-                    summarize_epoch_metrics(train_metrics),
-                    summarize_epoch_metrics(validation_metrics),
-                )
-                for epoch, train_metrics, validation_metrics in iter_epoch_pairs(training_run)
-            ],
+            epoch_rows=list(iter_epoch_records(training_run)),
         )
         active_write_reporter.finish_task(artifact_task, message=str(artifact_dir), silent=True)
         artifact_paths.extend(

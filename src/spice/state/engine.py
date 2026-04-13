@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterable
+from enum import StrEnum
 from pathlib import Path
 
 from sqlalchemy import Engine, event, inspect, select
@@ -12,9 +13,16 @@ from sqlalchemy.engine import Connection, create_engine
 
 from .schema import metadata, spice_meta
 
-DATASET_ROOT_KIND = "corpus"
-ARTIFACT_ROOT_KIND = "artifact"
-STUDY_ROOT_KIND = "study"
+
+class RootKind(StrEnum):
+    CORPUS = "corpus"
+    ARTIFACT = "artifact"
+    STUDY = "study"
+
+
+DATASET_ROOT_KIND = RootKind.CORPUS
+ARTIFACT_ROOT_KIND = RootKind.ARTIFACT
+STUDY_ROOT_KIND = RootKind.STUDY
 STATE_DB_FILENAME = "state.sqlite"
 
 
@@ -45,7 +53,7 @@ def create_state_engine(path: Path) -> Engine:
     return engine
 
 
-def ensure_state_db(path: Path, *, root_kind: str, tables: Iterable) -> None:
+def ensure_state_db(path: Path, *, root_kind: RootKind, tables: Iterable) -> None:
     managed_tables = (spice_meta, *tuple(tables))
     engine = create_state_engine(path)
     try:
@@ -58,7 +66,7 @@ def ensure_state_db(path: Path, *, root_kind: str, tables: Iterable) -> None:
         engine.dispose()
 
 
-def touch_meta(conn: Connection, *, root_kind: str) -> None:
+def touch_meta(conn: Connection, *, root_kind: RootKind) -> None:
     now = int(time.time())
     statement = sqlite_insert(spice_meta).values(
         singleton=1,
@@ -77,7 +85,7 @@ def touch_meta(conn: Connection, *, root_kind: str) -> None:
     )
 
 
-def detect_root_kind(path: Path) -> str:
+def detect_root_kind(path: Path) -> RootKind:
     if not path.is_file():
         raise FileNotFoundError(f"Missing state database: {path}")
     engine = create_state_engine(path)
@@ -91,7 +99,7 @@ def detect_root_kind(path: Path) -> str:
             ).mappings().first()
         if row is None:
             raise ValueError(f"Missing SPICE state metadata: {path}")
-        return str(row["root_kind"])
+        return RootKind(str(row["root_kind"]))
     finally:
         engine.dispose()
 
@@ -104,7 +112,7 @@ def table_exists(path: Path, table_name: str) -> bool:
         engine.dispose()
 
 
-def _ensure_root_kind(conn: Connection, *, root_kind: str) -> None:
+def _ensure_root_kind(conn: Connection, *, root_kind: RootKind) -> None:
     row = conn.execute(
         select(spice_meta.c.root_kind).where(spice_meta.c.singleton == 1)
     ).mappings().first()

@@ -17,15 +17,14 @@ from ..config import (
     FeatureSetConfig,
     ModelConfig,
     SplitConfig,
-    StudyDirection,
     TaskSpec,
     TrainConfig,
     TrainingConfig,
     TuneConfig,
     TunedParameterSet,
-    TuningObjective,
     TuningSpaceConfig,
 )
+from ..modeling.objective import active_objective, objective_spec, optuna_direction
 from ..modeling.registry import (
     coerce_model_config,
     coerce_tuned_parameter_set,
@@ -50,6 +49,7 @@ class StudyTrialState(StrEnum):
 @dataclass(frozen=True, slots=True)
 class StudyManifest:
     study_id: str
+    objective_id: str
     study_name: str
     chain_name: str
     dataset_id: str
@@ -59,8 +59,6 @@ class StudyManifest:
     model: ModelConfig
     split: SplitConfig
     training: TrainingConfig
-    objective_metric: TuningObjective
-    direction: StudyDirection
     sampler_name: str
     sampler_seed: int
     pruner_name: str
@@ -135,6 +133,7 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
         raise ValueError("study_id is required for study manifests")
     return StudyManifest(
         study_id=config.paths.study_id,
+        objective_id=active_objective().objective_id,
         study_name=config.study.name,
         chain_name=config.chain.name,
         dataset_id=config.paths.corpus_id,
@@ -144,8 +143,6 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
         model=config.model,
         split=config.split,
         training=config.training,
-        objective_metric=config.tuning.objective_metric,
-        direction=config.tuning.direction,
         sampler_name=_STUDY_SAMPLER_NAME,
         sampler_seed=config.tuning.sampler_seed,
         pruner_name=_pruner_name(config.tuning.enable_pruning),
@@ -178,6 +175,7 @@ def load_study_manifest(db_path: Path) -> StudyManifest:
         model = coerce_model_config(_mapping(row["model"]))
         return StudyManifest(
             study_id=str(row["study_id"]),
+            objective_id=str(row["objective_id"]),
             study_name=str(row["study_name"]),
             chain_name=str(row["chain_name"]),
             dataset_id=str(row["dataset_id"]),
@@ -187,8 +185,6 @@ def load_study_manifest(db_path: Path) -> StudyManifest:
             model=model,
             split=SplitConfig.model_validate(_mapping(row["split"])),
             training=TrainingConfig.model_validate(_mapping(row["training"])),
-            objective_metric=TuningObjective(str(row["objective_metric"])),
-            direction=StudyDirection(str(row["direction"])),
             sampler_name=str(row["sampler_name"]),
             sampler_seed=int(row["sampler_seed"]),
             pruner_name=str(row["pruner_name"]),
@@ -262,46 +258,6 @@ def list_trial_records(db_path: Path) -> list[StudyTrialRecord]:
     manifest = load_study_manifest(db_path)
     study = _load_materialized_study(db_path, manifest=manifest)
     return [build_trial_record(trial, model_id=manifest.model_id) for trial in study.trials]
-
-
-def describe_study(db_path: Path, *, detail: str | None) -> dict[str, object]:
-    summary = load_study_summary(db_path)
-    manifest = summary.manifest
-    best_trial = summary.best_trial
-    payload: dict[str, object] = {
-        "study": {
-            "study_id": manifest.study_id,
-            "study_name": manifest.study_name,
-            "chain_name": manifest.chain_name,
-            "dataset_id": manifest.dataset_id,
-            "dataset_name": manifest.dataset_name,
-            "task_id": manifest.task_id,
-            "feature_set_id": manifest.feature_set_id,
-            "model_id": manifest.model_id,
-            "objective_metric": manifest.objective_metric.value,
-            "direction": manifest.direction.name,
-            "sampler_name": manifest.sampler_name,
-            "sampler_seed": manifest.sampler_seed,
-            "pruner_name": manifest.pruner_name,
-            "trial_count": summary.trial_counts.total,
-            "best_value": None if best_trial is None else best_trial.value,
-            "best_trial_number": None if best_trial is None else best_trial.number,
-        }
-    }
-    if detail == "config":
-        payload["config"] = _manifest_detail_payload(manifest)
-    if detail == "trials":
-        payload["trials"] = [
-            {
-                "number": record.number,
-                "state": record.state.value,
-                "value": record.value,
-                "best_epoch": record.best_epoch,
-                "params": record.params.model_dump(mode="json", exclude_none=True),
-            }
-            for record in list_trial_records(db_path)
-        ]
-    return payload
 
 
 def record_trial_params(trial: optuna.Trial, params: TunedParameterSet) -> None:
@@ -378,6 +334,7 @@ def validate_tuned_train_request(config: TrainConfig, *, manifest: StudyManifest
     stored_payload = {
         "study_name": manifest.study_name,
         "study_id": manifest.study_id,
+        "objective_id": manifest.objective_id,
         "chain_name": manifest.chain_name,
         "dataset_id": manifest.dataset_id,
         "dataset_name": manifest.dataset_name,
@@ -388,6 +345,7 @@ def validate_tuned_train_request(config: TrainConfig, *, manifest: StudyManifest
     requested_payload = {
         "study_name": config.study.name,
         "study_id": config.paths.study_id,
+        "objective_id": active_objective().objective_id,
         "chain_name": config.chain.name,
         "dataset_id": config.paths.corpus_id,
         "dataset_name": config.dataset.name,
@@ -441,7 +399,7 @@ def _load_or_create_materialized_study(db_path: Path, *, manifest: StudyManifest
         return optuna.create_study(
             study_name=manifest.study_name,
             storage=study_storage(db_path),
-            direction=manifest.direction,
+            direction=optuna_direction(objective_spec(manifest.objective_id)),
             load_if_exists=False,
             sampler=optuna.samplers.TPESampler(seed=manifest.sampler_seed),
             pruner=(
@@ -458,6 +416,7 @@ def _manifest_values(manifest: StudyManifest) -> dict[str, object]:
     return {
         "singleton": 1,
         "study_id": manifest.study_id,
+        "objective_id": manifest.objective_id,
         "study_name": manifest.study_name,
         "chain_name": manifest.chain_name,
         "dataset_id": manifest.dataset_id,
@@ -470,8 +429,6 @@ def _manifest_values(manifest: StudyManifest) -> dict[str, object]:
         "model": manifest.model.model_dump(mode="json", exclude_none=True),
         "split": manifest.split.model_dump(mode="json"),
         "training": manifest.training.model_dump(mode="json"),
-        "objective_metric": manifest.objective_metric.value,
-        "direction": manifest.direction.value,
         "sampler_name": manifest.sampler_name,
         "sampler_seed": manifest.sampler_seed,
         "pruner_name": manifest.pruner_name,
@@ -482,29 +439,11 @@ def _manifest_values(manifest: StudyManifest) -> dict[str, object]:
     }
 
 
-def _manifest_detail_payload(manifest: StudyManifest) -> dict[str, object]:
-    return {
-        "task": manifest.task.model_dump(mode="json"),
-        "feature_set": manifest.feature_set.model_dump(mode="json"),
-        "model": manifest.model.model_dump(mode="json", exclude_none=True),
-        "split": manifest.split.model_dump(mode="json"),
-        "training": manifest.training.model_dump(mode="json"),
-        "tuning": {
-            "objective_metric": manifest.objective_metric.value,
-            "direction": manifest.direction.value,
-            "sampler_name": manifest.sampler_name,
-            "sampler_seed": manifest.sampler_seed,
-            "pruner_name": manifest.pruner_name,
-            "enable_pruning": manifest.enable_pruning,
-        },
-        "tuning_space": manifest.tuning_space.model_dump(mode="json", exclude_none=True),
-    }
-
-
 def _study_semantics_payload(manifest: StudyManifest) -> dict[str, object]:
     return {
         "study_name": manifest.study_name,
         "study_id": manifest.study_id,
+        "objective_id": manifest.objective_id,
         "chain_name": manifest.chain_name,
         "dataset_id": manifest.dataset_id,
         "dataset_name": manifest.dataset_name,
@@ -513,8 +452,6 @@ def _study_semantics_payload(manifest: StudyManifest) -> dict[str, object]:
         "model": manifest.model.model_dump(mode="json", exclude_none=True),
         "split": manifest.split.model_dump(mode="json"),
         "training": manifest.training.model_dump(mode="json"),
-        "objective_metric": manifest.objective_metric.value,
-        "direction": manifest.direction.value,
         "sampler_name": manifest.sampler_name,
         "sampler_seed": manifest.sampler_seed,
         "pruner_name": manifest.pruner_name,

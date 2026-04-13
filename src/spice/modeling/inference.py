@@ -15,7 +15,7 @@ from .torch_datasets import move_batch_to_device
 IntVector = NDArray[np.int64]
 
 
-def predict_class_offsets(
+def predict_candidate_offsets(
     model: TemporalModel,
     *,
     model_id: str,
@@ -38,7 +38,7 @@ def predict_class_offsets(
         model_id=model_id,
         batch_size=batch_size,
     )
-    task_id = reporter.start_task("predict offsets", total=len(loader), unit="batches")
+    task_id = reporter.start_task("predict candidates", total=len(loader), unit="batches")
     predictions: list[int] = []
     with torch.no_grad():
         for batch in loader:

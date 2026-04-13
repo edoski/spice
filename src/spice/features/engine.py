@@ -48,7 +48,6 @@ class FeatureTable:
     feature_names: tuple[str, ...]
     feature_graph_fingerprint: str
     feature_history_seconds: int
-    block_numbers: IntVector
     timestamps: IntVector
     feature_matrix: FloatMatrix
     log_base_fees: FloatVector
@@ -143,12 +142,11 @@ def build_feature_table(
     required_history_seconds = feature_history_seconds(selection.feature_names)
     graph_fingerprint = feature_graph_fingerprint(selection.feature_names)
     result = build_feature_driver().execute(
-        list(selection.feature_names) + ["block_numbers", "timestamps", "log_base_fee"],
+        list(selection.feature_names) + ["timestamps", "log_base_fee"],
         inputs={
             "blocks": blocks,
         },
     )
-    block_numbers = np.asarray(result["block_numbers"], dtype=np.int64)
     timestamps = np.asarray(result["timestamps"], dtype=np.int64)
     log_base_fees = np.asarray(result["log_base_fee"], dtype=np.float32)
     raw_feature_columns = [
@@ -158,13 +156,12 @@ def build_feature_table(
     if raw_feature_columns:
         feature_matrix = np.column_stack(raw_feature_columns).astype(np.float32, copy=False)
     else:  # pragma: no cover - guarded by config validation
-        feature_matrix = np.empty((block_numbers.shape[0], 0), dtype=np.float32)
+        feature_matrix = np.empty((timestamps.shape[0], 0), dtype=np.float32)
     return FeatureTable(
         feature_set_id=selection.feature_set_id,
         feature_names=selection.feature_names,
         feature_graph_fingerprint=graph_fingerprint,
         feature_history_seconds=required_history_seconds,
-        block_numbers=block_numbers.astype(np.int64, copy=False),
         timestamps=timestamps.astype(np.int64, copy=False),
         feature_matrix=feature_matrix.astype(np.float32, copy=False),
         log_base_fees=log_base_fees.astype(np.float32, copy=False),

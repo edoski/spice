@@ -27,15 +27,10 @@ class DatasetSplitIndices:
 class TemporalDatasetStore:
     feature_matrix: FloatMatrix
     log_base_fees: FloatVector
-    block_numbers: IntVector
     timestamps: IntVector
     anchor_rows: IntVector
     context_start_rows: IntVector
     candidate_end_rows: IntVector
-    class_labels: IntVector
-    target_log_fee: FloatVector
-    next_block_log_fee: FloatVector
-    optimal_log_fee: FloatVector
     max_candidate_slots: int
 
     @property
@@ -69,7 +64,6 @@ def build_temporal_store(
         raise ValueError("delay_seconds must be positive")
 
     timestamps = feature_table.timestamps
-    block_numbers = feature_table.block_numbers
     log_base_fees = feature_table.log_base_fees
     feature_matrix = feature_table.feature_matrix
     if timestamps.size == 0:
@@ -108,32 +102,13 @@ def build_temporal_store(
     if np.any(selected_candidate_counts > resolved_max_candidate_slots):
         raise ValueError("Configured max_candidate_slots is too small for this dataset")
 
-    class_labels = np.empty(anchor_rows.shape[0], dtype=np.int64)
-    target_log_fee = np.empty(anchor_rows.shape[0], dtype=np.float32)
-    next_block_log_fee = np.empty(anchor_rows.shape[0], dtype=np.float32)
-    optimal_log_fee = np.empty(anchor_rows.shape[0], dtype=np.float32)
-    for sample_index, (start_row, end_row) in enumerate(
-        zip(candidate_starts, selected_candidate_ends, strict=True)
-    ):
-        candidate_logs = log_base_fees[start_row:end_row]
-        label = int(np.argmin(candidate_logs))
-        class_labels[sample_index] = label
-        target_log_fee[sample_index] = np.float32(candidate_logs[label])
-        next_block_log_fee[sample_index] = np.float32(candidate_logs[0])
-        optimal_log_fee[sample_index] = np.float32(candidate_logs.min())
-
     return TemporalDatasetStore(
         feature_matrix=feature_matrix,
         log_base_fees=log_base_fees,
-        block_numbers=block_numbers,
         timestamps=timestamps,
         anchor_rows=anchor_rows,
         context_start_rows=selected_context_starts,
         candidate_end_rows=selected_candidate_ends,
-        class_labels=class_labels,
-        target_log_fee=target_log_fee,
-        next_block_log_fee=next_block_log_fee,
-        optimal_log_fee=optimal_log_fee,
         max_candidate_slots=resolved_max_candidate_slots,
     )
 

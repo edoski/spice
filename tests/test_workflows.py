@@ -5,7 +5,11 @@ from typer.testing import CliRunner
 
 from spice.cli import app
 from spice.core.console import NullReporter
-from spice.state.artifact import list_simulation_runs, load_training_summary
+from spice.state.artifact import (
+    list_simulation_runs,
+    load_simulation_summary,
+    load_training_summary,
+)
 from spice.state.catalog import list_artifact_records, list_study_records
 from spice.state.study import load_study
 from spice.workflows.simulate import run as run_simulate
@@ -194,7 +198,11 @@ def test_simulate_workflow_smoke(tmp_path) -> None:
     run_simulate(simulate_config, reporter=NullReporter())
 
     assert simulate_config.paths.artifact_state_db.is_file()
-    assert list_simulation_runs(simulate_config.paths.artifact_state_db)
+    runs = list_simulation_runs(simulate_config.paths.artifact_state_db)
+    summary = load_simulation_summary(simulate_config.paths.artifact_state_db)
+    assert runs
+    assert summary is not None
+    assert summary.runs == runs
 
 
 def test_simulate_rejects_execution_request_above_capability(tmp_path) -> None:

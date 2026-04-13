@@ -207,8 +207,8 @@ def _print_sections(
 def _show_root_detail(root_path: Path, *, detail: str | None) -> None:
     from .state.show import describe_root, sectioned_summary
 
-    payload = describe_root(root_path, detail=detail)
-    title, sections = sectioned_summary(payload)
+    description = describe_root(root_path, detail=detail)
+    title, sections = sectioned_summary(description)
     _print_sections(title, sections)
 
 

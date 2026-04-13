@@ -1,4 +1,4 @@
-"""Internal training and simulation summaries."""
+"""Typed training and simulation summary envelopes."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from dataclasses import dataclass
 
 from ..config import ArtifactVariant, StudyConfig
 from .artifacts import LoadedTrainingArtifact, TrainingArtifactManifest
-from .evaluation import EpochMetrics
+from .objective import EpochMetrics, WindowMetricSummary
 from .pipeline import PreparedInferenceDataset, PreparedTrainingDataset, TrainingRunResult
-from .simulation import SimulationSummary
+from .simulation import SimulationRunSummary, SimulationSummary
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,16 +20,9 @@ class SplitSizes:
 
 
 @dataclass(frozen=True, slots=True)
-class MetricsSummary:
-    total_loss: float
-    accuracy: float
-    mean_cost_over_optimum: float
-    mean_profit_over_baseline: float
-
-
-@dataclass(frozen=True, slots=True)
 class TrainingSummary:
     artifact_id: str
+    objective_id: str
     chain: str
     dataset_id: str
     dataset_name: str
@@ -50,30 +43,21 @@ class TrainingSummary:
     resolved_device: str
     resolved_precision: str
     compiled: bool
-    best_validation_metrics: MetricsSummary
-    test_metrics: MetricsSummary
+    best_validation_metrics: EpochMetrics
+    test_metrics: EpochMetrics
 
 
 @dataclass(frozen=True, slots=True)
-class SimulationAggregateSummary:
-    mean: float
-    std: float
-
-
-@dataclass(frozen=True, slots=True)
-class SimulationRunRecord:
-    window_start_timestamp: float
-    window_end_timestamp: float
-    n_arrivals: int
-    n_events: int
-    profit_over_baseline: float
-    cost_over_optimum: float
-    baseline_cost_over_optimum: float
+class TrainingEpochRecord:
+    epoch: int
+    train_metrics: EpochMetrics
+    validation_metrics: EpochMetrics
 
 
 @dataclass(frozen=True, slots=True)
 class SimulationSummaryRecord:
     artifact_id: str
+    objective_id: str
     chain: str
     dataset_id: str
     dataset_name: str
@@ -93,23 +77,20 @@ class SimulationSummaryRecord:
     n_evaluation_rows: int
     sample_count: int
     max_candidate_slots: int
-    profit_over_baseline: SimulationAggregateSummary
-    cost_over_optimum: SimulationAggregateSummary
-    baseline_cost_over_optimum: SimulationAggregateSummary
+    profit_over_baseline: float
+    cost_over_optimum: float
+    baseline_cost_over_optimum: float
+    realized_fee_sum: float
+    baseline_fee_sum: float
+    optimum_fee_sum: float
+    window_profit_over_baseline: WindowMetricSummary
+    window_cost_over_optimum: WindowMetricSummary
+    window_baseline_cost_over_optimum: WindowMetricSummary
     total_events: int
-    runs: list[SimulationRunRecord]
+    runs: list[SimulationRunSummary]
 
 
-def summarize_epoch_metrics(metrics: EpochMetrics) -> MetricsSummary:
-    return MetricsSummary(
-        total_loss=metrics.total_loss,
-        accuracy=metrics.accuracy,
-        mean_cost_over_optimum=metrics.mean_cost_over_optimum,
-        mean_profit_over_baseline=metrics.mean_profit_over_baseline,
-    )
-
-
-def iter_epoch_pairs(result: TrainingRunResult) -> Iterator[tuple[int, EpochMetrics, EpochMetrics]]:
+def iter_epoch_records(result: TrainingRunResult) -> Iterator[TrainingEpochRecord]:
     for index, (train_metrics, validation_metrics) in enumerate(
         zip(
             result.training_result.train_history,
@@ -118,7 +99,11 @@ def iter_epoch_pairs(result: TrainingRunResult) -> Iterator[tuple[int, EpochMetr
         ),
         start=1,
     ):
-        yield index, train_metrics, validation_metrics
+        yield TrainingEpochRecord(
+            epoch=index,
+            train_metrics=train_metrics,
+            validation_metrics=validation_metrics,
+        )
 
 
 def build_training_summary(
@@ -134,6 +119,7 @@ def build_training_summary(
 ) -> TrainingSummary:
     return TrainingSummary(
         artifact_id=manifest.artifact_id,
+        objective_id=manifest.objective_id,
         chain=chain_name,
         dataset_id=dataset_id,
         dataset_name=manifest.dataset_name,
@@ -158,8 +144,8 @@ def build_training_summary(
         resolved_device=result.training_result.resolved_device,
         resolved_precision=result.training_result.resolved_precision,
         compiled=result.training_result.compiled,
-        best_validation_metrics=summarize_epoch_metrics(best_validation_metrics),
-        test_metrics=summarize_epoch_metrics(test_metrics),
+        best_validation_metrics=best_validation_metrics,
+        test_metrics=test_metrics,
     )
 
 
@@ -176,6 +162,7 @@ def build_simulation_summary_record(
     manifest = loaded_artifact.manifest
     return SimulationSummaryRecord(
         artifact_id=manifest.artifact_id,
+        objective_id=manifest.objective_id,
         chain=manifest.chain.name,
         dataset_id=manifest.dataset_id,
         dataset_name=manifest.dataset_name,
@@ -195,29 +182,15 @@ def build_simulation_summary_record(
         n_evaluation_rows=prepared.n_evaluation_rows,
         sample_count=prepared.sample_count,
         max_candidate_slots=manifest.max_candidate_slots,
-        profit_over_baseline=SimulationAggregateSummary(
-            mean=simulation.mean_profit_over_baseline,
-            std=simulation.std_profit_over_baseline,
-        ),
-        cost_over_optimum=SimulationAggregateSummary(
-            mean=simulation.mean_cost_over_optimum,
-            std=simulation.std_cost_over_optimum,
-        ),
-        baseline_cost_over_optimum=SimulationAggregateSummary(
-            mean=simulation.mean_baseline_cost_over_optimum,
-            std=simulation.std_baseline_cost_over_optimum,
-        ),
+        profit_over_baseline=simulation.profit_over_baseline,
+        cost_over_optimum=simulation.cost_over_optimum,
+        baseline_cost_over_optimum=simulation.baseline_cost_over_optimum,
+        realized_fee_sum=simulation.realized_fee_sum,
+        baseline_fee_sum=simulation.baseline_fee_sum,
+        optimum_fee_sum=simulation.optimum_fee_sum,
+        window_profit_over_baseline=simulation.window_profit_over_baseline,
+        window_cost_over_optimum=simulation.window_cost_over_optimum,
+        window_baseline_cost_over_optimum=simulation.window_baseline_cost_over_optimum,
         total_events=simulation.total_events,
-        runs=[
-            SimulationRunRecord(
-                window_start_timestamp=run.window_start_timestamp,
-                window_end_timestamp=run.window_end_timestamp,
-                n_arrivals=run.n_arrivals,
-                n_events=run.n_events,
-                profit_over_baseline=run.profit_over_baseline,
-                cost_over_optimum=run.cost_over_optimum,
-                baseline_cost_over_optimum=run.baseline_cost_over_optimum,
-            )
-            for run in simulation.runs
-        ],
+        runs=list(simulation.runs),
     )

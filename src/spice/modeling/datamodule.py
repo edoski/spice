@@ -9,7 +9,6 @@ from numpy.typing import NDArray
 from ..data.datasets import TemporalDatasetStore
 from ._runtime import build_model_loader
 from .representations import RepresentationLoader
-from .torch_datasets import build_class_weights
 
 IntVector = NDArray[np.int64]
 
@@ -34,11 +33,6 @@ class TemporalDataModule(L.LightningDataModule):
         self.predict_sample_indices = predict_sample_indices
         self.model_id = model_id
         self.batch_size = batch_size
-        self.class_weights = build_class_weights(
-            store.class_labels,
-            train_sample_indices,
-            store.max_candidate_slots,
-        )
 
     def loader_for(
         self,

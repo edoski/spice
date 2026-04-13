@@ -13,7 +13,9 @@ from ..core.files import write_path_atomic
 from ..data.normalization import ScalerStats
 from ..features import FeatureSelection, feature_graph_fingerprint, make_feature_selection
 from ..state.artifact import load_artifact_manifest, write_artifact_manifest
+from ..state.engine import RootKind
 from .models import TemporalModel
+from .objective import active_objective
 from .pipeline import PreparedTrainingDataset, TrainingSpec
 from .registry import build_model
 
@@ -26,6 +28,7 @@ class ArtifactChainMetadata:
 @dataclass(frozen=True, slots=True)
 class TrainingArtifactManifest:
     artifact_id: str
+    objective_id: str
     chain: ArtifactChainMetadata
     dataset_id: str
     dataset_name: str
@@ -89,6 +92,7 @@ def build_training_artifact_manifest(
 ) -> TrainingArtifactManifest:
     return TrainingArtifactManifest(
         artifact_id=spec.artifact_id,
+        objective_id=active_objective().objective_id,
         chain=ArtifactChainMetadata(name=spec.chain.name),
         dataset_id=spec.dataset_id,
         dataset_name=spec.dataset_name,
@@ -122,7 +126,7 @@ def persist_training_artifact(
     artifact_dir: Path,
     *,
     manifest: TrainingArtifactManifest,
-    root_kind: str,
+    root_kind: RootKind,
     model: TemporalModel,
 ) -> None:
     artifact_dir.mkdir(parents=True, exist_ok=True)

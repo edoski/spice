@@ -6,12 +6,12 @@ from ..config import SimulateConfig
 from ..core.console import Reporter
 from ..data.io import load_block_frame
 from ..modeling.artifacts import load_training_artifact, validate_artifact_feature_graph
-from ..modeling.inference import predict_class_offsets
+from ..modeling.inference import predict_candidate_offsets
 from ..modeling.pipeline import prepare_inference_dataset
 from ..modeling.reporting import build_simulation_summary_record
 from ..modeling.simulation import run_temporal_simulation
 from ..planning.contracts import resolve_feature_contract
-from ..state import ARTIFACT_ROOT_KIND
+from ..state import ARTIFACT_ROOT_KIND, RootKind
 from ..state.artifact import write_simulation_state
 from ._shared import abort_cleanup, managed_workflow
 
@@ -30,7 +30,7 @@ def _workflow_facts(config: SimulateConfig) -> list[tuple[str, str]]:
     return facts
 
 
-def _state_root_kind(config: SimulateConfig) -> str:
+def _state_root_kind(config: SimulateConfig) -> RootKind:
     del config
     return ARTIFACT_ROOT_KIND
 
@@ -123,7 +123,7 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                 prepare_task,
                 message=f"samples={prepared.sample_count}",
             )
-            predictions = predict_class_offsets(
+            predictions = predict_candidate_offsets(
                 loaded_artifact.model,
                 model_id=loaded_artifact.manifest.model.id,
                 store=prepared.store,
@@ -194,17 +194,11 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                     [
                         (
                             "profit over baseline",
-                            (
-                                f"{summary.profit_over_baseline.mean:.4f} +/- "
-                                f"{summary.profit_over_baseline.std:.4f}"
-                            ),
+                            f"{summary.profit_over_baseline:.4f}",
                         ),
                         (
                             "cost over optimum",
-                            (
-                                f"{summary.cost_over_optimum.mean:.4f} +/- "
-                                f"{summary.cost_over_optimum.std:.4f}"
-                            ),
+                            f"{summary.cost_over_optimum:.4f}",
                         ),
                     ],
                 ),

@@ -10,9 +10,11 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from ..acquisition.metadata import (
     AcquireRunRecord,
+    AcquisitionConfigSnapshot,
     BlockRangeMetadata,
     ChainMetadata,
     CompactValidationReport,
+    DatasetAcquisitionRuntimeMetadata,
     DatasetCoverageMetadata,
     DatasetIdentity,
     DatasetRequestMetadata,
@@ -20,6 +22,7 @@ from ..acquisition.metadata import (
     DatasetValidationMetadata,
     DatasetWindowMetadata,
     ProviderMetadata,
+    TaskContractSnapshot,
     TimestampRangeMetadata,
 )
 from .engine import DATASET_ROOT_KIND, create_state_engine, ensure_state_db, touch_meta
@@ -155,14 +158,14 @@ def load_dataset_summary(db_path: Path) -> DatasetSummary:
         engine.dispose()
 
 
-def list_acquire_runs(db_path: Path) -> list[dict[str, object]]:
+def list_acquire_runs(db_path: Path) -> list[AcquireRunRecord]:
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
             rows = conn.execute(
                 select(acquire_runs).order_by(acquire_runs.c.run_id.desc())
             ).mappings().all()
-        return [dict(row) for row in rows]
+        return [_acquire_run_from_row(row) for row in rows]
     finally:
         engine.dispose()
 
@@ -211,3 +214,44 @@ def _now_timestamp() -> int:
     from time import time
 
     return int(time())
+
+
+def _acquire_run_from_row(row) -> AcquireRunRecord:
+    return AcquireRunRecord(
+        provider=ProviderMetadata(
+            name=str(row["provider_name"]),
+            reference=str(row["provider_reference"]),
+            endpoint_fingerprint=str(row["provider_endpoint_fingerprint"]),
+        ),
+        task=TaskContractSnapshot(
+            task_id=str(row["task_id"]),
+            feature_set_id=str(row["feature_set_id"]),
+            lookback_seconds=int(row["lookback_seconds"]),
+            sample_count=int(row["sample_count"]),
+            max_supported_delay_seconds=int(row["max_supported_delay_seconds"]),
+            feature_history_seconds=int(row["feature_history_seconds"]),
+            required_history_seconds=int(row["required_history_seconds"]),
+            acquired_history_window_seconds=int(row["acquired_history_window_seconds"]),
+            valid_anchor_samples=int(row["valid_anchor_samples"]),
+        ),
+        settings=AcquisitionConfigSnapshot(
+            chunk_size=int(row["chunk_size"]),
+            rpc_batch_size=int(row["rpc_batch_size"]),
+            rpc_concurrency=int(row["rpc_concurrency"]),
+            rpc_min_batch_size=int(row["rpc_min_batch_size"]),
+            rpc_concurrency_rungs=[int(value) for value in row["rpc_concurrency_rungs"]],
+        ),
+        runtime=DatasetAcquisitionRuntimeMetadata(
+            configured_batch_size=int(row["configured_batch_size"]),
+            final_batch_size=int(row["final_batch_size"]),
+            min_batch_size=int(row["min_batch_size"]),
+            configured_concurrency=int(row["configured_concurrency"]),
+            final_concurrency=int(row["final_concurrency"]),
+            concurrency_rungs=[int(value) for value in row["concurrency_rungs"]],
+            oversize_error_count=int(row["oversize_error_count"]),
+            transient_error_count=int(row["transient_error_count"]),
+            oversize_backoffs=int(row["oversize_backoffs"]),
+            transient_backoffs=int(row["transient_backoffs"]),
+            concurrency_recoveries=int(row["concurrency_recoveries"]),
+        ),
+    )

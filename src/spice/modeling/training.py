@@ -23,10 +23,17 @@ from ._runtime import (
     set_global_seed,
 )
 from .datamodule import TemporalDataModule
-from .evaluation import EpochMetrics, compute_temporal_batch_metrics, mean_metrics
 from .lightning_module import TemporalLightningModule
 from .models import TemporalModel
-from .torch_datasets import build_class_weights, move_batch_to_device
+from .objective import (
+    EpochMetrics,
+    best_epoch,
+    compute_temporal_batch_metrics,
+    primary_direction,
+    primary_validation_metric_name,
+    summarize_epoch_metrics,
+)
+from .torch_datasets import move_batch_to_device
 
 IntVector = NDArray[np.int64]
 
@@ -111,8 +118,8 @@ class ReporterProgressCallback(L.Callback):
             completed=completed,
             message=(
                 f"epoch={trainer.current_epoch + 1}/{self._max_epochs} "
-                f"validation loss={format_compact_number(latest.total_loss)} "
-                f"acc={format_compact_number(latest.accuracy)}"
+                f"validation profit={format_compact_number(latest.profit_over_baseline)} "
+                f"cost={format_compact_number(latest.cost_over_optimum)}"
             ),
         )
 
@@ -172,12 +179,7 @@ def _trainer_device_args(device_name: str) -> tuple[str, int | str | list[int]]:
 
 
 def _best_epoch(validation_history: list[EpochMetrics]) -> int:
-    if not validation_history:
-        return 1
-    return min(
-        range(len(validation_history)),
-        key=lambda index: validation_history[index].total_loss,
-    ) + 1
+    return best_epoch(validation_history)
 
 
 def train_model(
@@ -221,20 +223,21 @@ def train_model(
 
     module = TemporalLightningModule(
         fit_model,
-        class_weights=data_module.class_weights,
         training_config=training_config,
     )
+    monitor = primary_validation_metric_name()
+    mode = "max" if primary_direction() == "maximize" else "min"
     checkpoint_callback = ModelCheckpoint(
         dirpath=artifact_dir / "checkpoints",
-        filename="epoch={epoch:02d}-validation_loss={validation_loss:.6f}",
-        monitor="validation_loss",
-        mode="min",
+        filename=f"epoch={{epoch:02d}}-{monitor}={{{monitor}:.6f}}",
+        monitor=monitor,
+        mode=mode,
         save_top_k=1,
         save_last=False,
     )
     early_stopping = EarlyStopping(
-        monitor="validation_loss",
-        mode="min",
+        monitor=monitor,
+        mode=mode,
         patience=training_config.early_stopping.patience,
         min_delta=training_config.early_stopping.min_delta,
     )
@@ -291,7 +294,6 @@ def evaluate_model(
     store: TemporalDatasetStore,
     sample_indices: IntVector,
     training_config: TrainingConfig,
-    class_weights: torch.Tensor | None = None,
     reporter: Reporter | None = None,
 ) -> EpochMetrics:
     reporter = reporter or NullReporter()
@@ -300,13 +302,6 @@ def evaluate_model(
     device = resolve_device(training_config.device)
     model.to(device)
     model.eval()
-    if class_weights is None:
-        class_weights = build_class_weights(
-            store.class_labels,
-            sample_indices,
-            store.max_candidate_slots,
-        )
-    class_weights = class_weights.to(device)
     loader = build_model_loader(
         store,
         sample_indices,
@@ -320,12 +315,11 @@ def evaluate_model(
             device_batch = move_batch_to_device(batch, device)
             outputs = model(device_batch.inputs, device_batch.input_mask)
             _, batch_metrics = compute_temporal_batch_metrics(
-                outputs,
-                device_batch,
-                class_weights=class_weights,
-                training_config=training_config,
+                outputs.logits,
+                device_batch.candidate_log_fees,
+                device_batch.candidate_mask,
             )
             metrics.append(batch_metrics)
             reporter.update_task(task_id, advance=1)
     reporter.finish_task(task_id)
-    return mean_metrics(metrics)
+    return summarize_epoch_metrics(metrics)

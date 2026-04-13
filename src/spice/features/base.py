@@ -17,10 +17,6 @@ def sorted_blocks(blocks: pl.DataFrame) -> pl.DataFrame:
     return blocks.sort("block_number")
 
 
-def block_numbers(sorted_blocks: pl.DataFrame) -> IntVector:
-    return sorted_blocks["block_number"].cast(pl.Int64).to_numpy().astype(np.int64, copy=False)
-
-
 def timestamps(sorted_blocks: pl.DataFrame) -> IntVector:
     return sorted_blocks["timestamp"].cast(pl.Int64).to_numpy().astype(np.int64, copy=False)
 

@@ -91,10 +91,10 @@ def test_rich_reporter_smoke() -> None:
 
 def test_extract_stage_metrics_promotes_train_metrics() -> None:
     metrics, detail = _extract_stage_metrics(
-        "epoch=1/50 batch 12.5k/12.5k loss=1.31 acc=0.812"
+        "epoch=1/50 batch 12.5k/12.5k objective_loss=1.31 profit=0.081"
     )
 
-    assert metrics == {"epoch": "1/50", "loss": "1.31", "acc": "0.812"}
+    assert metrics == {"epoch": "1/50", "objective_loss": "1.31", "profit": "0.081"}
     assert detail == "batch 12.5k/12.5k"
 
 
@@ -109,16 +109,20 @@ def test_rich_reporter_renders_train_metrics_in_columns() -> None:
     )
     fit = reporter.stage_reporter("fit", label="fit", total=100, unit="batches")
     task_id = fit.start_task("train epochs", total=100, unit="batches")
-    fit.update_task(task_id, completed=10, message="epoch=1/50 batch 10/100 loss=1.31 acc=0.812")
+    fit.update_task(
+        task_id,
+        completed=10,
+        message="epoch=1/50 batch 10/100 objective_loss=1.31 profit=0.081",
+    )
     reporter.console.print(reporter._render_stage_table())
 
     rendered = output.getvalue()
     assert "epoch" in rendered
-    assert "loss" in rendered
-    assert "acc" in rendered
+    assert "obj" in rendered
+    assert "profit" in rendered
     assert "batch 10/100" in rendered
     assert "epoch=1/50" not in rendered
-    assert "loss=1.31" not in rendered
+    assert "objective_loss=1.31" not in rendered
 
 
 def test_rich_reporter_renders_acquire_metrics_in_columns_on_wide_terminals() -> None:

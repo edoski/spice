@@ -74,30 +74,39 @@ _PROGRESS_BAR_STYLES = {
     "failed": ("grey23", "red", "red", "red"),
 }
 _DETAIL_VALUE_LABELS = frozenset({"batch", "conc"})
-_STAGE_METRIC_PRIORITY = ("epoch", "loss", "acc", "batch", "conc")
+_STAGE_METRIC_PRIORITY = ("epoch", "profit", "cost", "objective_loss", "hit", "batch", "conc")
 _STAGE_METRIC_LABELS = {
     "epoch": "epoch",
-    "loss": "loss",
-    "acc": "acc",
+    "profit": "profit",
+    "cost": "cost",
+    "objective_loss": "obj",
+    "hit": "hit",
     "batch": "batch",
     "conc": "conc",
 }
 _STAGE_METRIC_WIDTHS = {
     "epoch": 7,
-    "loss": 7,
-    "acc": 6,
+    "profit": 8,
+    "cost": 8,
+    "objective_loss": 7,
+    "hit": 6,
     "batch": 7,
     "conc": 5,
 }
 _STAGE_METRIC_ALIASES = {
     "epoch": "epoch",
-    "loss": "loss",
-    "validation_loss": "loss",
-    "val_loss": "loss",
-    "acc": "acc",
-    "accuracy": "acc",
-    "validation_accuracy": "acc",
-    "val_acc": "acc",
+    "profit": "profit",
+    "validation_profit": "profit",
+    "validation_profit_over_baseline": "profit",
+    "cost": "cost",
+    "validation_cost": "cost",
+    "validation_cost_over_optimum": "cost",
+    "objective_loss": "objective_loss",
+    "loss": "objective_loss",
+    "validation_objective_loss": "objective_loss",
+    "hit": "hit",
+    "exact_optimum_hit_rate": "hit",
+    "validation_exact_optimum_hit_rate": "hit",
     "batch": "batch",
     "conc": "conc",
 }

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import statistics
 from dataclasses import dataclass
 
 import numpy as np
@@ -10,6 +9,7 @@ from numpy.typing import NDArray
 
 from ..core.console import NullReporter, Reporter
 from ..data.datasets import TemporalDatasetStore
+from .objective import WindowMetricSummary, summarize_simulation_primary, summarize_window_metric
 
 IntVector = NDArray[np.int64]
 
@@ -23,16 +23,22 @@ class SimulationRunSummary:
     profit_over_baseline: float
     cost_over_optimum: float
     baseline_cost_over_optimum: float
+    realized_fee_sum: float
+    baseline_fee_sum: float
+    optimum_fee_sum: float
 
 
 @dataclass(slots=True)
 class SimulationSummary:
-    mean_profit_over_baseline: float
-    std_profit_over_baseline: float
-    mean_cost_over_optimum: float
-    std_cost_over_optimum: float
-    mean_baseline_cost_over_optimum: float
-    std_baseline_cost_over_optimum: float
+    profit_over_baseline: float
+    cost_over_optimum: float
+    baseline_cost_over_optimum: float
+    realized_fee_sum: float
+    baseline_fee_sum: float
+    optimum_fee_sum: float
+    window_profit_over_baseline: WindowMetricSummary
+    window_cost_over_optimum: WindowMetricSummary
+    window_baseline_cost_over_optimum: WindowMetricSummary
     total_events: int
     runs: list[SimulationRunSummary]
 
@@ -83,17 +89,20 @@ def summarize_realized_costs(
     selected_sample_indices = sample_indices[selected_positions]
     selected_offsets = np.asarray(predicted_offsets, dtype=np.int64)[selected_positions]
     selected_anchor_rows = store.anchor_rows[selected_sample_indices]
-    realized_rows = selected_anchor_rows + 1 + selected_offsets
+    candidate_starts = selected_anchor_rows + 1
+    candidate_ends = store.candidate_end_rows[selected_sample_indices]
+    realized_rows = candidate_starts + selected_offsets
     realized_logs = store.log_base_fees[realized_rows]
     realized_total = float(np.exp(realized_logs.astype(np.float64, copy=False)).sum())
     baseline_total = float(
-        np.exp(
-            store.next_block_log_fee[selected_sample_indices].astype(np.float64, copy=False)
-        ).sum()
+        np.exp(store.log_base_fees[candidate_starts].astype(np.float64, copy=False)).sum()
     )
-    optimum_total = float(
-        np.exp(store.optimal_log_fee[selected_sample_indices].astype(np.float64, copy=False)).sum()
-    )
+    optimum_logs = np.empty(selected_sample_indices.shape[0], dtype=np.float64)
+    for index, (start_row, end_row) in enumerate(
+        zip(candidate_starts, candidate_ends, strict=True)
+    ):
+        optimum_logs[index] = float(store.log_base_fees[start_row:end_row].min())
+    optimum_total = float(np.exp(optimum_logs).sum())
 
     return SimulationRunSummary(
         window_start_timestamp=window_start_timestamp,
@@ -103,6 +112,9 @@ def summarize_realized_costs(
         profit_over_baseline=(baseline_total - realized_total) / baseline_total,
         cost_over_optimum=(realized_total - optimum_total) / optimum_total,
         baseline_cost_over_optimum=(baseline_total - optimum_total) / optimum_total,
+        realized_fee_sum=realized_total,
+        baseline_fee_sum=baseline_total,
+        optimum_fee_sum=optimum_total,
     )
 
 
@@ -177,16 +189,25 @@ def run_temporal_simulation(
     if not runs:
         raise ValueError("Simulation produced no valid runs")
 
-    profits = [run.profit_over_baseline for run in runs]
-    model_costs = [run.cost_over_optimum for run in runs]
-    baseline_costs = [run.baseline_cost_over_optimum for run in runs]
+    primary = summarize_simulation_primary(
+        realized_fee_sum=sum(run.realized_fee_sum for run in runs),
+        baseline_fee_sum=sum(run.baseline_fee_sum for run in runs),
+        optimum_fee_sum=sum(run.optimum_fee_sum for run in runs),
+    )
     summary = SimulationSummary(
-        mean_profit_over_baseline=statistics.fmean(profits),
-        std_profit_over_baseline=statistics.pstdev(profits),
-        mean_cost_over_optimum=statistics.fmean(model_costs),
-        std_cost_over_optimum=statistics.pstdev(model_costs),
-        mean_baseline_cost_over_optimum=statistics.fmean(baseline_costs),
-        std_baseline_cost_over_optimum=statistics.pstdev(baseline_costs),
+        profit_over_baseline=primary.profit_over_baseline,
+        cost_over_optimum=primary.cost_over_optimum,
+        baseline_cost_over_optimum=primary.baseline_cost_over_optimum,
+        realized_fee_sum=primary.realized_fee_sum,
+        baseline_fee_sum=primary.baseline_fee_sum,
+        optimum_fee_sum=primary.optimum_fee_sum,
+        window_profit_over_baseline=summarize_window_metric(
+            [run.profit_over_baseline for run in runs]
+        ),
+        window_cost_over_optimum=summarize_window_metric([run.cost_over_optimum for run in runs]),
+        window_baseline_cost_over_optimum=summarize_window_metric(
+            [run.baseline_cost_over_optimum for run in runs]
+        ),
         total_events=sum(run.n_events for run in runs),
         runs=runs,
     )

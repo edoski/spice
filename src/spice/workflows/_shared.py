@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from ..config import ArtifactVariant, SimulateConfig, TrainConfig, TuneConfig, WorkflowTask
 from ..core.console import ConsoleRuntime, Reporter, create_console_runtime
-from ..modeling.evaluation import EpochMetrics
+from ..modeling.objective import EpochMetrics
 from ..modeling.pipeline import TrainingSpec
 from ..modeling.tuning import apply_tuned_parameters
 from ..planning.contracts import resolve_task_contract
@@ -45,10 +45,10 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
 
 def epoch_metrics_to_dict(metrics: EpochMetrics) -> dict[str, float]:
     return {
-        "loss": metrics.total_loss,
-        "accuracy": metrics.accuracy,
-        "cost_over_optimum": metrics.mean_cost_over_optimum,
-        "profit_over_baseline": metrics.mean_profit_over_baseline,
+        "objective_loss": metrics.objective_loss,
+        "exact_optimum_hit_rate": metrics.exact_optimum_hit_rate,
+        "cost_over_optimum": metrics.cost_over_optimum,
+        "profit_over_baseline": metrics.profit_over_baseline,
     }
 
 

@@ -19,12 +19,8 @@ IntVector = NDArray[np.int64]
 class SequenceEventBatch(NamedTuple):
     inputs: torch.Tensor
     input_mask: torch.Tensor
-    class_label: torch.Tensor
-    target_log_fee: torch.Tensor
     candidate_log_fees: torch.Tensor
     candidate_mask: torch.Tensor
-    next_block_log_fee: torch.Tensor
-    optimal_log_fee: torch.Tensor
 
 
 def build_sequence_event_batch(
@@ -59,26 +55,8 @@ def build_sequence_event_batch(
     return SequenceEventBatch(
         inputs=torch.from_numpy(inputs),
         input_mask=torch.from_numpy(input_mask),
-        class_label=torch.from_numpy(
-            np.ascontiguousarray(store.class_labels[sample_indices].astype(np.int64, copy=False))
-        ),
-        target_log_fee=torch.from_numpy(
-            np.ascontiguousarray(
-                store.target_log_fee[sample_indices].astype(np.float32, copy=False)
-            )
-        ),
         candidate_log_fees=torch.from_numpy(candidate_log_fees),
         candidate_mask=torch.from_numpy(candidate_mask),
-        next_block_log_fee=torch.from_numpy(
-            np.ascontiguousarray(
-                store.next_block_log_fee[sample_indices].astype(np.float32, copy=False)
-            )
-        ),
-        optimal_log_fee=torch.from_numpy(
-            np.ascontiguousarray(
-                store.optimal_log_fee[sample_indices].astype(np.float32, copy=False)
-            )
-        ),
     )
 
 
@@ -119,27 +97,6 @@ def move_batch_to_device(
     device: torch.device,
 ) -> SequenceEventBatch:
     return SequenceEventBatch(*(tensor.to(device) for tensor in batch))
-
-
-def build_class_weights(
-    class_labels: IntVector,
-    sample_indices: IntVector,
-    max_candidate_slots: int,
-) -> torch.Tensor:
-    if sample_indices.size == 0:
-        raise ValueError("Cannot build class weights for an empty sample selection")
-    if max_candidate_slots <= 0:
-        raise ValueError("max_candidate_slots must be positive")
-    selected_labels = class_labels[sample_indices]
-    counts = np.bincount(selected_labels, minlength=max_candidate_slots)
-    weights = np.ones(max_candidate_slots, dtype=np.float32)
-    present = counts > 0
-    if np.any(present):
-        total_present = float(counts[present].sum())
-        weights[present] = (
-            total_present / float(present.sum())
-        ) / counts[present].astype(np.float32, copy=False)
-    return torch.from_numpy(weights)
 
 
 def _build_sequence_event_loader(

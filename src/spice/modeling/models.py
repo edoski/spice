@@ -15,7 +15,6 @@ from ..config.models import ModelConfig
 
 class ModelOutputs(NamedTuple):
     logits: torch.Tensor
-    fee_hat: torch.Tensor
 
 
 class MLPHead(nn.Module):
@@ -77,13 +76,9 @@ class TemporalOutputHead(nn.Module):
     ) -> None:
         super().__init__()
         self.classifier = MLPHead(hidden_dim, head_hidden_dim, n_candidate_slots)
-        self.regressor = MLPHead(hidden_dim, head_hidden_dim, 1)
 
     def forward(self, encoded: torch.Tensor) -> ModelOutputs:
-        return ModelOutputs(
-            logits=self.classifier(encoded),
-            fee_hat=self.regressor(encoded).squeeze(-1),
-        )
+        return ModelOutputs(logits=self.classifier(encoded))
 
 
 class LSTMBaseline(TemporalModel):

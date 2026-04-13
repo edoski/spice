@@ -29,22 +29,6 @@ class WorkflowTask(StrEnum):
     SIMULATE = "simulate"
 
 
-class StudyDirection(StrEnum):
-    MAXIMIZE = "maximize"
-    MINIMIZE = "minimize"
-
-
-class TuningObjective(StrEnum):
-    VALIDATION_LOSS = "validation_loss"
-    VALIDATION_ACCURACY = "validation_accuracy"
-    VALIDATION_COST_OVER_OPTIMUM = "validation_cost_over_optimum"
-    VALIDATION_PROFIT_OVER_BASELINE = "validation_profit_over_baseline"
-
-    @property
-    def metric_name(self) -> str:
-        return self.value.removeprefix("validation_")
-
-
 class TrainingPrecision(StrEnum):
     AUTO = "auto"
     FP32 = "fp32"
@@ -151,8 +135,6 @@ class TrainingConfig(ConfigModel):
     max_epochs: int = Field(gt=0)
     early_stopping: EarlyStoppingConfig
     gradient_clip_norm: float = Field(gt=0.0)
-    action_loss_weight: float = Field(gt=0.0)
-    fee_loss_weight: float = Field(gt=0.0)
     device: str
     seed: int = Field(ge=0)
     deterministic: bool
@@ -316,10 +298,8 @@ class TunedParameterSet(ConfigModel):
 
 
 class TuningConfig(ConfigModel):
-    direction: StudyDirection
     trial_count: int = Field(gt=0)
     timeout_seconds: int | None = Field(default=None, gt=0)
-    objective_metric: TuningObjective
     sampler_seed: int = Field(ge=0)
     enable_pruning: bool
 
@@ -500,6 +480,8 @@ def build_path_layout(
     include_artifacts: bool = False,
     tuning_mode: bool = False,
 ) -> PathLayout:
+    from ..modeling.objective import active_objective
+
     output_root = storage.root
     catalog_db = output_root / ".spice" / "catalog.sqlite"
     corpus_id = corpus_storage_id(chain_name=chain.name, dataset_name=dataset.name)
@@ -526,6 +508,7 @@ def build_path_layout(
             study_id = study_storage_id(
                 chain_name=chain.name,
                 corpus_id=corpus_id,
+                objective_id=active_objective().objective_id,
                 feature_set=resolved_feature_set_payload,
                 model=resolved_model_payload,
                 task=resolved_task_payload,
@@ -537,6 +520,7 @@ def build_path_layout(
             artifact_id = artifact_storage_id(
                 chain_name=chain.name,
                 corpus_id=corpus_id,
+                objective_id=active_objective().objective_id,
                 feature_set=resolved_feature_set_payload,
                 model=resolved_model_payload,
                 task=resolved_task_payload,

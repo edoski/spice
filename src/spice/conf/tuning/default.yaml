@@ -1,6 +1,4 @@
-direction: maximize
 trial_count: 20
 timeout_seconds: null
-objective_metric: validation_profit_over_baseline
 sampler_seed: 2026
 enable_pruning: true
