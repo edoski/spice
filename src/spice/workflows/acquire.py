@@ -10,7 +10,6 @@ from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures.thread import _worker
 from contextlib import suppress
-from math import ceil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, cast
@@ -33,9 +32,7 @@ from ..corpus.summary import acquire_dry_run_sections, acquisition_summary_secti
 from ..features import FeatureSelection, build_feature_table, make_feature_selection
 from ..storage.catalog import upsert_dataset_record
 from ..storage.corpus import write_dataset_state
-from ..temporal.contracts import resolve_problem_contract
-from ..temporal.store import build_temporal_store
-from ..temporal.window import DelayWindow
+from ..temporal.contracts import CompiledProblemContract, resolve_problem_contract
 from ._shared import managed_workflow
 
 
@@ -53,27 +50,11 @@ def _count_valid_history_samples(
     *,
     history_dir: Path,
     selection: FeatureSelection,
-    window: DelayWindow,
+    contract: CompiledProblemContract,
 ) -> int:
     blocks = load_block_frame(history_dir).sort("block_number")
     feature_table = build_feature_table(blocks, selection=selection)
-    store = build_temporal_store(feature_table, window=window)
-    return store.n_samples
-
-
-def _initial_history_window_seconds(
-    *,
-    required_history_seconds: int,
-    sample_count: int,
-    max_supported_delay_seconds: int,
-    estimated_block_interval_seconds: float,
-) -> int:
-    return max(
-        required_history_seconds + max_supported_delay_seconds,
-        required_history_seconds
-        + max_supported_delay_seconds
-        + ceil(sample_count * estimated_block_interval_seconds),
-    )
+    return contract.count_valid_capability_samples(feature_table)
 
 
 class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
@@ -175,8 +156,9 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
         feature_set=config.feature_set,
     )
     selection = make_feature_selection(
-        config.feature_set.id,
-        tuple(config.feature_set.outputs),
+        feature_set_id=config.feature_set.id,
+        feature_family_id=config.feature_set.family.id,
+        feature_names=tuple(config.feature_set.outputs),
     )
     evaluation_window = evaluation_range(
         config.evaluation_window_start_timestamp,
@@ -220,11 +202,8 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 chunk_size=config.acquisition.chunk_size,
             )
             estimated_block_interval_seconds = await block_client.estimate_recent_block_interval()
-            history_window_seconds = _initial_history_window_seconds(
-                required_history_seconds=contract.required_history_seconds,
-                sample_count=contract.sample_count,
-                max_supported_delay_seconds=contract.max_supported_delay_seconds,
-                estimated_block_interval_seconds=estimated_block_interval_seconds,
+            history_window_seconds = contract.initial_history_window_seconds(
+                estimated_block_interval_seconds,
             )
             history_start_timestamp = max(
                 0,
@@ -288,7 +267,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     valid_anchor_samples = _count_valid_history_samples(
                         history_dir=history_result.path,
                         selection=selection,
-                        window=contract.capability_window,
+                        contract=contract,
                     )
                     if valid_anchor_samples >= contract.sample_count:
                         break

@@ -34,7 +34,7 @@ def _trend_slope(values: FloatVector, timestamps: IntVector, *, window_seconds: 
     return result
 
 
-@tag(spice_kind="feature", spice_history_seconds="600")
+@tag(spice_kind="feature", spice_history_seconds="600", spice_warmup_rows="0")
 def trend_slope_600s(
     log_base_fee: FloatVector,
     timestamps: IntVector,

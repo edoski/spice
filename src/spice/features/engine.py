@@ -1,10 +1,10 @@
-"""Hamilton-backed feature graph helpers."""
+"""Family-aware Hamilton feature graph helpers."""
 
 from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache
 from hashlib import sha256
 from typing import Any, cast
 
@@ -14,11 +14,12 @@ from hamilton import driver
 from hamilton.graph_types import HamiltonNode
 from numpy.typing import NDArray
 
-from . import base, rolling, trend
-
-FEATURE_KIND_TAG = "spice_kind"
-FEATURE_HISTORY_SECONDS_TAG = "spice_history_seconds"
-FEATURE_KIND_VALUE = "feature"
+from .families import (
+    FEATURE_KIND_TAG,
+    FEATURE_KIND_VALUE,
+    FeaturePrerequisites,
+    feature_family_spec,
+)
 
 FloatMatrix = NDArray[np.float32]
 FloatVector = NDArray[np.float32]
@@ -28,54 +29,77 @@ IntVector = NDArray[np.int64]
 @dataclass(slots=True, frozen=True)
 class FeatureSelection:
     feature_set_id: str
+    feature_family_id: str
     feature_names: tuple[str, ...]
 
 
 def make_feature_selection(
+    *,
     feature_set_id: str,
+    feature_family_id: str,
     feature_names: tuple[str, ...],
 ) -> FeatureSelection:
     selection = FeatureSelection(
         feature_set_id=feature_set_id,
+        feature_family_id=feature_family_id,
         feature_names=feature_names,
     )
-    validate_feature_selection(selection.feature_set_id, selection.feature_names)
+    validate_feature_selection(
+        selection.feature_set_id,
+        selection.feature_family_id,
+        selection.feature_names,
+    )
     return selection
 
 
 @dataclass(slots=True)
-class FeatureTable:
-    feature_set_id: str
-    feature_names: tuple[str, ...]
-    feature_graph_fingerprint: str
-    feature_history_seconds: int
+class CanonicalBlockSeries:
+    block_numbers: IntVector
     timestamps: IntVector
-    feature_matrix: FloatMatrix
     log_base_fees: FloatVector
 
 
-@lru_cache(maxsize=1)
-def build_feature_driver() -> driver.Driver:
-    return driver.Builder().with_modules(base, rolling, trend).build()
+@dataclass(slots=True)
+class ResolvedFeatureTable:
+    feature_set_id: str
+    feature_family_id: str
+    feature_names: tuple[str, ...]
+    feature_graph_fingerprint: str
+    feature_prerequisites: FeaturePrerequisites
+    series: CanonicalBlockSeries
+    feature_matrix: FloatMatrix
 
 
-@lru_cache(maxsize=1)
-def _node_map() -> dict[str, HamiltonNode]:
-    return {node.name: node for node in build_feature_driver().list_available_variables()}
+@cache
+def build_feature_driver(feature_family_id: str) -> driver.Driver:
+    return driver.Builder().with_modules(*feature_family_spec(feature_family_id).modules).build()
 
 
-@lru_cache(maxsize=1)
-def feature_node_map() -> dict[str, HamiltonNode]:
+@cache
+def _node_map(feature_family_id: str) -> dict[str, HamiltonNode]:
+    return {
+        node.name: node
+        for node in build_feature_driver(feature_family_id).list_available_variables()
+    }
+
+
+@cache
+def feature_node_map(feature_family_id: str) -> dict[str, HamiltonNode]:
     return {
         name: node
-        for name, node in _node_map().items()
+        for name, node in _node_map(feature_family_id).items()
         if node.tags.get(FEATURE_KIND_TAG) == FEATURE_KIND_VALUE
     }
 
 
-def validate_feature_selection(feature_set_id: str, feature_names: tuple[str, ...]) -> None:
+def validate_feature_selection(
+    feature_set_id: str,
+    feature_family_id: str,
+    feature_names: tuple[str, ...],
+) -> None:
     if not feature_set_id:
         raise ValueError("feature_set.id must be non-empty")
+    feature_family_spec(feature_family_id)
     if not feature_names:
         raise ValueError("feature_set.outputs must not be empty")
     duplicates = [name for name in dict.fromkeys(feature_names) if feature_names.count(name) > 1]
@@ -83,25 +107,28 @@ def validate_feature_selection(feature_set_id: str, feature_names: tuple[str, ..
         raise ValueError(
             "feature_set.outputs must not contain duplicates: " + ", ".join(duplicates)
         )
-    unknown = [name for name in feature_names if name not in feature_node_map()]
+    family_nodes = feature_node_map(feature_family_id)
+    unknown = [name for name in feature_names if name not in family_nodes]
     if unknown:
-        raise ValueError("Unknown feature outputs: " + ", ".join(unknown))
+        raise ValueError(
+            f"Unknown feature outputs for family {feature_family_id}: " + ", ".join(unknown)
+        )
 
 
-def feature_history_seconds(feature_names: tuple[str, ...]) -> int:
-    validate_feature_selection("validated", feature_names)
-    return max(
-        _tagged_history_seconds(feature_node_map()[name].tags[FEATURE_HISTORY_SECONDS_TAG])
-        for name in feature_names
-    )
+def resolve_feature_prerequisites(
+    feature_family_id: str,
+    feature_names: tuple[str, ...],
+) -> FeaturePrerequisites:
+    validate_feature_selection("validated", feature_family_id, feature_names)
+    family_nodes = feature_node_map(feature_family_id)
+    return feature_family_spec(feature_family_id).resolve_prerequisites(feature_names, family_nodes)
 
 
-def _tagged_history_seconds(raw_value: str | list[str]) -> int:
-    return int(raw_value[0] if isinstance(raw_value, list) else raw_value)
-
-
-def _dependency_closure(feature_names: tuple[str, ...]) -> list[HamiltonNode]:
-    nodes = _node_map()
+def _dependency_closure(
+    feature_family_id: str,
+    feature_names: tuple[str, ...],
+) -> list[HamiltonNode]:
+    nodes = _node_map(feature_family_id)
     stack = list(feature_names)
     visited: set[str] = set()
     ordered: list[HamiltonNode] = []
@@ -117,13 +144,18 @@ def _dependency_closure(feature_names: tuple[str, ...]) -> list[HamiltonNode]:
     return sorted(ordered, key=lambda item: item.name)
 
 
-def feature_graph_fingerprint(feature_names: tuple[str, ...]) -> str:
-    validate_feature_selection("validated", feature_names)
+def feature_graph_fingerprint(
+    feature_family_id: str,
+    feature_names: tuple[str, ...],
+) -> str:
+    validate_feature_selection("validated", feature_family_id, feature_names)
     digest = sha256()
+    digest.update(feature_family_id.encode("utf-8"))
+    digest.update(b"\0")
     for name in feature_names:
         digest.update(name.encode("utf-8"))
         digest.update(b"\0")
-    for node in _dependency_closure(feature_names):
+    for node in _dependency_closure(feature_family_id, feature_names):
         digest.update(node.name.encode("utf-8"))
         digest.update(b"\0")
         if node.is_external_input:
@@ -142,17 +174,31 @@ def build_feature_table(
     blocks: pl.DataFrame,
     *,
     selection: FeatureSelection,
-) -> FeatureTable:
-    validate_feature_selection(selection.feature_set_id, selection.feature_names)
-    required_history_seconds = feature_history_seconds(selection.feature_names)
-    graph_fingerprint = feature_graph_fingerprint(selection.feature_names)
-    final_vars = cast(Any, [*selection.feature_names, "timestamps", "log_base_fee"])
-    result = build_feature_driver().execute(
+) -> ResolvedFeatureTable:
+    validate_feature_selection(
+        selection.feature_set_id,
+        selection.feature_family_id,
+        selection.feature_names,
+    )
+    feature_prerequisites = resolve_feature_prerequisites(
+        selection.feature_family_id,
+        selection.feature_names,
+    )
+    graph_fingerprint = feature_graph_fingerprint(
+        selection.feature_family_id,
+        selection.feature_names,
+    )
+    final_vars = cast(
+        Any,
+        [*selection.feature_names, "block_numbers", "timestamps", "log_base_fee"],
+    )
+    result = build_feature_driver(selection.feature_family_id).execute(
         final_vars,
         inputs={
             "blocks": blocks,
         },
     )
+    block_numbers = np.asarray(result["block_numbers"], dtype=np.int64)
     timestamps = np.asarray(result["timestamps"], dtype=np.int64)
     log_base_fees = np.asarray(result["log_base_fee"], dtype=np.float32)
     raw_feature_columns = [
@@ -161,14 +207,18 @@ def build_feature_table(
     ]
     if raw_feature_columns:
         feature_matrix = np.column_stack(raw_feature_columns).astype(np.float32, copy=False)
-    else:  # pragma: no cover - guarded by config validation
+    else:  # pragma: no cover
         feature_matrix = np.empty((timestamps.shape[0], 0), dtype=np.float32)
-    return FeatureTable(
+    return ResolvedFeatureTable(
         feature_set_id=selection.feature_set_id,
+        feature_family_id=selection.feature_family_id,
         feature_names=selection.feature_names,
         feature_graph_fingerprint=graph_fingerprint,
-        feature_history_seconds=required_history_seconds,
-        timestamps=timestamps.astype(np.int64, copy=False),
+        feature_prerequisites=feature_prerequisites,
+        series=CanonicalBlockSeries(
+            block_numbers=block_numbers.astype(np.int64, copy=False),
+            timestamps=timestamps.astype(np.int64, copy=False),
+            log_base_fees=log_base_fees.astype(np.float32, copy=False),
+        ),
         feature_matrix=feature_matrix.astype(np.float32, copy=False),
-        log_base_fees=log_base_fees.astype(np.float32, copy=False),
     )

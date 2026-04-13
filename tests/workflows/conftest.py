@@ -45,18 +45,24 @@ def model_workflow_override():
         lookback_seconds: int = 120,
         max_supported_delay_seconds: int = 36,
         requested_delay_seconds: int | None = None,
+        compiler_id: str = "estimated_block",
     ) -> dict[str, object]:
+        feature_set_name = (
+            "icdcs_2026_time_native" if compiler_id == "timestamp_native" else "icdcs_2026"
+        )
         return {
             "chain": "ethereum",
             "model": "lstm",
             "dataset": {
                 "evaluation_date": TEST_EVALUATION_DATE.isoformat(),
             },
+            "feature_set": feature_set_name,
             "problem": {
                 "id": "test_problem",
                 "lookback_seconds": lookback_seconds,
                 "sample_count": sample_count,
                 "max_supported_delay_seconds": max_supported_delay_seconds,
+                "compiler": {"id": compiler_id},
             },
             "execution": {
                 "id": "test_execution",
@@ -203,12 +209,20 @@ def required_dataset_blocks(config: TrainConfig | TuneConfig | SimulateConfig) -
         feature_set=config.feature_set,
     )
     block_interval_seconds = synthetic_block_interval_seconds(config.chain.name)
-    required_seconds = (
-        contract.required_history_seconds
-        + contract.max_supported_delay_seconds
-        + contract.sample_count * block_interval_seconds
+    required_blocks = (
+        math.ceil(
+            (
+                contract.required_history_seconds
+                + contract.max_supported_delay_seconds
+                + block_interval_seconds
+            )
+            / block_interval_seconds
+        )
+        + contract.warmup_rows
+        + contract.sample_count
+        + 8
     )
-    return max(64, math.ceil(required_seconds / block_interval_seconds) + 1)
+    return max(64, required_blocks)
 
 
 def make_block_rows(
@@ -257,11 +271,31 @@ def make_history_rows(config: TrainConfig | TuneConfig | SimulateConfig) -> list
 def make_evaluation_rows(
     config: SimulateConfig,
     *,
-    count: int = 64,
+    count: int | None = None,
     start_block: int = 10_001,
 ) -> list[dict[str, int]]:
+    resolved_count = count
+    if resolved_count is None:
+        contract = resolve_problem_contract(
+            problem=config.problem,
+            feature_set=config.feature_set,
+        )
+        block_interval_seconds = synthetic_block_interval_seconds(config.chain.name)
+        resolved_count = max(
+            64,
+            math.ceil(
+                (
+                    contract.required_history_seconds
+                    + config.execution.requested_delay_seconds
+                    + block_interval_seconds
+                )
+                / block_interval_seconds
+            )
+            + contract.warmup_rows
+            + 8,
+        )
     return make_block_rows(
-        count,
+        resolved_count,
         start_block=start_block,
         start_timestamp=config.evaluation_window_start_timestamp,
         chain_id=config.chain.runtime.chain_id,

@@ -1,25 +1,39 @@
-"""Hamilton-backed feature graph."""
+"""Family-aware Hamilton feature graph."""
 
 from .engine import (
+    CanonicalBlockSeries,
     FeatureSelection,
-    FeatureTable,
+    ResolvedFeatureTable,
     build_feature_driver,
     build_feature_table,
     feature_graph_fingerprint,
-    feature_history_seconds,
     feature_node_map,
     make_feature_selection,
+    resolve_feature_prerequisites,
     validate_feature_selection,
+)
+from .families import (
+    FeatureFamilyConfig,
+    FeatureFamilySpec,
+    FeaturePrerequisites,
+    coerce_feature_family_config,
+    feature_family_spec,
 )
 
 __all__ = [
+    "CanonicalBlockSeries",
+    "FeatureFamilyConfig",
+    "FeatureFamilySpec",
+    "FeaturePrerequisites",
     "FeatureSelection",
-    "FeatureTable",
+    "ResolvedFeatureTable",
     "build_feature_driver",
     "build_feature_table",
+    "coerce_feature_family_config",
+    "feature_family_spec",
     "feature_graph_fingerprint",
-    "feature_history_seconds",
     "feature_node_map",
     "make_feature_selection",
+    "resolve_feature_prerequisites",
     "validate_feature_selection",
 ]

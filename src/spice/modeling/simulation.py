@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..core.reporting import NullReporter, Reporter
-from ..temporal.store import TemporalDatasetStore
+from ..temporal.problem_store import CompiledProblemStore
 from .objective import WindowMetricSummary, summarize_simulation_primary, summarize_window_metric
 
 IntVector = NDArray[np.int64]
@@ -72,7 +72,7 @@ def select_sample_positions_for_arrivals(
 
 
 def summarize_realized_costs(
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     predicted_offsets: list[int],
     sample_indices: IntVector,
     selected_positions: IntVector,
@@ -119,7 +119,7 @@ def summarize_realized_costs(
 
 
 def run_temporal_simulation(
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     predicted_offsets: list[int],
     *,
     sample_indices: IntVector,

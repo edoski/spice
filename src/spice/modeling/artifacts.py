@@ -28,6 +28,7 @@ class LoadedTrainingArtifact:
 def feature_selection_from_manifest(manifest: TrainingArtifactManifest) -> FeatureSelection:
     return make_feature_selection(
         feature_set_id=manifest.feature_set_id,
+        feature_family_id=manifest.feature_family_id,
         feature_names=tuple(manifest.feature_names),
     )
 
@@ -46,7 +47,10 @@ def validate_artifact_feature_graph(
             "Configured feature_set.id does not match the trained artifact: "
             f"expected {selection.feature_set_id}, got {requested_feature_set_id}"
         )
-    current_fingerprint = feature_graph_fingerprint(selection.feature_names)
+    current_fingerprint = feature_graph_fingerprint(
+        selection.feature_family_id,
+        selection.feature_names,
+    )
     if current_fingerprint != manifest.feature_graph_fingerprint:
         raise ValueError("Current feature graph does not match the trained artifact manifest")
     return selection
@@ -63,20 +67,19 @@ def build_training_artifact_manifest(
         chain=ArtifactChainMetadata(name=spec.chain.name),
         dataset_id=spec.dataset_id,
         dataset_name=spec.dataset_name,
-        problem_id=spec.problem.id,
+        problem=spec.problem,
         variant=spec.variant,
         study=spec.study,
         study_id=spec.study_id,
-        max_supported_delay_seconds=spec.problem.max_supported_delay_seconds,
-        lookback_seconds=spec.problem.lookback_seconds,
-        sample_count=spec.problem.sample_count,
-        feature_history_seconds=spec.contract.feature_history_seconds,
+        feature_family_id=prepared.feature_family_id,
+        feature_prerequisites=prepared.feature_prerequisites,
         max_candidate_slots=prepared.max_candidate_slots,
         feature_set_id=prepared.feature_set_id,
         feature_names=list(prepared.feature_names),
         feature_graph_fingerprint=prepared.feature_graph_fingerprint,
         model=spec.model,
         scaler=prepared.scaler,
+        compiler_runtime_metadata=prepared.compiler_runtime_metadata,
     )
 
 

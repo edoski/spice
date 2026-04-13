@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from ..config import ArtifactVariant, ModelConfig, StudyConfig
+from ..config import ArtifactVariant, ModelConfig, ProblemSpec, StudyConfig
+from ..features import FeaturePrerequisites
 from ..temporal.scaling import ScalerStats
 from .objective import EpochMetrics, WindowMetricSummary
 from .pipeline import PreparedInferenceDataset, PreparedTrainingDataset, TrainingRunResult
@@ -24,20 +25,35 @@ class TrainingArtifactManifest:
     chain: ArtifactChainMetadata
     dataset_id: str
     dataset_name: str
-    problem_id: str
+    problem: ProblemSpec
     variant: ArtifactVariant
     study: StudyConfig | None
     study_id: str | None
-    max_supported_delay_seconds: int
-    lookback_seconds: int
-    sample_count: int
-    feature_history_seconds: int
+    feature_family_id: str
+    feature_prerequisites: FeaturePrerequisites
     max_candidate_slots: int
     feature_set_id: str
     feature_names: list[str]
     feature_graph_fingerprint: str
     model: ModelConfig
     scaler: ScalerStats
+    compiler_runtime_metadata: dict[str, object]
+
+    @property
+    def problem_id(self) -> str:
+        return self.problem.id
+
+    @property
+    def max_supported_delay_seconds(self) -> int:
+        return self.problem.max_supported_delay_seconds
+
+    @property
+    def lookback_seconds(self) -> int:
+        return self.problem.lookback_seconds
+
+    @property
+    def sample_count(self) -> int:
+        return self.problem.sample_count
 
     @property
     def n_features(self) -> int:
@@ -65,7 +81,8 @@ class TrainingSummary:
     problem_id: str
     max_supported_delay_seconds: int
     lookback_seconds: int
-    feature_history_seconds: int
+    feature_family_id: str
+    feature_prerequisites: FeaturePrerequisites
     sample_count: int
     max_candidate_slots: int
     n_rows_available: int
@@ -105,7 +122,8 @@ class SimulationSummaryRecord:
     max_supported_delay_seconds: int
     requested_delay_seconds: int
     lookback_seconds: int
-    feature_history_seconds: int
+    feature_family_id: str
+    feature_prerequisites: FeaturePrerequisites
     simulation_window_seconds: int
     arrival_rate_per_second: float
     repetitions: int
@@ -166,7 +184,8 @@ def build_training_summary(
         problem_id=manifest.problem_id,
         max_supported_delay_seconds=manifest.max_supported_delay_seconds,
         lookback_seconds=manifest.lookback_seconds,
-        feature_history_seconds=manifest.feature_history_seconds,
+        feature_family_id=manifest.feature_family_id,
+        feature_prerequisites=manifest.feature_prerequisites,
         sample_count=manifest.sample_count,
         max_candidate_slots=manifest.max_candidate_slots,
         n_rows_available=prepared.n_rows_available,
@@ -213,7 +232,8 @@ def build_simulation_summary_record(
         max_supported_delay_seconds=manifest.max_supported_delay_seconds,
         requested_delay_seconds=requested_delay_seconds,
         lookback_seconds=manifest.lookback_seconds,
-        feature_history_seconds=manifest.feature_history_seconds,
+        feature_family_id=manifest.feature_family_id,
+        feature_prerequisites=manifest.feature_prerequisites,
         simulation_window_seconds=window_seconds,
         arrival_rate_per_second=arrival_rate_per_second,
         repetitions=repetitions,

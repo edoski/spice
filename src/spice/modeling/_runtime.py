@@ -11,7 +11,7 @@ import torch
 from numpy.typing import NDArray
 
 from ..config import CompileMode, ModelConfig, TrainingConfig, TrainingPrecision
-from ..temporal.store import TemporalDatasetStore
+from ..temporal.problem_store import CompiledProblemStore
 from .families.registry import (
     resolve_auto_compile,
     resolve_default_precision,
@@ -116,7 +116,7 @@ def build_representation_runtime_context(
 
 
 def prepare_model_representation(
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     sample_indices: IntVector,
     *,
     model_id: str,
@@ -131,7 +131,7 @@ def prepare_model_representation(
 
 
 def build_model_loader(
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     sample_indices: IntVector,
     *,
     model_id: str,

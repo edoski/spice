@@ -12,6 +12,7 @@ from spice.config import (
     load_tune_config,
 )
 from spice.core.reporting import NullReporter
+from spice.temporal.contracts import resolve_problem_contract
 from spice.workflows.simulate import run as run_simulate
 from spice.workflows.train import run as run_train
 from spice.workflows.tune import run as run_tune
@@ -25,10 +26,15 @@ def _model_workflow_override(
     lookback_seconds: int = 120,
     max_supported_delay_seconds: int = 36,
     requested_delay_seconds: int | None = None,
+    compiler_id: str = "estimated_block",
 ) -> dict[str, object]:
+    feature_set_name = (
+        "icdcs_2026_time_native" if compiler_id == "timestamp_native" else "icdcs_2026"
+    )
     return {
         "chain": "ethereum",
         "model": "lstm",
+        "feature_set": feature_set_name,
         "dataset": {
             "evaluation_date": "2025-11-09",
         },
@@ -37,6 +43,7 @@ def _model_workflow_override(
             "lookback_seconds": lookback_seconds,
             "sample_count": sample_count,
             "max_supported_delay_seconds": max_supported_delay_seconds,
+            "compiler": {"id": compiler_id},
         },
         "execution": {
             "id": "test_execution",
@@ -148,16 +155,28 @@ def _seed_dataset(path: Path, rows: list[dict[str, int]]) -> Path:
 
 
 def _seed_history_dataset(config) -> Path:
+    contract = resolve_problem_contract(
+        problem=config.problem,
+        feature_set=config.feature_set,
+    )
+    block_interval_seconds = 12
+    row_count = max(
+        128,
+        ((contract.required_history_seconds + contract.max_supported_delay_seconds + 12) // 12)
+        + contract.warmup_rows
+        + contract.sample_count
+        + 16,
+    )
     rows = [
         {
             "block_number": index,
-            "timestamp": 1_000 + index * 12,
+            "timestamp": 1_000 + index * block_interval_seconds,
             "base_fee_per_gas": 1_000_000_000,
             "gas_used": 18_000_000,
             "gas_limit": 30_000_000,
             "chain_id": config.chain.runtime.chain_id,
         }
-        for index in range(1, 129)
+        for index in range(1, row_count + 1)
     ]
     return _seed_dataset(config.paths.history_dir, rows)
 

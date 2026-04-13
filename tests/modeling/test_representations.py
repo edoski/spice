@@ -24,11 +24,11 @@ from spice.modeling.representations import (
     register_input_representation,
 )
 from spice.modeling.training import evaluate_model
-from spice.temporal.store import TemporalDatasetStore
+from spice.temporal.problem_store import CompiledProblemStore
 
 
-def _test_store() -> TemporalDatasetStore:
-    return TemporalDatasetStore(
+def _test_store() -> CompiledProblemStore:
+    return CompiledProblemStore(
         feature_matrix=np.array(
             [
                 [-1.0, 0.0, 0.1],
@@ -144,7 +144,7 @@ class _FlatPreparedRepresentation:
 
 
 def _prepare_flat_problem(
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     sample_indices: np.ndarray,
     *,
     runtime_context: RepresentationRuntimeContext,

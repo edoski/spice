@@ -23,6 +23,8 @@ from ..config import (
     TuneConfig,
     TunedParameterSet,
     TuningSpaceConfig,
+    coerce_feature_set_config,
+    coerce_problem_spec,
 )
 from ..modeling.families.registry import (
     coerce_model_config,
@@ -180,8 +182,8 @@ def load_study_manifest(db_path: Path) -> StudyManifest:
             chain_name=str(row["chain_name"]),
             dataset_id=str(row["dataset_id"]),
             dataset_name=str(row["dataset_name"]),
-            problem=ProblemSpec.model_validate(_mapping(row["problem"])),
-            feature_set=FeatureSetConfig.model_validate(_mapping(row["feature_set"])),
+            problem=coerce_problem_spec(_mapping(row["problem"])),
+            feature_set=coerce_feature_set_config(_mapping(row["feature_set"])),
             model=model,
             split=SplitConfig.model_validate(_mapping(row["split"])),
             training=TrainingConfig.model_validate(_mapping(row["training"])),

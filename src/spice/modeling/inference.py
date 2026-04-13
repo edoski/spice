@@ -9,7 +9,7 @@ import torch
 from numpy.typing import NDArray
 
 from ..core.reporting import NullReporter, Reporter
-from ..temporal.store import TemporalDatasetStore
+from ..temporal.problem_store import CompiledProblemStore
 from ._runtime import (
     build_model_loader,
     build_representation_runtime_context,
@@ -25,7 +25,7 @@ def predict_candidate_offsets(
     model: TemporalModel,
     *,
     model_id: str,
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     sample_indices: IntVector,
     batch_size: int,
     device: str,

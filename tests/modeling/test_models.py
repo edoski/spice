@@ -12,11 +12,11 @@ from spice.modeling.models import (
     take_last_valid,
 )
 from spice.modeling.representations import build_sequence_event_batch
-from spice.temporal.store import TemporalDatasetStore
+from spice.temporal.problem_store import CompiledProblemStore
 
 
-def _test_store() -> TemporalDatasetStore:
-    return TemporalDatasetStore(
+def _test_store() -> CompiledProblemStore:
+    return CompiledProblemStore(
         feature_matrix=np.array(
             [
                 [-1.0, 0.0, 0.1],

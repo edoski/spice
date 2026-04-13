@@ -42,6 +42,8 @@ from .models import (
     TuningTrainingSearchSpace,
     WorkflowTask,
     apply_provider_acquisition_overrides,
+    coerce_feature_set_config,
+    coerce_problem_spec,
 )
 
 __all__ = [
@@ -78,6 +80,8 @@ __all__ = [
     "WorkflowTask",
     "apply_provider_acquisition_overrides",
     "build_path_layout",
+    "coerce_feature_set_config",
+    "coerce_problem_spec",
     "load_acquire_config",
     "load_named_group",
     "load_named_model",

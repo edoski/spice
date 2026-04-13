@@ -9,7 +9,8 @@ Runtime commands:
 3. `spice train`
 4. `spice simulate`
 
-One CLI. One config system. One canonical temporal semantics model.
+One CLI. One config system. One compiler boundary for temporal semantics.
+One feature-family boundary for feature semantics.
 One canonical objective semantics layer.
 
 ## Core Model
@@ -24,8 +25,8 @@ SPICE has one architectural hierarchy:
 Canonical domain truth is:
 
 - raw block corpus
-- timestamp-native feature table
-- ragged timestamp-native anchor samples
+- resolved feature table
+- compiled problem store
 
 Model-input compilation is a separate layer:
 
@@ -75,9 +76,10 @@ Selector rules:
 Public temporal contract:
 
 - `dataset.evaluation_date` defines the fixed one-day UTC evaluation window.
-- `task.lookback_seconds` defines real context span.
-- `task.sample_count` defines training and tuning anchor count.
-- `task.max_supported_delay_seconds` defines artifact capability.
+- `problem.lookback_seconds` defines real context span.
+- `problem.sample_count` defines training and tuning anchor count.
+- `problem.max_supported_delay_seconds` defines artifact capability.
+- `problem.compiler.id` selects the temporal compiler.
 - `execution.requested_delay_seconds` defines the runtime deadline inside that capability.
 
 No config field encodes nominal block time.
@@ -85,16 +87,21 @@ No public config field selects objective semantics yet.
 
 ## Temporal Semantics
 
-SPICE is seconds-native outside and timestamp-native inside.
+SPICE is seconds-native outside and compiler-driven inside.
 
-For anchor block `i` at timestamp `t_i`:
+Current compiler boundary:
 
-- context = blocks in `[t_i - lookback_seconds, t_i]`
-- valid future candidates = blocks in `(t_i, t_i + delay_seconds]`
-- label = cheapest valid future block inside that real deadline
-- baseline = next block
+- `timestamp_native`: context and candidates come from real timestamp windows
+- `estimated_block`: seconds are lowered into corpus-calibrated row geometry
 
-This semantics is shared by acquisition sufficiency checks, training, inference, and simulation.
+Both compilers lower into the same `CompiledProblemStore`:
+
+- `anchor_rows`
+- `context_start_rows`
+- `candidate_end_rows`
+- `max_candidate_slots`
+
+Acquisition, training, inference, and simulation consume compiled contracts and compiled stores only. They do not branch on compiler id.
 
 ## Objective Semantics
 
@@ -125,20 +132,29 @@ Feature execution lives in [src/spice/features](src/spice/features).
 
 Rules:
 
-- each feature is a small Hamilton node
+- each feature family is a registered semantic system
+- each feature is a small Hamilton node inside one family
 - feature selection is config-driven
 - feature formulas stay in Python
-- feature history is derived from the selected graph in seconds
-- artifacts persist `feature_set_id`, ordered `feature_names`, and `feature_graph_fingerprint`
+- prerequisites are derived from the selected graph as `history_seconds` and `warmup_rows`
+- artifacts persist `feature_set_id`, `feature_family_id`, ordered `feature_names`, and `feature_graph_fingerprint`
 - inference rebuilds the same graph and fails on mismatch
 
-Current feature family is time-native:
+Current feature families:
 
-- event-time deltas such as `seconds_since_previous_block`
-- elapsed time such as `elapsed_seconds`
-- rolling statistics over `60s`, `300s`, `600s`
-- trend windows over real time
-- wall-clock cyclical features
+- `block_native`
+  - `elapsed_blocks`
+  - rolling statistics over `10`, `50`, `200` blocks
+  - `trend_slope_200`
+  - wall-clock cyclical features
+- `time_native`
+  - `seconds_since_previous_block`
+  - `elapsed_seconds`
+  - rolling statistics over `60s`, `300s`, `600s`
+  - `trend_slope_600s`
+  - wall-clock cyclical features
+
+Feature families do not select compilers. Compilers consume only the generic resolved feature table and prerequisites.
 
 ## Corpus and Samples
 
@@ -154,7 +170,7 @@ Padding is not domain truth. Padding exists only in the collate path for model e
 
 ## Model Boundary
 
-Current sequence families share one semantic batch shape because they solve the same sequence-event task.
+Current sequence families share one semantic batch shape because they solve the same sequence-event problem.
 
 Shared batch semantics:
 
@@ -166,7 +182,7 @@ Shared batch semantics:
 Important distinction:
 
 - `input_mask` is batch transport logic
-- `candidate_mask` is task semantics because valid future actions truly vary by sample
+- `candidate_mask` is problem semantics because valid future actions truly vary by sample
 - optimum index, baseline fee, and realized fee are derived from the candidate slate by the objective package
 
 The compiler seam is keyed by input representation semantics, not model family name.
@@ -220,53 +236,49 @@ These are selector-driven commands over existing state. They do not use workflow
 - [console.py](src/spice/core/console.py): workflow reporting
 - [files.py](src/spice/core/files.py): atomic file and directory promotion helpers
 
-### `state`
+### `storage`
 
 - `engine.py`: SQLAlchemy engine creation, SQLite PRAGMAs, `RootKind`, root-kind bootstrap
 - `schema.py`: SPICE-owned Core table definitions
 - `catalog.py`: global selector-to-root catalog
-- `dataset.py`: corpus summary + acquire-run persistence
+- `corpus.py`: corpus summary + acquire-run persistence
 - `artifact.py`: manifest, training, and simulation table I/O
-- `codecs.py`: typed payload codecs between runtime dataclasses and SQLite JSON fields
 - `study.py`: Optuna-backed study helpers and tuned-param loading
-- `show.py`: typed root descriptions and section rendering for `spice show`
+- `inspect.py`: typed root descriptions and section rendering for `spice show`
 
 ### `acquisition`
 
 - [rpc.py](src/spice/acquisition/rpc.py): exact timestamp window resolution, RPC pulling, adaptive batching
-- [datasets.py](src/spice/acquisition/datasets.py): history and evaluation corpus reuse
-- [metadata.py](src/spice/acquisition/metadata.py): typed corpus summary builders
 
 ### `features`
 
-- [engine.py](src/spice/features/engine.py): Hamilton driver, feature selection, history-seconds derivation, fingerprinting
-- [base.py](src/spice/features/base.py): base event-time features
-- [rolling.py](src/spice/features/rolling.py): time-window statistics
-- [trend.py](src/spice/features/trend.py): time-window trend features
+- [engine.py](src/spice/features/engine.py): family-aware Hamilton driver, resolved feature tables, prerequisite derivation, fingerprinting
+- `families/`: self-registering feature family specs and Hamilton modules
 
-### `data`
+### `corpus`
 
-- [block_contract.py](src/spice/data/block_contract.py): canonical block schema
-- [io.py](src/spice/data/io.py): parquet corpus discovery and loading
-- [datasets.py](src/spice/data/datasets.py): timestamp-native sample store and split helpers
-- [normalization.py](src/spice/data/normalization.py): ragged-span scaler fitting and application
-- [validation.py](src/spice/data/validation.py): corpus validation
+- `contract.py`: canonical block schema
+- `io.py`: parquet corpus discovery and loading
+- `validation.py`: corpus validation
+- `metadata.py`: typed corpus summary builders
 
-### `planning`
+### `temporal`
 
-- [geometry.py](src/spice/planning/geometry.py): seconds-based lookback and delay windows
-- [contracts.py](src/spice/planning/contracts.py): resolved task contracts shared across workflows
+- `contracts.py`: compiled problem contracts shared across workflows
+- `problem_store.py`: shared compiled problem-store IR and split helpers
+- `compilers/`: self-registering temporal compiler specs
 
 ### `modeling`
 
 - [representations.py](src/spice/modeling/representations.py): input-representation registry
-- [torch_datasets.py](src/spice/modeling/torch_datasets.py): shared `sequence_event` batch compiler
+- [problem_batches.py](src/spice/modeling/problem_batches.py): shared semantic batch contracts
 - [pipeline.py](src/spice/modeling/pipeline.py): training and inference dataset preparation
 - [models.py](src/spice/modeling/models.py): baseline temporal models
 - [training.py](src/spice/modeling/training.py): trainer execution and metrics
 - [execution.py](src/spice/modeling/execution.py): persisted training flow
 - [artifacts.py](src/spice/modeling/artifacts.py): model + manifest persistence and feature validation
-- [reporting.py](src/spice/modeling/reporting.py): typed training and simulation summary envelopes
+- [results.py](src/spice/modeling/results.py): typed training and simulation summary envelopes
+- [result_codecs.py](src/spice/modeling/result_codecs.py): typed runtime-to-storage codecs
 - [simulation.py](src/spice/modeling/simulation.py): Poisson-arrival simulation over evaluation examples
 - `objective/`: objective spec, references, loss, metrics, and selection
 

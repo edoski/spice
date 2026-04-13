@@ -11,13 +11,18 @@ from spice.workflows.train import run as run_train
 from spice.workflows.tune import run as run_tune
 
 
+@pytest.mark.parametrize("compiler_id", ["timestamp_native", "estimated_block"])
 def test_train_workflow_smoke(
     tmp_path,
+    compiler_id,
     load_test_train_config,
     model_workflow_override,
     seed_history_dataset,
 ) -> None:
-    config = load_test_train_config(tmp_path, override=model_workflow_override())
+    config = load_test_train_config(
+        tmp_path,
+        override=model_workflow_override(compiler_id=compiler_id),
+    )
     seed_history_dataset(config)
 
     run_train(config, reporter=NullReporter())
@@ -210,15 +215,17 @@ def test_train_tuned_rejects_problem_drift_from_study(
         run_train(tuned_train_config, reporter=NullReporter())
 
 
+@pytest.mark.parametrize("compiler_id", ["timestamp_native", "estimated_block"])
 def test_simulate_workflow_smoke(
     tmp_path,
+    compiler_id,
     load_test_simulate_config,
     load_test_train_config,
     model_workflow_override,
     seed_evaluation_dataset,
     seed_history_dataset,
 ) -> None:
-    override = model_workflow_override()
+    override = model_workflow_override(compiler_id=compiler_id)
     train_config = load_test_train_config(tmp_path, override=override)
     simulate_config = load_test_simulate_config(tmp_path, override=override)
     seed_history_dataset(train_config)

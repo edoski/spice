@@ -78,28 +78,16 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                 message=f"artifact={artifact_dir} evaluation={evaluation_block_path}",
             )
             prepare_task = prepare_reporter.start_task("prepare inference dataset")
-            if loaded_artifact.manifest.problem_id != config.problem.id:
-                raise ValueError(
-                    "Configured problem.id does not match the trained artifact: "
-                    f"expected {loaded_artifact.manifest.problem_id}, got {config.problem.id}"
-                )
             if (
-                loaded_artifact.manifest.max_supported_delay_seconds
-                != config.problem.max_supported_delay_seconds
+                loaded_artifact.manifest.problem.model_dump(mode="json")
+                != config.problem.model_dump(mode="json")
             ):
                 raise ValueError(
-                    "Configured problem.max_supported_delay_seconds does not match "
-                    "the trained artifact"
+                    "Configured problem does not match the trained artifact semantics"
                 )
-            if (
-                loaded_artifact.manifest.lookback_seconds != config.problem.lookback_seconds
-                or loaded_artifact.manifest.sample_count != config.problem.sample_count
-            ):
-                raise ValueError("Configured problem does not match the trained artifact contract")
             contract = resolve_feature_contract(
                 problem=config.problem,
-                feature_set_id=selection.feature_set_id,
-                feature_names=selection.feature_names,
+                selection=selection,
             )
             if (
                 config.execution.requested_delay_seconds
@@ -114,7 +102,9 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                 history_blocks,
                 evaluation_blocks,
                 selection=selection,
-                window=contract.window_for_delay(config.execution.requested_delay_seconds),
+                contract=contract,
+                requested_delay_seconds=config.execution.requested_delay_seconds,
+                compiler_runtime_metadata=loaded_artifact.manifest.compiler_runtime_metadata,
                 scaler=loaded_artifact.manifest.scaler,
                 max_candidate_slots=loaded_artifact.manifest.max_candidate_slots,
                 window_start_timestamp=config.evaluation_window_start_timestamp,

@@ -19,6 +19,8 @@ from .models import (
     PresetSpec,
     ProblemSpec,
     ProviderSpec,
+    coerce_feature_set_config,
+    coerce_problem_spec,
 )
 
 _CONF_ROOT = Path(__file__).resolve().parents[1] / "conf"
@@ -273,7 +275,15 @@ def validate_mapping_for_write(
     name: str,
     payload: dict[str, object],
 ) -> ConfigModel:
-    model = definition.model_type.model_validate(payload)
+    model = (
+        coerce_problem_spec(payload)
+        if definition.model_type is ProblemSpec
+        else (
+            coerce_feature_set_config(payload)
+            if definition.model_type is FeatureSetConfig
+            else definition.model_type.model_validate(payload)
+        )
+    )
     _validate_identity(definition=definition, name=name, model=model)
     _validate_cross_references(definition=definition, model=model)
     return model

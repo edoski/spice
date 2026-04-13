@@ -7,13 +7,14 @@ from datetime import UTC, datetime
 from ..acquisition.rpc import BlockPullPlan
 from ..config import AcquireConfig
 from ..corpus.builders import DatasetBuildOutcome
-from ..temporal.contracts import ProblemContract
+from ..features import FeaturePrerequisites
+from ..temporal.contracts import CompiledProblemContract
 
 
 def acquire_dry_run_sections(
     config: AcquireConfig,
     *,
-    contract: ProblemContract,
+    contract: CompiledProblemContract,
     history_window_seconds: int,
     history_plan: BlockPullPlan,
     evaluation_plan: BlockPullPlan,
@@ -26,9 +27,14 @@ def acquire_dry_run_sections(
                 ("storage id", config.paths.corpus_id),
                 ("chain", config.chain.name),
                 ("problem", config.problem.id),
+                ("compiler", contract.compiler_id),
                 ("feature set", config.feature_set.id),
+                ("feature family", contract.feature_family_id),
                 ("evaluation date", str(config.dataset.evaluation_date)),
-                ("feature history", f"{contract.feature_history_seconds}s"),
+                (
+                    "feature prerequisites",
+                    _feature_prerequisites_string(contract.feature_prerequisites),
+                ),
                 ("lookback", f"{contract.lookback_seconds}s"),
                 ("history window", f"{history_window_seconds}s"),
             ],
@@ -74,6 +80,7 @@ def acquisition_summary_sections(
                 ("chain", config.chain.name),
                 ("problem", config.problem.id),
                 ("feature set", config.feature_set.id),
+                ("feature family", config.feature_set.family.id),
                 ("provider", provider_name),
             ],
         ),
@@ -123,6 +130,15 @@ def _format_duration(start_timestamp: int, end_timestamp: int) -> str:
 def _format_count(value: int, singular: str, plural: str | None = None) -> str:
     unit = singular if value == 1 else (plural or f"{singular}s")
     return f"{value:,} {unit}"
+
+
+def _feature_prerequisites_string(prerequisites: FeaturePrerequisites) -> str:
+    return " ".join(
+        [
+            f"history={prerequisites.history_seconds}s",
+            f"warmup={prerequisites.warmup_rows} rows",
+        ]
+    )
 
 
 def _planned_window_rows(

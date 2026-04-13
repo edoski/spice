@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from spice.config import ArtifactVariant, StudyConfig
+from spice.config import ArtifactVariant, StudyConfig, coerce_problem_spec
+from spice.features import FeaturePrerequisites
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.objective import EpochMetrics, WindowMetricSummary
 from spice.modeling.results import (
@@ -34,14 +35,20 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         chain=ArtifactChainMetadata(name="ethereum"),
         dataset_id="icdcs_2026",
         dataset_name="icdcs_2026",
-        problem_id="test_problem",
+        problem=coerce_problem_spec(
+            {
+                "id": "test_problem",
+                "lookback_seconds": 120,
+                "sample_count": 24,
+                "max_supported_delay_seconds": 36,
+                "compiler": {"id": "estimated_block"},
+            }
+        ),
         variant=ArtifactVariant.BASELINE,
         study=StudyConfig(name="default"),
         study_id=None,
-        max_supported_delay_seconds=36,
-        lookback_seconds=120,
-        sample_count=24,
-        feature_history_seconds=120,
+        feature_family_id="time_native",
+        feature_prerequisites=FeaturePrerequisites(history_seconds=120, warmup_rows=0),
         max_candidate_slots=2,
         feature_set_id="icdcs_2026",
         feature_names=["seconds_since_previous_block", "elapsed_seconds"],
@@ -54,6 +61,11 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
             head_hidden_dim=8,
         ),
         scaler=ScalerStats(means=[0.0, 1.0], scales=[1.0, 1.0]),
+        compiler_runtime_metadata={
+            "effective_block_interval_seconds": 12.0,
+            "lookback_steps": 10,
+            "capability_candidate_count": 4,
+        },
     )
     summary = TrainingSummary(
         artifact_id=manifest.artifact_id,
@@ -68,7 +80,8 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         problem_id=manifest.problem_id,
         max_supported_delay_seconds=manifest.max_supported_delay_seconds,
         lookback_seconds=manifest.lookback_seconds,
-        feature_history_seconds=manifest.feature_history_seconds,
+        feature_family_id=manifest.feature_family_id,
+        feature_prerequisites=manifest.feature_prerequisites,
         sample_count=manifest.sample_count,
         max_candidate_slots=manifest.max_candidate_slots,
         n_rows_available=128,
@@ -159,7 +172,8 @@ def test_simulation_artifact_summary_round_trip(tmp_path) -> None:
         max_supported_delay_seconds=36,
         requested_delay_seconds=36,
         lookback_seconds=120,
-        feature_history_seconds=120,
+        feature_family_id="time_native",
+        feature_prerequisites=FeaturePrerequisites(history_seconds=120, warmup_rows=0),
         simulation_window_seconds=600,
         arrival_rate_per_second=0.02,
         repetitions=3,

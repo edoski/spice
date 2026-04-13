@@ -2,3 +2,5 @@ id: icdcs_2026
 lookback_seconds: 600
 sample_count: 400000
 max_supported_delay_seconds: 36
+compiler:
+  id: estimated_block

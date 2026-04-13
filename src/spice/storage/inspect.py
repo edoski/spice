@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..corpus.metadata import AcquireRunRecord, DatasetSummary
+from ..features import FeaturePrerequisites
 from ..modeling.artifacts import TrainingArtifactManifest
 from ..modeling.results import SimulationSummaryRecord, TrainingEpochRecord, TrainingSummary
 from ..modeling.simulation import SimulationRunSummary
@@ -223,13 +224,17 @@ def _artifact_sections(
                 ("chain", manifest.chain.name),
                 ("problem", manifest.problem_id),
                 ("feature set", manifest.feature_set_id),
+                ("feature family", manifest.feature_family_id),
                 ("model", manifest.model.id),
                 ("variant", manifest.variant.value),
                 ("study", manifest.study.name if manifest.study is not None else "n/a"),
                 ("study id", manifest.study_id or "n/a"),
                 ("capability", f"{manifest.max_supported_delay_seconds}s"),
                 ("lookback", f"{manifest.lookback_seconds}s"),
-                ("feature history", f"{manifest.feature_history_seconds}s"),
+                (
+                    "feature prerequisites",
+                    _feature_prerequisites_string(manifest.feature_prerequisites),
+                ),
                 ("max slots", str(manifest.max_candidate_slots)),
             ],
         ),
@@ -406,8 +411,16 @@ def _window_string(window) -> str:
 def _acquire_run_string(run: AcquireRunRecord) -> str:
     return (
         f"problem={run.problem.problem_id} feature_set={run.problem.feature_set_id} "
+        f"family={run.problem.feature_family_id} "
         f"history={run.problem.acquired_history_window_seconds}s "
         f"anchors={run.problem.valid_anchor_samples}"
+    )
+
+
+def _feature_prerequisites_string(prerequisites: FeaturePrerequisites) -> str:
+    return (
+        f"history={prerequisites.history_seconds}s "
+        f"warmup={prerequisites.warmup_rows} rows"
     )
 
 

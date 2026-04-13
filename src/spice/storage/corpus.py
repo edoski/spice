@@ -28,6 +28,7 @@ from ..corpus.metadata import (
     ProviderMetadata,
     TimestampRangeMetadata,
 )
+from ..features import FeaturePrerequisites
 from .engine import DATASET_ROOT_KIND, create_state_engine, ensure_state_db, touch_meta
 from .schema import DATASET_TABLES, acquire_runs, dataset_summary
 
@@ -79,11 +80,15 @@ def write_dataset_state(
                     provider_reference=acquire_run.provider.reference,
                     provider_endpoint_fingerprint=acquire_run.provider.endpoint_fingerprint,
                     problem_id=acquire_run.problem.problem_id,
+                    compiler_id=acquire_run.problem.compiler_id,
                     feature_set_id=acquire_run.problem.feature_set_id,
+                    feature_family_id=acquire_run.problem.feature_family_id,
                     lookback_seconds=acquire_run.problem.lookback_seconds,
                     sample_count=acquire_run.problem.sample_count,
                     max_supported_delay_seconds=acquire_run.problem.max_supported_delay_seconds,
-                    feature_history_seconds=acquire_run.problem.feature_history_seconds,
+                    feature_prerequisites=acquire_run.problem.feature_prerequisites.model_dump(
+                        mode="json"
+                    ),
                     required_history_seconds=acquire_run.problem.required_history_seconds,
                     acquired_history_window_seconds=acquire_run.problem.acquired_history_window_seconds,
                     valid_anchor_samples=acquire_run.problem.valid_anchor_samples,
@@ -250,11 +255,15 @@ def _acquire_run_from_row(row: RowMapping) -> AcquireRunRecord:
         ),
         problem=ProblemContractSnapshot(
             problem_id=_row_str(row, "problem_id"),
+            compiler_id=_row_str(row, "compiler_id"),
             feature_set_id=_row_str(row, "feature_set_id"),
+            feature_family_id=_row_str(row, "feature_family_id"),
             lookback_seconds=_row_int(row, "lookback_seconds"),
             sample_count=_row_int(row, "sample_count"),
             max_supported_delay_seconds=_row_int(row, "max_supported_delay_seconds"),
-            feature_history_seconds=_row_int(row, "feature_history_seconds"),
+            feature_prerequisites=FeaturePrerequisites.model_validate(
+                cast(dict[str, object], _row_value(row, "feature_prerequisites"))
+            ),
             required_history_seconds=_row_int(row, "required_history_seconds"),
             acquired_history_window_seconds=_row_int(row, "acquired_history_window_seconds"),
             valid_anchor_samples=_row_int(row, "valid_anchor_samples"),

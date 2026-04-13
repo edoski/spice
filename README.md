@@ -1,6 +1,6 @@
 # SPICE
 
-SPICE is a temporal fee-timing pipeline for EVM chains. It acquires canonical block corpora, builds timestamp-native feature tables, tunes models, trains artifacts, and runs evaluation-day simulations under real delay budgets.
+SPICE is a temporal fee-timing pipeline for EVM chains. It acquires canonical block corpora, builds resolved feature tables through registered feature families, tunes models, trains artifacts, and runs evaluation-day simulations under real delay budgets.
 
 ## Stack
 
@@ -44,10 +44,10 @@ spice config create chain my_chain --set runtime.chain_id=123 --set runtime.uses
 spice config update provider direct --set chains.my_chain.endpoint.env_var=MY_CHAIN_RPC_URL
 spice config delete preset old_preset
 spice show dataset
-spice show artifact --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --variant baseline
-spice show study --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --study default
-spice show study --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --study default --detail config
-spice delete artifact --chain avalanche --dataset icdcs_2026 --model lstm --task icdcs_2026 --variant baseline
+spice show artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --variant baseline
+spice show study --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --study default
+spice show study --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --study default --detail config
+spice delete artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --variant baseline
 ```
 
 Override files stay plain YAML:
@@ -65,7 +65,7 @@ Named specs live under [src/spice/conf](src/spice/conf):
 - `preset/`: convenience bundles of named selectors
 - `dataset/`: evaluation-date selectors
 - `chain/`, `provider/`: chain and RPC specs
-- `task/`, `execution/`: delay budgets and sampling contracts in real seconds
+- `problem/`, `execution/`: delay budgets and sampling contracts in real seconds
 - `model/`, `feature_set/`: modeling choices
 - `training/`, `split/`, `simulation/`, `acquisition/`, `tuning/`, `tuning_space/`: workflow profiles
 
@@ -81,9 +81,11 @@ Rules:
 
 - Presets are optional. They are not the canonical schema.
 - `spice config` writes canonical YAML into `src/spice/conf/<group>/<name>.yaml`.
-- `task.lookback_seconds` and `task.max_supported_delay_seconds` are real wall-clock contracts.
-- Feature history is derived from the selected feature graph in seconds.
-- `acquire` expands raw history until the selected task and feature graph produce enough valid anchor samples.
+- `problem.lookback_seconds` and `problem.max_supported_delay_seconds` are real wall-clock contracts.
+- `problem.compiler.id` selects the temporal compiler.
+- `feature_set.family.id` selects the feature family.
+- Feature prerequisites are derived from the selected feature graph as `history_seconds` and `warmup_rows`.
+- `acquire` expands raw history until the selected problem and feature graph produce enough valid anchor samples.
 - `train` and `simulate` validate that the selected feature graph matches the trained artifact.
 - Objective selection is internal for now. SPICE ships one code-defined objective: `profit_over_baseline`.
 
@@ -95,13 +97,13 @@ Public interfaces stay seconds-native:
 - `max_supported_delay_seconds`
 - `requested_delay_seconds`
 
-Internal semantics are timestamp-native:
+Internal semantics go through a problem-local compiler:
 
-- context = blocks with timestamps inside the real lookback window
-- valid future candidates = blocks inside the real delay window
-- labels = cheapest valid future block under that real deadline
+- `timestamp_native`: context and candidates come from real timestamp windows
+- `estimated_block`: seconds are lowered into corpus-calibrated block geometry
 
-SPICE does not convert seconds into nominal block counts anymore.
+The shipped `icdcs_2026` path uses `estimated_block` plus the `block_native` feature family.
+The `time_native` family remains available as an alternate path.
 
 ## Objective Semantics
 
@@ -128,7 +130,7 @@ Current training uses a direct economic surrogate over the valid future candidat
 
 `outputs/` is the default root. Override it only when you want isolation somewhere else.
 
-Users query by selectors such as `--dataset`, `--study`, `--model`, `--task`, and `--variant`.
+Users query by selectors such as `--dataset`, `--study`, `--model`, `--problem`, and `--variant`.
 `dataset` is the public selector word. Internally the raw block collection is a `corpus`.
 Storage ids are deterministic internal ids. The catalog maps selectors to roots.
 Structured state is SQLite-only. SPICE does not persist generated JSON metadata or report files.
@@ -140,8 +142,8 @@ Study and artifact identity include the active `objective_id`, so changing objec
 Canonical internal truth is:
 
 - raw block corpus
-- timestamp-native feature table
-- ragged timestamp-native samples
+- resolved feature table
+- compiled problem store
 
 Current sequence families share one semantic input representation:
 
@@ -159,7 +161,7 @@ The current shared sequence batch contains:
 
 Economic references such as optimum index, baseline fee, and realized fee are derived by the objective package from that candidate slate. They are not persisted as separate batch payload.
 
-Future model families can register a different input representation without changing corpus storage, task semantics, or workflow interfaces.
+Future model families can register a different input representation without changing corpus storage, problem semantics, or workflow interfaces.
 
 ## Inspection and State
 

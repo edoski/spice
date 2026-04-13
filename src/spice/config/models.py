@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
 from pathlib import Path
@@ -15,13 +16,14 @@ from pydantic import (
     model_validator,
 )
 
-from ..features import validate_feature_selection
+from ..features import FeatureFamilyConfig, validate_feature_selection
 from ..modeling.families.base import (
     ConfigModel,
     ModelConfig,
     ModelTuningSpaceConfig,
     TunedModelParams,
 )
+from ..temporal.compilers import ProblemCompilerConfig
 
 if TYPE_CHECKING:
     from ..storage.layout import PathLayout
@@ -96,11 +98,32 @@ class ProblemSpec(ConfigModel):
     lookback_seconds: int = Field(gt=0)
     sample_count: int = Field(gt=0)
     max_supported_delay_seconds: int = Field(gt=0)
+    compiler: SerializeAsAny[ProblemCompilerConfig]
 
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
         return _validate_path_segment(value, label="problem.id")
+
+
+def coerce_problem_spec(payload: Mapping[str, object] | ProblemSpec) -> ProblemSpec:
+    from ..temporal.compilers import coerce_problem_compiler_config
+
+    raw_payload = (
+        payload.model_dump(mode="json")
+        if isinstance(payload, ProblemSpec)
+        else dict(payload)
+    )
+    raw_compiler = raw_payload.get("compiler")
+    if raw_compiler is None:
+        raise ValueError("problem.compiler is required")
+    if not isinstance(raw_compiler, Mapping) and not isinstance(
+        raw_compiler,
+        ProblemCompilerConfig,
+    ):
+        raise TypeError("problem.compiler must be a mapping")
+    raw_payload["compiler"] = coerce_problem_compiler_config(raw_compiler)
+    return ProblemSpec.model_validate(raw_payload)
 
 
 class ExecutionSpec(ConfigModel):
@@ -180,6 +203,7 @@ class SimulationConfig(ConfigModel):
 
 class FeatureSetConfig(ConfigModel):
     id: str
+    family: SerializeAsAny[FeatureFamilyConfig]
     outputs: list[str] = Field(min_length=1)
 
     @field_validator("id")
@@ -196,8 +220,25 @@ class FeatureSetConfig(ConfigModel):
 
     @model_validator(mode="after")
     def validate_feature_selection(self) -> Self:
-        validate_feature_selection(self.id, tuple(self.outputs))
+        validate_feature_selection(self.id, self.family.id, tuple(self.outputs))
         return self
+
+
+def coerce_feature_set_config(payload: Mapping[str, object] | FeatureSetConfig) -> FeatureSetConfig:
+    from ..features import coerce_feature_family_config
+
+    raw_payload = (
+        payload.model_dump(mode="json")
+        if isinstance(payload, FeatureSetConfig)
+        else dict(payload)
+    )
+    raw_family = raw_payload.get("family")
+    if raw_family is None:
+        raise ValueError("feature_set.family is required")
+    if not isinstance(raw_family, Mapping) and not isinstance(raw_family, FeatureFamilyConfig):
+        raise TypeError("feature_set.family must be a mapping")
+    raw_payload["family"] = coerce_feature_family_config(raw_family)
+    return FeatureSetConfig.model_validate(raw_payload)
 
 
 class StudyConfig(ConfigModel):

@@ -10,7 +10,8 @@ from ..acquisition.rpc import AcquisitionRuntimeSnapshot
 from ..config import AcquireConfig
 from ..corpus.io import iter_block_files
 from ..corpus.validation import BlockDatasetValidationReport
-from ..temporal.contracts import ProblemContract
+from ..features import FeaturePrerequisites
+from ..temporal.contracts import CompiledProblemContract
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,11 +100,13 @@ class AcquisitionConfigSnapshot:
 @dataclass(frozen=True, slots=True)
 class ProblemContractSnapshot:
     problem_id: str
+    compiler_id: str
     feature_set_id: str
+    feature_family_id: str
     lookback_seconds: int
     sample_count: int
     max_supported_delay_seconds: int
-    feature_history_seconds: int
+    feature_prerequisites: FeaturePrerequisites
     required_history_seconds: int
     acquired_history_window_seconds: int
     valid_anchor_samples: int
@@ -264,7 +267,7 @@ def build_acquire_run_record(
     *,
     config: AcquireConfig,
     provider: ProviderMetadata,
-    contract: ProblemContract,
+    contract: CompiledProblemContract,
     acquisition_runtime: AcquisitionRuntimeSnapshot,
     acquired_history_window_seconds: int,
     valid_anchor_samples: int,
@@ -273,11 +276,13 @@ def build_acquire_run_record(
         provider=provider,
         problem=ProblemContractSnapshot(
             problem_id=config.problem.id,
+            compiler_id=contract.compiler_id,
             feature_set_id=config.feature_set.id,
+            feature_family_id=contract.feature_family_id,
             lookback_seconds=contract.lookback_seconds,
             sample_count=contract.sample_count,
             max_supported_delay_seconds=contract.max_supported_delay_seconds,
-            feature_history_seconds=contract.feature_history_seconds,
+            feature_prerequisites=contract.feature_prerequisites,
             required_history_seconds=contract.required_history_seconds,
             acquired_history_window_seconds=acquired_history_window_seconds,
             valid_anchor_samples=valid_anchor_samples,

@@ -46,7 +46,7 @@ def test_old_task_group_and_runtime_key_are_rejected(tmp_path, isolate_conf_root
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="Use problem instead"):
+    with pytest.raises(ValueError, match="Unknown top-level config fields: task"):
         load_train_config(
             preset="icdcs_2026",
             config_path=config_path,
@@ -300,6 +300,8 @@ def test_config_cli_created_specs_resolve_in_runtime_commands(
             "sample_count=24",
             "--set",
             "max_supported_delay_seconds=36",
+            "--set",
+            "compiler.id=timestamp_native",
         ],
         [
             "config",
@@ -314,6 +316,8 @@ def test_config_cli_created_specs_resolve_in_runtime_commands(
             "create",
             "feature-set",
             "phase2_feature_set",
+            "--set",
+            "family.id=block_native",
             "--set",
             f"outputs={feature_outputs}",
         ],

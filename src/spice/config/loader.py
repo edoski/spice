@@ -31,6 +31,8 @@ from .models import (
     TuningConfig,
     TuningSpaceConfig,
     apply_provider_acquisition_overrides,
+    coerce_feature_set_config,
+    coerce_problem_spec,
 )
 from .registry import list_group_names, load_named_group, load_yaml_mapping
 
@@ -139,8 +141,6 @@ def _reject_unknown_top_level_keys(
     unknown = sorted(set(payload) - allowed_keys)
     if not unknown:
         return
-    if "task" in unknown:
-        raise ValueError("Unknown top-level config field: task. Use problem instead.")
     raise ValueError(f"Unknown top-level config fields: {', '.join(unknown)}")
 
 
@@ -150,6 +150,22 @@ def resolve_named_or_inline(raw: object, *, group: str, model_type: type[ModelT]
     if isinstance(raw, Mapping):
         return model_type.model_validate(dict(raw))
     raise ValueError(f"{group} must be provided as a spec name or mapping")
+
+
+def resolve_problem(raw: object) -> ProblemSpec:
+    if isinstance(raw, str):
+        return coerce_problem_spec(load_named_group(raw, "problem"))
+    if isinstance(raw, Mapping):
+        return coerce_problem_spec(raw)
+    raise ValueError("problem must be provided as a spec name or mapping")
+
+
+def resolve_feature_set(raw: object) -> FeatureSetConfig:
+    if isinstance(raw, str):
+        return coerce_feature_set_config(load_named_group(raw, "feature_set"))
+    if isinstance(raw, Mapping):
+        return coerce_feature_set_config(raw)
+    raise ValueError("feature_set must be provided as a spec name or mapping")
 
 
 def resolve_storage(raw: object | None) -> StorageSpec:
@@ -236,17 +252,9 @@ def load_acquire_config(
         allowed_keys=_KNOWN_TOP_LEVEL_CONFIG_KEYS,
     )
     dataset_spec, chain_spec, storage_spec = _resolve_common(payload)
-    problem_spec = resolve_named_or_inline(
-        payload["problem"],
-        group="problem",
-        model_type=ProblemSpec,
-    )
+    problem_spec = resolve_problem(payload["problem"])
     provider_spec = _resolve_provider(payload, chain=chain_spec)
-    feature_set_spec = resolve_named_or_inline(
-        payload["feature_set"],
-        group="feature_set",
-        model_type=FeatureSetConfig,
-    )
+    feature_set_spec = resolve_feature_set(payload["feature_set"])
     acquisition_raw = payload.get("acquisition", "default")
     acquisition_spec = resolve_named_or_inline(
         acquisition_raw,
@@ -281,7 +289,7 @@ def _resolve_model_workflow(
     ArtifactConfig,
 ]:
     dataset, chain, storage = _resolve_common(payload)
-    problem = resolve_named_or_inline(payload["problem"], group="problem", model_type=ProblemSpec)
+    problem = resolve_problem(payload["problem"])
     model_raw = payload["model"]
     if isinstance(model_raw, str):
         model = load_named_model(model_raw)
@@ -289,11 +297,7 @@ def _resolve_model_workflow(
         model = coerce_model_config(dict(model_raw))
     else:
         raise ValueError("model must be provided as a spec name or mapping")
-    feature_set = resolve_named_or_inline(
-        payload["feature_set"],
-        group="feature_set",
-        model_type=FeatureSetConfig,
-    )
+    feature_set = resolve_feature_set(payload["feature_set"])
     study_raw = payload.get("study")
     if isinstance(study_raw, Mapping):
         study = StudyConfig.model_validate(study_raw)

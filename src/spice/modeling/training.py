@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 
 from ..config import ModelConfig, TrainingConfig
 from ..core.reporting import NullReporter, Reporter, format_compact_number
-from ..temporal.store import TemporalDatasetStore
+from ..temporal.problem_store import CompiledProblemStore
 from ._runtime import (
     build_model_loader,
     build_representation_runtime_context,
@@ -193,7 +193,7 @@ def train_model(
     model: TemporalModel,
     *,
     model_config: ModelConfig,
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     train_sample_indices: IntVector,
     validation_sample_indices: IntVector,
     training_config: TrainingConfig,
@@ -316,7 +316,7 @@ def evaluate_model(
     model: torch.nn.Module,
     *,
     model_id: str,
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     sample_indices: IntVector,
     training_config: TrainingConfig,
     reporter: Reporter | None = None,

@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from ..temporal.store import TemporalDatasetStore
+from ..temporal.problem_store import CompiledProblemStore
 from .problem_batches import CandidateChoiceTargets, TemporalProblemBatch
 
 IntVector = NDArray[np.int64]
@@ -148,7 +148,7 @@ def input_representation_spec(representation_id: str) -> InputRepresentationSpec
 
 def prepare_representation(
     representation_id: str,
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     sample_indices: IntVector,
     *,
     runtime_context: RepresentationRuntimeContext,
@@ -163,7 +163,7 @@ def prepare_representation(
 
 def build_representation_loader(
     representation_id: str,
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     sample_indices: IntVector,
     *,
     runtime_context: RepresentationRuntimeContext,
@@ -184,7 +184,7 @@ def build_representation_loader(
 
 
 def build_sequence_event_batch(
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     sample_indices: IntVector,
     *,
     sample_positions: IntVector | None = None,
@@ -256,7 +256,7 @@ class _SequenceEventLayout:
 
 @dataclass(slots=True)
 class _StreamingSequenceEventRepresentation:
-    store: TemporalDatasetStore
+    store: CompiledProblemStore
     layout: _SequenceEventLayout
     batch_size: int
     representation_id: str = "sequence_event"
@@ -332,7 +332,7 @@ class _MaterializedSequenceEventRepresentation:
 
 
 def _prepare_sequence_event(
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     sample_indices: IntVector,
     *,
     runtime_context: RepresentationRuntimeContext,
@@ -355,7 +355,7 @@ def _prepare_sequence_event(
 
 
 def _sequence_event_layout(
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     sample_indices: IntVector,
 ) -> _SequenceEventLayout:
     if sample_indices.size == 0:
@@ -414,7 +414,7 @@ def _sequence_event_order(
 
 
 def _materialize_sequence_event(
-    store: TemporalDatasetStore,
+    store: CompiledProblemStore,
     layout: _SequenceEventLayout,
     *,
     batch_size: int,

@@ -70,7 +70,7 @@ def _rolling_std_feature(
     return _rolling_std(values, _window_bounds(timestamps, window_seconds=window_seconds))
 
 
-@tag(spice_kind="feature", spice_history_seconds="60")
+@tag(spice_kind="feature", spice_history_seconds="60", spice_warmup_rows="0")
 def rolling_mean_log_base_fee_60s(
     log_base_fee: FloatVector,
     timestamps: IntVector,
@@ -78,7 +78,7 @@ def rolling_mean_log_base_fee_60s(
     return _rolling_mean_feature(log_base_fee, timestamps, window_seconds=60)
 
 
-@tag(spice_kind="feature", spice_history_seconds="60")
+@tag(spice_kind="feature", spice_history_seconds="60", spice_warmup_rows="0")
 def rolling_std_log_base_fee_60s(
     log_base_fee: FloatVector,
     timestamps: IntVector,
@@ -86,7 +86,7 @@ def rolling_std_log_base_fee_60s(
     return _rolling_std_feature(log_base_fee, timestamps, window_seconds=60)
 
 
-@tag(spice_kind="feature", spice_history_seconds="60")
+@tag(spice_kind="feature", spice_history_seconds="60", spice_warmup_rows="0")
 def rolling_mean_gas_utilization_60s(
     gas_utilization: FloatVector,
     timestamps: IntVector,
@@ -94,7 +94,7 @@ def rolling_mean_gas_utilization_60s(
     return _rolling_mean_feature(gas_utilization, timestamps, window_seconds=60)
 
 
-@tag(spice_kind="feature", spice_history_seconds="60")
+@tag(spice_kind="feature", spice_history_seconds="60", spice_warmup_rows="0")
 def rolling_std_gas_utilization_60s(
     gas_utilization: FloatVector,
     timestamps: IntVector,
@@ -102,7 +102,7 @@ def rolling_std_gas_utilization_60s(
     return _rolling_std_feature(gas_utilization, timestamps, window_seconds=60)
 
 
-@tag(spice_kind="feature", spice_history_seconds="300")
+@tag(spice_kind="feature", spice_history_seconds="300", spice_warmup_rows="0")
 def rolling_mean_log_base_fee_300s(
     log_base_fee: FloatVector,
     timestamps: IntVector,
@@ -110,7 +110,7 @@ def rolling_mean_log_base_fee_300s(
     return _rolling_mean_feature(log_base_fee, timestamps, window_seconds=300)
 
 
-@tag(spice_kind="feature", spice_history_seconds="300")
+@tag(spice_kind="feature", spice_history_seconds="300", spice_warmup_rows="0")
 def rolling_std_log_base_fee_300s(
     log_base_fee: FloatVector,
     timestamps: IntVector,
@@ -118,7 +118,7 @@ def rolling_std_log_base_fee_300s(
     return _rolling_std_feature(log_base_fee, timestamps, window_seconds=300)
 
 
-@tag(spice_kind="feature", spice_history_seconds="300")
+@tag(spice_kind="feature", spice_history_seconds="300", spice_warmup_rows="0")
 def rolling_mean_gas_utilization_300s(
     gas_utilization: FloatVector,
     timestamps: IntVector,
@@ -126,7 +126,7 @@ def rolling_mean_gas_utilization_300s(
     return _rolling_mean_feature(gas_utilization, timestamps, window_seconds=300)
 
 
-@tag(spice_kind="feature", spice_history_seconds="300")
+@tag(spice_kind="feature", spice_history_seconds="300", spice_warmup_rows="0")
 def rolling_std_gas_utilization_300s(
     gas_utilization: FloatVector,
     timestamps: IntVector,
@@ -134,7 +134,7 @@ def rolling_std_gas_utilization_300s(
     return _rolling_std_feature(gas_utilization, timestamps, window_seconds=300)
 
 
-@tag(spice_kind="feature", spice_history_seconds="600")
+@tag(spice_kind="feature", spice_history_seconds="600", spice_warmup_rows="0")
 def rolling_mean_log_base_fee_600s(
     log_base_fee: FloatVector,
     timestamps: IntVector,
@@ -142,7 +142,7 @@ def rolling_mean_log_base_fee_600s(
     return _rolling_mean_feature(log_base_fee, timestamps, window_seconds=600)
 
 
-@tag(spice_kind="feature", spice_history_seconds="600")
+@tag(spice_kind="feature", spice_history_seconds="600", spice_warmup_rows="0")
 def rolling_std_log_base_fee_600s(
     log_base_fee: FloatVector,
     timestamps: IntVector,
@@ -150,7 +150,7 @@ def rolling_std_log_base_fee_600s(
     return _rolling_std_feature(log_base_fee, timestamps, window_seconds=600)
 
 
-@tag(spice_kind="feature", spice_history_seconds="600")
+@tag(spice_kind="feature", spice_history_seconds="600", spice_warmup_rows="0")
 def rolling_mean_gas_utilization_600s(
     gas_utilization: FloatVector,
     timestamps: IntVector,
@@ -158,7 +158,7 @@ def rolling_mean_gas_utilization_600s(
     return _rolling_mean_feature(gas_utilization, timestamps, window_seconds=600)
 
 
-@tag(spice_kind="feature", spice_history_seconds="600")
+@tag(spice_kind="feature", spice_history_seconds="600", spice_warmup_rows="0")
 def rolling_std_gas_utilization_600s(
     gas_utilization: FloatVector,
     timestamps: IntVector,

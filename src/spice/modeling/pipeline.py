@@ -21,19 +21,23 @@ from ..config import (
 )
 from ..core.reporting import NullReporter, Reporter
 from ..corpus.io import load_block_frame
-from ..features import FeatureSelection, build_feature_table, make_feature_selection
-from ..temporal.contracts import ProblemContract, resolve_problem_contract
-from ..temporal.scaling import ScalerStats, fit_standard_scaler, transform_feature_matrix
-from ..temporal.store import (
+from ..features import (
+    FeaturePrerequisites,
+    FeatureSelection,
+    build_feature_table,
+    make_feature_selection,
+)
+from ..temporal.compilers import CompilerRuntimeMetadata
+from ..temporal.contracts import CompiledProblemContract, resolve_problem_contract
+from ..temporal.problem_store import (
+    CompiledProblemStore,
     DatasetSplitIndices,
     IntVector,
-    TemporalDatasetStore,
-    build_temporal_store,
     chronological_split_indices,
     filter_sample_indices_by_timestamp_window,
     tail_sample_indices,
 )
-from ..temporal.window import DelayWindow
+from ..temporal.scaling import ScalerStats, fit_standard_scaler, transform_feature_matrix
 from .families.registry import build_model
 from .models import TemporalModel
 from .training import TrainingResult, train_model
@@ -46,7 +50,7 @@ class TrainingSpec:
     dataset_name: str
     artifact_id: str
     problem: ProblemSpec
-    contract: ProblemContract
+    contract: CompiledProblemContract
     feature_set: FeatureSetConfig
     model: ModelConfig
     split: SplitConfig
@@ -89,11 +93,14 @@ class PreparedTrainingDataset:
     n_rows_used: int
     sample_count: int
     feature_set_id: str
+    feature_family_id: str
     feature_names: tuple[str, ...]
     feature_graph_fingerprint: str
-    store: TemporalDatasetStore
+    feature_prerequisites: FeaturePrerequisites
+    store: CompiledProblemStore
     split_indices: DatasetSplitIndices
     scaler: ScalerStats
+    compiler_runtime_metadata: CompilerRuntimeMetadata
 
     @property
     def n_features(self) -> int:
@@ -110,9 +117,11 @@ class PreparedInferenceDataset:
     n_evaluation_rows: int
     sample_count: int
     feature_set_id: str
+    feature_family_id: str
     feature_names: tuple[str, ...]
     feature_graph_fingerprint: str
-    store: TemporalDatasetStore
+    feature_prerequisites: FeaturePrerequisites
+    store: CompiledProblemStore
     sample_indices: IntVector
 
     @property
@@ -146,7 +155,7 @@ class TrainingStageReporters:
         )
 
 
-def _selected_row_span(store: TemporalDatasetStore, sample_indices: IntVector) -> tuple[int, int]:
+def _selected_row_span(store: CompiledProblemStore, sample_indices: IntVector) -> tuple[int, int]:
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
     first_sample = int(sample_indices[0])
@@ -163,23 +172,20 @@ def prepare_training_dataset(
 ) -> PreparedTrainingDataset:
     selection = make_feature_selection(
         feature_set_id=spec.feature_set.id,
+        feature_family_id=spec.feature_set.family.id,
         feature_names=tuple(spec.feature_set.outputs),
     )
     sorted_blocks = blocks.sort("block_number")
     if sorted_blocks.height == 0:
         raise ValueError("Training dataset is empty")
     feature_table = build_feature_table(sorted_blocks, selection=selection)
-    if feature_table.feature_history_seconds != spec.contract.feature_history_seconds:
+    if feature_table.feature_prerequisites != spec.contract.feature_prerequisites:
         raise ValueError(
-            "Resolved feature history does not match the current feature graph: "
-            f"expected {spec.contract.feature_history_seconds}, "
-            f"got {feature_table.feature_history_seconds}"
+            "Resolved feature prerequisites do not match the current feature graph: "
+            f"expected {spec.contract.feature_prerequisites.model_dump(mode='json')}, "
+            f"got {feature_table.feature_prerequisites.model_dump(mode='json')}"
         )
-    capability_window = spec.contract.capability_window
-    store = build_temporal_store(
-        feature_table,
-        window=capability_window,
-    )
+    store, compiler_runtime_metadata = spec.contract.build_capability_store(feature_table)
     selected_sample_indices = tail_sample_indices(store, sample_count=spec.problem.sample_count)
     split_positions = chronological_split_indices(spec.problem.sample_count, spec.split)
     split_indices = DatasetSplitIndices(
@@ -203,11 +209,14 @@ def prepare_training_dataset(
         n_rows_used=used_end - used_start,
         sample_count=spec.problem.sample_count,
         feature_set_id=feature_table.feature_set_id,
+        feature_family_id=feature_table.feature_family_id,
         feature_names=feature_table.feature_names,
         feature_graph_fingerprint=feature_table.feature_graph_fingerprint,
+        feature_prerequisites=feature_table.feature_prerequisites,
         store=scaled_store,
         split_indices=split_indices,
         scaler=scaler,
+        compiler_runtime_metadata=compiler_runtime_metadata,
     )
 
 
@@ -216,7 +225,9 @@ def prepare_inference_dataset(
     evaluation_blocks: pl.DataFrame,
     *,
     selection: FeatureSelection,
-    window: DelayWindow,
+    contract: CompiledProblemContract,
+    requested_delay_seconds: int,
+    compiler_runtime_metadata: CompilerRuntimeMetadata,
     scaler: ScalerStats,
     max_candidate_slots: int,
     window_start_timestamp: int,
@@ -227,9 +238,10 @@ def prepare_inference_dataset(
         raise ValueError("History dataset is empty")
     combined_blocks = pl.concat([sorted_history_blocks, evaluation_blocks.sort("block_number")])
     feature_table = build_feature_table(combined_blocks, selection=selection)
-    store = build_temporal_store(
+    store = contract.build_requested_delay_store(
         feature_table,
-        window=window,
+        requested_delay_seconds,
+        compiler_runtime_metadata=compiler_runtime_metadata,
         max_candidate_slots=max_candidate_slots,
     )
     sample_indices = filter_sample_indices_by_timestamp_window(
@@ -249,8 +261,10 @@ def prepare_inference_dataset(
         n_evaluation_rows=evaluation_blocks.height,
         sample_count=int(sample_indices.shape[0]),
         feature_set_id=feature_table.feature_set_id,
+        feature_family_id=feature_table.feature_family_id,
         feature_names=feature_table.feature_names,
         feature_graph_fingerprint=feature_table.feature_graph_fingerprint,
+        feature_prerequisites=feature_table.feature_prerequisites,
         store=scaled_store,
         sample_indices=sample_indices,
     )

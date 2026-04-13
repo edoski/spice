@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, cast
 
 from sqlalchemy.engine import RowMapping
 
-from ..config import ArtifactVariant, StudyConfig
+from ..config import ArtifactVariant, StudyConfig, coerce_problem_spec
+from ..features import FeaturePrerequisites
 from ..temporal.scaling import ScalerStats
 from .families.registry import coerce_model_config
 from .objective import EpochMetrics, WindowMetricSummary
@@ -124,6 +125,7 @@ def artifact_manifest_values(manifest: TrainingArtifactManifest) -> dict[str, ob
         "dataset_id": manifest.dataset_id,
         "dataset_name": manifest.dataset_name,
         "problem_id": manifest.problem_id,
+        "problem": manifest.problem.model_dump(mode="json"),
         "variant": manifest.variant.value,
         "study_id": manifest.study_id,
         "study_name": None if manifest.study is None else manifest.study.name,
@@ -131,13 +133,15 @@ def artifact_manifest_values(manifest: TrainingArtifactManifest) -> dict[str, ob
         "max_supported_delay_seconds": manifest.max_supported_delay_seconds,
         "lookback_seconds": manifest.lookback_seconds,
         "sample_count": manifest.sample_count,
-        "feature_history_seconds": manifest.feature_history_seconds,
+        "feature_family_id": manifest.feature_family_id,
+        "feature_prerequisites": manifest.feature_prerequisites.model_dump(mode="json"),
         "max_candidate_slots": manifest.max_candidate_slots,
         "feature_set_id": manifest.feature_set_id,
         "feature_names": list(manifest.feature_names),
         "feature_graph_fingerprint": manifest.feature_graph_fingerprint,
         "model": manifest.model.model_dump(mode="json", exclude_none=True),
         "scaler": manifest.scaler.model_dump(mode="json", exclude_none=True),
+        "compiler_runtime_metadata": dict(manifest.compiler_runtime_metadata),
     }
 
 
@@ -150,20 +154,21 @@ def artifact_manifest_from_row(row: RowMapping) -> TrainingArtifactManifest:
         chain=ArtifactChainMetadata(name=_row_str(row, "chain_name")),
         dataset_id=_row_str(row, "dataset_id"),
         dataset_name=_row_str(row, "dataset_name"),
-        problem_id=_row_str(row, "problem_id"),
+        problem=coerce_problem_spec(mapping_payload(_row_value(row, "problem"))),
         variant=ArtifactVariant(_row_str(row, "variant")),
         study=study_config_from_name(_row_value(row, "study_name")),
         study_id=_row_optional_str(row, "study_id"),
-        max_supported_delay_seconds=_row_int(row, "max_supported_delay_seconds"),
-        lookback_seconds=_row_int(row, "lookback_seconds"),
-        sample_count=_row_int(row, "sample_count"),
-        feature_history_seconds=_row_int(row, "feature_history_seconds"),
+        feature_family_id=_row_str(row, "feature_family_id"),
+        feature_prerequisites=FeaturePrerequisites.model_validate(
+            mapping_payload(_row_value(row, "feature_prerequisites"))
+        ),
         max_candidate_slots=_row_int(row, "max_candidate_slots"),
         feature_set_id=_row_str(row, "feature_set_id"),
         feature_names=string_list_payload(_row_value(row, "feature_names")),
         feature_graph_fingerprint=_row_str(row, "feature_graph_fingerprint"),
         model=coerce_model_config(mapping_payload(_row_value(row, "model"))),
         scaler=ScalerStats.model_validate(mapping_payload(_row_value(row, "scaler"))),
+        compiler_runtime_metadata=mapping_payload(_row_value(row, "compiler_runtime_metadata")),
     )
 
 
@@ -182,7 +187,8 @@ def training_summary_values(summary: TrainingSummary) -> dict[str, object]:
         "problem_id": summary.problem_id,
         "max_supported_delay_seconds": summary.max_supported_delay_seconds,
         "lookback_seconds": summary.lookback_seconds,
-        "feature_history_seconds": summary.feature_history_seconds,
+        "feature_family_id": summary.feature_family_id,
+        "feature_prerequisites": summary.feature_prerequisites.model_dump(mode="json"),
         "sample_count": summary.sample_count,
         "max_candidate_slots": summary.max_candidate_slots,
         "n_rows_available": summary.n_rows_available,
@@ -219,7 +225,10 @@ def training_summary_from_row(row: RowMapping) -> TrainingSummary:
         problem_id=_row_str(row, "problem_id"),
         max_supported_delay_seconds=_row_int(row, "max_supported_delay_seconds"),
         lookback_seconds=_row_int(row, "lookback_seconds"),
-        feature_history_seconds=_row_int(row, "feature_history_seconds"),
+        feature_family_id=_row_str(row, "feature_family_id"),
+        feature_prerequisites=FeaturePrerequisites.model_validate(
+            mapping_payload(_row_value(row, "feature_prerequisites"))
+        ),
         sample_count=_row_int(row, "sample_count"),
         max_candidate_slots=_row_int(row, "max_candidate_slots"),
         n_rows_available=_row_int(row, "n_rows_available"),
@@ -278,7 +287,8 @@ def simulation_summary_values(summary: SimulationSummaryRecord) -> dict[str, obj
         "max_supported_delay_seconds": summary.max_supported_delay_seconds,
         "requested_delay_seconds": summary.requested_delay_seconds,
         "lookback_seconds": summary.lookback_seconds,
-        "feature_history_seconds": summary.feature_history_seconds,
+        "feature_family_id": summary.feature_family_id,
+        "feature_prerequisites": summary.feature_prerequisites.model_dump(mode="json"),
         "simulation_window_seconds": summary.simulation_window_seconds,
         "arrival_rate_per_second": summary.arrival_rate_per_second,
         "repetitions": summary.repetitions,
@@ -322,7 +332,10 @@ def simulation_summary_from_row(
         max_supported_delay_seconds=_row_int(row, "max_supported_delay_seconds"),
         requested_delay_seconds=_row_int(row, "requested_delay_seconds"),
         lookback_seconds=_row_int(row, "lookback_seconds"),
-        feature_history_seconds=_row_int(row, "feature_history_seconds"),
+        feature_family_id=_row_str(row, "feature_family_id"),
+        feature_prerequisites=FeaturePrerequisites.model_validate(
+            mapping_payload(_row_value(row, "feature_prerequisites"))
+        ),
         simulation_window_seconds=_row_int(row, "simulation_window_seconds"),
         arrival_rate_per_second=_row_float(row, "arrival_rate_per_second"),
         repetitions=_row_int(row, "repetitions"),

@@ -162,8 +162,10 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     assert summary.provider.name == "publicnode"
     assert len(runs) == 1
     assert runs[0].problem.problem_id == config.problem.id
+    assert runs[0].problem.compiler_id == config.problem.compiler.id
     assert runs[0].problem.feature_set_id == config.feature_set.id
-    assert runs[0].problem.feature_history_seconds == contract.feature_history_seconds
+    assert runs[0].problem.feature_family_id == config.feature_set.family.id
+    assert runs[0].problem.feature_prerequisites == contract.feature_prerequisites
     assert runs[0].problem.required_history_seconds == contract.required_history_seconds
     assert runs[0].problem.valid_anchor_samples >= config.problem.sample_count
     assert runs[0].problem.acquired_history_window_seconds >= contract.required_history_seconds

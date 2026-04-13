@@ -32,6 +32,7 @@ def acquire_override():
                 "lookback_seconds": lookback_seconds,
                 "sample_count": sample_count,
                 "max_supported_delay_seconds": max_supported_delay_seconds,
+                "compiler": {"id": "timestamp_native"},
             },
             "acquisition": {
                 "chunk_size": 64,

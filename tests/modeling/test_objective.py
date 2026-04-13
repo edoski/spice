@@ -7,6 +7,7 @@ import polars as pl
 import pytest
 import torch
 
+from spice.config import coerce_problem_spec
 from spice.core.reporting import NullReporter
 from spice.features import FeatureSelection, build_feature_table
 from spice.modeling.objective import (
@@ -18,13 +19,13 @@ from spice.modeling.objective import (
 )
 from spice.modeling.problem_batches import CandidateChoiceTargets
 from spice.modeling.simulation import run_temporal_simulation
-from spice.temporal.store import build_temporal_store
-from spice.temporal.window import DelayWindow
+from spice.temporal.contracts import resolve_feature_contract
 
 
 def _build_test_store() -> object:
     selection = FeatureSelection(
         feature_set_id="test_timestamp_native",
+        feature_family_id="time_native",
         feature_names=("seconds_since_previous_block", "elapsed_seconds"),
     )
     blocks = pl.DataFrame(
@@ -38,14 +39,20 @@ def _build_test_store() -> object:
         }
     )
     feature_table = build_feature_table(blocks, selection=selection)
-    return build_temporal_store(
-        feature_table,
-        window=DelayWindow(
-            lookback_seconds=10,
-            delay_seconds=12,
-            feature_history_seconds=feature_table.feature_history_seconds,
+    contract = resolve_feature_contract(
+        problem=coerce_problem_spec(
+            {
+                "id": "test_timestamp_native",
+                "lookback_seconds": 10,
+                "sample_count": 4,
+                "max_supported_delay_seconds": 12,
+                "compiler": {"id": "timestamp_native"},
+            }
         ),
+        selection=selection,
     )
+    store, _ = contract.build_capability_store(feature_table)
+    return store
 
 
 def test_objective_loss_prefers_cheaper_candidates_and_ignores_masked_slots() -> None:
