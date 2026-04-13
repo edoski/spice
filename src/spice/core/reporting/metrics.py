@@ -225,12 +225,10 @@ def _remaining_seconds(stage: _StageState) -> float | None:
         or stage.completed >= stage.total
     ):
         return None
-    rate = stage.smoothed_rate
-    if rate is None or rate <= 0:
-        elapsed = _elapsed_seconds(stage)
-        if elapsed is None or elapsed <= 0:
-            return None
-        rate = stage.completed / elapsed
+    elapsed = _elapsed_seconds(stage)
+    if elapsed is None or elapsed <= 0:
+        return None
+    rate = stage.completed / elapsed
     if rate <= 0:
         return None
     return (stage.total - stage.completed) / rate

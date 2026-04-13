@@ -143,6 +143,7 @@ register_model_spec(
     ModelSpec(
         id="transformer",
         input_representation="sequence_event",
+        family_execution_id="masked_transformer_last_valid",
         model_config_type=TransformerModelConfig,
         tuning_space_type=TransformerTuningSpaceModelConfig,
         tuned_params_type=TransformerTunedModelParams,

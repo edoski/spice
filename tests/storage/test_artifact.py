@@ -78,6 +78,10 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         resolved_device="cpu",
         resolved_precision="32-true",
         compiled=False,
+        representation_id="sequence_event",
+        storage_mode_id="materialized_dense",
+        batch_planner_id="signature_bucketed",
+        family_execution_id="dense_recurrent_last_valid",
         best_validation_metrics=EpochMetrics(
             objective_loss=0.25,
             exact_optimum_hit_rate=0.5,

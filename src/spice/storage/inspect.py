@@ -241,6 +241,10 @@ def _artifact_sections(
                 "training",
                 [
                     ("best epoch", str(training.best_epoch)),
+                    ("representation", training.representation_id),
+                    ("storage mode", training.storage_mode_id),
+                    ("batch planner", training.batch_planner_id),
+                    ("family execution", training.family_execution_id),
                     (
                         "split",
                         " ".join(

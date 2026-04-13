@@ -10,7 +10,11 @@ from numpy.typing import NDArray
 
 from ..core.reporting import NullReporter, Reporter
 from ..temporal.store import TemporalDatasetStore
-from ._runtime import build_model_loader, resolve_device
+from ._runtime import (
+    build_model_loader,
+    build_representation_runtime_context,
+    resolve_device,
+)
 from .models import TemporalModel
 from .representations import SequenceEventBatch, move_batch_to_device
 
@@ -34,24 +38,36 @@ def predict_candidate_offsets(
     resolved_device = resolve_device(device)
     model.to(resolved_device)
     model.eval()
+    runtime_context = build_representation_runtime_context(
+        device=resolved_device,
+        batch_size=batch_size,
+    )
     loader = build_model_loader(
         store,
         sample_indices,
         model_id=model_id,
-        batch_size=batch_size,
+        runtime_context=runtime_context,
+        seed=0,
     )
     task_id = reporter.start_task("predict candidates", total=len(loader), unit="batches")
-    predictions: list[int] = []
+    predictions = [0] * int(sample_indices.shape[0])
     with torch.no_grad():
         for batch in loader:
             batch = cast(SequenceEventBatch, batch)
+            sample_positions = batch.sample_positions.tolist()
             device_batch = move_batch_to_device(batch, resolved_device)
             logits = model(device_batch.inputs, device_batch.input_mask).logits
             logits = logits.masked_fill(
                 ~device_batch.candidate_mask,
                 torch.finfo(logits.dtype).min,
             )
-            predictions.extend(logits.argmax(dim=-1).cpu().tolist())
+            batch_predictions = logits.argmax(dim=-1).cpu().tolist()
+            for sample_position, prediction in zip(
+                sample_positions,
+                batch_predictions,
+                strict=True,
+            ):
+                predictions[int(sample_position)] = int(prediction)
             reporter.update_task(task_id, advance=1)
     reporter.finish_task(task_id)
     return predictions

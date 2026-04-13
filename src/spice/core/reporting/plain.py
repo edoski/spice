@@ -454,16 +454,25 @@ class _BaseWorkflowReporter(NullReporter):
             return
         if stage.unit is None:
             return
-        if stage.completed <= previous_completed:
-            return
         now = time.monotonic()
         elapsed = max(0.0, now - stage.started_at)
         if elapsed <= 0.0:
             return
-        average_rate = stage.completed / elapsed
-        if average_rate <= 0.0:
+        if stage.completed <= previous_completed:
+            stage.last_progress_at = now
+            stage.last_progress_completed = stage.completed
             return
-        stage.smoothed_rate = _smooth_value(stage.smoothed_rate, average_rate, alpha=0.22)
+        checkpoint_at = (
+            stage.last_progress_at
+            if stage.last_progress_at is not None
+            else stage.started_at
+        )
+        delta_elapsed = max(0.0, now - checkpoint_at)
+        delta_completed = stage.completed - stage.last_progress_completed
+        if delta_elapsed > 0.0 and delta_completed > 0:
+            recent_rate = delta_completed / delta_elapsed
+            if recent_rate > 0.0:
+                stage.smoothed_rate = _smooth_value(stage.smoothed_rate, recent_rate, alpha=0.22)
         stage.last_progress_at = now
         stage.last_progress_completed = stage.completed
 

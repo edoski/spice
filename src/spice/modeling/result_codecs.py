@@ -194,6 +194,10 @@ def training_summary_values(summary: TrainingSummary) -> dict[str, object]:
         "resolved_device": summary.resolved_device,
         "resolved_precision": summary.resolved_precision,
         "compiled": summary.compiled,
+        "representation_id": summary.representation_id,
+        "storage_mode_id": summary.storage_mode_id,
+        "batch_planner_id": summary.batch_planner_id,
+        "family_execution_id": summary.family_execution_id,
         "best_validation_metrics": epoch_metrics_values(summary.best_validation_metrics),
         "test_metrics": epoch_metrics_values(summary.test_metrics),
     }
@@ -229,6 +233,10 @@ def training_summary_from_row(row: RowMapping) -> TrainingSummary:
         resolved_device=_row_str(row, "resolved_device"),
         resolved_precision=_row_str(row, "resolved_precision"),
         compiled=bool(_row_value(row, "compiled")),
+        representation_id=_row_str(row, "representation_id"),
+        storage_mode_id=_row_str(row, "storage_mode_id"),
+        batch_planner_id=_row_str(row, "batch_planner_id"),
+        family_execution_id=_row_str(row, "family_execution_id"),
         best_validation_metrics=epoch_metrics_from_payload(
             _row_value(row, "best_validation_metrics")
         ),

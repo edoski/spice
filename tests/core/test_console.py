@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from io import StringIO
 
+import pytest
 from rich.console import Console
 
 from spice.core.reporting import PlainReporter, RichReporter
-from spice.core.reporting.metrics import _extract_stage_metrics
+from spice.core.reporting.metrics import _extract_stage_metrics, _render_eta, _render_rate
 
 
 def test_plain_reporter_renders_staged_workflow_lines() -> None:
@@ -182,3 +183,37 @@ def test_rich_reporter_keeps_hidden_acquire_metrics_in_detail_on_narrow_terminal
     assert "batch=256" in rendered
     assert "conc=8" in rendered
     assert "retrying" in rendered
+
+
+def test_reporter_rate_uses_recent_progress_while_eta_uses_stage_average(monkeypatch) -> None:
+    class _Clock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def monotonic(self) -> float:
+            return self.now
+
+    clock = _Clock()
+    monkeypatch.setattr("spice.core.reporting.plain.time.monotonic", clock.monotonic)
+    monkeypatch.setattr("spice.core.reporting.metrics.time.monotonic", clock.monotonic)
+
+    reporter = RichReporter(console=Console(file=StringIO(), force_terminal=False, width=160))
+    reporter._refresh_live = lambda: None
+
+    fit = reporter.stage_reporter("fit", label="fit", total=100, unit="batches")
+    task_id = fit.start_task("train epochs", total=100, unit="batches")
+
+    clock.now = 1.0
+    fit.update_task(task_id, advance=10)
+    stage = reporter._stages["fit"]
+    assert stage.smoothed_rate == pytest.approx(10.0)
+
+    clock.now = 11.0
+    fit.update_task(task_id, completed=10, message="validation profit=0.020")
+    assert stage.smoothed_rate == pytest.approx(10.0)
+
+    clock.now = 12.0
+    fit.update_task(task_id, advance=10)
+    assert stage.smoothed_rate == pytest.approx(10.0)
+    assert _render_rate(stage).plain == "10.0 bat/s"
+    assert _render_eta(stage).plain == "0:48"

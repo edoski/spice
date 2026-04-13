@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import random
+import subprocess
 
 import numpy as np
 import torch
@@ -13,9 +15,21 @@ from ..temporal.store import TemporalDatasetStore
 from .families.registry import (
     resolve_auto_compile,
     resolve_default_precision,
+    resolve_family_execution_id,
     resolve_input_representation,
 )
-from .representations import RepresentationLoader, build_representation_loader
+from .representations import (
+    PreparedRepresentation,
+    PreparedRepresentationLoader,
+    RepresentationRuntimeContext,
+    build_representation_loader,
+    prepare_representation,
+)
+
+try:
+    import psutil
+except ImportError:  # pragma: no cover - fallback path is covered below
+    psutil = None
 
 IntVector = NDArray[np.int64]
 _TORCHINDUCTOR_MIN_CUDA_SMS_FOR_AUTO_COMPILE = 68
@@ -87,18 +101,86 @@ def _device_supports_auto_compile(device: torch.device) -> bool:
     return properties.multi_processor_count >= _TORCHINDUCTOR_MIN_CUDA_SMS_FOR_AUTO_COMPILE
 
 
+def build_representation_runtime_context(
+    *,
+    device: torch.device,
+    batch_size: int,
+) -> RepresentationRuntimeContext:
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    return RepresentationRuntimeContext(
+        device_type=device.type,
+        batch_size=batch_size,
+        available_memory_bytes=_available_system_memory_bytes(),
+    )
+
+
+def prepare_model_representation(
+    store: TemporalDatasetStore,
+    sample_indices: IntVector,
+    *,
+    model_id: str,
+    runtime_context: RepresentationRuntimeContext,
+) -> PreparedRepresentation:
+    return prepare_representation(
+        resolve_input_representation(model_id),
+        store,
+        sample_indices,
+        runtime_context=runtime_context,
+    )
+
+
 def build_model_loader(
     store: TemporalDatasetStore,
     sample_indices: IntVector,
     *,
     model_id: str,
-    batch_size: int,
+    runtime_context: RepresentationRuntimeContext,
+    seed: int,
     shuffle: bool = False,
-) -> RepresentationLoader:
+) -> PreparedRepresentationLoader:
     return build_representation_loader(
         resolve_input_representation(model_id),
         store,
         sample_indices,
-        batch_size=batch_size,
+        runtime_context=runtime_context,
+        seed=seed,
         shuffle=shuffle,
     )
+
+
+def resolve_family_execution(model_id: str) -> str:
+    return resolve_family_execution_id(model_id)
+
+
+def _available_system_memory_bytes() -> int:
+    if psutil is not None:
+        return int(psutil.virtual_memory().available)
+
+    page_size = _sysconf_int("SC_PAGE_SIZE")
+    available_pages = _sysconf_int("SC_AVPHYS_PAGES")
+    if page_size is not None and available_pages is not None:
+        return page_size * available_pages
+
+    physical_pages = _sysconf_int("SC_PHYS_PAGES")
+    if page_size is not None and physical_pages is not None:
+        return page_size * physical_pages
+
+    if os.name == "posix":
+        try:
+            output = subprocess.check_output(
+                ["sysctl", "-n", "hw.memsize"],
+                text=True,
+            ).strip()
+            return int(output)
+        except (OSError, ValueError, subprocess.CalledProcessError):
+            pass
+
+    return 8 * 1024**3
+
+
+def _sysconf_int(name: str) -> int | None:
+    try:
+        return int(os.sysconf(name))
+    except (AttributeError, OSError, ValueError):
+        return None

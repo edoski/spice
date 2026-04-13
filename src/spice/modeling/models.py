@@ -64,6 +64,22 @@ def take_last_valid(encoded: torch.Tensor, input_mask: torch.Tensor) -> torch.Te
     return encoded[batch_indices, last_positions]
 
 
+def packed_lstm_last_state_reference(
+    backbone: nn.LSTM,
+    inputs: torch.Tensor,
+    input_mask: torch.Tensor,
+) -> torch.Tensor:
+    lengths = sequence_lengths_from_mask(input_mask)
+    packed = pack_padded_sequence(
+        inputs,
+        lengths.cpu(),
+        batch_first=True,
+        enforce_sorted=False,
+    )
+    _, (hidden_state, _) = backbone(packed)
+    return hidden_state[-1]
+
+
 class TemporalModel(nn.Module, ABC):
     @abstractmethod
     def forward(self, inputs: torch.Tensor, input_mask: torch.Tensor) -> ModelOutputs:
@@ -103,15 +119,8 @@ class LSTMBaseline(TemporalModel):
 
     def forward(self, inputs: torch.Tensor, input_mask: torch.Tensor) -> ModelOutputs:
         projected = self.input_projection(inputs)
-        lengths = sequence_lengths_from_mask(input_mask)
-        packed = pack_padded_sequence(
-            projected,
-            lengths.cpu(),
-            batch_first=True,
-            enforce_sorted=False,
-        )
-        _, (hidden_state, _) = self.backbone(packed)
-        last_state = hidden_state[-1]
+        recurrent, _ = self.backbone(projected)
+        last_state = take_last_valid(recurrent, input_mask)
         return self.output_head(last_state)
 
 
@@ -171,15 +180,8 @@ class TransformerLSTMBaseline(TemporalModel):
             self.position_encoding(projected),
             src_key_padding_mask=~input_mask.bool(),
         )
-        lengths = sequence_lengths_from_mask(input_mask)
-        packed = pack_padded_sequence(
-            encoded,
-            lengths.cpu(),
-            batch_first=True,
-            enforce_sorted=False,
-        )
-        _, (hidden_state, _) = self.lstm(packed)
-        return self.output_head(hidden_state[-1])
+        recurrent, _ = self.lstm(encoded)
+        return self.output_head(take_last_valid(recurrent, input_mask))
 
 
 class TransformerEncoderConfig(Protocol):

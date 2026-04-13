@@ -36,6 +36,10 @@ def training_summary_sections(
                 ("device", summary.resolved_device),
                 ("precision", summary.resolved_precision),
                 ("compile", "on" if summary.compiled else "off"),
+                ("representation", summary.representation_id),
+                ("storage mode", summary.storage_mode_id),
+                ("batch planner", summary.batch_planner_id),
+                ("family execution", summary.family_execution_id),
             ],
         ),
         (

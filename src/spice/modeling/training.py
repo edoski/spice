@@ -17,8 +17,11 @@ from ..core.reporting import NullReporter, Reporter, format_compact_number
 from ..temporal.store import TemporalDatasetStore
 from ._runtime import (
     build_model_loader,
+    build_representation_runtime_context,
+    prepare_model_representation,
     resolve_compile_enabled,
     resolve_device,
+    resolve_family_execution,
     resolve_trainer_precision,
     set_global_seed,
 )
@@ -47,6 +50,10 @@ class TrainingResult:
     resolved_precision: str
     compiled: bool
     resolved_device: str
+    representation_id: str
+    storage_mode_id: str
+    batch_planner_id: str
+    family_execution_id: str
 
 
 def _unwrap_compiled_model(model: TemporalModel) -> TemporalModel:
@@ -212,13 +219,27 @@ def train_model(
         model_config=model_config,
     )
     fit_model = cast(TemporalModel, torch.compile(model) if compile_enabled else model)
+    runtime_context = build_representation_runtime_context(
+        device=device,
+        batch_size=training_config.batch_size,
+    )
+    train_representation = prepare_model_representation(
+        store,
+        train_sample_indices,
+        model_id=model_config.id,
+        runtime_context=runtime_context,
+    )
+    validation_representation = prepare_model_representation(
+        store,
+        validation_sample_indices,
+        model_id=model_config.id,
+        runtime_context=runtime_context,
+    )
 
     data_module = TemporalDataModule(
-        store=store,
-        train_sample_indices=train_sample_indices,
-        validation_sample_indices=validation_sample_indices,
-        model_id=model_config.id,
-        batch_size=training_config.batch_size,
+        train_representation=train_representation,
+        validation_representation=validation_representation,
+        seed=training_config.seed,
     )
 
     module = TemporalLightningModule(
@@ -284,6 +305,10 @@ def train_model(
         resolved_precision=precision,
         compiled=compile_enabled,
         resolved_device=device.type,
+        representation_id=data_module.train_dataloader().representation_id,
+        storage_mode_id=data_module.train_dataloader().storage_mode_id,
+        batch_planner_id=data_module.train_dataloader().batch_planner_id,
+        family_execution_id=resolve_family_execution(model_config.id),
     )
 
 
@@ -302,11 +327,16 @@ def evaluate_model(
     device = resolve_device(training_config.device)
     model.to(device)
     model.eval()
+    runtime_context = build_representation_runtime_context(
+        device=device,
+        batch_size=training_config.batch_size,
+    )
     loader = build_model_loader(
         store,
         sample_indices,
         model_id=model_id,
-        batch_size=training_config.batch_size,
+        runtime_context=runtime_context,
+        seed=training_config.seed,
     )
     task_id = reporter.start_task("evaluate model", total=len(loader), unit="batches")
     metrics = []

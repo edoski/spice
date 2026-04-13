@@ -116,6 +116,7 @@ register_model_spec(
     ModelSpec(
         id="lstm",
         input_representation="sequence_event",
+        family_execution_id="dense_recurrent_last_valid",
         model_config_type=LstmModelConfig,
         tuning_space_type=LstmTuningSpaceModelConfig,
         tuned_params_type=LstmTunedModelParams,

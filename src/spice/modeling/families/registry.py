@@ -28,6 +28,7 @@ ModelTunedParamsT = TypeVar("ModelTunedParamsT", bound=TunedModelParams)
 class ModelSpec(Generic[ModelConfigT, ModelTuningSpaceT, ModelTunedParamsT]):
     id: str
     input_representation: str
+    family_execution_id: str
     model_config_type: type[ModelConfigT]
     tuning_space_type: type[ModelTuningSpaceT]
     tuned_params_type: type[ModelTunedParamsT]
@@ -143,6 +144,10 @@ def build_model(
 
 def resolve_input_representation(model_id: str) -> str:
     return model_spec(model_id).input_representation
+
+
+def resolve_family_execution_id(model_id: str) -> str:
+    return model_spec(model_id).family_execution_id
 
 
 def resolve_default_precision(model_id: str, device: torch.device) -> TrainingPrecision:

@@ -127,6 +127,10 @@ training_summary = Table(
     Column("resolved_device", String, nullable=False),
     Column("resolved_precision", String, nullable=False),
     Column("compiled", Boolean, nullable=False),
+    Column("representation_id", String, nullable=False),
+    Column("storage_mode_id", String, nullable=False),
+    Column("batch_planner_id", String, nullable=False),
+    Column("family_execution_id", String, nullable=False),
     Column("best_validation_metrics", JSON, nullable=False),
     Column("test_metrics", JSON, nullable=False),
 )

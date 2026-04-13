@@ -47,6 +47,9 @@ def test_training_summary_metrics_match_replayed_saved_artifact(
     )
 
     assert summary.objective_id == "profit_over_baseline"
+    assert summary.representation_id == "sequence_event"
+    assert summary.batch_planner_id == "signature_bucketed"
+    assert summary.family_execution_id == "dense_recurrent_last_valid"
     assert summary.best_validation_metrics.objective_loss == pytest.approx(
         validation_metrics.objective_loss
     )

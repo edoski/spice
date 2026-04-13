@@ -75,6 +75,10 @@ class TrainingSummary:
     resolved_device: str
     resolved_precision: str
     compiled: bool
+    representation_id: str
+    storage_mode_id: str
+    batch_planner_id: str
+    family_execution_id: str
     best_validation_metrics: EpochMetrics
     test_metrics: EpochMetrics
 
@@ -176,6 +180,10 @@ def build_training_summary(
         resolved_device=result.training_result.resolved_device,
         resolved_precision=result.training_result.resolved_precision,
         compiled=result.training_result.compiled,
+        representation_id=result.training_result.representation_id,
+        storage_mode_id=result.training_result.storage_mode_id,
+        batch_planner_id=result.training_result.batch_planner_id,
+        family_execution_id=result.training_result.family_execution_id,
         best_validation_metrics=best_validation_metrics,
         test_metrics=test_metrics,
     )
