@@ -5,37 +5,31 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
+from ...core.components import ComponentCatalog
 from .base import ProblemCompilerConfig, ProblemCompilerSpec
 
-_PROBLEM_COMPILER_SPECS: dict[str, ProblemCompilerSpec[Any]] = {}
-_BUILTINS_LOADED = False
+_PROBLEM_COMPILER_SPECS = ComponentCatalog[ProblemCompilerSpec[Any]](
+    kind_label="problem compiler",
+    entry_point_group="spice.problem_compilers",
+)
 
 
 def register_problem_compiler_spec(spec: ProblemCompilerSpec[Any]) -> None:
-    existing = _PROBLEM_COMPILER_SPECS.get(spec.id)
-    if existing is not None:
-        raise ValueError(f"Duplicate problem compiler spec id: {spec.id}")
-    _PROBLEM_COMPILER_SPECS[spec.id] = spec
+    _PROBLEM_COMPILER_SPECS.register(spec.id, spec)
 
 
-def _ensure_builtin_problem_compilers_loaded() -> None:
-    global _BUILTINS_LOADED
-    if _BUILTINS_LOADED:
-        return
+def _load_builtin_problem_compilers() -> None:
     from . import estimated_block, timestamp_native  # noqa: F401
 
-    _BUILTINS_LOADED = True
+
+_PROBLEM_COMPILER_SPECS.configure_builtin_loader(_load_builtin_problem_compilers)
 
 
 def problem_compiler_spec(compiler_id: str) -> ProblemCompilerSpec[Any]:
-    _ensure_builtin_problem_compilers_loaded()
     try:
-        return _PROBLEM_COMPILER_SPECS[compiler_id]
-    except KeyError as exc:
-        known = ", ".join(sorted(_PROBLEM_COMPILER_SPECS))
-        raise ValueError(
-            f"Unknown problem.compiler.id: {compiler_id}. Known compilers: {known}"
-        ) from exc
+        return _PROBLEM_COMPILER_SPECS.get(compiler_id)
+    except ValueError as exc:
+        raise ValueError(str(exc).replace("problem compiler", "problem.compiler.id")) from exc
 
 
 def coerce_problem_compiler_config(

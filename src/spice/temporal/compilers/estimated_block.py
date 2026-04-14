@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
@@ -18,19 +18,22 @@ from ..problem_store import CompiledProblemStore
 from .base import ProblemCompilerConfig, ProblemCompilerSpec
 from .registry import register_problem_compiler_spec
 
+if TYPE_CHECKING:
+    from ...config import ProblemSpec
+
 _INTERVAL_KEY = "effective_block_interval_seconds"
 _LOOKBACK_STEPS_KEY = "lookback_steps"
 _CAPABILITY_CANDIDATE_COUNT_KEY = "capability_candidate_count"
 
 
 class EstimatedBlockCompilerConfig(ProblemCompilerConfig):
-    id: Literal["estimated_block"] = "estimated_block"
+    id: str = "estimated_block"
 
 
 @dataclass(frozen=True, slots=True)
 class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
     def initial_history_window_seconds(self, recent_block_interval_seconds: float | None) -> int:
-        minimum_window = self.required_history_seconds + self.max_supported_delay_seconds
+        minimum_window = self.required_history_seconds + self.max_delay_seconds
         if recent_block_interval_seconds is None or recent_block_interval_seconds <= 0:
             return minimum_window
         bootstrap_lookback_steps = _lookback_steps_for_seconds(
@@ -38,7 +41,7 @@ class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
             recent_block_interval_seconds,
         )
         bootstrap_candidate_count = _candidate_count_for_delay(
-            self.max_supported_delay_seconds,
+            self.max_delay_seconds,
             recent_block_interval_seconds,
         )
         return self.feature_prerequisites.history_seconds + math.ceil(
@@ -67,7 +70,7 @@ class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
             effective_block_interval_seconds,
         )
         capability_candidate_count = _candidate_count_for_delay(
-            self.max_supported_delay_seconds,
+            self.max_delay_seconds,
             effective_block_interval_seconds,
         )
         store = _build_estimated_block_problem_store(
@@ -85,20 +88,20 @@ class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
             },
         )
 
-    def build_requested_delay_store(
+    def build_delay_store(
         self,
         feature_table: ResolvedFeatureTable,
-        requested_delay_seconds: int,
+        delay_seconds: int,
         *,
         compiler_runtime_metadata: ProblemRuntimeMetadata,
         max_candidate_slots: int,
     ) -> CompiledProblemStore:
-        if requested_delay_seconds <= 0:
-            raise ValueError("requested_delay_seconds must be positive")
-        if requested_delay_seconds > self.max_supported_delay_seconds:
+        if delay_seconds <= 0:
+            raise ValueError("delay_seconds must be positive")
+        if delay_seconds > self.max_delay_seconds:
             raise ValueError(
-                "requested_delay_seconds exceeds problem capability: "
-                f"{requested_delay_seconds} > {self.max_supported_delay_seconds}"
+                "delay_seconds exceeds problem capability: "
+                f"{delay_seconds} > {self.max_delay_seconds}"
             )
         effective_block_interval_seconds = _runtime_float(
             compiler_runtime_metadata,
@@ -106,7 +109,7 @@ class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
         )
         lookback_steps = _runtime_int(compiler_runtime_metadata, _LOOKBACK_STEPS_KEY)
         candidate_count = _candidate_count_for_delay(
-            requested_delay_seconds,
+            delay_seconds,
             effective_block_interval_seconds,
         )
         return _build_estimated_block_problem_store(
@@ -119,7 +122,7 @@ class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
 
 
 def compile_problem(
-    problem,
+    problem: ProblemSpec,
     feature_contract: CompiledFeatureContract,
 ) -> CompiledProblemContract:
     return EstimatedBlockCompiledProblemContract(
@@ -129,7 +132,7 @@ def compile_problem(
         feature_family_id=feature_contract.feature_family_id,
         lookback_seconds=problem.lookback_seconds,
         sample_count=problem.sample_count,
-        max_supported_delay_seconds=problem.max_supported_delay_seconds,
+        max_delay_seconds=problem.max_delay_seconds,
         feature_prerequisites=feature_contract.feature_prerequisites,
     )
 
@@ -233,6 +236,6 @@ register_problem_compiler_spec(
     ProblemCompilerSpec[EstimatedBlockCompilerConfig](
         id="estimated_block",
         config_type=EstimatedBlockCompilerConfig,
-        compile_problem=cast(object, compile_problem),
+        compile_problem=compile_problem,
     )
 )

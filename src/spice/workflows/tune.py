@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import cast
 
 import optuna
 from optuna.trial import FrozenTrial, TrialState
@@ -12,19 +11,19 @@ from optuna.trial import FrozenTrial, TrialState
 from ..config import TuneConfig
 from ..core.reporting import Reporter, StageMetricDescriptor
 from ..core.runtime import ConsoleRuntime
-from ..modeling.execution import run_persisted_training
 from ..modeling.families.registry import sample_tuned_parameters
+from ..modeling.persisted_training import run_persisted_training
 from ..modeling.pipeline import TrainingStageReporters, build_training_spec
 from ..modeling.tuning import apply_tuned_parameters
 from ..prediction import compile_prediction_contract
 from ..storage.catalog import upsert_study_record
-from ..storage.study import (
-    build_study_summary,
+from ..storage.study_models import build_study_summary
+from ..storage.study_optuna import (
     open_tuning_study,
     record_trial_best_epoch,
     record_trial_params,
-    study_summary_sections,
 )
+from ..storage.study_render import study_summary_sections
 from ._shared import managed_workflow
 
 _TRIAL_STAGE_METRICS: tuple[StageMetricDescriptor, ...] = (
@@ -77,7 +76,7 @@ def _objective(
     assert base_config.tuning_space is not None
     params = sample_tuned_parameters(trial, tuning_space=base_config.tuning_space)
     record_trial_params(trial, params)
-    config = cast(TuneConfig, apply_tuned_parameters(base_config, params))
+    config = apply_tuned_parameters(base_config, params)
 
     spec = build_training_spec(config)
     history_block_path = config.paths.history_dir
@@ -105,7 +104,7 @@ def _objective(
                 persist_artifact=False,
             )
     metric_value = spec.prediction_contract.optimization_value(
-        persisted.best_validation_metrics
+        persisted.summary.runtime.best_validation_metrics
     )
     record_trial_best_epoch(trial, persisted.training_run.training_result.best_epoch)
     if config.tuning.enable_pruning:
@@ -118,11 +117,7 @@ def _objective(
 def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
     with managed_workflow(
         config,
-        run_name=(
-            "study-"
-            f"{config.chain.name}-{config.model.id}-"
-            f"{config.problem.id}"
-        ),
+        run_name=(f"study-{config.chain.name}-{config.model.id}-{config.problem.id}"),
         reporter=reporter,
     ) as session:
         session.runtime.configure_workflow("tune", _workflow_facts(config))

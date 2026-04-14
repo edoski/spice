@@ -6,7 +6,7 @@ from spice.core.reporting import NullReporter
 from spice.modeling.artifacts import load_training_artifact, validate_artifact_semantics
 from spice.storage.artifact import list_simulation_runs, load_simulation_summary
 from spice.storage.catalog import list_artifact_records, list_study_records
-from spice.storage.study import load_study
+from spice.storage.study_optuna import load_study
 from spice.workflows.simulate import run as run_simulate
 from spice.workflows.train import run as run_train
 from spice.workflows.tune import run as run_tune
@@ -240,7 +240,7 @@ def test_simulate_workflow_smoke(
     summary = load_simulation_summary(simulate_config.paths.artifact_state_db)
     assert runs
     assert summary is not None
-    assert summary.runs == runs
+    assert summary.runtime.runs == runs
 
 
 @pytest.mark.parametrize(
@@ -275,28 +275,23 @@ def test_simulate_workflow_supports_both_prediction_families(
 
     summary = load_simulation_summary(simulate_config.paths.artifact_state_db)
     assert summary is not None
-    assert summary.prediction_family_id == expected_family_id
-    assert summary.simulation_metric_descriptors
+    assert summary.manifest.prediction_family_id == expected_family_id
+    assert summary.manifest.simulation_metric_descriptors
 
 
-def test_simulate_rejects_execution_request_above_capability(
+def test_simulate_rejects_delay_request_above_capability(
     tmp_path,
     deep_merge,
     load_test_simulate_config,
     model_workflow_override,
 ) -> None:
     override = deep_merge(
-        model_workflow_override(max_supported_delay_seconds=24),
-        {
-            "execution": {
-                "id": "too_large",
-                "requested_delay_seconds": 36,
-            }
-        },
+        model_workflow_override(max_delay_seconds=24),
+        {"delay_seconds": 36},
     )
     with pytest.raises(
         ValueError,
-        match="execution.requested_delay_seconds must be <=",
+        match="delay_seconds must be <= problem.max_delay_seconds",
     ):
         load_test_simulate_config(tmp_path, override=override)
 
@@ -342,9 +337,7 @@ def test_simulate_validation_rejects_semantic_bundle_mismatch(
     loaded_artifact = load_training_artifact(train_config.paths.artifact_root)
 
     feature_set = (
-        mismatch_config.feature_set
-        if use_mismatch_feature_set
-        else simulate_config.feature_set
+        mismatch_config.feature_set if use_mismatch_feature_set else simulate_config.feature_set
     )
     model = mismatch_config.model if use_mismatch_model else simulate_config.model
 

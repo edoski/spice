@@ -10,7 +10,7 @@ from ...base import PredictionFamilyConfig
 
 
 class MinBlockFeeMultitaskFamilyConfig(PredictionFamilyConfig):
-    id: Literal["min_block_fee_multitask"] = "min_block_fee_multitask"
+    id: str = "min_block_fee_multitask"
     classification_loss_weight: float = Field(default=1.0, gt=0.0)
     regression_loss_weight: float = Field(default=1.0, gt=0.0)
     class_weighting: Literal["inverse_frequency"] = "inverse_frequency"

@@ -25,7 +25,7 @@ from ..corpus.builders import (
 from ..corpus.io import load_block_frame
 from ..corpus.metadata import (
     build_acquire_run_record,
-    build_dataset_summary,
+    build_dataset_manifest,
     provider_metadata,
 )
 from ..corpus.summary import acquire_dry_run_sections, acquisition_summary_sections
@@ -128,9 +128,7 @@ def _run_async_interruptibly(coro: Coroutine[Any, Any, None]) -> None:
             with suppress(ValueError):
                 signal.signal(signal.SIGINT, previous_sigint)
         pending = [
-            pending_task
-            for pending_task in asyncio.all_tasks(loop)
-            if not pending_task.done()
+            pending_task for pending_task in asyncio.all_tasks(loop) if not pending_task.done()
         ]
         for pending_task in pending:
             pending_task.cancel()
@@ -293,8 +291,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     completed=history_result.validation.row_count,
                     unit="blocks",
                     message=(
-                        f"{history_result.file_count:,} files, "
-                        f"anchors={valid_anchor_samples:,}"
+                        f"{history_result.file_count:,} files, anchors={valid_anchor_samples:,}"
                     ),
                 )
                 evaluation_result = await ensure_evaluation_dataset(
@@ -315,13 +312,14 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     unit="blocks",
                     message=f"{evaluation_result.file_count:,} files",
                 )
-                summary = build_dataset_summary(
+                manifest = build_dataset_manifest(
                     config=config,
+                    contract=contract,
+                    feature_contract=feature_contract,
                     history_request_start_timestamp=history_plan.window.start,
                     history_request_end_timestamp=history_plan.window.end,
                     evaluation_request_start_timestamp=evaluation_window.start,
                     evaluation_request_end_timestamp=evaluation_window.end,
-                    provider=current_provider,
                     history_validation=history_result.validation,
                     evaluation_validation=evaluation_result.validation,
                 )
@@ -329,7 +327,6 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     config=config,
                     provider=current_provider,
                     contract=contract,
-                    feature_contract=feature_contract,
                     acquisition_runtime=rpc_controller.snapshot(),
                     acquired_history_window_seconds=history_window_seconds,
                     valid_anchor_samples=valid_anchor_samples,
@@ -337,7 +334,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 temp_state_db = temp_root / ".spice" / "state.sqlite"
                 write_dataset_state(
                     temp_state_db,
-                    summary=summary,
+                    manifest=manifest,
                     acquire_run=acquire_run,
                 )
                 promotions: list[tuple[Path, Path]] = []
@@ -352,7 +349,6 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     dataset_id=config.paths.corpus_id,
                     dataset_name=config.dataset.name,
                     chain_name=config.chain.name,
-                    provider_name=current_provider.name,
                     root_path=config.paths.corpus_root,
                     state_db_path=state_db_path,
                 )

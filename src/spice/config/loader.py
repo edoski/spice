@@ -1,10 +1,12 @@
-"""Explicit YAML config loading and composition."""
+# pyright: strict
+
+"""Explicit YAML config loading and workflow resolution."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TypeVar, cast
+from typing import Literal, TypeVar, cast, overload
 
 from ..modeling.families.registry import coerce_model_config, coerce_tuning_space_config
 from .models import (
@@ -14,7 +16,6 @@ from .models import (
     ChainSpec,
     ConfigModel,
     DatasetSpec,
-    ExecutionSpec,
     FeatureSetConfig,
     ModelConfig,
     PredictionConfig,
@@ -31,59 +32,29 @@ from .models import (
     TuneConfig,
     TuningConfig,
     TuningSpaceConfig,
+    WorkflowSelections,
+    WorkflowTask,
     apply_provider_acquisition_overrides,
     coerce_feature_set_config,
     coerce_prediction_config,
     coerce_problem_spec,
 )
-from .registry import list_group_names, load_named_group, load_yaml_mapping
+from .registry import list_group_names, load_named_group, named_group_keys
 
 _MODEL_GROUP = "model"
 _TUNING_SPACE_GROUP = "tuning_space"
-_KNOWN_TOP_LEVEL_CONFIG_KEYS = {
-    "acquisition",
-    "artifact",
-    "chain",
-    "dataset",
-    "execution",
-    "feature_set",
-    "prediction",
-    "model",
-    "problem",
-    "provider",
-    "simulation",
-    "split",
-    "storage",
-    "study",
-    "training",
-    "tuning",
-    "tuning_space",
-}
-_MERGEABLE_NAMED_GROUPS = {
-    "dataset": "dataset",
-    "problem": "problem",
-    "execution": "execution",
-    "chain": "chain",
-    "provider": "provider",
-    "feature_set": "feature_set",
-    "prediction": "prediction",
-    "training": "training",
-    "split": "split",
-    "simulation": "simulation",
-    "acquisition": "acquisition",
-    "tuning": "tuning",
-    "model": _MODEL_GROUP,
-    "tuning_space": _TUNING_SPACE_GROUP,
-}
+_KNOWN_TOP_LEVEL_CONFIG_KEYS = frozenset(PresetSpec.model_fields)
+_NAMED_GROUP_KEYS = frozenset(named_group_keys())
 
 ModelT = TypeVar("ModelT", bound=ConfigModel)
+WorkflowConfig = AcquireConfig | TrainConfig | TuneConfig | SimulateConfig
 
 
-def load_named_model(name: str) -> ModelConfig:
+def _load_named_model(name: str) -> ModelConfig[str]:
     return coerce_model_config(load_named_group(name, _MODEL_GROUP))
 
 
-def load_named_tuning_space(name: str, *, model_config: ModelConfig) -> TuningSpaceConfig:
+def load_named_tuning_space(name: str, *, model_config: ModelConfig[str]) -> TuningSpaceConfig:
     tuning_space = coerce_tuning_space_config(
         load_named_group(name, _TUNING_SPACE_GROUP),
         model_config=model_config,
@@ -93,34 +64,8 @@ def load_named_tuning_space(name: str, *, model_config: ModelConfig) -> TuningSp
     return tuning_space
 
 
-def load_named_preset(name: str) -> PresetSpec:
+def _load_named_preset(name: str) -> PresetSpec:
     return PresetSpec.model_validate(load_named_group(name, "preset"))
-
-
-def deep_merge(base: dict[str, object], override: Mapping[str, object]) -> dict[str, object]:
-    merged = dict(base)
-    for key, value in override.items():
-        existing = merged.get(key)
-        if (
-            isinstance(existing, str)
-            and isinstance(value, Mapping)
-            and key in _MERGEABLE_NAMED_GROUPS
-        ):
-            merged[key] = deep_merge(
-                load_named_group(existing, _MERGEABLE_NAMED_GROUPS[key]),
-                cast(Mapping[str, object], value),
-            )
-        elif isinstance(existing, dict) and isinstance(value, Mapping):
-            merged[key] = deep_merge(existing, cast(Mapping[str, object], value))
-        else:
-            merged[key] = cast(object, value)
-    return merged
-
-
-def read_config_override(path: Path | None) -> dict[str, object]:
-    if path is None:
-        return {}
-    return load_yaml_mapping(path)
 
 
 def compact_mapping(payload: Mapping[str, object | None]) -> dict[str, object]:
@@ -129,7 +74,9 @@ def compact_mapping(payload: Mapping[str, object | None]) -> dict[str, object]:
         if value is None:
             continue
         if isinstance(value, Mapping):
-            nested = compact_mapping(cast(Mapping[str, object | None], value))
+            nested = compact_mapping(
+                _optional_mapping(cast(Mapping[object, object], value), label=key)
+            )
             if nested:
                 compacted[key] = nested
             continue
@@ -137,30 +84,204 @@ def compact_mapping(payload: Mapping[str, object | None]) -> dict[str, object]:
     return compacted
 
 
-def _reject_unknown_top_level_keys(
-    payload: Mapping[str, object],
+def _deep_merge_mappings(
+    base: Mapping[str, object],
+    override: Mapping[str, object],
+) -> dict[str, object]:
+    merged = dict(base)
+    for key, override_value in override.items():
+        base_value = merged.get(key)
+        if isinstance(base_value, Mapping) and isinstance(override_value, Mapping):
+            merged[key] = _deep_merge_mappings(
+                _mapping_copy(cast(Mapping[object, object], base_value), label=key),
+                _mapping_copy(cast(Mapping[object, object], override_value), label=key),
+            )
+            continue
+        merged[key] = _mapping_copy(
+            cast(Mapping[object, object], override_value), label=key
+        ) if isinstance(
+            override_value, Mapping
+        ) else override_value
+    return merged
+
+
+def _merge_workflow_payload(
+    base: Mapping[str, object],
+    override: Mapping[str, object],
+) -> dict[str, object]:
+    merged = dict(base)
+    for key, override_value in override.items():
+        base_value = merged.get(key)
+        if isinstance(override_value, Mapping):
+            if isinstance(base_value, Mapping):
+                merged[key] = _deep_merge_mappings(
+                    _mapping_copy(cast(Mapping[object, object], base_value), label=key),
+                    _mapping_copy(cast(Mapping[object, object], override_value), label=key),
+                )
+                continue
+            if isinstance(base_value, str) and key in _NAMED_GROUP_KEYS:
+                merged[key] = _deep_merge_mappings(
+                    load_named_group(base_value, key),
+                    _mapping_copy(cast(Mapping[object, object], override_value), label=key),
+                )
+                continue
+            merged[key] = _mapping_copy(
+                cast(Mapping[object, object], override_value), label=key
+            )
+            continue
+        merged[key] = override_value
+    return merged
+
+
+def _mapping_copy(value: Mapping[object, object], *, label: str) -> dict[str, object]:
+    del label
+    return {str(key): child for key, child in value.items()}
+
+
+def _optional_mapping(
+    value: Mapping[object, object],
     *,
-    allowed_keys: set[str],
-) -> None:
-    unknown = sorted(set(payload) - allowed_keys)
-    if not unknown:
-        return
-    raise ValueError(f"Unknown top-level config fields: {', '.join(unknown)}")
+    label: str,
+) -> dict[str, object | None]:
+    mapping = _mapping_copy(value, label=label)
+    return {key: child for key, child in mapping.items()}
+
+
+@overload
+def resolve_workflow_config(
+    workflow_kind: Literal[WorkflowTask.ACQUIRE],
+    selections: WorkflowSelections,
+) -> AcquireConfig: ...
+
+
+@overload
+def resolve_workflow_config(
+    workflow_kind: Literal[WorkflowTask.TRAIN],
+    selections: WorkflowSelections,
+) -> TrainConfig: ...
+
+
+@overload
+def resolve_workflow_config(
+    workflow_kind: Literal[WorkflowTask.TUNE],
+    selections: WorkflowSelections,
+) -> TuneConfig: ...
+
+
+@overload
+def resolve_workflow_config(
+    workflow_kind: Literal[WorkflowTask.SIMULATE],
+    selections: WorkflowSelections,
+) -> SimulateConfig: ...
+
+
+def resolve_workflow_config(
+    workflow_kind: WorkflowTask | str,
+    selections: WorkflowSelections,
+) -> WorkflowConfig:
+    workflow = (
+        workflow_kind if isinstance(workflow_kind, WorkflowTask) else WorkflowTask(workflow_kind)
+    )
+    payload = _workflow_request(
+        workflow=workflow,
+        selections=selections,
+    )
+    if workflow is WorkflowTask.ACQUIRE:
+        return _resolve_acquire_config(payload)
+    if workflow is WorkflowTask.TRAIN:
+        return _resolve_train_config(payload)
+    if workflow is WorkflowTask.TUNE:
+        return _resolve_tune_config(payload)
+    if workflow is WorkflowTask.SIMULATE:
+        return _resolve_simulate_config(payload)
+    raise ValueError(f"Unsupported workflow: {workflow.value}")
+
+
+def _workflow_request(
+    *,
+    workflow: WorkflowTask,
+    selections: WorkflowSelections,
+) -> dict[str, object]:
+    merged: dict[str, object] = {}
+    if selections.preset is not None:
+        merged = _load_named_preset(selections.preset).model_dump(mode="json", exclude_none=True)
+    merged = _merge_workflow_payload(
+        merged,
+        compact_mapping(
+            {
+                "dataset": selections.dataset,
+                "problem": selections.problem,
+                "chain": selections.chain,
+                "provider": selections.provider if workflow is WorkflowTask.ACQUIRE else None,
+                "model": selections.model
+                if workflow in {WorkflowTask.TRAIN, WorkflowTask.TUNE, WorkflowTask.SIMULATE}
+                else None,
+                "feature_set": selections.feature_set,
+                "prediction": selections.prediction
+                if workflow in {WorkflowTask.TRAIN, WorkflowTask.TUNE, WorkflowTask.SIMULATE}
+                else None,
+                "study": selections.study
+                if workflow in {WorkflowTask.TRAIN, WorkflowTask.TUNE, WorkflowTask.SIMULATE}
+                else None,
+                "artifact": {"variant": selections.variant}
+                if selections.variant is not None
+                else None,
+                "storage": {"root": selections.storage_root}
+                if selections.storage_root is not None
+                else None,
+                "acquisition": {"dry_run": selections.dry_run}
+                if workflow is WorkflowTask.ACQUIRE and selections.dry_run is not None
+                else None,
+                "tuning": {"trial_count": selections.trial_count}
+                if workflow is WorkflowTask.TUNE and selections.trial_count is not None
+                else None,
+                "delay_seconds": selections.delay_seconds
+                if workflow is WorkflowTask.SIMULATE
+                else None,
+            }
+        ),
+    )
+    _reject_unknown_top_level_keys(merged)
+    return merged
+
+
+def _reject_unknown_top_level_keys(payload: Mapping[str, object]) -> None:
+    unknown = sorted(set(payload) - _KNOWN_TOP_LEVEL_CONFIG_KEYS)
+    if unknown:
+        raise ValueError(f"Unknown top-level config fields: {', '.join(unknown)}")
+
+
+def _require_payload_key(payload: Mapping[str, object], key: str) -> object:
+    if key not in payload:
+        raise ValueError(f"Missing required workflow config field: {key}")
+    return payload[key]
 
 
 def resolve_named_or_inline(raw: object, *, group: str, model_type: type[ModelT]) -> ModelT:
     if isinstance(raw, str):
         return model_type.model_validate(load_named_group(raw, group))
     if isinstance(raw, Mapping):
-        return model_type.model_validate(dict(raw))
+        return model_type.model_validate(
+            _mapping_copy(cast(Mapping[object, object], raw), label=group)
+        )
     raise ValueError(f"{group} must be provided as a spec name or mapping")
+
+
+def resolve_inline(raw: object, *, label: str, model_type: type[ModelT]) -> ModelT:
+    if isinstance(raw, Mapping):
+        return model_type.model_validate(
+            _mapping_copy(cast(Mapping[object, object], raw), label=label)
+        )
+    raise ValueError(f"{label} must be provided as a mapping")
 
 
 def resolve_problem(raw: object) -> ProblemSpec:
     if isinstance(raw, str):
         return coerce_problem_spec(load_named_group(raw, "problem"))
     if isinstance(raw, Mapping):
-        return coerce_problem_spec(raw)
+        return coerce_problem_spec(
+            _mapping_copy(cast(Mapping[object, object], raw), label="problem")
+        )
     raise ValueError("problem must be provided as a spec name or mapping")
 
 
@@ -168,7 +289,9 @@ def resolve_feature_set(raw: object) -> FeatureSetConfig:
     if isinstance(raw, str):
         return coerce_feature_set_config(load_named_group(raw, "feature_set"))
     if isinstance(raw, Mapping):
-        return coerce_feature_set_config(raw)
+        return coerce_feature_set_config(
+            _mapping_copy(cast(Mapping[object, object], raw), label="feature_set")
+        )
     raise ValueError("feature_set must be provided as a spec name or mapping")
 
 
@@ -176,7 +299,9 @@ def resolve_prediction(raw: object) -> PredictionConfig:
     if isinstance(raw, str):
         return coerce_prediction_config(load_named_group(raw, "prediction"))
     if isinstance(raw, Mapping):
-        return coerce_prediction_config(raw)
+        return coerce_prediction_config(
+            _mapping_copy(cast(Mapping[object, object], raw), label="prediction")
+        )
     raise ValueError("prediction must be provided as a spec name or mapping")
 
 
@@ -186,25 +311,10 @@ def resolve_storage(raw: object | None) -> StorageSpec:
     if isinstance(raw, (str, Path)):
         return StorageSpec(root=Path(raw))
     if isinstance(raw, Mapping):
-        return StorageSpec.model_validate(dict(raw))
+        return StorageSpec.model_validate(
+            _mapping_copy(cast(Mapping[object, object], raw), label="storage")
+        )
     raise ValueError("storage must be a path or mapping")
-
-
-def _merged_request(
-    *,
-    preset_name: str | None,
-    config_path: Path | None,
-    cli_overrides: dict[str, object],
-) -> dict[str, object]:
-    merged: dict[str, object] = {}
-    if preset_name is not None:
-        merged = deep_merge(merged, load_named_preset(preset_name).model_dump(mode="json"))
-    config_override = read_config_override(config_path)
-    preset_override = config_override.get("preset")
-    if isinstance(preset_override, str):
-        merged = deep_merge(merged, load_named_preset(preset_override).model_dump(mode="json"))
-        config_override = {key: value for key, value in config_override.items() if key != "preset"}
-    return deep_merge(deep_merge(merged, config_override), cli_overrides)
 
 
 def _resolve_common(
@@ -231,46 +341,56 @@ def _resolve_provider(payload: dict[str, object], *, chain: ChainSpec) -> Provid
     return provider
 
 
-def load_acquire_config(
-    *,
-    preset: str | None = None,
-    config_path: Path | None = None,
-    dataset: str | None = None,
-    problem: str | None = None,
-    chain: str | None = None,
-    provider: str | None = None,
-    feature_set: str | None = None,
-    acquisition: str | None = None,
-    storage_root: Path | None = None,
-    dry_run: bool | None = None,
-) -> AcquireConfig:
-    payload = _merged_request(
-        preset_name=preset,
-        config_path=config_path,
-        cli_overrides=compact_mapping(
-            {
-                "dataset": dataset,
-                "problem": problem,
-                "chain": chain,
-                "provider": provider,
-                "feature_set": feature_set,
-                "acquisition": {"dry_run": dry_run} if dry_run is not None else None,
-                "storage": {"root": storage_root} if storage_root is not None else None,
-            }
-        ),
+def _resolve_model_workflow(
+    payload: dict[str, object],
+) -> tuple[
+    DatasetSpec,
+    ChainSpec,
+    StorageSpec,
+    ProblemSpec,
+    ModelConfig[str],
+    FeatureSetConfig,
+    PredictionConfig,
+    StudyConfig,
+    ArtifactConfig,
+]:
+    dataset, chain, storage = _resolve_common(payload)
+    problem = resolve_problem(payload["problem"])
+    model_raw = payload["model"]
+    if isinstance(model_raw, str):
+        model = _load_named_model(model_raw)
+    elif isinstance(model_raw, Mapping):
+        model = coerce_model_config(
+            _mapping_copy(cast(Mapping[object, object], model_raw), label="model")
+        )
+    else:
+        raise ValueError("model must be provided as a spec name or mapping")
+    feature_set = resolve_feature_set(payload["feature_set"])
+    prediction = resolve_prediction(payload["prediction"])
+    study_raw = payload.get("study")
+    if isinstance(study_raw, Mapping):
+        study = StudyConfig.model_validate(study_raw)
+    elif isinstance(study_raw, str):
+        study = StudyConfig(name=study_raw)
+    else:
+        study = StudyConfig()
+    artifact_raw = payload.get("artifact")
+    artifact = (
+        ArtifactConfig.model_validate(artifact_raw)
+        if isinstance(artifact_raw, Mapping)
+        else ArtifactConfig()
     )
-    _reject_unknown_top_level_keys(
-        payload,
-        allowed_keys=_KNOWN_TOP_LEVEL_CONFIG_KEYS,
-    )
+    return dataset, chain, storage, problem, model, feature_set, prediction, study, artifact
+
+
+def _resolve_acquire_config(payload: dict[str, object]) -> AcquireConfig:
     dataset_spec, chain_spec, storage_spec = _resolve_common(payload)
     problem_spec = resolve_problem(payload["problem"])
     provider_spec = _resolve_provider(payload, chain=chain_spec)
     feature_set_spec = resolve_feature_set(payload["feature_set"])
-    acquisition_raw = payload.get("acquisition", "default")
-    acquisition_spec = resolve_named_or_inline(
-        acquisition_raw,
-        group="acquisition",
+    acquisition_spec = resolve_inline(
+        _require_payload_key(payload, "acquisition"),
+        label="acquisition",
         model_type=AcquisitionConfig,
     )
     acquisition_spec = apply_provider_acquisition_overrides(
@@ -288,83 +408,7 @@ def load_acquire_config(
     )
 
 
-def _resolve_model_workflow(
-    payload: dict[str, object],
-) -> tuple[
-    DatasetSpec,
-    ChainSpec,
-    StorageSpec,
-    ProblemSpec,
-    ModelConfig,
-    FeatureSetConfig,
-    PredictionConfig,
-    StudyConfig,
-    ArtifactConfig,
-]:
-    dataset, chain, storage = _resolve_common(payload)
-    problem = resolve_problem(payload["problem"])
-    model_raw = payload["model"]
-    if isinstance(model_raw, str):
-        model = load_named_model(model_raw)
-    elif isinstance(model_raw, Mapping):
-        model = coerce_model_config(dict(model_raw))
-    else:
-        raise ValueError("model must be provided as a spec name or mapping")
-    feature_set = resolve_feature_set(payload["feature_set"])
-    prediction = resolve_prediction(payload["prediction"])
-    study_raw = payload.get("study")
-    if isinstance(study_raw, Mapping):
-        study = StudyConfig.model_validate(study_raw)
-    else:
-        study = StudyConfig(name=cast(str, study_raw) if isinstance(study_raw, str) else "default")
-    artifact_raw = payload.get("artifact")
-    artifact = (
-        ArtifactConfig.model_validate(artifact_raw)
-        if isinstance(artifact_raw, Mapping)
-        else ArtifactConfig()
-    )
-    return dataset, chain, storage, problem, model, feature_set, prediction, study, artifact
-
-
-def load_train_config(
-    *,
-    preset: str | None = None,
-    config_path: Path | None = None,
-    dataset: str | None = None,
-    problem: str | None = None,
-    chain: str | None = None,
-    model: str | None = None,
-    feature_set: str | None = None,
-    prediction: str | None = None,
-    training: str | None = None,
-    split: str | None = None,
-    storage_root: Path | None = None,
-    variant: str | None = None,
-    study: str | None = None,
-) -> TrainConfig:
-    payload = _merged_request(
-        preset_name=preset,
-        config_path=config_path,
-        cli_overrides=compact_mapping(
-            {
-                "dataset": dataset,
-                "problem": problem,
-                "chain": chain,
-                "model": model,
-                "feature_set": feature_set,
-                "prediction": prediction,
-                "training": training,
-                "split": split,
-                "study": study,
-                "artifact": {"variant": variant} if variant is not None else None,
-                "storage": {"root": storage_root} if storage_root is not None else None,
-            }
-        ),
-    )
-    _reject_unknown_top_level_keys(
-        payload,
-        allowed_keys=_KNOWN_TOP_LEVEL_CONFIG_KEYS,
-    )
+def _resolve_train_config(payload: dict[str, object]) -> TrainConfig:
     (
         dataset_spec,
         chain_spec,
@@ -376,14 +420,14 @@ def load_train_config(
         study_spec,
         artifact_spec,
     ) = _resolve_model_workflow(payload)
-    training_spec = resolve_named_or_inline(
-        payload.get("training", "default"),
-        group="training",
+    training_spec = resolve_inline(
+        _require_payload_key(payload, "training"),
+        label="training",
         model_type=TrainingConfig,
     )
-    split_spec = resolve_named_or_inline(
-        payload.get("split", "default"),
-        group="split",
+    split_spec = resolve_inline(
+        _require_payload_key(payload, "split"),
+        label="split",
         model_type=SplitConfig,
     )
     return TrainConfig(
@@ -401,48 +445,7 @@ def load_train_config(
     )
 
 
-def load_tune_config(
-    *,
-    preset: str | None = None,
-    config_path: Path | None = None,
-    dataset: str | None = None,
-    problem: str | None = None,
-    chain: str | None = None,
-    model: str | None = None,
-    feature_set: str | None = None,
-    prediction: str | None = None,
-    training: str | None = None,
-    split: str | None = None,
-    tuning: str | None = None,
-    tuning_space: str | None = None,
-    storage_root: Path | None = None,
-    study: str | None = None,
-    trial_count: int | None = None,
-) -> TuneConfig:
-    payload = _merged_request(
-        preset_name=preset,
-        config_path=config_path,
-        cli_overrides=compact_mapping(
-            {
-                "dataset": dataset,
-                "problem": problem,
-                "chain": chain,
-                "model": model,
-                "feature_set": feature_set,
-                "prediction": prediction,
-                "training": training,
-                "split": split,
-                "tuning": {"trial_count": trial_count} if trial_count is not None else tuning,
-                "tuning_space": tuning_space,
-                "study": study,
-                "storage": {"root": storage_root} if storage_root is not None else None,
-            }
-        ),
-    )
-    _reject_unknown_top_level_keys(
-        payload,
-        allowed_keys=_KNOWN_TOP_LEVEL_CONFIG_KEYS,
-    )
+def _resolve_tune_config(payload: dict[str, object]) -> TuneConfig:
     (
         dataset_spec,
         chain_spec,
@@ -454,32 +457,30 @@ def load_tune_config(
         study_spec,
         artifact_spec,
     ) = _resolve_model_workflow(payload)
-    training_spec = resolve_named_or_inline(
-        payload.get("training", "default"),
-        group="training",
+    training_spec = resolve_inline(
+        _require_payload_key(payload, "training"),
+        label="training",
         model_type=TrainingConfig,
     )
-    split_spec = resolve_named_or_inline(
-        payload.get("split", "default"),
-        group="split",
+    split_spec = resolve_inline(
+        _require_payload_key(payload, "split"),
+        label="split",
         model_type=SplitConfig,
     )
-    tuning_raw = payload.get("tuning", "default")
-    tuning_spec = resolve_named_or_inline(
+    tuning_raw = _require_payload_key(payload, "tuning")
+    tuning_spec = resolve_inline(
         tuning_raw,
-        group="tuning",
+        label="tuning",
         model_type=TuningConfig,
     )
-    tuning_space_raw = payload.get("tuning_space")
-    tuning_space_spec: TuningSpaceConfig
-    if tuning_space_raw is None:
-        default_name = f"{model_spec.id}_default"
-        tuning_space_spec = load_named_tuning_space(default_name, model_config=model_spec)
-    elif isinstance(tuning_space_raw, str):
+    tuning_space_raw = _require_payload_key(payload, "tuning_space")
+    if isinstance(tuning_space_raw, str):
         tuning_space_spec = load_named_tuning_space(tuning_space_raw, model_config=model_spec)
     elif isinstance(tuning_space_raw, Mapping):
         resolved_tuning_space = coerce_tuning_space_config(
-            dict(tuning_space_raw),
+            _mapping_copy(
+                cast(Mapping[object, object], tuning_space_raw), label="tuning_space"
+            ),
             model_config=model_spec,
         )
         if resolved_tuning_space is None:
@@ -504,47 +505,7 @@ def load_tune_config(
     )
 
 
-def load_simulate_config(
-    *,
-    preset: str | None = None,
-    config_path: Path | None = None,
-    dataset: str | None = None,
-    problem: str | None = None,
-    chain: str | None = None,
-    model: str | None = None,
-    feature_set: str | None = None,
-    prediction: str | None = None,
-    training: str | None = None,
-    simulation: str | None = None,
-    execution: str | None = None,
-    storage_root: Path | None = None,
-    variant: str | None = None,
-    study: str | None = None,
-) -> SimulateConfig:
-    payload = _merged_request(
-        preset_name=preset,
-        config_path=config_path,
-        cli_overrides=compact_mapping(
-            {
-                "dataset": dataset,
-                "problem": problem,
-                "chain": chain,
-                "model": model,
-                "feature_set": feature_set,
-                "prediction": prediction,
-                "training": training,
-                "simulation": simulation,
-                "execution": execution,
-                "study": study,
-                "artifact": {"variant": variant} if variant is not None else None,
-                "storage": {"root": storage_root} if storage_root is not None else None,
-            }
-        ),
-    )
-    _reject_unknown_top_level_keys(
-        payload,
-        allowed_keys=_KNOWN_TOP_LEVEL_CONFIG_KEYS,
-    )
+def _resolve_simulate_config(payload: dict[str, object]) -> SimulateConfig:
     (
         dataset_spec,
         chain_spec,
@@ -556,21 +517,20 @@ def load_simulate_config(
         study_spec,
         artifact_spec,
     ) = _resolve_model_workflow(payload)
-    training_spec = resolve_named_or_inline(
-        payload.get("training", "default"),
-        group="training",
+    training_spec = resolve_inline(
+        _require_payload_key(payload, "training"),
+        label="training",
         model_type=TrainingConfig,
     )
-    simulation_spec = resolve_named_or_inline(
-        payload.get("simulation", "default"),
-        group="simulation",
+    simulation_spec = resolve_inline(
+        _require_payload_key(payload, "simulation"),
+        label="simulation",
         model_type=SimulationConfig,
     )
-    execution_spec = resolve_named_or_inline(
-        payload["execution"],
-        group="execution",
-        model_type=ExecutionSpec,
-    )
+    delay_raw = _require_payload_key(payload, "delay_seconds")
+    if not isinstance(delay_raw, int):
+        raise ValueError("delay_seconds must be an integer")
+    delay_seconds = delay_raw
     return SimulateConfig(
         chain=chain_spec,
         dataset=dataset_spec,
@@ -583,5 +543,5 @@ def load_simulate_config(
         artifact=artifact_spec,
         training=training_spec,
         simulation=simulation_spec,
-        execution=execution_spec,
+        delay_seconds=delay_seconds,
     )

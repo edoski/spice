@@ -3,12 +3,12 @@ from __future__ import annotations
 import math
 from datetime import date
 from pathlib import Path
+from typing import cast
 
 import polars as pl
 import pytest
-import yaml
 
-from spice.config import AcquireConfig, load_acquire_config
+from spice.config import AcquireConfig, WorkflowTask
 
 PRESET = "icdcs_2026"
 TEST_EVALUATION_DATE = date(2025, 11, 9)
@@ -20,7 +20,7 @@ def acquire_override():
         *,
         sample_count: int = 4,
         lookback_seconds: int = 24,
-        max_supported_delay_seconds: int = 12,
+        max_delay_seconds: int = 12,
     ) -> dict[str, object]:
         return {
             "chain": "ethereum",
@@ -31,7 +31,7 @@ def acquire_override():
                 "id": "acquire_test_problem",
                 "lookback_seconds": lookback_seconds,
                 "sample_count": sample_count,
-                "max_supported_delay_seconds": max_supported_delay_seconds,
+                "max_delay_seconds": max_delay_seconds,
                 "compiler": {"id": "timestamp_native"},
             },
             "acquisition": {
@@ -49,7 +49,7 @@ def acquire_override():
 
 
 @pytest.fixture
-def load_test_acquire_config(tmp_path: Path):
+def load_test_acquire_config(tmp_path: Path, load_workflow_config):
     def _load(
         tmp_path_arg: Path | None = None,
         *,
@@ -58,17 +58,16 @@ def load_test_acquire_config(tmp_path: Path):
         provider: str | None = None,
     ) -> AcquireConfig:
         workspace = tmp_path if tmp_path_arg is None else tmp_path_arg
-        config_path = (
-            None
-            if override is None
-            else _write_override(workspace, override, name="acquire.yaml")
-        )
-        return load_acquire_config(
-            preset=PRESET,
-            config_path=config_path,
-            chain=chain,
-            provider=provider,
-            storage_root=workspace / "outputs",
+        return cast(
+            AcquireConfig,
+            load_workflow_config(
+                WorkflowTask.ACQUIRE,
+                workspace=workspace,
+                preset=PRESET,
+                override=override,
+                chain=chain,
+                provider=provider,
+            ),
         )
 
     return _load
@@ -118,14 +117,3 @@ def write_dataset_dir():
         return path
 
     return _write_dataset_dir
-
-
-def _write_override(
-    tmp_path: Path,
-    payload: dict[str, object],
-    *,
-    name: str = "override.yaml",
-) -> Path:
-    path = tmp_path / name
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-    return path

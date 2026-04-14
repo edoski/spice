@@ -6,7 +6,7 @@ from ..config import ArtifactVariant, TrainConfig
 from ..core.constants import MODEL_STATE_FILENAME
 from ..core.files import remove_path
 from ..core.reporting import Reporter, StageMetricDescriptor
-from ..modeling.execution import run_persisted_training
+from ..modeling.persisted_training import run_persisted_training
 from ..modeling.pipeline import TrainingStageReporters, build_training_spec
 from ..modeling.summary import training_summary_sections
 from ..modeling.tuning import apply_study_best_params

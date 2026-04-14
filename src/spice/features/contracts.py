@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
+from ..semantics import FeatureSemantics
 from .engine import (
     FeatureSelection,
     ResolvedFeatureTable,
@@ -25,6 +26,16 @@ class CompiledFeatureContract:
     feature_names: tuple[str, ...]
     feature_graph_fingerprint: str
     feature_prerequisites: FeaturePrerequisites
+
+    @property
+    def semantics(self) -> FeatureSemantics:
+        return FeatureSemantics(
+            feature_set_id=self.feature_set_id,
+            feature_family_id=self.feature_family_id,
+            feature_names=self.feature_names,
+            feature_graph_fingerprint=self.feature_graph_fingerprint,
+            feature_prerequisites=self.feature_prerequisites,
+        )
 
     @property
     def selection(self) -> FeatureSelection:

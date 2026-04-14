@@ -16,12 +16,13 @@ from ...config.models import (
     TuningSpaceConfig,
     TuningTrainingSearchSpace,
 )
+from ...core.components import ComponentCatalog
 from ...prediction import PredictionOutputSpec
 from ..models import TemporalModel
 from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
 
 if TYPE_CHECKING:
-    from ..representations import CompiledRepresentationContract
+    pass
 
 ModelConfigT = TypeVar("ModelConfigT", bound=ModelConfig)
 ModelTuningSpaceT = TypeVar("ModelTuningSpaceT", bound=ModelTuningSpaceConfig)
@@ -31,7 +32,7 @@ ModelTunedParamsT = TypeVar("ModelTunedParamsT", bound=TunedModelParams)
 @dataclass(frozen=True, slots=True)
 class ModelSpec(Generic[ModelConfigT, ModelTuningSpaceT, ModelTunedParamsT]):
     id: str
-    default_representation_id: str
+    resolve_representation_id: Callable[[ModelConfigT], str]
     model_config_type: type[ModelConfigT]
     tuning_space_type: type[ModelTuningSpaceT]
     tuned_params_type: type[ModelTunedParamsT]
@@ -42,42 +43,35 @@ class ModelSpec(Generic[ModelConfigT, ModelTuningSpaceT, ModelTunedParamsT]):
     sample_model_params: Callable[[optuna.Trial, ModelTuningSpaceT], ModelTunedParamsT | None]
     apply_model_params: Callable[[ModelConfigT, ModelTunedParamsT], ModelConfigT]
 
-    def compile_representation_contract(self) -> CompiledRepresentationContract:
-        from ..representations import compile_representation_contract
-
-        return compile_representation_contract(self.default_representation_id)
+    def representation_id_for(self, config: ModelConfigT) -> str:
+        return self.resolve_representation_id(config)
 
 
-_MODEL_SPECS: dict[str, ModelSpec[Any, Any, Any]] = {}
-_BUILTINS_LOADED = False
+_MODEL_SPECS = ComponentCatalog[ModelSpec[Any, Any, Any]](
+    kind_label="model",
+    entry_point_group="spice.models",
+)
 
 
 def register_model_spec(spec: ModelSpec[Any, Any, Any]) -> None:
-    existing = _MODEL_SPECS.get(spec.id)
-    if existing is not None:
-        raise ValueError(f"Duplicate model spec id: {spec.id}")
-    _MODEL_SPECS[spec.id] = spec
+    _MODEL_SPECS.register(spec.id, spec)
 
 
-def _ensure_builtin_model_specs_loaded() -> None:
-    global _BUILTINS_LOADED
-    if _BUILTINS_LOADED:
-        return
+def _load_builtin_model_specs() -> None:
     from . import lstm, transformer, transformer_lstm  # noqa: F401
 
-    _BUILTINS_LOADED = True
+
+_MODEL_SPECS.configure_builtin_loader(_load_builtin_model_specs)
 
 
 def model_spec(model_id: str) -> ModelSpec[Any, Any, Any]:
-    _ensure_builtin_model_specs_loaded()
     try:
-        return _MODEL_SPECS[model_id]
-    except KeyError as exc:
-        known = ", ".join(sorted(_MODEL_SPECS))
-        raise ValueError(f"Unknown model.id: {model_id}. Known models: {known}") from exc
+        return _MODEL_SPECS.get(model_id)
+    except ValueError as exc:
+        raise ValueError(str(exc).replace("Unknown model", "Unknown model.id")) from exc
 
 
-def coerce_model_config(payload: Mapping[str, object] | ModelConfig) -> ModelConfig:
+def coerce_model_config(payload: Mapping[str, object] | ModelConfig[str]) -> ModelConfig[str]:
     if isinstance(payload, ModelConfig):
         raw_payload = payload.model_dump(mode="json")
         model_id = payload.id
@@ -91,7 +85,7 @@ def coerce_model_config(payload: Mapping[str, object] | ModelConfig) -> ModelCon
 def coerce_tuning_space_config(
     payload: Mapping[str, object] | TuningSpaceConfig | None,
     *,
-    model_config: ModelConfig,
+    model_config: ModelConfig[str],
 ) -> TuningSpaceConfig | None:
     if payload is None:
         return None
@@ -144,14 +138,15 @@ def coerce_tuned_parameter_set(
 def build_model(
     n_features: int,
     output_spec: PredictionOutputSpec,
-    config: ModelConfig,
+    config: ModelConfig[str],
 ) -> TemporalModel:
     spec = model_spec(config.id)
     return spec.build_model(n_features, output_spec, cast(Any, config))
 
 
-def compile_default_representation_contract(model_id: str) -> CompiledRepresentationContract:
-    return model_spec(model_id).compile_representation_contract()
+def resolve_model_representation_id(model_config: ModelConfig[str]) -> str:
+    spec = model_spec(model_config.id)
+    return spec.representation_id_for(cast(Any, model_config))
 
 
 def resolve_default_precision(model_id: str, device: torch.device) -> TrainingPrecision:
@@ -192,9 +187,9 @@ def sample_tuned_parameters(
 
 
 def apply_tuned_parameters(
-    model_config: ModelConfig,
+    model_config: ModelConfig[str],
     params: TunedParameterSet,
-) -> ModelConfig:
+) -> ModelConfig[str]:
     if params.model is None:
         return model_config
     spec = model_spec(model_config.id)

@@ -1,3 +1,5 @@
+# pyright: strict
+
 """Workflow command routing."""
 
 from __future__ import annotations
@@ -7,239 +9,186 @@ from typing import Annotated
 
 import typer
 
+from ...config import (
+    AcquireConfig,
+    SimulateConfig,
+    TrainConfig,
+    TuneConfig,
+    WorkflowSelections,
+    WorkflowTask,
+    resolve_workflow_config,
+)
 
-def _run_acquire(
+
+def _selection_option(*param_decls: str, metavar: str, help: str) -> object:
+    return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Selection")
+
+
+def _execution_option(*param_decls: str, metavar: str, help: str) -> object:
+    return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Execution")
+
+
+def _output_option(*param_decls: str, metavar: str, help: str) -> object:
+    return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Outputs")
+
+
+def _resolve_acquire_config(
     *,
     preset: str | None,
-    config: Path | None,
     dataset: str | None,
     problem: str | None,
     chain: str | None,
     provider: str | None,
     feature_set: str | None,
-    acquisition_profile: str | None,
     storage_root: Path | None,
     dry_run: bool | None,
-) -> None:
-    from ...config import load_acquire_config
-    from ...workflows import acquire
-
-    acquire.run(
-        load_acquire_config(
+) -> AcquireConfig:
+    return resolve_workflow_config(
+        WorkflowTask.ACQUIRE,
+        WorkflowSelections(
             preset=preset,
-            config_path=config,
             dataset=dataset,
             problem=problem,
             chain=chain,
             provider=provider,
             feature_set=feature_set,
-            acquisition=acquisition_profile,
             storage_root=storage_root,
             dry_run=dry_run,
-        )
+        ),
     )
 
 
-def _run_train(
+def _resolve_train_config(
     *,
     preset: str | None,
-    config: Path | None,
     dataset: str | None,
     problem: str | None,
     chain: str | None,
     model: str | None,
     feature_set: str | None,
     prediction: str | None,
-    training_profile: str | None,
-    split: str | None,
-    storage_root: Path | None,
-    variant: str | None,
     study: str | None,
-) -> None:
-    from ...config import load_train_config
-    from ...workflows import train
-
-    train.run(
-        load_train_config(
+    variant: str | None,
+    storage_root: Path | None,
+) -> TrainConfig:
+    return resolve_workflow_config(
+        WorkflowTask.TRAIN,
+        WorkflowSelections(
             preset=preset,
-            config_path=config,
             dataset=dataset,
             problem=problem,
             chain=chain,
             model=model,
             feature_set=feature_set,
             prediction=prediction,
-            training=training_profile,
-            split=split,
-            storage_root=storage_root,
-            variant=variant,
             study=study,
-        )
+            variant=variant,
+            storage_root=storage_root,
+        ),
     )
 
 
-def _run_tune(
+def _resolve_tune_config(
     *,
     preset: str | None,
-    config: Path | None,
     dataset: str | None,
     problem: str | None,
     chain: str | None,
     model: str | None,
     feature_set: str | None,
     prediction: str | None,
-    training_profile: str | None,
-    split: str | None,
-    tuning_profile: str | None,
-    tuning_space: str | None,
-    storage_root: Path | None,
     study: str | None,
     trial_count: int | None,
-) -> None:
-    from ...config import load_tune_config
-    from ...workflows import tune
-
-    tune.run(
-        load_tune_config(
+    storage_root: Path | None,
+) -> TuneConfig:
+    return resolve_workflow_config(
+        WorkflowTask.TUNE,
+        WorkflowSelections(
             preset=preset,
-            config_path=config,
             dataset=dataset,
             problem=problem,
             chain=chain,
             model=model,
             feature_set=feature_set,
             prediction=prediction,
-            training=training_profile,
-            split=split,
-            tuning=tuning_profile,
-            tuning_space=tuning_space,
-            storage_root=storage_root,
             study=study,
             trial_count=trial_count,
-        )
+            storage_root=storage_root,
+        ),
     )
 
 
-def _run_simulate(
+def _resolve_simulate_config(
     *,
     preset: str | None,
-    config: Path | None,
     dataset: str | None,
     problem: str | None,
     chain: str | None,
     model: str | None,
     feature_set: str | None,
     prediction: str | None,
-    training_profile: str | None,
-    simulation_profile: str | None,
-    execution: str | None,
-    storage_root: Path | None,
-    variant: str | None,
     study: str | None,
-) -> None:
-    from ...config import load_simulate_config
-    from ...workflows import simulate
-
-    simulate.run(
-        load_simulate_config(
+    variant: str | None,
+    delay_seconds: int | None,
+    storage_root: Path | None,
+) -> SimulateConfig:
+    return resolve_workflow_config(
+        WorkflowTask.SIMULATE,
+        WorkflowSelections(
             preset=preset,
-            config_path=config,
             dataset=dataset,
             problem=problem,
             chain=chain,
             model=model,
             feature_set=feature_set,
             prediction=prediction,
-            training=training_profile,
-            simulation=simulation_profile,
-            execution=execution,
-            storage_root=storage_root,
-            variant=variant,
             study=study,
-        )
+            variant=variant,
+            delay_seconds=delay_seconds,
+            storage_root=storage_root,
+        ),
     )
 
 
 def acquire_command(
     preset: Annotated[
         str | None,
-        typer.Option(
+        _selection_option(
             "--preset",
             metavar="PRESET",
-            help="Apply a named preset before config-file and CLI overrides.",
-            rich_help_panel="Selection",
-        ),
-    ] = None,
-    config: Annotated[
-        Path | None,
-        typer.Option(
-            "--config",
-            metavar="PATH",
-            help="Overlay a YAML config file on top of the selected preset.",
-            rich_help_panel="Overrides",
+            help="Apply a named preset before selector overrides.",
         ),
     ] = None,
     dataset: Annotated[
         str | None,
-        typer.Option(
-            "--dataset",
-            metavar="DATASET",
-            help="Use a named dataset spec.",
-            rich_help_panel="Selection",
-        ),
+        _selection_option("--dataset", metavar="DATASET", help="Use a named dataset spec."),
     ] = None,
     problem: Annotated[
         str | None,
-        typer.Option(
-            "--problem",
-            metavar="PROBLEM",
-            help="Use a named problem profile.",
-            rich_help_panel="Selection",
-        ),
+        _selection_option("--problem", metavar="PROBLEM", help="Use a named problem spec."),
     ] = None,
     chain: Annotated[
         str | None,
-        typer.Option(
-            "--chain",
-            metavar="CHAIN",
-            help="Override the target chain.",
-            rich_help_panel="Selection",
-        ),
+        _selection_option("--chain", metavar="CHAIN", help="Override the target chain."),
     ] = None,
     provider: Annotated[
         str | None,
-        typer.Option(
-            "--provider",
-            metavar="PROVIDER",
-            help="Override the RPC provider.",
-            rich_help_panel="Selection",
-        ),
+        _selection_option("--provider", metavar="PROVIDER", help="Override the RPC provider."),
     ] = None,
     feature_set: Annotated[
         str | None,
-        typer.Option(
+        _selection_option(
             "--feature-set",
             metavar="FEATURE_SET",
             help="Use a named feature selection.",
-            rich_help_panel="Selection",
-        ),
-    ] = None,
-    acquisition_profile: Annotated[
-        str | None,
-        typer.Option(
-            "--acquisition",
-            metavar="PROFILE",
-            help="Use a named acquisition profile.",
-            rich_help_panel="Profiles",
         ),
     ] = None,
     storage_root: Annotated[
         Path | None,
-        typer.Option(
+        _output_option(
             "--storage-root",
             metavar="PATH",
             help="Store outputs under a non-default root.",
-            rich_help_panel="Outputs",
         ),
     ] = None,
     dry_run: Annotated[
@@ -251,243 +200,258 @@ def acquire_command(
         ),
     ] = None,
 ) -> None:
-    _run_acquire(
-        preset=preset,
-        config=config,
-        dataset=dataset,
-        problem=problem,
-        chain=chain,
-        provider=provider,
-        feature_set=feature_set,
-        acquisition_profile=acquisition_profile,
-        storage_root=storage_root,
-        dry_run=dry_run,
+    from ...workflows import acquire
+
+    acquire.run(
+        _resolve_acquire_config(
+            preset=preset,
+            dataset=dataset,
+            problem=problem,
+            chain=chain,
+            provider=provider,
+            feature_set=feature_set,
+            storage_root=storage_root,
+            dry_run=dry_run,
+        )
     )
 
 
 def train_command(
     preset: Annotated[
         str | None,
-        typer.Option("--preset", metavar="PRESET"),
-    ] = None,
-    config: Annotated[
-        Path | None,
-        typer.Option("--config", metavar="PATH"),
+        _selection_option(
+            "--preset",
+            metavar="PRESET",
+            help="Apply a named preset before selector overrides.",
+        ),
     ] = None,
     dataset: Annotated[
         str | None,
-        typer.Option("--dataset", metavar="DATASET"),
+        _selection_option("--dataset", metavar="DATASET", help="Use a named dataset spec."),
     ] = None,
     problem: Annotated[
         str | None,
-        typer.Option("--problem", metavar="PROBLEM"),
+        _selection_option("--problem", metavar="PROBLEM", help="Use a named problem spec."),
     ] = None,
     chain: Annotated[
         str | None,
-        typer.Option("--chain", metavar="CHAIN"),
+        _selection_option("--chain", metavar="CHAIN", help="Override the target chain."),
     ] = None,
     model: Annotated[
         str | None,
-        typer.Option("--model", metavar="MODEL"),
+        _selection_option("--model", metavar="MODEL", help="Use a named model config."),
     ] = None,
     feature_set: Annotated[
         str | None,
-        typer.Option("--feature-set", metavar="FEATURE_SET"),
+        _selection_option(
+            "--feature-set",
+            metavar="FEATURE_SET",
+            help="Use a named feature selection.",
+        ),
     ] = None,
     prediction: Annotated[
         str | None,
-        typer.Option("--prediction", metavar="PREDICTION"),
-    ] = None,
-    training_profile: Annotated[
-        str | None,
-        typer.Option("--training", metavar="PROFILE"),
-    ] = None,
-    split: Annotated[
-        str | None,
-        typer.Option("--split", metavar="PROFILE"),
-    ] = None,
-    storage_root: Annotated[
-        Path | None,
-        typer.Option("--storage-root", metavar="PATH"),
-    ] = None,
-    variant: Annotated[
-        str | None,
-        typer.Option("--variant", metavar="VARIANT"),
+        _selection_option(
+            "--prediction",
+            metavar="PREDICTION",
+            help="Use a named prediction config.",
+        ),
     ] = None,
     study: Annotated[
         str | None,
-        typer.Option("--study", metavar="STUDY"),
+        _selection_option("--study", metavar="STUDY", help="Override the study name."),
+    ] = None,
+    variant: Annotated[
+        str | None,
+        _selection_option("--variant", metavar="VARIANT", help="Override the artifact variant."),
+    ] = None,
+    storage_root: Annotated[
+        Path | None,
+        _output_option(
+            "--storage-root",
+            metavar="PATH",
+            help="Store outputs under a non-default root.",
+        ),
     ] = None,
 ) -> None:
-    _run_train(
-        preset=preset,
-        config=config,
-        dataset=dataset,
-        problem=problem,
-        chain=chain,
-        model=model,
-        feature_set=feature_set,
-        prediction=prediction,
-        training_profile=training_profile,
-        split=split,
-        storage_root=storage_root,
-        variant=variant,
-        study=study,
+    from ...workflows import train
+
+    train.run(
+        _resolve_train_config(
+            preset=preset,
+            dataset=dataset,
+            problem=problem,
+            chain=chain,
+            model=model,
+            feature_set=feature_set,
+            prediction=prediction,
+            storage_root=storage_root,
+            variant=variant,
+            study=study,
+        )
     )
 
 
 def tune_command(
     preset: Annotated[
         str | None,
-        typer.Option("--preset", metavar="PRESET"),
-    ] = None,
-    config: Annotated[
-        Path | None,
-        typer.Option("--config", metavar="PATH"),
+        _selection_option(
+            "--preset",
+            metavar="PRESET",
+            help="Apply a named preset before selector overrides.",
+        ),
     ] = None,
     dataset: Annotated[
         str | None,
-        typer.Option("--dataset", metavar="DATASET"),
+        _selection_option("--dataset", metavar="DATASET", help="Use a named dataset spec."),
     ] = None,
     problem: Annotated[
         str | None,
-        typer.Option("--problem", metavar="PROBLEM"),
+        _selection_option("--problem", metavar="PROBLEM", help="Use a named problem spec."),
     ] = None,
     chain: Annotated[
         str | None,
-        typer.Option("--chain", metavar="CHAIN"),
+        _selection_option("--chain", metavar="CHAIN", help="Override the target chain."),
     ] = None,
     model: Annotated[
         str | None,
-        typer.Option("--model", metavar="MODEL"),
+        _selection_option("--model", metavar="MODEL", help="Use a named model config."),
     ] = None,
     feature_set: Annotated[
         str | None,
-        typer.Option("--feature-set", metavar="FEATURE_SET"),
+        _selection_option(
+            "--feature-set",
+            metavar="FEATURE_SET",
+            help="Use a named feature selection.",
+        ),
     ] = None,
     prediction: Annotated[
         str | None,
-        typer.Option("--prediction", metavar="PREDICTION"),
-    ] = None,
-    training_profile: Annotated[
-        str | None,
-        typer.Option("--training", metavar="PROFILE"),
-    ] = None,
-    split: Annotated[
-        str | None,
-        typer.Option("--split", metavar="PROFILE"),
-    ] = None,
-    tuning_profile: Annotated[
-        str | None,
-        typer.Option("--tuning", metavar="PROFILE"),
-    ] = None,
-    tuning_space: Annotated[
-        str | None,
-        typer.Option("--tuning-space", metavar="PROFILE"),
-    ] = None,
-    storage_root: Annotated[
-        Path | None,
-        typer.Option("--storage-root", metavar="PATH"),
+        _selection_option(
+            "--prediction",
+            metavar="PREDICTION",
+            help="Use a named prediction config.",
+        ),
     ] = None,
     study: Annotated[
         str | None,
-        typer.Option("--study", metavar="STUDY"),
+        _selection_option("--study", metavar="STUDY", help="Override the study name."),
     ] = None,
     trial_count: Annotated[
         int | None,
-        typer.Option("--trial-count", metavar="N"),
+        _execution_option(
+            "--trial-count",
+            metavar="COUNT",
+            help="Override the requested trial count.",
+        ),
+    ] = None,
+    storage_root: Annotated[
+        Path | None,
+        _output_option(
+            "--storage-root",
+            metavar="PATH",
+            help="Store outputs under a non-default root.",
+        ),
     ] = None,
 ) -> None:
-    _run_tune(
-        preset=preset,
-        config=config,
-        dataset=dataset,
-        problem=problem,
-        chain=chain,
-        model=model,
-        feature_set=feature_set,
-        prediction=prediction,
-        training_profile=training_profile,
-        split=split,
-        tuning_profile=tuning_profile,
-        tuning_space=tuning_space,
-        storage_root=storage_root,
-        study=study,
-        trial_count=trial_count,
+    from ...workflows import tune
+
+    tune.run(
+        _resolve_tune_config(
+            preset=preset,
+            dataset=dataset,
+            problem=problem,
+            chain=chain,
+            model=model,
+            feature_set=feature_set,
+            prediction=prediction,
+            storage_root=storage_root,
+            study=study,
+            trial_count=trial_count,
+        )
     )
 
 
 def simulate_command(
     preset: Annotated[
         str | None,
-        typer.Option("--preset", metavar="PRESET"),
-    ] = None,
-    config: Annotated[
-        Path | None,
-        typer.Option("--config", metavar="PATH"),
+        _selection_option(
+            "--preset",
+            metavar="PRESET",
+            help="Apply a named preset before selector overrides.",
+        ),
     ] = None,
     dataset: Annotated[
         str | None,
-        typer.Option("--dataset", metavar="DATASET"),
+        _selection_option("--dataset", metavar="DATASET", help="Use a named dataset spec."),
     ] = None,
     problem: Annotated[
         str | None,
-        typer.Option("--problem", metavar="PROBLEM"),
+        _selection_option("--problem", metavar="PROBLEM", help="Use a named problem spec."),
     ] = None,
     chain: Annotated[
         str | None,
-        typer.Option("--chain", metavar="CHAIN"),
+        _selection_option("--chain", metavar="CHAIN", help="Override the target chain."),
     ] = None,
     model: Annotated[
         str | None,
-        typer.Option("--model", metavar="MODEL"),
+        _selection_option("--model", metavar="MODEL", help="Use a named model config."),
     ] = None,
     feature_set: Annotated[
         str | None,
-        typer.Option("--feature-set", metavar="FEATURE_SET"),
+        _selection_option(
+            "--feature-set",
+            metavar="FEATURE_SET",
+            help="Use a named feature selection.",
+        ),
     ] = None,
     prediction: Annotated[
         str | None,
-        typer.Option("--prediction", metavar="PREDICTION"),
-    ] = None,
-    training_profile: Annotated[
-        str | None,
-        typer.Option("--training", metavar="PROFILE"),
-    ] = None,
-    simulation_profile: Annotated[
-        str | None,
-        typer.Option("--simulation", metavar="PROFILE"),
-    ] = None,
-    execution: Annotated[
-        str | None,
-        typer.Option("--execution", metavar="EXECUTION"),
-    ] = None,
-    storage_root: Annotated[
-        Path | None,
-        typer.Option("--storage-root", metavar="PATH"),
-    ] = None,
-    variant: Annotated[
-        str | None,
-        typer.Option("--variant", metavar="VARIANT"),
+        _selection_option(
+            "--prediction",
+            metavar="PREDICTION",
+            help="Use a named prediction config.",
+        ),
     ] = None,
     study: Annotated[
         str | None,
-        typer.Option("--study", metavar="STUDY"),
+        _selection_option("--study", metavar="STUDY", help="Override the study name."),
+    ] = None,
+    variant: Annotated[
+        str | None,
+        _selection_option("--variant", metavar="VARIANT", help="Override the artifact variant."),
+    ] = None,
+    delay_seconds: Annotated[
+        int | None,
+        _execution_option(
+            "--delay-seconds",
+            metavar="SECONDS",
+            help="Override the simulation delay in seconds.",
+        ),
+    ] = None,
+    storage_root: Annotated[
+        Path | None,
+        _output_option(
+            "--storage-root",
+            metavar="PATH",
+            help="Store outputs under a non-default root.",
+        ),
     ] = None,
 ) -> None:
-    _run_simulate(
-        preset=preset,
-        config=config,
-        dataset=dataset,
-        problem=problem,
-        chain=chain,
-        model=model,
-        feature_set=feature_set,
-        prediction=prediction,
-        training_profile=training_profile,
-        simulation_profile=simulation_profile,
-        execution=execution,
-        storage_root=storage_root,
-        variant=variant,
-        study=study,
+    from ...workflows import simulate
+
+    simulate.run(
+        _resolve_simulate_config(
+            preset=preset,
+            dataset=dataset,
+            problem=problem,
+            chain=chain,
+            model=model,
+            feature_set=feature_set,
+            prediction=prediction,
+            storage_root=storage_root,
+            variant=variant,
+            study=study,
+            delay_seconds=delay_seconds,
+        )
     )

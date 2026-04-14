@@ -35,7 +35,7 @@ def test_temporal_store_uses_real_timestamps_for_context_and_candidates() -> Non
                 "id": "test_timestamp_native",
                 "lookback_seconds": 10,
                 "sample_count": 4,
-                "max_supported_delay_seconds": 12,
+                "max_delay_seconds": 12,
                 "compiler": {"id": "timestamp_native"},
             }
         ),
@@ -82,7 +82,7 @@ def test_estimated_block_store_uses_corpus_calibration_for_row_geometry() -> Non
                 "id": "test_estimated_block",
                 "lookback_seconds": 20,
                 "sample_count": 3,
-                "max_supported_delay_seconds": 18,
+                "max_delay_seconds": 18,
                 "compiler": {"id": "estimated_block"},
             }
         ),

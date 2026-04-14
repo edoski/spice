@@ -6,6 +6,7 @@ from spice.core.reporting import NullReporter
 from spice.corpus.io import load_block_frame
 from spice.modeling.artifacts import load_training_artifact
 from spice.modeling.pipeline import build_training_spec, prepare_training_dataset
+from spice.modeling.representations import SEQUENCE_INPUT_REPRESENTATION_ID
 from spice.modeling.training import evaluate_model
 from spice.storage.artifact import list_training_epochs, load_training_summary
 from spice.workflows.train import run as run_train
@@ -54,17 +55,19 @@ def test_training_summary_metrics_match_replayed_saved_artifact(
         reporter=NullReporter(),
     )
 
-    assert summary.prediction_id == config.prediction.id
-    assert summary.representation_id == "sequence_inputs"
-    assert summary.batch_planner_id == "signature_bucketed"
-    assert summary.best_validation_metrics.values == pytest.approx(validation_metrics.values)
-    assert summary.test_metrics.values == pytest.approx(test_metrics.values)
+    assert summary.manifest.prediction_id == config.prediction.id
+    assert summary.manifest.representation_id == SEQUENCE_INPUT_REPRESENTATION_ID
+    assert summary.runtime.batch_planner_id == "signature_bucketed"
+    assert summary.runtime.best_validation_metrics.values == pytest.approx(
+        validation_metrics.values
+    )
+    assert summary.runtime.test_metrics.values == pytest.approx(test_metrics.values)
 
     epochs = list_training_epochs(config.paths.artifact_state_db)
     assert epochs
-    assert epochs[summary.best_epoch - 1].epoch == summary.best_epoch
+    assert epochs[summary.runtime.best_epoch - 1].epoch == summary.runtime.best_epoch
     primary_metric_id = spec.prediction_contract.primary_metric_id
-    best_epoch_metrics = epochs[summary.best_epoch - 1].validation_metrics
+    best_epoch_metrics = epochs[summary.runtime.best_epoch - 1].validation_metrics
     assert best_epoch_metrics.require(primary_metric_id) == pytest.approx(
-        summary.best_validation_metrics.require(primary_metric_id)
+        summary.runtime.best_validation_metrics.require(primary_metric_id)
     )

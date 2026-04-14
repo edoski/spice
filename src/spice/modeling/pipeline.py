@@ -24,10 +24,10 @@ from ..core.reporting import NullReporter, Reporter
 from ..corpus.io import load_block_frame
 from ..features import (
     CompiledFeatureContract,
-    FeaturePrerequisites,
     compile_feature_contract,
 )
 from ..prediction import CompiledPredictionContract, compile_prediction_contract
+from ..semantics import FeatureSemantics
 from ..temporal.contracts import (
     CompiledProblemContract,
     ProblemRuntimeMetadata,
@@ -43,8 +43,9 @@ from ..temporal.problem_store import (
 )
 from ..temporal.scaling import ScalerStats, fit_standard_scaler, transform_feature_matrix
 from ._runtime import CompiledRepresentationContract
-from .families.registry import build_model, compile_default_representation_contract
+from .families.registry import build_model, resolve_model_representation_id
 from .models import TemporalModel
+from .representations import compile_representation_contract
 from .training import TrainingResult, train_model
 
 
@@ -100,7 +101,9 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
         feature_set=config.feature_set,
         prediction=config.prediction,
         prediction_contract=prediction_contract,
-        representation_contract=compile_default_representation_contract(config.model.id),
+        representation_contract=compile_representation_contract(
+            resolve_model_representation_id(config.model)
+        ),
         model=config.model,
         variant=variant,
         study=config.study if variant is ArtifactVariant.TUNED else None,
@@ -115,11 +118,7 @@ class PreparedTrainingDataset:
     n_rows_available: int
     n_rows_used: int
     sample_count: int
-    feature_set_id: str
-    feature_family_id: str
-    feature_names: tuple[str, ...]
-    feature_graph_fingerprint: str
-    feature_prerequisites: FeaturePrerequisites
+    feature: FeatureSemantics
     store: CompiledProblemStore
     split_indices: DatasetSplitIndices
     scaler: ScalerStats
@@ -139,11 +138,7 @@ class PreparedInferenceDataset:
     n_history_rows: int
     n_evaluation_rows: int
     sample_count: int
-    feature_set_id: str
-    feature_family_id: str
-    feature_names: tuple[str, ...]
-    feature_graph_fingerprint: str
-    feature_prerequisites: FeaturePrerequisites
+    feature: FeatureSemantics
     store: CompiledProblemStore
     sample_indices: IntVector
 
@@ -227,11 +222,7 @@ def prepare_training_dataset(
         n_rows_available=sorted_blocks.height,
         n_rows_used=used_end - used_start,
         sample_count=spec.problem.sample_count,
-        feature_set_id=feature_table.feature_set_id,
-        feature_family_id=feature_table.feature_family_id,
-        feature_names=feature_table.feature_names,
-        feature_graph_fingerprint=feature_table.feature_graph_fingerprint,
-        feature_prerequisites=feature_table.feature_prerequisites,
+        feature=spec.feature_contract.semantics,
         store=scaled_store,
         split_indices=split_indices,
         scaler=scaler,
@@ -245,7 +236,7 @@ def prepare_inference_dataset(
     *,
     feature_contract: CompiledFeatureContract,
     contract: CompiledProblemContract,
-    requested_delay_seconds: int,
+    delay_seconds: int,
     compiler_runtime_metadata: ProblemRuntimeMetadata,
     scaler: ScalerStats,
     max_candidate_slots: int,
@@ -257,9 +248,9 @@ def prepare_inference_dataset(
         raise ValueError("History dataset is empty")
     combined_blocks = pl.concat([sorted_history_blocks, evaluation_blocks.sort("block_number")])
     feature_table = feature_contract.build_table(combined_blocks)
-    store = contract.build_requested_delay_store(
+    store = contract.build_delay_store(
         feature_table,
-        requested_delay_seconds,
+        delay_seconds,
         compiler_runtime_metadata=compiler_runtime_metadata,
         max_candidate_slots=max_candidate_slots,
     )
@@ -279,11 +270,7 @@ def prepare_inference_dataset(
         n_history_rows=history_blocks.height,
         n_evaluation_rows=evaluation_blocks.height,
         sample_count=int(sample_indices.shape[0]),
-        feature_set_id=feature_table.feature_set_id,
-        feature_family_id=feature_table.feature_family_id,
-        feature_names=feature_table.feature_names,
-        feature_graph_fingerprint=feature_table.feature_graph_fingerprint,
-        feature_prerequisites=feature_table.feature_prerequisites,
+        feature=feature_contract.semantics,
         store=scaled_store,
         sample_indices=sample_indices,
     )

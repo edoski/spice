@@ -16,6 +16,7 @@ from ..core.reporting import (
     StageMetricValue,
     format_compact_number,
 )
+from ..semantics import PredictionSemantics
 from ..temporal.problem_store import CompiledProblemStore
 from .base import (
     MetricDescriptor,
@@ -115,6 +116,19 @@ class CompiledPredictionContract:
     primary_metric_id: str
     direction: Literal["maximize", "minimize"]
     supported_workflows: frozenset[str]
+
+    @property
+    def semantics(self) -> PredictionSemantics:
+        return PredictionSemantics(
+            prediction_id=self.prediction_id,
+            prediction_family_id=self.prediction_family_id,
+            training_metric_descriptors=self.training_metric_descriptors,
+            progress_metric_descriptors=self.progress_metric_descriptors,
+            simulation_metric_descriptors=self.simulation_metric_descriptors,
+            primary_metric_id=self.primary_metric_id,
+            direction=self.direction,
+            supported_workflows=self.supported_workflows,
+        )
 
     @property
     def checkpoint_monitor(self) -> str:

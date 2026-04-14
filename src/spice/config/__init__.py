@@ -1,15 +1,7 @@
 """Public configuration API."""
 
 from ..storage.layout import PathLayout, build_path_layout
-from .loader import (
-    load_acquire_config,
-    load_named_group,
-    load_named_model,
-    load_named_preset,
-    load_simulate_config,
-    load_train_config,
-    load_tune_config,
-)
+from .loader import resolve_workflow_config
 from .models import (
     AcquireConfig,
     AcquisitionConfig,
@@ -18,7 +10,6 @@ from .models import (
     ChainSpec,
     CompileMode,
     DatasetSpec,
-    ExecutionSpec,
     FeatureSetConfig,
     ModelConfig,
     ModelTuningSpaceConfig,
@@ -41,12 +32,14 @@ from .models import (
     TuningConfig,
     TuningSpaceConfig,
     TuningTrainingSearchSpace,
+    WorkflowSelections,
     WorkflowTask,
     apply_provider_acquisition_overrides,
     coerce_feature_set_config,
     coerce_prediction_config,
     coerce_problem_spec,
 )
+from .registry import load_named_group
 
 __all__ = [
     "AcquireConfig",
@@ -56,7 +49,6 @@ __all__ = [
     "ChainSpec",
     "CompileMode",
     "DatasetSpec",
-    "ExecutionSpec",
     "FeatureSetConfig",
     "ModelConfig",
     "ModelTuningSpaceConfig",
@@ -80,17 +72,13 @@ __all__ = [
     "TuningConfig",
     "TuningSpaceConfig",
     "TuningTrainingSearchSpace",
+    "WorkflowSelections",
     "WorkflowTask",
     "apply_provider_acquisition_overrides",
     "build_path_layout",
     "coerce_feature_set_config",
     "coerce_prediction_config",
     "coerce_problem_spec",
-    "load_acquire_config",
     "load_named_group",
-    "load_named_model",
-    "load_named_preset",
-    "load_simulate_config",
-    "load_train_config",
-    "load_tune_config",
+    "resolve_workflow_config",
 ]

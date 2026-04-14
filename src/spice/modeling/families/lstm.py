@@ -11,6 +11,7 @@ from pydantic import Field, field_validator, model_validator
 from ...config.models import TrainingPrecision
 from ...prediction import PredictionOutputSpec
 from ..models import LSTMBaseline, TemporalModel
+from ..representations import SEQUENCE_INPUT_REPRESENTATION_ID
 from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
 from .registry import ModelSpec, register_model_spec
 
@@ -113,10 +114,15 @@ def _apply_model_params(
     return model_config.model_copy(update=updates)
 
 
+def _resolve_representation_id(config: LstmModelConfig) -> str:
+    del config
+    return SEQUENCE_INPUT_REPRESENTATION_ID
+
+
 register_model_spec(
     ModelSpec(
         id="lstm",
-        default_representation_id="sequence_inputs",
+        resolve_representation_id=_resolve_representation_id,
         model_config_type=LstmModelConfig,
         tuning_space_type=LstmTuningSpaceModelConfig,
         tuned_params_type=LstmTunedModelParams,

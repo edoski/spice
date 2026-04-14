@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import cast
+from typing import overload
 
 from ..config import (
     TrainConfig,
@@ -13,11 +13,26 @@ from ..config import (
     coerce_prediction_config,
     coerce_problem_spec,
 )
-from ..storage.study import load_best_params, load_study_manifest, validate_tuned_train_request
+from ..storage.study_manifest import load_study_manifest, validate_tuned_train_request
+from ..storage.study_optuna import load_best_params
 from .families.registry import (
     apply_tuned_parameters as apply_model_tuned_parameters,
 )
 from .families.registry import coerce_model_config, coerce_tuning_space_config
+
+
+@overload
+def apply_tuned_parameters(
+    config: TrainConfig,
+    params: TunedParameterSet,
+) -> TrainConfig: ...
+
+
+@overload
+def apply_tuned_parameters(
+    config: TuneConfig,
+    params: TunedParameterSet,
+) -> TuneConfig: ...
 
 
 def apply_tuned_parameters(
@@ -35,14 +50,15 @@ def apply_tuned_parameters(
     payload["problem"] = coerce_problem_spec(payload["problem"])
     payload["feature_set"] = coerce_feature_set_config(payload["feature_set"])
     payload["prediction"] = coerce_prediction_config(payload["prediction"])
-    payload["model"] = coerce_model_config(payload["model"])
-    model_type = TuneConfig if isinstance(config, TuneConfig) else TrainConfig
+    resolved_model = coerce_model_config(payload["model"])
+    payload["model"] = resolved_model
     if isinstance(config, TuneConfig):
         payload["tuning_space"] = coerce_tuning_space_config(
             payload["tuning_space"],
-            model_config=payload["model"],
+            model_config=resolved_model,
         )
-    return model_type.model_validate(payload)
+        return TuneConfig.model_validate(payload)
+    return TrainConfig.model_validate(payload)
 
 
 def apply_study_best_params(config: TrainConfig) -> TrainConfig:
@@ -62,7 +78,5 @@ def apply_study_best_params(config: TrainConfig) -> TrainConfig:
     try:
         params = load_best_params(path, study_name=config.study.name)
     except OSError as exc:
-        raise FileNotFoundError(
-            f"Best tuning params are required but missing: {path}"
-        ) from exc
-    return cast(TrainConfig, apply_tuned_parameters(config, params))
+        raise FileNotFoundError(f"Best tuning params are required but missing: {path}") from exc
+    return apply_tuned_parameters(config, params)

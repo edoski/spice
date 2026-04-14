@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from types import ModuleType
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -72,7 +73,7 @@ FeatureFamilyConfigT = TypeVar("FeatureFamilyConfigT", bound=FeatureFamilyConfig
 class FeatureFamilySpec(Generic[FeatureFamilyConfigT]):
     id: str
     config_type: type[FeatureFamilyConfigT]
-    modules: tuple[object, ...]
+    modules: tuple[ModuleType, ...]
     resolve_prerequisites: Callable[
         [tuple[str, ...], dict[str, HamiltonNode]],
         FeaturePrerequisites,

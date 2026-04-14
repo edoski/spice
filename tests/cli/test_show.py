@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import polars as pl
 from typer.testing import CliRunner
 
 from spice.cli import app
 from spice.config import (
-    load_simulate_config,
-    load_train_config,
-    load_tune_config,
+    SimulateConfig,
+    TrainConfig,
+    TuneConfig,
+    WorkflowTask,
 )
 from spice.core.reporting import NullReporter
 from spice.features import compile_feature_contract
+from spice.storage.catalog import CatalogStudyRecord
 from spice.temporal.contracts import compile_problem_contract
 from spice.workflows.simulate import run as run_simulate
 from spice.workflows.train import run as run_train
@@ -25,8 +28,8 @@ def _model_workflow_override(
     *,
     sample_count: int = 24,
     lookback_seconds: int = 120,
-    max_supported_delay_seconds: int = 36,
-    requested_delay_seconds: int | None = None,
+    max_delay_seconds: int = 36,
+    delay_seconds: int | None = None,
     compiler_id: str = "estimated_block",
 ) -> dict[str, object]:
     feature_set_name = (
@@ -43,17 +46,10 @@ def _model_workflow_override(
             "id": "test_problem",
             "lookback_seconds": lookback_seconds,
             "sample_count": sample_count,
-            "max_supported_delay_seconds": max_supported_delay_seconds,
+            "max_delay_seconds": max_delay_seconds,
             "compiler": {"id": compiler_id},
         },
-        "execution": {
-            "id": "test_execution",
-            "requested_delay_seconds": (
-                max_supported_delay_seconds
-                if requested_delay_seconds is None
-                else requested_delay_seconds
-            ),
-        },
+        "delay_seconds": max_delay_seconds if delay_seconds is None else delay_seconds,
         "training": {
             "device": "cpu",
             "batch_size": 8,
@@ -95,56 +91,54 @@ def _tune_override() -> dict[str, object]:
     }
 
 
-def _write_override(tmp_path: Path, payload: dict[str, object], *, name: str) -> Path:
-    import yaml
-
-    path = tmp_path / name
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-    return path
-
-
 def _load_test_train_config(
     tmp_path: Path,
+    load_workflow_config,
     *,
     override: dict[str, object] | None = None,
-):
-    config_path = (
-        None if override is None else _write_override(tmp_path, override, name="train.yaml")
-    )
-    return load_train_config(
-        preset="icdcs_2026",
-        config_path=config_path,
-        storage_root=tmp_path / "outputs",
+) -> TrainConfig:
+    return cast(
+        TrainConfig,
+        load_workflow_config(
+            WorkflowTask.TRAIN,
+            workspace=tmp_path,
+            preset="icdcs_2026",
+            override=override,
+        ),
     )
 
 
 def _load_test_tune_config(
     tmp_path: Path,
+    load_workflow_config,
     *,
     override: dict[str, object] | None = None,
-):
-    config_path = (
-        None if override is None else _write_override(tmp_path, override, name="tune.yaml")
-    )
-    return load_tune_config(
-        preset="icdcs_2026",
-        config_path=config_path,
-        storage_root=tmp_path / "outputs",
+) -> TuneConfig:
+    return cast(
+        TuneConfig,
+        load_workflow_config(
+            WorkflowTask.TUNE,
+            workspace=tmp_path,
+            preset="icdcs_2026",
+            override=override,
+        ),
     )
 
 
 def _load_test_simulate_config(
     tmp_path: Path,
+    load_workflow_config,
     *,
     override: dict[str, object] | None = None,
-):
-    config_path = (
-        None if override is None else _write_override(tmp_path, override, name="simulate.yaml")
-    )
-    return load_simulate_config(
-        preset="icdcs_2026",
-        config_path=config_path,
-        storage_root=tmp_path / "outputs",
+) -> SimulateConfig:
+    return cast(
+        SimulateConfig,
+        load_workflow_config(
+            WorkflowTask.SIMULATE,
+            workspace=tmp_path,
+            preset="icdcs_2026",
+            override=override,
+        ),
     )
 
 
@@ -164,7 +158,7 @@ def _seed_history_dataset(config) -> Path:
     block_interval_seconds = 12
     row_count = max(
         128,
-        ((contract.required_history_seconds + contract.max_supported_delay_seconds + 12) // 12)
+        ((contract.required_history_seconds + contract.max_delay_seconds + 12) // 12)
         + contract.warmup_rows
         + contract.sample_count
         + 16,
@@ -198,10 +192,10 @@ def _seed_evaluation_dataset(config) -> Path:
     return _seed_dataset(config.paths.evaluation_dir, rows)
 
 
-def test_show_command_smoke(tmp_path) -> None:
+def test_show_command_smoke(tmp_path, load_workflow_config) -> None:
     override = _model_workflow_override()
-    train_config = _load_test_train_config(tmp_path, override=override)
-    simulate_config = _load_test_simulate_config(tmp_path, override=override)
+    train_config = _load_test_train_config(tmp_path, load_workflow_config, override=override)
+    simulate_config = _load_test_simulate_config(tmp_path, load_workflow_config, override=override)
     _seed_history_dataset(train_config)
     _seed_evaluation_dataset(simulate_config)
     run_train(train_config, reporter=NullReporter())
@@ -235,9 +229,10 @@ def test_show_command_smoke(tmp_path) -> None:
     assert "simulation" in result.stdout
 
 
-def test_show_study_config_detail_smoke(tmp_path) -> None:
+def test_show_study_config_detail_smoke(tmp_path, load_workflow_config) -> None:
     config = _load_test_tune_config(
         tmp_path,
+        load_workflow_config,
         override={**_model_workflow_override(), **_tune_override()},
     )
     _seed_history_dataset(config)
@@ -273,8 +268,77 @@ def test_show_study_config_detail_smoke(tmp_path) -> None:
     assert "learning rate" in result.stdout
 
 
-def test_delete_artifact_command_smoke(tmp_path) -> None:
-    config = _load_test_train_config(tmp_path, override=_model_workflow_override())
+def test_show_detail_rejects_invalid_value_at_parse_time() -> None:
+    result = runner.invoke(app, ["show", "artifact", "--detail", "bogus"])
+
+    assert result.exit_code != 0
+    assert "Invalid value for '--detail'" in result.output
+
+
+def test_show_detail_guides_narrowing_flags(monkeypatch, tmp_path: Path) -> None:
+    records = [
+        CatalogStudyRecord(
+            study_id="study_a",
+            study_name="baseline",
+            dataset_id="dataset",
+            dataset_name="icdcs_2026",
+            chain_name="ethereum",
+            feature_set_id="icdcs_2026",
+            prediction_id="candidate_offset_selection",
+            model_id="lstm",
+            problem_id="icdcs_2026",
+            root_path=tmp_path / "study-a",
+            state_db_path=tmp_path / "study-a.sqlite",
+        ),
+        CatalogStudyRecord(
+            study_id="study_b",
+            study_name="ablation",
+            dataset_id="dataset",
+            dataset_name="icdcs_2026",
+            chain_name="ethereum",
+            feature_set_id="icdcs_2026",
+            prediction_id="candidate_offset_selection",
+            model_id="lstm",
+            problem_id="icdcs_2026",
+            root_path=tmp_path / "study-b",
+            state_db_path=tmp_path / "study-b.sqlite",
+        ),
+    ]
+    monkeypatch.setattr(
+        "spice.cli.commands.storage.list_study_records",
+        lambda *_args, **_kwargs: records,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "show",
+            "study",
+            "--chain",
+            "ethereum",
+            "--dataset",
+            "icdcs_2026",
+            "--feature-set",
+            "icdcs_2026",
+            "--model",
+            "lstm",
+            "--problem",
+            "icdcs_2026",
+            "--detail",
+            "trials",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--study" in result.output
+
+
+def test_delete_artifact_command_smoke(tmp_path, load_workflow_config) -> None:
+    config = _load_test_train_config(
+        tmp_path,
+        load_workflow_config,
+        override=_model_workflow_override(),
+    )
     _seed_history_dataset(config)
     run_train(config, reporter=NullReporter())
 

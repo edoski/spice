@@ -1,4 +1,4 @@
-"""Shared training execution and persistence helpers."""
+"""Persisted training orchestration and artifact/state writes."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ from .artifacts import (
 )
 from .pipeline import TrainingRunResult, TrainingSpec, TrainingStageReporters, run_training
 from .results import (
-    TrainingSummary,
-    build_training_summary,
+    LoadedTrainingSummary,
+    build_training_runtime_summary,
     iter_epoch_records,
 )
 from .training import evaluate_model
@@ -28,8 +28,7 @@ from .training import evaluate_model
 class PersistedTrainingRun:
     training_run: TrainingRunResult
     manifest: TrainingArtifactManifest
-    summary: TrainingSummary
-    best_validation_metrics: MetricSet
+    summary: LoadedTrainingSummary
     artifact_dir: Path
     artifact_paths: tuple[Path, ...]
 
@@ -106,12 +105,8 @@ def run_persisted_training(
             model=loaded_artifact.model,
             reporter=active_stage_reporters.evaluate,
         )
-        summary = build_training_summary(
+        runtime_summary = build_training_runtime_summary(
             training_run,
-            chain_name=spec.chain.name,
-            dataset_id=spec.dataset_id,
-            model_id=spec.model.id,
-            manifest=manifest,
             prepared=training_run.prepared,
             best_validation_metrics=best_validation_metrics,
             test_metrics=test_metrics,
@@ -119,7 +114,7 @@ def run_persisted_training(
         write_training_state(
             artifact_dir / ".spice" / "state.sqlite",
             root_kind=state_root_kind,
-            summary=summary,
+            summary=runtime_summary,
             epoch_rows=list(iter_epoch_records(training_run)),
         )
         active_write_reporter.finish_task(artifact_task, message=str(artifact_dir), silent=True)
@@ -136,12 +131,8 @@ def run_persisted_training(
             model=training_run.model,
             reporter=active_stage_reporters.evaluate,
         )
-        summary = build_training_summary(
+        runtime_summary = build_training_runtime_summary(
             training_run,
-            chain_name=spec.chain.name,
-            dataset_id=spec.dataset_id,
-            model_id=spec.model.id,
-            manifest=manifest,
             prepared=training_run.prepared,
             best_validation_metrics=best_validation_metrics,
             test_metrics=test_metrics,
@@ -152,8 +143,7 @@ def run_persisted_training(
     return PersistedTrainingRun(
         training_run=training_run,
         manifest=manifest,
-        summary=summary,
-        best_validation_metrics=best_validation_metrics,
+        summary=LoadedTrainingSummary(manifest=manifest, runtime=runtime_summary),
         artifact_dir=artifact_dir,
         artifact_paths=tuple(artifact_paths),
     )

@@ -1,71 +1,50 @@
+# pyright: strict
+
 """Modeling-owned workflow summary builders."""
 
 from __future__ import annotations
 
-from ..prediction import MetricDescriptor
-from .results import SimulationSummaryRecord, TrainingSummary
-
-
-def _metric_lines(
-    descriptors: list[MetricDescriptor],
-    metrics,
-) -> list[tuple[str, str]]:
-    return [
-        (descriptor.label, f"{metrics.require(descriptor.id):.4f}")
-        for descriptor in descriptors
-        if descriptor.id in metrics.values
-    ]
-
-
-def _window_metric_lines(summary: SimulationSummaryRecord) -> list[tuple[str, str]]:
-    return [
-        (
-            descriptor.label,
-            (
-                f"mean={summary.window_metrics[descriptor.id].mean:.4f} "
-                f"std={summary.window_metrics[descriptor.id].std:.4f}"
-            ),
-        )
-        for descriptor in summary.simulation_metric_descriptors
-        if descriptor.id in summary.window_metrics
-    ]
+from ..core.rendering import metric_fields, window_metric_fields
+from .results import LoadedSimulationSummary, LoadedTrainingSummary
 
 
 def training_summary_sections(
-    summary: TrainingSummary,
+    summary: LoadedTrainingSummary,
 ) -> list[tuple[str, list[tuple[str, str]]]]:
+    manifest = summary.manifest
+    runtime = summary.runtime
     return [
         (
             "dataset",
             [
-                ("name", summary.dataset_name),
-                ("storage id", summary.dataset_id),
-                ("chain", summary.chain),
-                ("model", summary.model_id),
-                ("problem", summary.problem_id),
-                ("prediction", summary.prediction_id),
+                ("name", manifest.dataset_name),
+                ("storage id", manifest.dataset_id),
+                ("chain", manifest.chain.name),
+                ("model", manifest.model.id),
+                ("problem", manifest.problem_id),
+                ("prediction", manifest.prediction_id),
             ],
         ),
         (
             "provenance",
             [
-                ("artifact id", summary.artifact_id),
-                ("variant", summary.variant.value),
-                *([] if summary.study is None else [("study", summary.study.name)]),
-                ("capability", f"{summary.max_supported_delay_seconds}s"),
+                ("artifact id", manifest.artifact_id),
+                ("variant", manifest.variant.value),
+                *([] if manifest.study is None else [("study", manifest.study.name)]),
+                ("capability", f"{manifest.max_delay_seconds}s"),
             ],
         ),
         (
             "runtime",
             [
-                ("lookback", f"{summary.lookback_seconds}s"),
-                ("best epoch", str(summary.best_epoch)),
-                ("device", summary.resolved_device),
-                ("precision", summary.resolved_precision),
-                ("compile", "on" if summary.compiled else "off"),
-                ("representation", summary.representation_id),
-                ("storage mode", summary.storage_mode_id),
-                ("batch planner", summary.batch_planner_id),
+                ("lookback", f"{manifest.lookback_seconds}s"),
+                ("best epoch", str(runtime.best_epoch)),
+                ("device", runtime.resolved_device),
+                ("precision", runtime.resolved_precision),
+                ("compile", "on" if runtime.compiled else "off"),
+                ("representation", manifest.representation_id),
+                ("storage mode", runtime.storage_mode_id),
+                ("batch planner", runtime.batch_planner_id),
             ],
         ),
         (
@@ -74,23 +53,23 @@ def training_summary_sections(
                 (
                     "split sizes",
                     (
-                        f"train={summary.split_sizes.train_samples:,} "
-                        f"validation={summary.split_sizes.validation_samples:,} "
-                        f"test={summary.split_sizes.test_samples:,}"
+                        f"train={runtime.split_sizes.train_samples:,} "
+                        f"validation={runtime.split_sizes.validation_samples:,} "
+                        f"test={runtime.split_sizes.test_samples:,}"
                     ),
                 ),
                 *[
                     (f"validation {label}", value)
-                    for label, value in _metric_lines(
-                        summary.training_metric_descriptors,
-                        summary.best_validation_metrics,
+                    for label, value in metric_fields(
+                        manifest.training_metric_descriptors,
+                        runtime.best_validation_metrics.values,
                     )
                 ],
                 *[
                     (f"test {label}", value)
-                    for label, value in _metric_lines(
-                        summary.training_metric_descriptors,
-                        summary.test_metrics,
+                    for label, value in metric_fields(
+                        manifest.training_metric_descriptors,
+                        runtime.test_metrics.values,
                     )
                 ],
             ],
@@ -99,45 +78,55 @@ def training_summary_sections(
 
 
 def simulation_summary_sections(
-    summary: SimulationSummaryRecord,
+    summary: LoadedSimulationSummary,
 ) -> list[tuple[str, list[tuple[str, str]]]]:
+    manifest = summary.manifest
+    runtime = summary.runtime
     return [
         (
             "dataset",
             [
-                ("name", summary.dataset_name),
-                ("storage id", summary.dataset_id),
-                ("chain", summary.chain),
-                ("model", summary.model_id),
-                ("problem", summary.problem_id),
-                ("prediction", summary.prediction_id),
+                ("name", manifest.dataset_name),
+                ("storage id", manifest.dataset_id),
+                ("chain", manifest.chain.name),
+                ("model", manifest.model.id),
+                ("problem", manifest.problem_id),
+                ("prediction", manifest.prediction_id),
             ],
         ),
         (
             "provenance",
             [
-                ("artifact id", summary.artifact_id),
-                ("variant", summary.variant.value),
-                *([] if summary.study is None else [("study", summary.study.name)]),
-                ("capability", f"{summary.max_supported_delay_seconds}s"),
-                ("requested", f"{summary.requested_delay_seconds}s"),
+                ("artifact id", manifest.artifact_id),
+                ("variant", manifest.variant.value),
+                *([] if manifest.study is None else [("study", manifest.study.name)]),
+                ("capability", f"{manifest.max_delay_seconds}s"),
+                ("requested", f"{runtime.delay_seconds}s"),
             ],
         ),
         (
             "simulation",
             [
-                ("window", f"{summary.simulation_window_seconds}s"),
-                ("repetitions", str(summary.repetitions)),
-                ("events", f"{summary.total_events:,}"),
+                ("window", f"{runtime.simulation_window_seconds}s"),
+                ("repetitions", str(runtime.repetitions)),
+                ("events", f"{runtime.total_events:,}"),
             ],
         ),
         (
             "results",
-            _metric_lines(summary.simulation_metric_descriptors, summary.metrics),
+            metric_fields(manifest.simulation_metric_descriptors, runtime.metrics.values),
         ),
         *(
             []
-            if not summary.window_metrics
-            else [("window metrics", _window_metric_lines(summary))]
+            if not runtime.window_metrics
+            else [
+                (
+                    "window metrics",
+                    window_metric_fields(
+                        summary.manifest.simulation_metric_descriptors,
+                        runtime.window_metrics,
+                    ),
+                )
+            ]
         ),
     ]

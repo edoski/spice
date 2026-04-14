@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import shlex
+import subprocess
 from typing import Annotated
 
 import typer
@@ -10,11 +13,12 @@ from ...config.registry import ConfigGroup
 from ..options import fail
 
 app = typer.Typer(
-    help="Author saved config specs.",
+    help="Query and edit saved YAML config specs.",
     no_args_is_help=True,
 )
 _CONFIG_GROUP_HELP = (
-    "One of: chain, provider, dataset, problem, execution, feature-set, preset."
+    "One of: chain, dataset, feature-set, model, prediction, preset, problem, "
+    "provider, tuning-space."
 )
 
 
@@ -23,10 +27,18 @@ def _print_config_names(names: list[str]) -> None:
         typer.echo(name)
 
 
+def _resolve_editor() -> str:
+    for env_name in ("VISUAL", "EDITOR"):
+        value = os.getenv(env_name)
+        if value:
+            return value
+    return "nvim"
+
+
 @app.command(
     "list",
     short_help="List saved config specs.",
-    help="List saved config names for one authorable group.",
+    help="List saved config names for one config group.",
 )
 def config_list_command(
     group: Annotated[
@@ -63,11 +75,11 @@ def config_show_command(
 
 
 @app.command(
-    "create",
-    short_help="Create one saved config spec.",
-    help="Create one saved config spec with repeated --set path=value operations.",
+    "edit",
+    short_help="Edit one saved config spec.",
+    help="Open the real YAML file in $VISUAL, else $EDITOR, else nvim. Seeds missing files.",
 )
-def config_create_command(
+def config_edit_command(
     group: Annotated[
         ConfigGroup,
         typer.Argument(metavar="GROUP", help=_CONFIG_GROUP_HELP),
@@ -76,99 +88,12 @@ def config_create_command(
         str,
         typer.Argument(metavar="NAME", help="Saved spec name."),
     ],
-    set_values: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--set",
-            metavar="PATH=VALUE",
-            help="Set one YAML path using dot notation.",
-        ),
-    ] = None,
 ) -> None:
-    from ...config.registry import create_named_group
+    from ...config.registry import ensure_named_group_file
 
+    editor = _resolve_editor()
     try:
-        create_named_group(
-            group_token=group.value,
-            name=name,
-            set_values=list(set_values or []),
-        )
-    except (FileExistsError, FileNotFoundError, TypeError, ValueError) as exc:
+        path = ensure_named_group_file(group.value, name)
+        subprocess.run([*shlex.split(editor), str(path)], check=True)
+    except (FileNotFoundError, TypeError, ValueError, subprocess.CalledProcessError) as exc:
         fail(str(exc))
-    typer.echo(f"created {group.value} {name}")
-
-
-@app.command(
-    "update",
-    short_help="Update one saved config spec.",
-    help="Update one saved config spec with repeated --set and --unset operations.",
-)
-def config_update_command(
-    group: Annotated[
-        ConfigGroup,
-        typer.Argument(metavar="GROUP", help=_CONFIG_GROUP_HELP),
-    ],
-    name: Annotated[
-        str,
-        typer.Argument(metavar="NAME", help="Saved spec name."),
-    ],
-    set_values: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--set",
-            metavar="PATH=VALUE",
-            help="Set one YAML path using dot notation.",
-        ),
-    ] = None,
-    unset_paths: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--unset",
-            metavar="PATH",
-            help="Remove one YAML path using dot notation.",
-        ),
-    ] = None,
-) -> None:
-    from ...config.registry import update_named_group
-
-    try:
-        update_named_group(
-            group_token=group.value,
-            name=name,
-            set_values=list(set_values or []),
-            unset_paths=list(unset_paths or []),
-        )
-    except (FileNotFoundError, TypeError, ValueError) as exc:
-        fail(str(exc))
-    typer.echo(f"updated {group.value} {name}")
-
-
-@app.command(
-    "delete",
-    short_help="Delete one saved config spec.",
-    help="Delete one saved config spec. Blocks on dependents unless --force is used.",
-)
-def config_delete_command(
-    group: Annotated[
-        ConfigGroup,
-        typer.Argument(metavar="GROUP", help=_CONFIG_GROUP_HELP),
-    ],
-    name: Annotated[
-        str,
-        typer.Argument(metavar="NAME", help="Saved spec name."),
-    ],
-    force: Annotated[
-        bool,
-        typer.Option(
-            "--force",
-            help="Delete even if dependent saved specs exist.",
-        ),
-    ] = False,
-) -> None:
-    from ...config.registry import delete_named_group
-
-    try:
-        delete_named_group(group_token=group.value, name=name, force=force)
-    except (FileNotFoundError, TypeError, ValueError) as exc:
-        fail(str(exc))
-    typer.echo(f"deleted {group.value} {name}")

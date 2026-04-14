@@ -12,12 +12,14 @@ from ..core.constants import MODEL_STATE_FILENAME
 from ..core.files import write_path_atomic
 from ..features import CompiledFeatureContract, compile_feature_contract
 from ..prediction import compile_prediction_contract
+from ..semantics import ArtifactSemantics
 from ..storage.artifact import load_artifact_manifest, write_artifact_manifest
 from ..storage.engine import RootKind
 from ._runtime import CompiledRepresentationContract
-from .families.registry import build_model, compile_default_representation_contract
+from .families.registry import build_model
 from .models import TemporalModel
 from .pipeline import PreparedTrainingDataset, TrainingSpec
+from .representations import compile_representation_contract
 from .results import ArtifactChainMetadata, TrainingArtifactManifest
 
 
@@ -60,7 +62,6 @@ def build_training_artifact_manifest(
     return TrainingArtifactManifest(
         artifact_id=spec.artifact_id,
         prediction=spec.prediction,
-        training_metric_descriptors=list(spec.prediction_contract.training_metric_descriptors),
         chain=ArtifactChainMetadata(name=spec.chain.name),
         dataset_id=spec.dataset_id,
         dataset_name=spec.dataset_name,
@@ -69,12 +70,16 @@ def build_training_artifact_manifest(
         study=spec.study,
         study_id=spec.study_id,
         feature_set=spec.feature_set,
-        feature_prerequisites=prepared.feature_prerequisites,
-        max_candidate_slots=prepared.max_candidate_slots,
-        feature_graph_fingerprint=prepared.feature_graph_fingerprint,
         model=spec.model,
         scaler=prepared.scaler,
         compiler_runtime_metadata=prepared.compiler_runtime_metadata,
+        semantics=ArtifactSemantics(
+            problem=spec.contract.semantics,
+            feature=spec.feature_contract.semantics,
+            prediction=spec.prediction_contract.semantics,
+            representation=spec.representation_contract.semantics,
+            max_candidate_slots=prepared.max_candidate_slots,
+        ),
     )
 
 
@@ -95,7 +100,7 @@ def load_training_artifact(artifact_dir: Path) -> LoadedTrainingArtifact:
     return LoadedTrainingArtifact(
         manifest=manifest,
         model=model,
-        representation_contract=compile_default_representation_contract(manifest.model.id),
+        representation_contract=compile_representation_contract(manifest.representation_id),
     )
 
 

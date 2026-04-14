@@ -26,8 +26,6 @@ def test_acquire_help_includes_panels_and_example() -> None:
 
     assert result.exit_code == 0, result.stdout
     assert "Selection" in result.stdout
-    assert "Overrides" in result.stdout
-    assert "Profiles" in result.stdout
     assert "Outputs" in result.stdout
     assert "Execution" in result.stdout
     assert "Example:" in result.stdout
@@ -38,12 +36,21 @@ def test_acquire_help_includes_panels_and_example() -> None:
     assert "--provider" in result.stdout
 
 
+def test_main_workflow_help_stays_operator_focused() -> None:
+    for command in ("train", "tune", "simulate", "show"):
+        result = runner.invoke(app, [command, "--help"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "Example:" in result.stdout
+
+
 def test_config_help_lists_core_authoring_commands() -> None:
     result = runner.invoke(app, ["config", "--help"])
 
     assert result.exit_code == 0, result.stdout
     assert "list" in result.stdout
     assert "show" in result.stdout
-    assert "create" in result.stdout
-    assert "update" in result.stdout
-    assert "delete" in result.stdout
+    assert "edit" in result.stdout
+    assert "create" not in result.stdout
+    assert "update" not in result.stdout
+    assert "delete" not in result.stdout

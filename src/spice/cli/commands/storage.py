@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from ...storage.inspect import (
-    artifact_list_sections,
-    dataset_list_sections,
-    describe_root,
-    sectioned_summary,
-    study_list_sections,
-)
+from ...storage.inspect import describe_root, sectioned_summary
+from ...storage.inspect_artifact import artifact_list_sections
+from ...storage.inspect_dataset import dataset_list_sections
+from ...storage.inspect_study import study_list_sections
 from ...storage.query import (
     ArtifactSelector,
     DatasetSelector,
@@ -47,12 +46,77 @@ from ..options import (
 
 show_app = typer.Typer(
     help="Query stored datasets, studies, and artifacts.",
+    epilog=(
+        "Example:\n"
+        "  spice show artifact --chain ethereum --dataset icdcs_2026 --detail epochs"
+    ),
     no_args_is_help=True,
 )
 delete_app = typer.Typer(
     help="Delete stored datasets, studies, and artifacts.",
     no_args_is_help=True,
 )
+
+
+class DatasetDetail(StrEnum):
+    RUNS = "runs"
+
+
+class StudyDetail(StrEnum):
+    TRIALS = "trials"
+    CONFIG = "config"
+
+
+class ArtifactDetail(StrEnum):
+    EPOCHS = "epochs"
+    RUNS = "runs"
+
+
+DatasetDetailOption = Annotated[
+    DatasetDetail | None,
+    typer.Option("--detail", metavar="DETAIL", help="Show one detail table: runs."),
+]
+StudyDetailOption = Annotated[
+    StudyDetail | None,
+    typer.Option(
+        "--detail",
+        metavar="DETAIL",
+        help="Show one detail table: trials or config.",
+    ),
+]
+ArtifactDetailOption = Annotated[
+    ArtifactDetail | None,
+    typer.Option(
+        "--detail",
+        metavar="DETAIL",
+        help="Show one detail table: epochs or runs.",
+    ),
+]
+
+
+_SELECTOR_FLAGS: dict[str, dict[str, str]] = {
+    "dataset": {
+        "chain_name": "--chain",
+        "dataset_name": "--dataset",
+    },
+    "study": {
+        "chain_name": "--chain",
+        "dataset_name": "--dataset",
+        "feature_set_id": "--feature-set",
+        "model_id": "--model",
+        "problem_id": "--problem",
+        "study_name": "--study",
+    },
+    "artifact": {
+        "chain_name": "--chain",
+        "dataset_name": "--dataset",
+        "feature_set_id": "--feature-set",
+        "model_id": "--model",
+        "problem_id": "--problem",
+        "variant": "--variant",
+        "study_name": "--study",
+    },
+}
 
 
 def _show_root_detail(root_path: Path, *, detail: str | None) -> None:
@@ -68,12 +132,16 @@ def _show_records(
     has_filters: bool,
     detail: str | None,
     list_sections,
+    selector: object,
 ) -> None:
     if not records:
         fail(f"No {kind} matches found")
     if detail is not None and len(records) != 1:
         print_sections(f"{kind} matches", list_sections(records))
-        fail(f"--detail requires exactly one {kind} match")
+        fail(
+            f"--detail requires exactly one {kind} match"
+            f"{_narrowing_guidance(kind, records, selector=selector)}"
+        )
     if detail is not None:
         _show_root_detail(records[0].root_path, detail=detail)
         return
@@ -87,10 +155,25 @@ def _handle_selector_error(
     error: SelectorResolutionError,
     *,
     list_sections,
+    selector: object,
 ) -> None:
     if error.records:
         print_sections(f"{error.kind} matches", list_sections(list(error.records)))
-    fail(str(error))
+    fail(f"{error}{_narrowing_guidance(error.kind, error.records, selector=selector)}")
+
+
+def _narrowing_guidance(kind: str, records: Sequence[object], *, selector: object) -> str:
+    if len(records) <= 1:
+        return ""
+    flags = [
+        flag
+        for attribute, flag in _SELECTOR_FLAGS.get(kind, {}).items()
+        if getattr(selector, attribute, None) is None
+        and len({getattr(record, attribute, None) for record in records}) > 1
+    ]
+    if not flags:
+        return ""
+    return f". Try {', '.join(flags)}."
 
 
 def _handle_delete_blocked(error: DeleteBlockedError) -> None:
@@ -110,21 +193,21 @@ def show_dataset_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
     storage_root: StorageRootReadOption = None,
-    detail: str | None = typer.Option(
-        "--detail", metavar="DETAIL", help="Show one detail table: runs."
-    ),
+    detail: DatasetDetailOption = None,
 ) -> None:
     root = resolve_storage_root(storage_root)
+    selector = DatasetSelector(chain_name=chain, dataset_name=dataset)
     records = list_dataset_records(
         root,
-        selector=DatasetSelector(chain_name=chain, dataset_name=dataset),
+        selector=selector,
     )
     _show_records(
         kind="dataset",
         records=records,
         has_filters=chain is not None or dataset is not None,
-        detail=detail,
+        detail=None if detail is None else detail.value,
         list_sections=dataset_list_sections,
+        selector=selector,
     )
 
 
@@ -141,23 +224,20 @@ def show_study_command(
     problem: ProblemFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootReadOption = None,
-    detail: str | None = typer.Option(
-        "--detail",
-        metavar="DETAIL",
-        help="Show one detail table: trials or config.",
-    ),
+    detail: StudyDetailOption = None,
 ) -> None:
     root = resolve_storage_root(storage_root)
+    selector = StudySelector(
+        chain_name=chain,
+        dataset_name=dataset,
+        feature_set_id=feature_set,
+        model_id=model,
+        problem_id=problem,
+        study_name=study,
+    )
     records = list_study_records(
         root,
-        selector=StudySelector(
-            chain_name=chain,
-            dataset_name=dataset,
-            feature_set_id=feature_set,
-            model_id=model,
-            problem_id=problem,
-            study_name=study,
-        ),
+        selector=selector,
     )
     _show_records(
         kind="study",
@@ -165,8 +245,9 @@ def show_study_command(
         has_filters=any(
             value is not None for value in (chain, dataset, feature_set, model, problem, study)
         ),
-        detail=detail,
+        detail=None if detail is None else detail.value,
         list_sections=study_list_sections,
+        selector=selector,
     )
 
 
@@ -184,24 +265,21 @@ def show_artifact_command(
     variant: VariantFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootReadOption = None,
-    detail: str | None = typer.Option(
-        "--detail",
-        metavar="DETAIL",
-        help="Show one detail table: epochs or runs.",
-    ),
+    detail: ArtifactDetailOption = None,
 ) -> None:
     root = resolve_storage_root(storage_root)
+    selector = ArtifactSelector(
+        chain_name=chain,
+        dataset_name=dataset,
+        feature_set_id=feature_set,
+        model_id=model,
+        problem_id=problem,
+        variant=variant,
+        study_name=study,
+    )
     records = list_artifact_records(
         root,
-        selector=ArtifactSelector(
-            chain_name=chain,
-            dataset_name=dataset,
-            feature_set_id=feature_set,
-            model_id=model,
-            problem_id=problem,
-            variant=variant,
-            study_name=study,
-        ),
+        selector=selector,
     )
     _show_records(
         kind="artifact",
@@ -210,8 +288,9 @@ def show_artifact_command(
             value is not None
             for value in (chain, dataset, feature_set, model, problem, variant, study)
         ),
-        detail=detail,
+        detail=None if detail is None else detail.value,
         list_sections=artifact_list_sections,
+        selector=selector,
     )
 
 
@@ -243,7 +322,7 @@ def delete_artifact_command(
     try:
         record = resolve_artifact_record(root, selector=selector)
     except SelectorResolutionError as error:
-        _handle_selector_error(error, list_sections=artifact_list_sections)
+        _handle_selector_error(error, list_sections=artifact_list_sections, selector=selector)
         return
     delete_artifact_record(root, record=record)
 
@@ -278,7 +357,7 @@ def delete_study_command(
     try:
         record = resolve_study_record(root, selector=selector)
     except SelectorResolutionError as error:
-        _handle_selector_error(error, list_sections=study_list_sections)
+        _handle_selector_error(error, list_sections=study_list_sections, selector=selector)
         return
     try:
         delete_study_record(root, record=record, cascade=cascade)
@@ -307,7 +386,7 @@ def delete_dataset_command(
     try:
         record = resolve_dataset_record(root, selector=selector)
     except SelectorResolutionError as error:
-        _handle_selector_error(error, list_sections=dataset_list_sections)
+        _handle_selector_error(error, list_sections=dataset_list_sections, selector=selector)
         return
     try:
         delete_dataset_record(root, record=record, cascade=cascade)

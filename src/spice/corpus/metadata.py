@@ -1,3 +1,5 @@
+# pyright: strict
+
 """Typed acquisition summary builders."""
 
 from __future__ import annotations
@@ -7,10 +9,11 @@ from hashlib import sha256
 from pathlib import Path
 
 from ..acquisition.rpc import AcquisitionRuntimeSnapshot
-from ..config import AcquireConfig, FeatureSetConfig
+from ..config import AcquireConfig
 from ..corpus.io import iter_block_files
 from ..corpus.validation import BlockDatasetValidationReport
-from ..features import CompiledFeatureContract, FeaturePrerequisites
+from ..features import CompiledFeatureContract
+from ..semantics import CorpusSemantics
 from ..temporal.contracts import CompiledProblemContract
 
 
@@ -79,13 +82,13 @@ class DatasetValidationMetadata:
 
 
 @dataclass(frozen=True, slots=True)
-class DatasetSummary:
+class DatasetManifest:
     dataset: DatasetIdentity
     chain: ChainMetadata
-    provider: ProviderMetadata
     request: DatasetRequestMetadata
     coverage: DatasetCoverageMetadata
     validation: DatasetValidationMetadata
+    semantics: CorpusSemantics
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,30 +101,10 @@ class AcquisitionConfigSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
-class ProblemContractSnapshot:
-    problem_id: str
-    compiler_id: str
-    feature_set: FeatureSetConfig
-    lookback_seconds: int
-    sample_count: int
-    max_supported_delay_seconds: int
-    feature_prerequisites: FeaturePrerequisites
-    feature_graph_fingerprint: str
+class AcquireRunFacts:
     required_history_seconds: int
     acquired_history_window_seconds: int
     valid_anchor_samples: int
-
-    @property
-    def feature_set_id(self) -> str:
-        return self.feature_set.id
-
-    @property
-    def feature_family_id(self) -> str:
-        return self.feature_set.family.id
-
-    @property
-    def feature_names(self) -> tuple[str, ...]:
-        return tuple(self.feature_set.outputs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,9 +125,9 @@ class DatasetAcquisitionRuntimeMetadata:
 @dataclass(frozen=True, slots=True)
 class AcquireRunRecord:
     provider: ProviderMetadata
-    problem: ProblemContractSnapshot
     settings: AcquisitionConfigSnapshot
     runtime: DatasetAcquisitionRuntimeMetadata
+    facts: AcquireRunFacts
 
 
 def has_block_files(path: Path) -> bool:
@@ -233,18 +216,19 @@ def acquisition_runtime_metadata(
     )
 
 
-def build_dataset_summary(
+def build_dataset_manifest(
     *,
     config: AcquireConfig,
+    contract: CompiledProblemContract,
+    feature_contract: CompiledFeatureContract,
     history_request_start_timestamp: int,
     history_request_end_timestamp: int,
     evaluation_request_start_timestamp: int,
     evaluation_request_end_timestamp: int,
-    provider: ProviderMetadata,
     history_validation: BlockDatasetValidationReport,
     evaluation_validation: BlockDatasetValidationReport,
-) -> DatasetSummary:
-    return DatasetSummary(
+) -> DatasetManifest:
+    return DatasetManifest(
         dataset=DatasetIdentity(
             id=config.paths.corpus_id,
             name=config.dataset.name,
@@ -253,7 +237,6 @@ def build_dataset_summary(
             name=config.chain.name,
             chain_id=config.chain.runtime.chain_id,
         ),
-        provider=provider,
         request=DatasetRequestMetadata(
             history=DatasetWindowMetadata(
                 start_timestamp=history_request_start_timestamp,
@@ -272,6 +255,10 @@ def build_dataset_summary(
             history=compact_validation_report(history_validation),
             evaluation=compact_validation_report(evaluation_validation),
         ),
+        semantics=CorpusSemantics(
+            problem=contract.semantics,
+            feature=feature_contract.semantics,
+        ),
     )
 
 
@@ -280,26 +267,17 @@ def build_acquire_run_record(
     config: AcquireConfig,
     provider: ProviderMetadata,
     contract: CompiledProblemContract,
-    feature_contract: CompiledFeatureContract,
     acquisition_runtime: AcquisitionRuntimeSnapshot,
     acquired_history_window_seconds: int,
     valid_anchor_samples: int,
 ) -> AcquireRunRecord:
     return AcquireRunRecord(
         provider=provider,
-        problem=ProblemContractSnapshot(
-            problem_id=config.problem.id,
-            compiler_id=contract.compiler_id,
-            feature_set=config.feature_set,
-            lookback_seconds=contract.lookback_seconds,
-            sample_count=contract.sample_count,
-            max_supported_delay_seconds=contract.max_supported_delay_seconds,
-            feature_prerequisites=contract.feature_prerequisites,
-            feature_graph_fingerprint=feature_contract.feature_graph_fingerprint,
+        settings=acquisition_settings(config),
+        runtime=acquisition_runtime_metadata(acquisition_runtime),
+        facts=AcquireRunFacts(
             required_history_seconds=contract.required_history_seconds,
             acquired_history_window_seconds=acquired_history_window_seconds,
             valid_anchor_samples=valid_anchor_samples,
         ),
-        settings=acquisition_settings(config),
-        runtime=acquisition_runtime_metadata(acquisition_runtime),
     )

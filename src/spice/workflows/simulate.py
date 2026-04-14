@@ -8,7 +8,7 @@ from ..corpus.io import load_block_frame
 from ..modeling.artifacts import load_training_artifact, validate_artifact_semantics
 from ..modeling.inference import predict_with_model
 from ..modeling.pipeline import prepare_inference_dataset
-from ..modeling.results import build_simulation_summary_record
+from ..modeling.results import LoadedSimulationSummary, build_simulation_runtime_summary
 from ..modeling.simulation import run_prediction_simulation
 from ..modeling.summary import simulation_summary_sections
 from ..prediction import compile_prediction_contract
@@ -24,7 +24,7 @@ def _workflow_facts(config: SimulateConfig) -> list[tuple[str, str]]:
         ("chain", config.chain.name),
         ("problem", config.problem.id),
         ("prediction", config.prediction.id),
-        ("execution", config.execution.id),
+        ("delay", f"{config.delay_seconds}s"),
         ("model", config.model.id),
         ("variant", config.artifact.variant.value),
     ]
@@ -48,7 +48,7 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
         config,
         run_name=(
             f"simulate-{config.chain.name}-{config.model.id}"
-            f"-{config.problem.id}-{config.execution.id}"
+            f"-{config.problem.id}-{config.delay_seconds}s"
         ),
         reporter=reporter,
     ) as session:
@@ -96,21 +96,17 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                     f"prediction family {prediction_contract.prediction_family_id} "
                     "does not support simulate"
                 )
-            if (
-                config.execution.requested_delay_seconds
-                > loaded_artifact.manifest.max_supported_delay_seconds
-            ):
+            if config.delay_seconds > loaded_artifact.manifest.max_delay_seconds:
                 raise ValueError(
-                    "execution.requested_delay_seconds exceeds artifact capability: "
-                    f"{config.execution.requested_delay_seconds} > "
-                    f"{loaded_artifact.manifest.max_supported_delay_seconds}"
+                    "delay_seconds exceeds artifact capability: "
+                    f"{config.delay_seconds} > {loaded_artifact.manifest.max_delay_seconds}"
                 )
             prepared = prepare_inference_dataset(
                 history_blocks,
                 evaluation_blocks,
                 feature_contract=feature_contract,
                 contract=contract,
-                requested_delay_seconds=config.execution.requested_delay_seconds,
+                delay_seconds=config.delay_seconds,
                 compiler_runtime_metadata=loaded_artifact.manifest.compiler_runtime_metadata,
                 scaler=loaded_artifact.manifest.scaler,
                 max_candidate_slots=loaded_artifact.manifest.max_candidate_slots,
@@ -142,23 +138,23 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                 seed=config.simulation.seed,
                 reporter=simulation_reporter,
             )
-            summary = build_simulation_summary_record(
-                loaded_artifact.manifest,
+            runtime_summary = build_simulation_runtime_summary(
                 prepared=prepared,
                 simulation=simulation,
-                simulation_metric_descriptors=list(
-                    prediction_contract.simulation_metric_descriptors
-                ),
-                requested_delay_seconds=config.execution.requested_delay_seconds,
+                delay_seconds=config.delay_seconds,
                 window_seconds=config.simulation.window_seconds,
                 arrival_rate_per_second=config.simulation.arrival_rate_per_second,
                 repetitions=config.simulation.repetitions,
+            )
+            summary = LoadedSimulationSummary(
+                manifest=loaded_artifact.manifest,
+                runtime=runtime_summary,
             )
             report_task = write_reporter.start_task("write simulation state")
             write_simulation_state(
                 artifact_dir / ".spice" / "state.sqlite",
                 root_kind=_state_root_kind(config),
-                summary=summary,
+                summary=runtime_summary,
             )
             write_reporter.finish_task(report_task, message=str(artifact_dir), silent=True)
         session.runtime.log_sectioned_summary(

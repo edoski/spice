@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar, cast
 
+from ..core.components import ComponentCatalog
 from .base import PredictionFamilyConfig
 from .contracts import CompiledPredictionContract
 
@@ -19,41 +20,33 @@ class PredictionFamilySpec(Generic[PredictionFamilyConfigT]):
     compile: Callable[[str, PredictionFamilyConfigT], CompiledPredictionContract]
 
 
-_PREDICTION_FAMILY_SPECS: dict[str, PredictionFamilySpec[Any]] = {}
-_BUILTINS_LOADED = False
+_PREDICTION_FAMILY_SPECS = ComponentCatalog[PredictionFamilySpec[Any]](
+    kind_label="prediction family",
+    entry_point_group="spice.prediction_families",
+)
 
 
 def register_prediction_family_spec(spec: PredictionFamilySpec[Any]) -> None:
-    existing = _PREDICTION_FAMILY_SPECS.get(spec.id)
-    if existing is not None:
-        raise ValueError(f"Duplicate prediction family spec id: {spec.id}")
-    _PREDICTION_FAMILY_SPECS[spec.id] = spec
+    _PREDICTION_FAMILY_SPECS.register(spec.id, spec)
 
 
-def _ensure_builtin_prediction_families_loaded() -> None:
-    global _BUILTINS_LOADED
-    if _BUILTINS_LOADED:
-        return
+def _load_builtin_prediction_families() -> None:
     from .families import candidate_offset_selection, min_block_fee_multitask  # noqa: F401
 
-    _BUILTINS_LOADED = True
+
+_PREDICTION_FAMILY_SPECS.configure_builtin_loader(_load_builtin_prediction_families)
 
 
 def prediction_family_spec(family_id: str) -> PredictionFamilySpec[Any]:
-    _ensure_builtin_prediction_families_loaded()
     try:
-        return _PREDICTION_FAMILY_SPECS[family_id]
-    except KeyError as exc:
-        known = ", ".join(sorted(_PREDICTION_FAMILY_SPECS)) or "<none>"
-        raise ValueError(
-            f"Unknown prediction.family.id: {family_id}. Known families: {known}"
-        ) from exc
+        return _PREDICTION_FAMILY_SPECS.get(family_id)
+    except ValueError as exc:
+        raise ValueError(str(exc).replace("prediction family", "prediction.family.id")) from exc
 
 
 def coerce_prediction_family_config(
     raw_config: Mapping[str, object] | PredictionFamilyConfig,
 ) -> PredictionFamilyConfig:
-    _ensure_builtin_prediction_families_loaded()
     if isinstance(raw_config, PredictionFamilyConfig):
         family_id = raw_config.id
         payload = raw_config.model_dump(mode="json")

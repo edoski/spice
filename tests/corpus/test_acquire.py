@@ -21,7 +21,7 @@ from spice.acquisition.rpc import (
 from spice.core.reporting import NullReporter, PlainReporter, StageMetricValue
 from spice.features import compile_feature_contract
 from spice.storage.catalog import list_dataset_records
-from spice.storage.corpus import list_acquire_runs, load_dataset_summary
+from spice.storage.corpus import list_acquire_runs, load_dataset_manifest
 from spice.temporal.contracts import compile_problem_contract
 from spice.workflows.acquire import _DaemonThreadPoolExecutor
 from spice.workflows.acquire import run as run_acquire
@@ -160,22 +160,24 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
 
     run_acquire(config, reporter=NullReporter())
 
-    summary = load_dataset_summary(config.paths.corpus_state_db)
+    summary = load_dataset_manifest(config.paths.corpus_state_db)
     runs = list_acquire_runs(config.paths.corpus_state_db)
     assert config.paths.corpus_state_db.is_file()
     assert summary.validation.evaluation.rows == evaluation_plan.expected_rows
-    assert summary.provider.name == "publicnode"
+    assert summary.semantics.problem.problem_id == config.problem.id
+    assert summary.semantics.problem.compiler_id == config.problem.compiler.id
+    assert summary.semantics.feature.feature_set_id == config.feature_set.id
+    assert summary.semantics.feature.feature_family_id == config.feature_set.family.id
+    assert (
+        summary.semantics.feature.feature_graph_fingerprint
+        == feature_contract.feature_graph_fingerprint
+    )
+    assert summary.semantics.feature.feature_prerequisites == contract.feature_prerequisites
     assert len(runs) == 1
-    assert runs[0].problem.problem_id == config.problem.id
-    assert runs[0].problem.compiler_id == config.problem.compiler.id
-    assert runs[0].problem.feature_set == config.feature_set
-    assert runs[0].problem.feature_set_id == config.feature_set.id
-    assert runs[0].problem.feature_family_id == config.feature_set.family.id
-    assert runs[0].problem.feature_graph_fingerprint == feature_contract.feature_graph_fingerprint
-    assert runs[0].problem.feature_prerequisites == contract.feature_prerequisites
-    assert runs[0].problem.required_history_seconds == contract.required_history_seconds
-    assert runs[0].problem.valid_anchor_samples >= config.problem.sample_count
-    assert runs[0].problem.acquired_history_window_seconds >= contract.required_history_seconds
+    assert runs[0].provider.name == "publicnode"
+    assert runs[0].facts.required_history_seconds == contract.required_history_seconds
+    assert runs[0].facts.valid_anchor_samples >= config.problem.sample_count
+    assert runs[0].facts.acquired_history_window_seconds >= contract.required_history_seconds
     assert config.paths.history_dir.is_dir()
     assert config.paths.evaluation_dir.is_dir()
     datasets = list_dataset_records(
@@ -275,8 +277,7 @@ def test_pull_block_range_emits_structured_progress_messages(
                 len(block_numbers),
                 start_block=block_numbers[0],
                 start_timestamp=(
-                    plan.window.start
-                    + (block_numbers[0] - plan.block_range.start) * 12
+                    plan.window.start + (block_numbers[0] - plan.block_range.start) * 12
                 ),
                 chain_id=config.chain.runtime.chain_id,
                 block_interval_seconds=12,

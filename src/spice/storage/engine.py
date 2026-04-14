@@ -10,6 +10,7 @@ from pathlib import Path
 from sqlalchemy import Engine, event, inspect, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection, create_engine
+from sqlalchemy.schema import Table
 
 from .schema import metadata, spice_meta
 
@@ -53,7 +54,7 @@ def create_state_engine(path: Path) -> Engine:
     return engine
 
 
-def ensure_state_db(path: Path, *, root_kind: RootKind, tables: Iterable) -> None:
+def ensure_state_db(path: Path, *, root_kind: RootKind, tables: Iterable[Table]) -> None:
     managed_tables = (spice_meta, *tuple(tables))
     engine = create_state_engine(path)
     try:
@@ -124,7 +125,7 @@ def _ensure_root_kind(conn: Connection, *, root_kind: RootKind) -> None:
         )
 
 
-def _ensure_table_shapes(conn: Connection, *, tables: Iterable) -> None:
+def _ensure_table_shapes(conn: Connection, *, tables: Iterable[Table]) -> None:
     inspector = inspect(conn)
     for table in tables:
         expected_columns = tuple(column.name for column in table.columns)

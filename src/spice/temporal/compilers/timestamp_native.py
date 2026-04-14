@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import ceil
-from typing import Literal, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -17,6 +17,9 @@ from ..contracts import CompiledProblemContract, ProblemRuntimeMetadata
 from ..problem_store import CompiledProblemStore
 from .base import ProblemCompilerConfig, ProblemCompilerSpec
 from .registry import register_problem_compiler_spec
+
+if TYPE_CHECKING:
+    from ...config import ProblemSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,20 +34,20 @@ class TimestampSamplingWindow:
 
 
 class TimestampNativeCompilerConfig(ProblemCompilerConfig):
-    id: Literal["timestamp_native"] = "timestamp_native"
+    id: str = "timestamp_native"
 
 
 @dataclass(frozen=True, slots=True)
 class TimestampNativeCompiledProblemContract(CompiledProblemContract):
     def initial_history_window_seconds(self, recent_block_interval_seconds: float | None) -> int:
-        minimum_window = self.required_history_seconds + self.max_supported_delay_seconds
+        minimum_window = self.required_history_seconds + self.max_delay_seconds
         if recent_block_interval_seconds is None or recent_block_interval_seconds <= 0:
             return minimum_window
         warmup_seconds = ceil(self.warmup_rows * recent_block_interval_seconds)
         return max(
             minimum_window,
             self.required_history_seconds
-            + self.max_supported_delay_seconds
+            + self.max_delay_seconds
             + warmup_seconds
             + ceil(self.sample_count * recent_block_interval_seconds),
         )
@@ -62,34 +65,34 @@ class TimestampNativeCompiledProblemContract(CompiledProblemContract):
                 feature_table,
                 window=TimestampSamplingWindow(
                     lookback_seconds=self.lookback_seconds,
-                    delay_seconds=self.max_supported_delay_seconds,
+                    delay_seconds=self.max_delay_seconds,
                     feature_prerequisites=self.feature_prerequisites,
                 ),
             ),
             {},
         )
 
-    def build_requested_delay_store(
+    def build_delay_store(
         self,
         feature_table: ResolvedFeatureTable,
-        requested_delay_seconds: int,
+        delay_seconds: int,
         *,
         compiler_runtime_metadata: ProblemRuntimeMetadata,
         max_candidate_slots: int,
     ) -> CompiledProblemStore:
         del compiler_runtime_metadata
-        if requested_delay_seconds <= 0:
-            raise ValueError("requested_delay_seconds must be positive")
-        if requested_delay_seconds > self.max_supported_delay_seconds:
+        if delay_seconds <= 0:
+            raise ValueError("delay_seconds must be positive")
+        if delay_seconds > self.max_delay_seconds:
             raise ValueError(
-                "requested_delay_seconds exceeds problem capability: "
-                f"{requested_delay_seconds} > {self.max_supported_delay_seconds}"
+                "delay_seconds exceeds problem capability: "
+                f"{delay_seconds} > {self.max_delay_seconds}"
             )
         return _build_timestamp_problem_store(
             feature_table,
             window=TimestampSamplingWindow(
                 lookback_seconds=self.lookback_seconds,
-                delay_seconds=requested_delay_seconds,
+                delay_seconds=delay_seconds,
                 feature_prerequisites=self.feature_prerequisites,
             ),
             max_candidate_slots=max_candidate_slots,
@@ -97,7 +100,7 @@ class TimestampNativeCompiledProblemContract(CompiledProblemContract):
 
 
 def compile_problem(
-    problem,
+    problem: ProblemSpec,
     feature_contract: CompiledFeatureContract,
 ) -> CompiledProblemContract:
     return TimestampNativeCompiledProblemContract(
@@ -107,7 +110,7 @@ def compile_problem(
         feature_family_id=feature_contract.feature_family_id,
         lookback_seconds=problem.lookback_seconds,
         sample_count=problem.sample_count,
-        max_supported_delay_seconds=problem.max_supported_delay_seconds,
+        max_delay_seconds=problem.max_delay_seconds,
         feature_prerequisites=feature_contract.feature_prerequisites,
     )
 
@@ -179,6 +182,6 @@ register_problem_compiler_spec(
     ProblemCompilerSpec[TimestampNativeCompilerConfig](
         id="timestamp_native",
         config_type=TimestampNativeCompilerConfig,
-        compile_problem=cast(object, compile_problem),
+        compile_problem=compile_problem,
     )
 )

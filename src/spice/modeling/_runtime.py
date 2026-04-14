@@ -11,7 +11,12 @@ import torch
 from numpy.typing import NDArray
 
 from ..config import CompileMode, ModelConfig, TrainingConfig, TrainingPrecision
-from ..prediction import CompiledPredictionContract, bind_prediction_representation
+from ..prediction import (
+    CompiledPredictionContract,
+    PredictionBatch,
+    bind_prediction_representation,
+)
+from ..prediction.contracts import PredictionPreparedRepresentation
 from ..temporal.problem_store import CompiledProblemStore
 from .families.registry import (
     resolve_auto_compile,
@@ -134,7 +139,7 @@ def prepare_prediction_representation(
     representation_contract: CompiledRepresentationContract,
     prediction_contract: CompiledPredictionContract,
     runtime_context: RepresentationRuntimeContext,
-):
+) -> PredictionPreparedRepresentation:
     prepared = prepare_model_representation(
         store,
         sample_indices,
@@ -143,6 +148,8 @@ def prepare_prediction_representation(
     )
     targets = prediction_contract.prepare_targets(store, sample_indices)
     return bind_prediction_representation(prepared, targets=targets)
+
+
 def build_prediction_loader(
     store: CompiledProblemStore,
     sample_indices: IntVector,
@@ -152,7 +159,7 @@ def build_prediction_loader(
     runtime_context: RepresentationRuntimeContext,
     seed: int,
     shuffle: bool = False,
-) -> PreparedRepresentationLoader:
+) -> PreparedRepresentationLoader[PredictionBatch]:
     prepared = prepare_prediction_representation(
         store,
         sample_indices,
@@ -165,6 +172,8 @@ def build_prediction_loader(
         seed=seed,
         shuffle=shuffle,
     )
+
+
 def _available_system_memory_bytes() -> int:
     if psutil is not None:
         return int(psutil.virtual_memory().available)

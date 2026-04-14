@@ -98,7 +98,7 @@ class ProblemSpec(ConfigModel):
     id: str
     lookback_seconds: int = Field(gt=0)
     sample_count: int = Field(gt=0)
-    max_supported_delay_seconds: int = Field(gt=0)
+    max_delay_seconds: int = Field(gt=0)
     compiler: SerializeAsAny[ProblemCompilerConfig]
 
     @field_validator("id")
@@ -111,9 +111,7 @@ def coerce_problem_spec(payload: Mapping[str, object] | ProblemSpec) -> ProblemS
     from ..temporal.compilers import coerce_problem_compiler_config
 
     raw_payload = (
-        payload.model_dump(mode="json")
-        if isinstance(payload, ProblemSpec)
-        else dict(payload)
+        payload.model_dump(mode="json") if isinstance(payload, ProblemSpec) else dict(payload)
     )
     raw_compiler = raw_payload.get("compiler")
     if raw_compiler is None:
@@ -125,16 +123,6 @@ def coerce_problem_spec(payload: Mapping[str, object] | ProblemSpec) -> ProblemS
         raise TypeError("problem.compiler must be a mapping")
     raw_payload["compiler"] = coerce_problem_compiler_config(raw_compiler)
     return ProblemSpec.model_validate(raw_payload)
-
-
-class ExecutionSpec(ConfigModel):
-    id: str
-    requested_delay_seconds: int = Field(gt=0)
-
-    @field_validator("id")
-    @classmethod
-    def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="execution.id")
 
 
 class SplitConfig(ConfigModel):
@@ -229,9 +217,7 @@ def coerce_feature_set_config(payload: Mapping[str, object] | FeatureSetConfig) 
     from ..features import coerce_feature_family_config
 
     raw_payload = (
-        payload.model_dump(mode="json")
-        if isinstance(payload, FeatureSetConfig)
-        else dict(payload)
+        payload.model_dump(mode="json") if isinstance(payload, FeatureSetConfig) else dict(payload)
     )
     raw_family = raw_payload.get("family")
     if raw_family is None:
@@ -256,9 +242,7 @@ def coerce_prediction_config(payload: Mapping[str, object] | PredictionConfig) -
     from ..prediction import coerce_prediction_family_config
 
     raw_payload = (
-        payload.model_dump(mode="json")
-        if isinstance(payload, PredictionConfig)
-        else dict(payload)
+        payload.model_dump(mode="json") if isinstance(payload, PredictionConfig) else dict(payload)
     )
     raw_family = raw_payload.get("family")
     if raw_family is None:
@@ -546,8 +530,8 @@ class ModelWorkflowConfig(WorkflowConfig):
     model: SerializeAsAny[ModelConfig]
     feature_set: FeatureSetConfig
     prediction: PredictionConfig
-    study: StudyConfig = StudyConfig()
-    artifact: ArtifactConfig = ArtifactConfig()
+    study: StudyConfig = Field(default_factory=StudyConfig)
+    artifact: ArtifactConfig = Field(default_factory=ArtifactConfig)
 
     @property
     def paths(self) -> PathLayout:
@@ -598,32 +582,47 @@ class SimulateConfig(ModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.SIMULATE
     training: TrainingConfig
     simulation: SimulationConfig
-    execution: ExecutionSpec
+    delay_seconds: int = Field(gt=0)
 
     @model_validator(mode="after")
-    def validate_execution(self) -> Self:
-        if self.execution.requested_delay_seconds > self.problem.max_supported_delay_seconds:
-            raise ValueError(
-                "execution.requested_delay_seconds must be <= problem.max_supported_delay_seconds"
-            )
+    def validate_delay(self) -> Self:
+        if self.delay_seconds > self.problem.max_delay_seconds:
+            raise ValueError("delay_seconds must be <= problem.max_delay_seconds")
         return self
 
 
 class PresetSpec(ConfigModel):
     dataset: str | None = None
     problem: str | None = None
-    execution: str | None = None
+    delay_seconds: int | None = Field(default=None, gt=0)
     chain: str | None = None
     provider: str | None = None
     model: str | None = None
     feature_set: str | None = None
     prediction: str | None = None
-    acquisition: str | None = None
-    training: str | None = None
-    split: str | None = None
-    simulation: str | None = None
-    tuning: str | None = None
-    tuning_space: str | None = None
+    acquisition: AcquisitionConfig | None = None
+    training: TrainingConfig | None = None
+    split: SplitConfig | None = None
+    simulation: SimulationConfig | None = None
+    tuning: TuningConfig | None = None
+    tuning_space: str | TuningSpaceConfig | None = None
     storage: StorageSpec | None = None
     study: StudyConfig | None = None
     artifact: ArtifactConfig | None = None
+
+
+class WorkflowSelections(ConfigModel):
+    preset: str | None = None
+    chain: str | None = None
+    dataset: str | None = None
+    problem: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    feature_set: str | None = None
+    prediction: str | None = None
+    study: str | None = None
+    variant: str | None = None
+    delay_seconds: int | None = Field(default=None, gt=0)
+    trial_count: int | None = Field(default=None, gt=0)
+    storage_root: Path | None = None
+    dry_run: bool | None = None

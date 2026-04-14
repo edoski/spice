@@ -37,16 +37,25 @@ app.command(
     "train",
     short_help="Train a model artifact.",
     help="Train one artifact from a materialized history corpus.",
+    epilog=(
+        "Example:\n"
+        "  spice train --preset icdcs_2026 --study default --variant baseline"
+    ),
 )(train_command)
 app.command(
     "tune",
     short_help="Tune a model artifact.",
     help="Tune one artifact with Optuna.",
+    epilog="Example:\n  spice tune --preset icdcs_2026 --trial-count 20",
 )(tune_command)
 app.command(
     "simulate",
     short_help="Simulate a model artifact.",
     help="Simulate one trained artifact on evaluation data.",
+    epilog=(
+        "Example:\n"
+        "  spice simulate --preset icdcs_2026 --study default --variant baseline"
+    ),
 )(simulate_command)
 
 

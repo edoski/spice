@@ -3,18 +3,16 @@ from __future__ import annotations
 import math
 from datetime import date
 from pathlib import Path
+from typing import cast
 
 import polars as pl
 import pytest
-import yaml
 
 from spice.config import (
     SimulateConfig,
     TrainConfig,
     TuneConfig,
-    load_simulate_config,
-    load_train_config,
-    load_tune_config,
+    WorkflowTask,
 )
 from spice.features import compile_feature_contract
 from spice.temporal.contracts import compile_problem_contract
@@ -44,8 +42,8 @@ def model_workflow_override():
         *,
         sample_count: int = 24,
         lookback_seconds: int = 120,
-        max_supported_delay_seconds: int = 36,
-        requested_delay_seconds: int | None = None,
+        max_delay_seconds: int = 36,
+        delay_seconds: int | None = None,
         compiler_id: str = "estimated_block",
     ) -> dict[str, object]:
         feature_set_name = (
@@ -62,17 +60,10 @@ def model_workflow_override():
                 "id": "test_problem",
                 "lookback_seconds": lookback_seconds,
                 "sample_count": sample_count,
-                "max_supported_delay_seconds": max_supported_delay_seconds,
+                "max_delay_seconds": max_delay_seconds,
                 "compiler": {"id": compiler_id},
             },
-            "execution": {
-                "id": "test_execution",
-                "requested_delay_seconds": (
-                    max_supported_delay_seconds
-                    if requested_delay_seconds is None
-                    else requested_delay_seconds
-                ),
-            },
+            "delay_seconds": max_delay_seconds if delay_seconds is None else delay_seconds,
             "training": {
                 "device": "cpu",
                 "batch_size": 8,
@@ -121,60 +112,63 @@ def tune_override():
 
 
 @pytest.fixture
-def load_test_train_config(tmp_path: Path):
+def load_test_train_config(tmp_path: Path, load_workflow_config):
     def _load(
         tmp_path_arg: Path | None = None,
         *,
         override: dict[str, object] | None = None,
     ) -> TrainConfig:
         workspace = tmp_path if tmp_path_arg is None else tmp_path_arg
-        config_path = (
-            None if override is None else _write_override(workspace, override, name="train.yaml")
-        )
-        return load_train_config(
-            preset=PRESET,
-            config_path=config_path,
-            storage_root=workspace / "outputs",
+        return cast(
+            TrainConfig,
+            load_workflow_config(
+                WorkflowTask.TRAIN,
+                workspace=workspace,
+                preset=PRESET,
+                override=override,
+            ),
         )
 
     return _load
 
 
 @pytest.fixture
-def load_test_tune_config(tmp_path: Path):
+def load_test_tune_config(tmp_path: Path, load_workflow_config):
     def _load(
         tmp_path_arg: Path | None = None,
         *,
         override: dict[str, object] | None = None,
     ) -> TuneConfig:
         workspace = tmp_path if tmp_path_arg is None else tmp_path_arg
-        config_path = (
-            None if override is None else _write_override(workspace, override, name="tune.yaml")
-        )
-        return load_tune_config(
-            preset=PRESET,
-            config_path=config_path,
-            storage_root=workspace / "outputs",
+        return cast(
+            TuneConfig,
+            load_workflow_config(
+                WorkflowTask.TUNE,
+                workspace=workspace,
+                preset=PRESET,
+                override=override,
+            ),
         )
 
     return _load
 
 
 @pytest.fixture
-def load_test_simulate_config(tmp_path: Path):
+def load_test_simulate_config(tmp_path: Path, load_workflow_config):
     def _load(
         tmp_path_arg: Path | None = None,
         *,
         override: dict[str, object] | None = None,
     ) -> SimulateConfig:
         workspace = tmp_path if tmp_path_arg is None else tmp_path_arg
-        config_path = (
-            None if override is None else _write_override(workspace, override, name="simulate.yaml")
-        )
-        return load_simulate_config(
-            preset=PRESET,
-            config_path=config_path,
-            storage_root=workspace / "outputs",
+        return cast(
+            SimulateConfig,
+            load_workflow_config(
+                WorkflowTask.SIMULATE,
+                workspace=workspace,
+                preset=PRESET,
+                override=override,
+            ),
         )
 
     return _load
@@ -215,7 +209,7 @@ def required_dataset_blocks(config: TrainConfig | TuneConfig | SimulateConfig) -
         math.ceil(
             (
                 contract.required_history_seconds
-                + contract.max_supported_delay_seconds
+                + contract.max_delay_seconds
                 + block_interval_seconds
             )
             / block_interval_seconds
@@ -289,7 +283,7 @@ def make_evaluation_rows(
             math.ceil(
                 (
                     contract.required_history_seconds
-                    + config.execution.requested_delay_seconds
+                    + config.delay_seconds
                     + block_interval_seconds
                 )
                 / block_interval_seconds
@@ -304,19 +298,6 @@ def make_evaluation_rows(
         chain_id=config.chain.runtime.chain_id,
         block_interval_seconds=synthetic_block_interval_seconds(config.chain.name),
     )
-
-
-def _write_override(
-    tmp_path: Path,
-    payload: dict[str, object],
-    *,
-    name: str = "override.yaml",
-) -> Path:
-    path = tmp_path / name
-    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-    return path
-
-
 def _write_dataset_dir(dataset_dir: Path, rows: list[dict[str, int]]) -> Path:
     dataset_dir.mkdir(parents=True, exist_ok=True)
     path = dataset_dir / "blocks.parquet"

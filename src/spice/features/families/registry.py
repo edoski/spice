@@ -3,44 +3,38 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
+from ...core.components import ComponentCatalog
 from .base import FeatureFamilyConfig, FeatureFamilySpec
 
-_FEATURE_FAMILY_SPECS: dict[str, FeatureFamilySpec[FeatureFamilyConfig]] = {}
-_BUILTINS_LOADED = False
+_FEATURE_FAMILY_SPECS = ComponentCatalog[FeatureFamilySpec[Any]](
+    kind_label="feature family",
+    entry_point_group="spice.feature_families",
+)
 
 
-def register_feature_family_spec(spec: FeatureFamilySpec[FeatureFamilyConfig]) -> None:
-    existing = _FEATURE_FAMILY_SPECS.get(spec.id)
-    if existing is not None:
-        raise ValueError(f"Duplicate feature family spec id: {spec.id}")
-    _FEATURE_FAMILY_SPECS[spec.id] = spec
+def register_feature_family_spec(spec: FeatureFamilySpec[Any]) -> None:
+    _FEATURE_FAMILY_SPECS.register(spec.id, spec)
 
 
-def _ensure_builtin_feature_families_loaded() -> None:
-    global _BUILTINS_LOADED
-    if _BUILTINS_LOADED:
-        return
+def _load_builtin_feature_families() -> None:
     from . import block_native, time_native  # noqa: F401
 
-    _BUILTINS_LOADED = True
+
+_FEATURE_FAMILY_SPECS.configure_builtin_loader(_load_builtin_feature_families)
 
 
-def feature_family_spec(family_id: str) -> FeatureFamilySpec[FeatureFamilyConfig]:
-    _ensure_builtin_feature_families_loaded()
+def feature_family_spec(family_id: str) -> FeatureFamilySpec[Any]:
     try:
-        return _FEATURE_FAMILY_SPECS[family_id]
-    except KeyError as exc:
-        known = ", ".join(sorted(_FEATURE_FAMILY_SPECS)) or "<none>"
-        raise ValueError(
-            f"Unknown feature_set.family.id: {family_id}. Known families: {known}"
-        ) from exc
+        return _FEATURE_FAMILY_SPECS.get(family_id)
+    except ValueError as exc:
+        raise ValueError(str(exc).replace("feature family", "feature_set.family.id")) from exc
 
 
 def coerce_feature_family_config(
     raw_config: Mapping[str, object] | FeatureFamilyConfig,
 ) -> FeatureFamilyConfig:
-    _ensure_builtin_feature_families_loaded()
     if isinstance(raw_config, FeatureFamilyConfig):
         family_id = raw_config.id
         payload = raw_config.model_dump(mode="json")

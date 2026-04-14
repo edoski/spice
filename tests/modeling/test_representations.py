@@ -5,11 +5,14 @@ import torch
 
 from spice.config import coerce_prediction_config
 from spice.modeling._runtime import build_prediction_loader
-from spice.modeling.families.registry import compile_default_representation_contract
+from spice.modeling.families.lstm import LstmModelConfig
+from spice.modeling.families.registry import resolve_model_representation_id
 from spice.modeling.inference import predict_with_model
 from spice.modeling.models import ModelOutputs, TemporalModel, take_last_valid
 from spice.modeling.representations import (
+    SEQUENCE_INPUT_REPRESENTATION_ID,
     RepresentationRuntimeContext,
+    compile_representation_contract,
     prepare_representation,
 )
 from spice.prediction import compile_prediction_contract
@@ -63,6 +66,16 @@ def _prediction_contract():
     )
 
 
+def _model_config() -> LstmModelConfig:
+    return LstmModelConfig(
+        input_projection_dim=8,
+        hidden_size=16,
+        num_layers=2,
+        dropout=0.1,
+        head_hidden_dim=8,
+    )
+
+
 class _ToyTemporalModel(TemporalModel):
     def __init__(self, n_candidate_slots: int) -> None:
         super().__init__()
@@ -90,7 +103,7 @@ def test_sequence_input_storage_modes_yield_identical_batches() -> None:
     store = _test_store()
     sample_indices = np.array([3, 0, 2, 1], dtype=np.int64)
     streaming = prepare_representation(
-        "sequence_inputs",
+        SEQUENCE_INPUT_REPRESENTATION_ID,
         store,
         sample_indices,
         runtime_context=RepresentationRuntimeContext(
@@ -100,7 +113,7 @@ def test_sequence_input_storage_modes_yield_identical_batches() -> None:
         ),
     )
     materialized = prepare_representation(
-        "sequence_inputs",
+        SEQUENCE_INPUT_REPRESENTATION_ID,
         store,
         sample_indices,
         runtime_context=RepresentationRuntimeContext(
@@ -113,8 +126,8 @@ def test_sequence_input_storage_modes_yield_identical_batches() -> None:
     streaming_batches = list(streaming.iter_batches(epoch=0, seed=2026, shuffle=False))
     materialized_batches = list(materialized.iter_batches(epoch=0, seed=2026, shuffle=False))
 
-    assert streaming.representation_id == "sequence_inputs"
-    assert materialized.representation_id == "sequence_inputs"
+    assert streaming.representation_id == SEQUENCE_INPUT_REPRESENTATION_ID
+    assert materialized.representation_id == SEQUENCE_INPUT_REPRESENTATION_ID
     assert len(streaming_batches) == len(materialized_batches) == 2
     for left, right in zip(streaming_batches, materialized_batches, strict=True):
         assert torch.equal(left.sample_positions, right.sample_positions)
@@ -125,7 +138,9 @@ def test_sequence_input_storage_modes_yield_identical_batches() -> None:
 def test_prediction_loader_binds_current_family_targets() -> None:
     store = _test_store()
     sample_indices = np.array([0, 1, 2, 3], dtype=np.int64)
-    representation_contract = compile_default_representation_contract("lstm")
+    representation_contract = compile_representation_contract(
+        resolve_model_representation_id(_model_config())
+    )
     loader = build_prediction_loader(
         store,
         sample_indices,
@@ -153,7 +168,9 @@ def test_prediction_loader_binds_current_family_targets() -> None:
 def test_predict_with_model_decodes_candidate_offsets() -> None:
     store = _test_store()
     sample_indices = np.array([0, 1, 2, 3], dtype=np.int64)
-    representation_contract = compile_default_representation_contract("lstm")
+    representation_contract = compile_representation_contract(
+        resolve_model_representation_id(_model_config())
+    )
     predictions = predict_with_model(
         _ToyTemporalModel(n_candidate_slots=store.max_candidate_slots),
         prediction_contract=_prediction_contract(),

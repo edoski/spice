@@ -20,7 +20,6 @@ dataset_index = Table(
     Column("dataset_id", String, primary_key=True),
     Column("dataset_name", String, nullable=False),
     Column("chain_name", String, nullable=False),
-    Column("provider_name", String, nullable=False),
     Column("root_path", String, nullable=False),
     Column("state_db_path", String, nullable=False),
     Column("created_at", Integer, nullable=False),
@@ -71,7 +70,6 @@ class CatalogDatasetRecord:
     dataset_id: str
     dataset_name: str
     chain_name: str
-    provider_name: str
     root_path: Path
     state_db_path: Path
 
@@ -122,7 +120,6 @@ def upsert_dataset_record(
     dataset_id: str,
     dataset_name: str,
     chain_name: str,
-    provider_name: str,
     root_path: Path,
     state_db_path: Path,
 ) -> None:
@@ -131,7 +128,6 @@ def upsert_dataset_record(
         "dataset_id": dataset_id,
         "dataset_name": dataset_name,
         "chain_name": chain_name,
-        "provider_name": provider_name,
         "root_path": str(root_path),
         "state_db_path": str(state_db_path),
         "created_at": now,
@@ -223,7 +219,6 @@ def list_dataset_records(
             dataset_id=str(row["dataset_id"]),
             dataset_name=str(row["dataset_name"]),
             chain_name=str(row["chain_name"]),
-            provider_name=str(row["provider_name"]),
             root_path=Path(str(row["root_path"])),
             state_db_path=Path(str(row["state_db_path"])),
         )

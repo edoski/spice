@@ -45,7 +45,7 @@ def _build_test_store():
                 "id": "test_timestamp_native",
                 "lookback_seconds": 10,
                 "sample_count": 4,
-                "max_supported_delay_seconds": 12,
+                "max_delay_seconds": 12,
                 "compiler": {"id": "timestamp_native"},
             }
         ),

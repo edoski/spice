@@ -1,3 +1,5 @@
+# pyright: strict
+
 """Typed training and simulation summary envelopes."""
 
 from __future__ import annotations
@@ -13,14 +15,13 @@ from ..config import (
     ProblemSpec,
     StudyConfig,
 )
-from ..features import FeaturePrerequisites
 from ..prediction import (
-    MetricDescriptor,
     MetricSet,
     PredictionSimulationRun,
     PredictionSimulationSummary,
     WindowMetricSummary,
 )
+from ..semantics import ArtifactSemantics
 from ..temporal.scaling import ScalerStats
 from .pipeline import PreparedInferenceDataset, PreparedTrainingDataset, TrainingRunResult
 
@@ -34,7 +35,6 @@ class ArtifactChainMetadata:
 class TrainingArtifactManifest:
     artifact_id: str
     prediction: PredictionConfig
-    training_metric_descriptors: list[MetricDescriptor]
     chain: ArtifactChainMetadata
     dataset_id: str
     dataset_name: str
@@ -43,52 +43,74 @@ class TrainingArtifactManifest:
     study: StudyConfig | None
     study_id: str | None
     feature_set: FeatureSetConfig
-    feature_prerequisites: FeaturePrerequisites
-    max_candidate_slots: int
-    feature_graph_fingerprint: str
-    model: ModelConfig
+    model: ModelConfig[str]
     scaler: ScalerStats
     compiler_runtime_metadata: dict[str, object]
+    semantics: ArtifactSemantics
 
     @property
     def problem_id(self) -> str:
-        return self.problem.id
+        return self.semantics.problem.problem_id
 
     @property
     def prediction_id(self) -> str:
-        return self.prediction.id
+        return self.semantics.prediction.prediction_id
 
     @property
     def prediction_family_id(self) -> str:
-        return self.prediction.family.id
+        return self.semantics.prediction.prediction_family_id
 
     @property
     def feature_set_id(self) -> str:
-        return self.feature_set.id
+        return self.semantics.feature.feature_set_id
 
     @property
     def feature_family_id(self) -> str:
-        return self.feature_set.family.id
+        return self.semantics.feature.feature_family_id
 
     @property
     def feature_names(self) -> tuple[str, ...]:
-        return tuple(self.feature_set.outputs)
+        return self.semantics.feature.feature_names
 
     @property
-    def max_supported_delay_seconds(self) -> int:
-        return self.problem.max_supported_delay_seconds
+    def max_delay_seconds(self) -> int:
+        return self.semantics.problem.max_delay_seconds
 
     @property
     def lookback_seconds(self) -> int:
-        return self.problem.lookback_seconds
+        return self.semantics.problem.lookback_seconds
 
     @property
     def sample_count(self) -> int:
-        return self.problem.sample_count
+        return self.semantics.problem.sample_count
+
+    @property
+    def feature_prerequisites(self):
+        return self.semantics.feature.feature_prerequisites
+
+    @property
+    def max_candidate_slots(self) -> int:
+        return self.semantics.max_candidate_slots
+
+    @property
+    def feature_graph_fingerprint(self) -> str:
+        return self.semantics.feature.feature_graph_fingerprint
+
+    @property
+    def training_metric_descriptors(self):
+        return self.semantics.prediction.training_metric_descriptors
+
+    @property
+    def simulation_metric_descriptors(self):
+        return self.semantics.prediction.simulation_metric_descriptors
+
+    @property
+    def representation_id(self) -> str:
+        return self.semantics.representation.representation_id
 
     @property
     def n_features(self) -> int:
-        return len(self.feature_set.outputs)
+        return len(self.semantics.feature.feature_names)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,25 +121,7 @@ class SplitSizes:
 
 
 @dataclass(frozen=True, slots=True)
-class TrainingSummary:
-    artifact_id: str
-    prediction_id: str
-    prediction_family_id: str
-    training_metric_descriptors: list[MetricDescriptor]
-    chain: str
-    dataset_id: str
-    dataset_name: str
-    variant: ArtifactVariant
-    study: StudyConfig | None
-    study_id: str | None
-    model_id: str
-    problem_id: str
-    max_supported_delay_seconds: int
-    lookback_seconds: int
-    feature_family_id: str
-    feature_prerequisites: FeaturePrerequisites
-    sample_count: int
-    max_candidate_slots: int
+class TrainingRuntimeSummary:
     n_rows_available: int
     n_rows_used: int
     split_sizes: SplitSizes
@@ -125,11 +129,16 @@ class TrainingSummary:
     resolved_device: str
     resolved_precision: str
     compiled: bool
-    representation_id: str
     storage_mode_id: str
     batch_planner_id: str
     best_validation_metrics: MetricSet
     test_metrics: MetricSet
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedTrainingSummary:
+    manifest: TrainingArtifactManifest
+    runtime: TrainingRuntimeSummary
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,35 +149,24 @@ class TrainingEpochRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class SimulationSummaryRecord:
-    artifact_id: str
-    prediction_id: str
-    prediction_family_id: str
-    simulation_metric_descriptors: list[MetricDescriptor]
-    chain: str
-    dataset_id: str
-    dataset_name: str
-    variant: ArtifactVariant
-    study: StudyConfig | None
-    study_id: str | None
-    model_id: str
-    problem_id: str
-    max_supported_delay_seconds: int
-    requested_delay_seconds: int
-    lookback_seconds: int
-    feature_family_id: str
-    feature_prerequisites: FeaturePrerequisites
+class SimulationRuntimeSummary:
+    delay_seconds: int
     simulation_window_seconds: int
     arrival_rate_per_second: float
     repetitions: int
     n_history_rows: int
     n_evaluation_rows: int
     sample_count: int
-    max_candidate_slots: int
     metrics: MetricSet
     window_metrics: dict[str, WindowMetricSummary]
     total_events: int
     runs: list[PredictionSimulationRun]
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedSimulationSummary:
+    manifest: TrainingArtifactManifest
+    runtime: SimulationRuntimeSummary
 
 
 def iter_epoch_records(result: TrainingRunResult) -> Iterator[TrainingEpochRecord]:
@@ -187,36 +185,14 @@ def iter_epoch_records(result: TrainingRunResult) -> Iterator[TrainingEpochRecor
         )
 
 
-def build_training_summary(
+def build_training_runtime_summary(
     result: TrainingRunResult,
     *,
-    chain_name: str,
-    dataset_id: str,
-    model_id: str,
-    manifest: TrainingArtifactManifest,
     prepared: PreparedTrainingDataset,
     best_validation_metrics: MetricSet,
     test_metrics: MetricSet,
-) -> TrainingSummary:
-    return TrainingSummary(
-        artifact_id=manifest.artifact_id,
-        prediction_id=manifest.prediction_id,
-        prediction_family_id=manifest.prediction_family_id,
-        training_metric_descriptors=list(manifest.training_metric_descriptors),
-        chain=chain_name,
-        dataset_id=dataset_id,
-        dataset_name=manifest.dataset_name,
-        variant=manifest.variant,
-        study=manifest.study,
-        study_id=manifest.study_id,
-        model_id=model_id,
-        problem_id=manifest.problem_id,
-        max_supported_delay_seconds=manifest.max_supported_delay_seconds,
-        lookback_seconds=manifest.lookback_seconds,
-        feature_family_id=manifest.feature_family_id,
-        feature_prerequisites=manifest.feature_prerequisites,
-        sample_count=manifest.sample_count,
-        max_candidate_slots=manifest.max_candidate_slots,
+) -> TrainingRuntimeSummary:
+    return TrainingRuntimeSummary(
         n_rows_available=prepared.n_rows_available,
         n_rows_used=prepared.n_rows_used,
         split_sizes=SplitSizes(
@@ -228,7 +204,6 @@ def build_training_summary(
         resolved_device=result.training_result.resolved_device,
         resolved_precision=result.training_result.resolved_precision,
         compiled=result.training_result.compiled,
-        representation_id=result.training_result.representation_id,
         storage_mode_id=result.training_result.storage_mode_id,
         batch_planner_id=result.training_result.batch_planner_id,
         best_validation_metrics=best_validation_metrics,
@@ -236,42 +211,23 @@ def build_training_summary(
     )
 
 
-def build_simulation_summary_record(
-    manifest: TrainingArtifactManifest,
+def build_simulation_runtime_summary(
     *,
     prepared: PreparedInferenceDataset,
     simulation: PredictionSimulationSummary,
-    simulation_metric_descriptors: list[MetricDescriptor],
-    requested_delay_seconds: int,
+    delay_seconds: int,
     window_seconds: int,
     arrival_rate_per_second: float,
     repetitions: int,
-) -> SimulationSummaryRecord:
-    return SimulationSummaryRecord(
-        artifact_id=manifest.artifact_id,
-        prediction_id=manifest.prediction_id,
-        prediction_family_id=manifest.prediction_family_id,
-        simulation_metric_descriptors=list(simulation_metric_descriptors),
-        chain=manifest.chain.name,
-        dataset_id=manifest.dataset_id,
-        dataset_name=manifest.dataset_name,
-        variant=manifest.variant,
-        study=manifest.study,
-        study_id=manifest.study_id,
-        model_id=manifest.model.id,
-        problem_id=manifest.problem_id,
-        max_supported_delay_seconds=manifest.max_supported_delay_seconds,
-        requested_delay_seconds=requested_delay_seconds,
-        lookback_seconds=manifest.lookback_seconds,
-        feature_family_id=manifest.feature_family_id,
-        feature_prerequisites=manifest.feature_prerequisites,
+) -> SimulationRuntimeSummary:
+    return SimulationRuntimeSummary(
+        delay_seconds=delay_seconds,
         simulation_window_seconds=window_seconds,
         arrival_rate_per_second=arrival_rate_per_second,
         repetitions=repetitions,
         n_history_rows=prepared.n_history_rows,
         n_evaluation_rows=prepared.n_evaluation_rows,
         sample_count=prepared.sample_count,
-        max_candidate_slots=manifest.max_candidate_slots,
         metrics=simulation.metrics,
         window_metrics=dict(simulation.window_metrics),
         total_events=simulation.total_events,

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from ..config.models import ProblemSpec
 from ..features import CompiledFeatureContract, FeaturePrerequisites
+from ..semantics import ProblemSemantics
 
 ProblemRuntimeMetadata = dict[str, object]
 
@@ -23,8 +24,18 @@ class CompiledProblemContract:
     feature_family_id: str
     lookback_seconds: int
     sample_count: int
-    max_supported_delay_seconds: int
+    max_delay_seconds: int
     feature_prerequisites: FeaturePrerequisites
+
+    @property
+    def semantics(self) -> ProblemSemantics:
+        return ProblemSemantics(
+            compiler_id=self.compiler_id,
+            problem_id=self.problem_id,
+            lookback_seconds=self.lookback_seconds,
+            sample_count=self.sample_count,
+            max_delay_seconds=self.max_delay_seconds,
+        )
 
     @property
     def required_history_seconds(self) -> int:
@@ -46,10 +57,10 @@ class CompiledProblemContract:
     ) -> tuple[CompiledProblemStore, ProblemRuntimeMetadata]:
         raise NotImplementedError
 
-    def build_requested_delay_store(
+    def build_delay_store(
         self,
         feature_table: ResolvedFeatureTable,
-        requested_delay_seconds: int,
+        delay_seconds: int,
         *,
         compiler_runtime_metadata: ProblemRuntimeMetadata,
         max_candidate_slots: int,

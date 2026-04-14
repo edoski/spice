@@ -5,17 +5,21 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import NamedTuple, Protocol
+from typing import Generic, NamedTuple, Protocol, TypeVar
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
 
+from ..core.components import ComponentCatalog
 from ..prediction import ModelInputBatch
+from ..semantics import RepresentationSemantics
 from ..temporal.problem_store import CompiledProblemStore
 
 IntVector = NDArray[np.int64]
 _MAX_AUTOMATIC_MATERIALIZATION_BYTES = 8 * 1024**3
+SEQUENCE_INPUT_REPRESENTATION_ID = "sequence_inputs"
+BatchT = TypeVar("BatchT", bound=ModelInputBatch, covariant=True)
 
 
 class SequenceInputBatch(NamedTuple):
@@ -44,10 +48,15 @@ class RepresentationRuntimeContext:
     available_memory_bytes: int
 
 
-class PreparedRepresentation(Protocol):
-    representation_id: str
-    storage_mode_id: str
-    batch_planner_id: str
+class PreparedRepresentation(Protocol[BatchT]):
+    @property
+    def representation_id(self) -> str: ...
+
+    @property
+    def storage_mode_id(self) -> str: ...
+
+    @property
+    def batch_planner_id(self) -> str: ...
 
     def __len__(self) -> int: ...
 
@@ -57,13 +66,13 @@ class PreparedRepresentation(Protocol):
         epoch: int,
         seed: int,
         shuffle: bool,
-    ) -> Iterator[ModelInputBatch]: ...
+    ) -> Iterator[BatchT]: ...
 
 
 @dataclass(frozen=True, slots=True)
 class InputRepresentationSpec:
     id: str
-    prepare: Callable[..., PreparedRepresentation]
+    prepare: Callable[..., PreparedRepresentation[ModelInputBatch]]
 
     def compile_contract(self) -> CompiledRepresentationContract:
         return CompiledRepresentationContract(
@@ -75,7 +84,11 @@ class InputRepresentationSpec:
 @dataclass(frozen=True, slots=True)
 class CompiledRepresentationContract:
     representation_id: str
-    prepare_impl: Callable[..., PreparedRepresentation]
+    prepare_impl: Callable[..., PreparedRepresentation[ModelInputBatch]]
+
+    @property
+    def semantics(self) -> RepresentationSemantics:
+        return RepresentationSemantics(representation_id=self.representation_id)
 
     def prepare(
         self,
@@ -83,7 +96,7 @@ class CompiledRepresentationContract:
         sample_indices: IntVector,
         *,
         runtime_context: RepresentationRuntimeContext,
-    ) -> PreparedRepresentation:
+    ) -> PreparedRepresentation[ModelInputBatch]:
         return self.prepare_impl(
             store,
             sample_indices,
@@ -98,7 +111,7 @@ class CompiledRepresentationContract:
         runtime_context: RepresentationRuntimeContext,
         seed: int,
         shuffle: bool = False,
-    ) -> PreparedRepresentationLoader:
+    ) -> PreparedRepresentationLoader[ModelInputBatch]:
         prepared = self.prepare(
             store,
             sample_indices,
@@ -111,10 +124,10 @@ class CompiledRepresentationContract:
         )
 
 
-class PreparedRepresentationLoader:
+class PreparedRepresentationLoader(Generic[BatchT]):
     def __init__(
         self,
-        prepared: PreparedRepresentation,
+        prepared: PreparedRepresentation[BatchT],
         *,
         seed: int,
         shuffle: bool,
@@ -139,7 +152,7 @@ class PreparedRepresentationLoader:
     def __len__(self) -> int:
         return len(self.prepared)
 
-    def __iter__(self) -> Iterator[ModelInputBatch]:
+    def __iter__(self) -> Iterator[BatchT]:
         epoch = self._epoch if self.shuffle else 0
         iterator = self.prepared.iter_batches(
             epoch=epoch,
@@ -151,24 +164,18 @@ class PreparedRepresentationLoader:
         return iterator
 
 
-_REPRESENTATIONS: dict[str, InputRepresentationSpec] = {}
+_REPRESENTATIONS = ComponentCatalog[InputRepresentationSpec](
+    kind_label="input representation",
+    entry_point_group="spice.input_representations",
+)
 
 
 def register_input_representation(spec: InputRepresentationSpec) -> None:
-    existing = _REPRESENTATIONS.get(spec.id)
-    if existing is not None:
-        raise ValueError(f"Duplicate input representation id: {spec.id}")
-    _REPRESENTATIONS[spec.id] = spec
+    _REPRESENTATIONS.register(spec.id, spec)
 
 
 def input_representation_spec(representation_id: str) -> InputRepresentationSpec:
-    try:
-        return _REPRESENTATIONS[representation_id]
-    except KeyError as exc:
-        known = ", ".join(sorted(_REPRESENTATIONS))
-        raise ValueError(
-            f"Unknown input representation: {representation_id}. Known representations: {known}"
-        ) from exc
+    return _REPRESENTATIONS.get(representation_id)
 
 
 def compile_representation_contract(representation_id: str) -> CompiledRepresentationContract:
@@ -182,12 +189,14 @@ def prepare_representation(
     sample_indices: IntVector,
     *,
     runtime_context: RepresentationRuntimeContext,
-) -> PreparedRepresentation:
+) -> PreparedRepresentation[ModelInputBatch]:
     return compile_representation_contract(representation_id).prepare(
         store,
         sample_indices,
         runtime_context=runtime_context,
     )
+
+
 def build_sequence_input_batch(
     store: CompiledProblemStore,
     sample_indices: IntVector,
@@ -243,7 +252,7 @@ class _StreamingSequenceInputRepresentation:
     store: CompiledProblemStore
     layout: _SequenceInputLayout
     batch_size: int
-    representation_id: str = "sequence_inputs"
+    representation_id: str = SEQUENCE_INPUT_REPRESENTATION_ID
     storage_mode_id: str = "streaming"
     batch_planner_id: str = "signature_bucketed"
 
@@ -280,7 +289,7 @@ class _MaterializedSequenceInputRepresentation:
     input_mask: torch.Tensor
     layout: _SequenceInputLayout
     batch_size: int
-    representation_id: str = "sequence_inputs"
+    representation_id: str = SEQUENCE_INPUT_REPRESENTATION_ID
     storage_mode_id: str = "materialized_dense"
     batch_planner_id: str = "signature_bucketed"
 
@@ -315,7 +324,7 @@ def _prepare_sequence_input(
     sample_indices: IntVector,
     *,
     runtime_context: RepresentationRuntimeContext,
-) -> PreparedRepresentation:
+) -> PreparedRepresentation[ModelInputBatch]:
     if runtime_context.batch_size <= 0:
         raise ValueError("runtime_context.batch_size must be positive")
     layout = _sequence_input_layout(store, sample_indices)
@@ -356,10 +365,7 @@ def _dense_sequence_input_storage_bytes(
 ) -> int:
     sample_count = int(layout.sample_indices.shape[0])
     inputs_bytes = (
-        sample_count
-        * layout.max_context_length
-        * n_features
-        * np.dtype(np.float32).itemsize
+        sample_count * layout.max_context_length * n_features * np.dtype(np.float32).itemsize
     )
     input_mask_bytes = sample_count * layout.max_context_length * np.dtype(np.bool_).itemsize
     return inputs_bytes + input_mask_bytes
@@ -409,7 +415,7 @@ def _materialize_sequence_input(
 
 register_input_representation(
     InputRepresentationSpec(
-        id="sequence_inputs",
+        id=SEQUENCE_INPUT_REPRESENTATION_ID,
         prepare=_prepare_sequence_input,
     )
 )
