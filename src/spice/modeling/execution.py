@@ -44,19 +44,21 @@ def _replay_split_metrics(
     prepared = training_run.prepared
     best_validation_metrics = evaluate_model(
         model,
-        model_id=spec.model.id,
         prediction_contract=spec.prediction_contract,
+        representation_contract=spec.representation_contract,
         store=prepared.store,
         sample_indices=prepared.split_indices.validation,
+        prediction_training_state=training_run.prediction_training_state,
         training_config=spec.training,
         reporter=reporter,
     )
     test_metrics = evaluate_model(
         model,
-        model_id=spec.model.id,
         prediction_contract=spec.prediction_contract,
+        representation_contract=spec.representation_contract,
         store=prepared.store,
         sample_indices=prepared.split_indices.test,
+        prediction_training_state=training_run.prediction_training_state,
         training_config=spec.training,
         reporter=reporter,
     )

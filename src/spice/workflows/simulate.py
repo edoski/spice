@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..config import SimulateConfig
 from ..core.reporting import Reporter
 from ..corpus.io import load_block_frame
-from ..modeling.artifacts import load_training_artifact, validate_artifact_feature_graph
+from ..modeling.artifacts import load_training_artifact, validate_artifact_semantics
 from ..modeling.inference import predict_with_model
 from ..modeling.pipeline import prepare_inference_dataset
 from ..modeling.results import build_simulation_summary_record
@@ -14,7 +14,7 @@ from ..modeling.summary import simulation_summary_sections
 from ..prediction import compile_prediction_contract
 from ..storage import ARTIFACT_ROOT_KIND, RootKind
 from ..storage.artifact import write_simulation_state
-from ..temporal.contracts import resolve_feature_contract
+from ..temporal.contracts import compile_problem_contract
 from ._shared import abort_cleanup, managed_workflow
 
 
@@ -69,9 +69,12 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
         ):
             load_task = load_reporter.start_task("load inference inputs")
             loaded_artifact = load_training_artifact(artifact_dir)
-            selection = validate_artifact_feature_graph(
+            feature_contract = validate_artifact_semantics(
                 loaded_artifact.manifest,
-                requested_feature_set_id=config.feature_set.id,
+                problem=config.problem,
+                feature_set=config.feature_set,
+                prediction=config.prediction,
+                model=config.model,
             )
             history_blocks = load_block_frame(history_block_path)
             evaluation_blocks = load_block_frame(evaluation_block_path)
@@ -80,23 +83,9 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                 message=f"artifact={artifact_dir} evaluation={evaluation_block_path}",
             )
             prepare_task = prepare_reporter.start_task("prepare inference dataset")
-            if (
-                loaded_artifact.manifest.problem.model_dump(mode="json")
-                != config.problem.model_dump(mode="json")
-            ):
-                raise ValueError(
-                    "Configured problem does not match the trained artifact semantics"
-                )
-            if (
-                loaded_artifact.manifest.prediction.model_dump(mode="json")
-                != config.prediction.model_dump(mode="json")
-            ):
-                raise ValueError(
-                    "Configured prediction does not match the trained artifact semantics"
-                )
-            contract = resolve_feature_contract(
+            contract = compile_problem_contract(
                 problem=config.problem,
-                selection=selection,
+                feature_contract=feature_contract,
             )
             prediction_contract = compile_prediction_contract(
                 prediction_id=config.prediction.id,
@@ -119,7 +108,7 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
             prepared = prepare_inference_dataset(
                 history_blocks,
                 evaluation_blocks,
-                selection=selection,
+                feature_contract=feature_contract,
                 contract=contract,
                 requested_delay_seconds=config.execution.requested_delay_seconds,
                 compiler_runtime_metadata=loaded_artifact.manifest.compiler_runtime_metadata,
@@ -134,8 +123,8 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
             )
             predictions = predict_with_model(
                 loaded_artifact.model,
-                model_id=loaded_artifact.manifest.model.id,
                 prediction_contract=prediction_contract,
+                representation_contract=loaded_artifact.representation_contract,
                 store=prepared.store,
                 sample_indices=prepared.sample_indices,
                 batch_size=config.training.batch_size,

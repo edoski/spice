@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from ..config import (
     ArtifactVariant,
+    FeatureSetConfig,
     ModelConfig,
     PredictionConfig,
     ProblemSpec,
@@ -32,7 +33,6 @@ class ArtifactChainMetadata:
 @dataclass(frozen=True, slots=True)
 class TrainingArtifactManifest:
     artifact_id: str
-    objective_id: str
     prediction: PredictionConfig
     metric_descriptors: list[MetricDescriptor]
     chain: ArtifactChainMetadata
@@ -42,11 +42,9 @@ class TrainingArtifactManifest:
     variant: ArtifactVariant
     study: StudyConfig | None
     study_id: str | None
-    feature_family_id: str
+    feature_set: FeatureSetConfig
     feature_prerequisites: FeaturePrerequisites
     max_candidate_slots: int
-    feature_set_id: str
-    feature_names: list[str]
     feature_graph_fingerprint: str
     model: ModelConfig
     scaler: ScalerStats
@@ -65,6 +63,18 @@ class TrainingArtifactManifest:
         return self.prediction.family.id
 
     @property
+    def feature_set_id(self) -> str:
+        return self.feature_set.id
+
+    @property
+    def feature_family_id(self) -> str:
+        return self.feature_set.family.id
+
+    @property
+    def feature_names(self) -> tuple[str, ...]:
+        return tuple(self.feature_set.outputs)
+
+    @property
     def max_supported_delay_seconds(self) -> int:
         return self.problem.max_supported_delay_seconds
 
@@ -78,7 +88,7 @@ class TrainingArtifactManifest:
 
     @property
     def n_features(self) -> int:
-        return len(self.feature_names)
+        return len(self.feature_set.outputs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +101,6 @@ class SplitSizes:
 @dataclass(frozen=True, slots=True)
 class TrainingSummary:
     artifact_id: str
-    objective_id: str
     prediction_id: str
     prediction_family_id: str
     metric_descriptors: list[MetricDescriptor]
@@ -119,7 +128,6 @@ class TrainingSummary:
     representation_id: str
     storage_mode_id: str
     batch_planner_id: str
-    family_execution_id: str
     best_validation_metrics: MetricSet
     test_metrics: MetricSet
 
@@ -134,7 +142,6 @@ class TrainingEpochRecord:
 @dataclass(frozen=True, slots=True)
 class SimulationSummaryRecord:
     artifact_id: str
-    objective_id: str
     prediction_id: str
     prediction_family_id: str
     metric_descriptors: list[MetricDescriptor]
@@ -193,7 +200,6 @@ def build_training_summary(
 ) -> TrainingSummary:
     return TrainingSummary(
         artifact_id=manifest.artifact_id,
-        objective_id=manifest.objective_id,
         prediction_id=manifest.prediction_id,
         prediction_family_id=manifest.prediction_family_id,
         metric_descriptors=list(manifest.metric_descriptors),
@@ -225,7 +231,6 @@ def build_training_summary(
         representation_id=result.training_result.representation_id,
         storage_mode_id=result.training_result.storage_mode_id,
         batch_planner_id=result.training_result.batch_planner_id,
-        family_execution_id=result.training_result.family_execution_id,
         best_validation_metrics=best_validation_metrics,
         test_metrics=test_metrics,
     )
@@ -243,7 +248,6 @@ def build_simulation_summary_record(
 ) -> SimulationSummaryRecord:
     return SimulationSummaryRecord(
         artifact_id=manifest.artifact_id,
-        objective_id=manifest.objective_id,
         prediction_id=manifest.prediction_id,
         prediction_family_id=manifest.prediction_family_id,
         metric_descriptors=list(manifest.metric_descriptors),

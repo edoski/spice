@@ -12,7 +12,7 @@ from ...modeling.families.base import ConfigModel
 
 if TYPE_CHECKING:
     from ...config.models import ProblemSpec
-    from ...features import FeatureSelection
+    from ...features import CompiledFeatureContract
     from ..contracts import CompiledProblemContract
 
 
@@ -38,7 +38,7 @@ ProblemCompilerConfigT = TypeVar("ProblemCompilerConfigT", bound=ProblemCompiler
 class ProblemCompilerSpec(Generic[ProblemCompilerConfigT]):
     id: str
     config_type: type[ProblemCompilerConfigT]
-    compile_problem: Callable[[ProblemSpec, FeatureSelection], CompiledProblemContract]
+    compile_problem: Callable[[ProblemSpec, CompiledFeatureContract], CompiledProblemContract]
 
 
 CompilerRuntimeMetadata = dict[str, object]

@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 if TYPE_CHECKING:
     from hamilton.graph_types import HamiltonNode
 
+    from ..contracts import CompiledFeatureContract
+
 
 def _validate_path_segment(value: str, *, label: str) -> str:
     if not value or "/" in value or "\\" in value:
@@ -71,6 +73,10 @@ class FeatureFamilySpec(Generic[FeatureFamilyConfigT]):
     id: str
     config_type: type[FeatureFamilyConfigT]
     modules: tuple[object, ...]
+    compile_contract: Callable[
+        [str, FeatureFamilyConfigT, tuple[str, ...]],
+        CompiledFeatureContract,
+    ]
     resolve_prerequisites: Callable[
         [tuple[str, ...], dict[str, HamiltonNode]],
         FeaturePrerequisites,

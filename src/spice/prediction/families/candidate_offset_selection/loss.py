@@ -1,4 +1,4 @@
-"""Current-family differentiable loss."""
+"""Candidate-offset selection differentiable loss."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from .batch import CandidateSlateTargetBatch
 from .outputs import masked_candidate_logits
 
 
-def compute_objective_loss(
+def compute_selection_loss(
     logits: torch.Tensor,
     targets: CandidateSlateTargetBatch,
 ) -> torch.Tensor:

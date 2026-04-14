@@ -5,7 +5,14 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import cast
 
-from ..config import TrainConfig, TuneConfig, TunedParameterSet
+from ..config import (
+    TrainConfig,
+    TuneConfig,
+    TunedParameterSet,
+    coerce_feature_set_config,
+    coerce_prediction_config,
+    coerce_problem_spec,
+)
 from ..storage.study import load_best_params, load_study_manifest, validate_tuned_train_request
 from .families.registry import (
     apply_tuned_parameters as apply_model_tuned_parameters,
@@ -33,6 +40,9 @@ def apply_tuned_parameters(
             tuned_config.training.weight_decay = params.training.weight_decay
     tuned_config.model = apply_model_tuned_parameters(tuned_config.model, params)
     payload = tuned_config.model_dump(mode="json")
+    payload["problem"] = coerce_problem_spec(payload["problem"])
+    payload["feature_set"] = coerce_feature_set_config(payload["feature_set"])
+    payload["prediction"] = coerce_prediction_config(payload["prediction"])
     payload["model"] = coerce_model_config(payload["model"])
     model_type = TuneConfig if isinstance(config, TuneConfig) else TrainConfig
     if isinstance(config, TuneConfig):

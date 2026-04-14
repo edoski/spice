@@ -9,6 +9,7 @@ from spice.modeling.inference import predict_with_model
 from spice.modeling.models import ModelOutputs, TemporalModel, take_last_valid
 from spice.modeling.representations import (
     RepresentationRuntimeContext,
+    compile_representation_contract,
     prepare_representation,
 )
 from spice.prediction import compile_prediction_contract
@@ -124,10 +125,11 @@ def test_sequence_input_storage_modes_yield_identical_batches() -> None:
 def test_prediction_loader_binds_current_family_targets() -> None:
     store = _test_store()
     sample_indices = np.array([0, 1, 2, 3], dtype=np.int64)
+    representation_contract = compile_representation_contract("sequence_inputs")
     loader = build_prediction_loader(
         store,
         sample_indices,
-        model_id="lstm",
+        representation_contract=representation_contract,
         prediction_contract=_prediction_contract(),
         runtime_context=RepresentationRuntimeContext(
             device_type="cpu",
@@ -151,10 +153,11 @@ def test_prediction_loader_binds_current_family_targets() -> None:
 def test_predict_with_model_decodes_candidate_offsets() -> None:
     store = _test_store()
     sample_indices = np.array([0, 1, 2, 3], dtype=np.int64)
+    representation_contract = compile_representation_contract("sequence_inputs")
     predictions = predict_with_model(
         _ToyTemporalModel(n_candidate_slots=store.max_candidate_slots),
-        model_id="lstm",
         prediction_contract=_prediction_contract(),
+        representation_contract=representation_contract,
         store=store,
         sample_indices=sample_indices,
         batch_size=2,

@@ -52,7 +52,6 @@ def training_summary_sections(
                 ("representation", summary.representation_id),
                 ("storage mode", summary.storage_mode_id),
                 ("batch planner", summary.batch_planner_id),
-                ("family execution", summary.family_execution_id),
             ],
         ),
         (

@@ -11,7 +11,7 @@ Runtime commands:
 
 One CLI. One config system. One compiler boundary for temporal semantics.
 One feature-family boundary for feature semantics.
-One canonical objective semantics layer.
+One prediction-family boundary for downstream semantics.
 
 ## Core Model
 
@@ -19,7 +19,7 @@ SPICE has one architectural hierarchy:
 
 1. canonical domain truth
 2. model-input compilation
-3. objective semantics
+3. prediction semantics
 4. model family
 
 Canonical domain truth is:
@@ -33,15 +33,14 @@ Model-input compilation is a separate layer:
 - current sequence families use the shared `sequence_event` representation
 - future families may register a different representation if they need genuinely different input semantics
 
-Objective semantics is another separate layer:
+Prediction semantics is another separate layer:
 
-- one active `objective_id`
-- one differentiable training surrogate
-- one primary validation and tuning metric
-- one simulation primary aggregation rule
-- one reporting order for metrics
-
-This layer is code-defined in `modeling/objective/`.
+- one active `prediction`
+- one compiled prediction family contract
+- one family-owned target contract
+- one family-owned output contract
+- one family-owned loss, metrics, decode, and replay bundle
+- one primary validation and tuning metric selected by that family
 
 Model family stays below that boundary:
 
@@ -50,7 +49,7 @@ Model family stays below that boundary:
 - `transformer_lstm`
 
 This keeps domain semantics stable while allowing future model growth.
-It also keeps objective changes orthogonal to corpus storage and model-input representation.
+It also keeps prediction changes orthogonal to corpus storage and model-input representation.
 
 ## Config Flow
 
@@ -83,7 +82,8 @@ Public temporal contract:
 - `execution.requested_delay_seconds` defines the runtime deadline inside that capability.
 
 No config field encodes nominal block time.
-No public config field selects objective semantics yet.
+`prediction.id` selects the named prediction config.
+`prediction.family.id` selects the registered prediction family.
 
 ## Temporal Semantics
 
@@ -103,28 +103,35 @@ Both compilers lower into the same `CompiledProblemStore`:
 
 Acquisition, training, inference, and simulation consume compiled contracts and compiled stores only. They do not branch on compiler id.
 
-## Objective Semantics
+## Prediction Semantics
 
-SPICE currently ships one objective family:
+Prediction execution lives in [src/spice/prediction](src/spice/prediction).
 
-- `objective_id = profit_over_baseline`
+Current shipped families:
 
-This objective package owns:
+- `candidate_offset_selection`
+  - one-head candidate-offset selection
+  - primary metric: `profit_over_baseline`
+- `min_block_fee_multitask`
+  - paper-faithful min-block classification plus min-fee regression
+  - primary metric: `total_loss`
 
-- candidate-slate reference derivation
-- direct economic training loss
-- epoch/test metrics
-- checkpoint and early-stop selection semantics
-- Optuna direction and reported value
-- simulation totals-based primary aggregation
+Family-owned responsibilities:
 
-Metric roles are:
+- target realization
+- output head specification
+- training loss
+- epoch metrics
+- best-epoch selection
+- optimization value for tuning
+- decode
+- replay
 
-- primary: `profit_over_baseline`
-- secondary: `cost_over_optimum`
-- diagnostics: `objective_loss`, `exact_optimum_hit_rate`
+Replay metrics stay economic and family-neutral:
 
-The current loss is a direct economic surrogate over valid candidate fees. Models emit candidate logits only.
+- `profit_over_baseline`
+- `cost_over_optimum`
+- `baseline_cost_over_optimum`
 
 ## Feature Architecture
 

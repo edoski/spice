@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import RowMapping
 
+from ..config import coerce_feature_set_config
 from ..corpus.metadata import (
     AcquireRunRecord,
     AcquisitionConfigSnapshot,
@@ -81,8 +82,14 @@ def write_dataset_state(
                     provider_endpoint_fingerprint=acquire_run.provider.endpoint_fingerprint,
                     problem_id=acquire_run.problem.problem_id,
                     compiler_id=acquire_run.problem.compiler_id,
+                    feature_set=acquire_run.problem.feature_set.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                    ),
                     feature_set_id=acquire_run.problem.feature_set_id,
                     feature_family_id=acquire_run.problem.feature_family_id,
+                    feature_names=list(acquire_run.problem.feature_names),
+                    feature_graph_fingerprint=acquire_run.problem.feature_graph_fingerprint,
                     lookback_seconds=acquire_run.problem.lookback_seconds,
                     sample_count=acquire_run.problem.sample_count,
                     max_supported_delay_seconds=acquire_run.problem.max_supported_delay_seconds,
@@ -256,14 +263,16 @@ def _acquire_run_from_row(row: RowMapping) -> AcquireRunRecord:
         problem=ProblemContractSnapshot(
             problem_id=_row_str(row, "problem_id"),
             compiler_id=_row_str(row, "compiler_id"),
-            feature_set_id=_row_str(row, "feature_set_id"),
-            feature_family_id=_row_str(row, "feature_family_id"),
+            feature_set=coerce_feature_set_config(
+                cast(dict[str, object], _row_value(row, "feature_set"))
+            ),
             lookback_seconds=_row_int(row, "lookback_seconds"),
             sample_count=_row_int(row, "sample_count"),
             max_supported_delay_seconds=_row_int(row, "max_supported_delay_seconds"),
             feature_prerequisites=FeaturePrerequisites.model_validate(
                 cast(dict[str, object], _row_value(row, "feature_prerequisites"))
             ),
+            feature_graph_fingerprint=_row_str(row, "feature_graph_fingerprint"),
             required_history_seconds=_row_int(row, "required_history_seconds"),
             acquired_history_window_seconds=_row_int(row, "acquired_history_window_seconds"),
             valid_anchor_samples=_row_int(row, "valid_anchor_samples"),

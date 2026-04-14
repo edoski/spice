@@ -221,7 +221,6 @@ def _artifact_sections(
             "artifact",
             [
                 ("artifact id", manifest.artifact_id),
-                ("objective", manifest.objective_id),
                 ("prediction", manifest.prediction_id),
                 ("dataset", manifest.dataset_name),
                 ("dataset id", manifest.dataset_id),
@@ -253,7 +252,6 @@ def _artifact_sections(
                     ("representation", training.representation_id),
                     ("storage mode", training.storage_mode_id),
                     ("batch planner", training.batch_planner_id),
-                    ("family execution", training.family_execution_id),
                     (
                         "split",
                         " ".join(
@@ -336,7 +334,6 @@ def _study_sections(
             [
                 ("name", manifest.study_name),
                 ("storage id", manifest.study_id),
-                ("objective", manifest.objective_id),
                 ("prediction", manifest.prediction_id),
                 ("chain", manifest.chain_name),
                 ("dataset", manifest.dataset_name),

@@ -53,7 +53,6 @@ class StudyTrialState(StrEnum):
 @dataclass(frozen=True, slots=True)
 class StudyManifest:
     study_id: str
-    objective_id: str
     prediction: PredictionConfig
     study_name: str
     chain_name: str
@@ -144,13 +143,8 @@ def study_storage(db_path: Path) -> RDBStorage:
 def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
     if config.paths.study_id is None:
         raise ValueError("study_id is required for study manifests")
-    prediction_contract = compile_prediction_contract(
-        prediction_id=config.prediction.id,
-        family_config=config.prediction.family,
-    )
     return StudyManifest(
         study_id=config.paths.study_id,
-        objective_id=prediction_contract.objective_id,
         prediction=config.prediction,
         study_name=config.study.name,
         chain_name=config.chain.name,
@@ -193,7 +187,6 @@ def load_study_manifest(db_path: Path) -> StudyManifest:
         model = coerce_model_config(_mapping(row["model"]))
         return StudyManifest(
             study_id=str(row["study_id"]),
-            objective_id=str(row["objective_id"]),
             prediction=coerce_prediction_config(_mapping(row["prediction"])),
             study_name=str(row["study_name"]),
             chain_name=str(row["chain_name"]),
@@ -341,6 +334,10 @@ def study_summary_sections(
     summary: StudySummary,
 ) -> list[tuple[str, list[tuple[str, str]]]]:
     best_trial = summary.best_trial
+    prediction_contract = compile_prediction_contract(
+        prediction_id=summary.manifest.prediction.id,
+        family_config=summary.manifest.prediction.family,
+    )
     return [
         (
             "study",
@@ -358,7 +355,7 @@ def study_summary_sections(
         (
             "best trial",
             [
-                ("objective", summary.manifest.objective_id),
+                ("monitor", prediction_contract.primary_metric_id),
                 (
                     "value",
                     "n/a"
@@ -391,7 +388,6 @@ def validate_tuned_train_request(config: TrainConfig, *, manifest: StudyManifest
     stored_payload = {
         "study_name": manifest.study_name,
         "study_id": manifest.study_id,
-        "objective_id": manifest.objective_id,
         "prediction": manifest.prediction.model_dump(mode="json"),
         "chain_name": manifest.chain_name,
         "dataset_id": manifest.dataset_id,
@@ -403,10 +399,6 @@ def validate_tuned_train_request(config: TrainConfig, *, manifest: StudyManifest
     requested_payload = {
         "study_name": config.study.name,
         "study_id": config.paths.study_id,
-        "objective_id": compile_prediction_contract(
-            prediction_id=config.prediction.id,
-            family_config=config.prediction.family,
-        ).objective_id,
         "prediction": config.prediction.model_dump(mode="json"),
         "chain_name": config.chain.name,
         "dataset_id": config.paths.corpus_id,
@@ -508,7 +500,6 @@ def _manifest_values(manifest: StudyManifest) -> dict[str, object]:
     return {
         "singleton": 1,
         "study_id": manifest.study_id,
-        "objective_id": manifest.objective_id,
         "prediction_id": manifest.prediction_id,
         "prediction_family_id": manifest.prediction_family_id,
         "study_name": manifest.study_name,
@@ -538,7 +529,6 @@ def _study_semantics_payload(manifest: StudyManifest) -> dict[str, object]:
     return {
         "study_name": manifest.study_name,
         "study_id": manifest.study_id,
-        "objective_id": manifest.objective_id,
         "prediction": manifest.prediction.model_dump(mode="json"),
         "chain_name": manifest.chain_name,
         "dataset_id": manifest.dataset_id,

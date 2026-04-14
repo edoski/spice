@@ -23,14 +23,13 @@ from ..config import (
 from ..core.reporting import NullReporter, Reporter
 from ..corpus.io import load_block_frame
 from ..features import (
+    CompiledFeatureContract,
     FeaturePrerequisites,
-    FeatureSelection,
-    build_feature_table,
-    make_feature_selection,
+    compile_feature_contract,
 )
 from ..prediction import CompiledPredictionContract, compile_prediction_contract
 from ..temporal.compilers import CompilerRuntimeMetadata
-from ..temporal.contracts import CompiledProblemContract, resolve_problem_contract
+from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
 from ..temporal.problem_store import (
     CompiledProblemStore,
     DatasetSplitIndices,
@@ -40,6 +39,7 @@ from ..temporal.problem_store import (
     tail_sample_indices,
 )
 from ..temporal.scaling import ScalerStats, fit_standard_scaler, transform_feature_matrix
+from ._runtime import CompiledRepresentationContract, compile_model_representation_contract
 from .families.registry import build_model
 from .models import TemporalModel
 from .training import TrainingResult, train_model
@@ -52,10 +52,12 @@ class TrainingSpec:
     dataset_name: str
     artifact_id: str
     problem: ProblemSpec
+    feature_contract: CompiledFeatureContract
     contract: CompiledProblemContract
     feature_set: FeatureSetConfig
     prediction: PredictionConfig
     prediction_contract: CompiledPredictionContract
+    representation_contract: CompiledRepresentationContract
     model: ModelConfig
     split: SplitConfig
     training: TrainingConfig
@@ -66,9 +68,10 @@ class TrainingSpec:
 
 def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
     variant = ArtifactVariant.TUNED if isinstance(config, TuneConfig) else config.artifact.variant
-    contract = resolve_problem_contract(
+    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    contract = compile_problem_contract(
         problem=config.problem,
-        feature_set=config.feature_set,
+        feature_contract=feature_contract,
     )
     prediction_contract = compile_prediction_contract(
         prediction_id=config.prediction.id,
@@ -89,10 +92,12 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
             else config.paths.study_id or "trial"
         ),
         problem=config.problem,
+        feature_contract=feature_contract,
         contract=contract,
         feature_set=config.feature_set,
         prediction=config.prediction,
         prediction_contract=prediction_contract,
+        representation_contract=compile_model_representation_contract(config.model.id),
         model=config.model,
         variant=variant,
         study=config.study if variant is ArtifactVariant.TUNED else None,
@@ -149,6 +154,7 @@ class TrainingRunResult:
     model: TemporalModel
     prepared: PreparedTrainingDataset
     training_result: TrainingResult
+    prediction_training_state: object | None
 
 
 @dataclass(slots=True)
@@ -185,15 +191,10 @@ def prepare_training_dataset(
     *,
     spec: TrainingSpec,
 ) -> PreparedTrainingDataset:
-    selection = make_feature_selection(
-        feature_set_id=spec.feature_set.id,
-        feature_family_id=spec.feature_set.family.id,
-        feature_names=tuple(spec.feature_set.outputs),
-    )
     sorted_blocks = blocks.sort("block_number")
     if sorted_blocks.height == 0:
         raise ValueError("Training dataset is empty")
-    feature_table = build_feature_table(sorted_blocks, selection=selection)
+    feature_table = spec.feature_contract.build_table(sorted_blocks)
     if feature_table.feature_prerequisites != spec.contract.feature_prerequisites:
         raise ValueError(
             "Resolved feature prerequisites do not match the current feature graph: "
@@ -239,7 +240,7 @@ def prepare_inference_dataset(
     history_blocks: pl.DataFrame,
     evaluation_blocks: pl.DataFrame,
     *,
-    selection: FeatureSelection,
+    feature_contract: CompiledFeatureContract,
     contract: CompiledProblemContract,
     requested_delay_seconds: int,
     compiler_runtime_metadata: CompilerRuntimeMetadata,
@@ -252,7 +253,7 @@ def prepare_inference_dataset(
     if sorted_history_blocks.height == 0:
         raise ValueError("History dataset is empty")
     combined_blocks = pl.concat([sorted_history_blocks, evaluation_blocks.sort("block_number")])
-    feature_table = build_feature_table(combined_blocks, selection=selection)
+    feature_table = feature_contract.build_table(combined_blocks)
     store = contract.build_requested_delay_store(
         feature_table,
         requested_delay_seconds,
@@ -315,6 +316,7 @@ def run_training(
         model,
         model_config=spec.model,
         prediction_contract=spec.prediction_contract,
+        representation_contract=spec.representation_contract,
         store=prepared.store,
         train_sample_indices=prepared.split_indices.train,
         validation_sample_indices=prepared.split_indices.validation,
@@ -326,4 +328,5 @@ def run_training(
         model=model,
         prepared=prepared,
         training_result=training_result,
+        prediction_training_state=training_result.prediction_training_state,
     )

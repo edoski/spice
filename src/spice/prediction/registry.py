@@ -34,7 +34,7 @@ def _ensure_builtin_prediction_families_loaded() -> None:
     global _BUILTINS_LOADED
     if _BUILTINS_LOADED:
         return
-    from .families import candidate_offset_selection  # noqa: F401
+    from .families import candidate_offset_selection, min_block_fee_multitask  # noqa: F401
 
     _BUILTINS_LOADED = True
 

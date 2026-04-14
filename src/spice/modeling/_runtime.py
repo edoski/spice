@@ -16,15 +16,14 @@ from ..temporal.problem_store import CompiledProblemStore
 from .families.registry import (
     resolve_auto_compile,
     resolve_default_precision,
-    resolve_family_execution_id,
     resolve_input_representation,
 )
 from .representations import (
+    CompiledRepresentationContract,
     PreparedRepresentation,
     PreparedRepresentationLoader,
     RepresentationRuntimeContext,
-    build_representation_loader,
-    prepare_representation,
+    compile_representation_contract,
 )
 
 try:
@@ -116,15 +115,18 @@ def build_representation_runtime_context(
     )
 
 
+def compile_model_representation_contract(model_id: str) -> CompiledRepresentationContract:
+    return compile_representation_contract(resolve_input_representation(model_id))
+
+
 def prepare_model_representation(
     store: CompiledProblemStore,
     sample_indices: IntVector,
     *,
-    model_id: str,
+    representation_contract: CompiledRepresentationContract,
     runtime_context: RepresentationRuntimeContext,
 ) -> PreparedRepresentation:
-    return prepare_representation(
-        resolve_input_representation(model_id),
+    return representation_contract.prepare(
         store,
         sample_indices,
         runtime_context=runtime_context,
@@ -135,14 +137,14 @@ def prepare_prediction_representation(
     store: CompiledProblemStore,
     sample_indices: IntVector,
     *,
-    model_id: str,
+    representation_contract: CompiledRepresentationContract,
     prediction_contract: CompiledPredictionContract,
     runtime_context: RepresentationRuntimeContext,
 ):
     prepared = prepare_model_representation(
         store,
         sample_indices,
-        model_id=model_id,
+        representation_contract=representation_contract,
         runtime_context=runtime_context,
     )
     targets = prediction_contract.prepare_targets(store, sample_indices)
@@ -153,13 +155,12 @@ def build_model_loader(
     store: CompiledProblemStore,
     sample_indices: IntVector,
     *,
-    model_id: str,
+    representation_contract: CompiledRepresentationContract,
     runtime_context: RepresentationRuntimeContext,
     seed: int,
     shuffle: bool = False,
 ) -> PreparedRepresentationLoader:
-    return build_representation_loader(
-        resolve_input_representation(model_id),
+    return representation_contract.build_loader(
         store,
         sample_indices,
         runtime_context=runtime_context,
@@ -172,7 +173,7 @@ def build_prediction_loader(
     store: CompiledProblemStore,
     sample_indices: IntVector,
     *,
-    model_id: str,
+    representation_contract: CompiledRepresentationContract,
     prediction_contract: CompiledPredictionContract,
     runtime_context: RepresentationRuntimeContext,
     seed: int,
@@ -181,7 +182,7 @@ def build_prediction_loader(
     prepared = prepare_prediction_representation(
         store,
         sample_indices,
-        model_id=model_id,
+        representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         runtime_context=runtime_context,
     )
@@ -190,12 +191,6 @@ def build_prediction_loader(
         seed=seed,
         shuffle=shuffle,
     )
-
-
-def resolve_family_execution(model_id: str) -> str:
-    return resolve_family_execution_id(model_id)
-
-
 def _available_system_memory_bytes() -> int:
     if psutil is not None:
         return int(psutil.virtual_memory().available)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from spice.core.reporting import NullReporter
+from spice.modeling.artifacts import load_training_artifact, validate_artifact_semantics
 from spice.storage.artifact import list_simulation_runs, load_simulation_summary
 from spice.storage.catalog import list_artifact_records, list_study_records
 from spice.storage.study import load_study
@@ -262,3 +263,60 @@ def test_simulate_rejects_execution_request_above_capability(
         match="execution.requested_delay_seconds must be <=",
     ):
         load_test_simulate_config(tmp_path, override=override)
+
+
+@pytest.mark.parametrize(
+    ("override", "error_pattern", "use_mismatch_feature_set", "use_mismatch_model"),
+    [
+        (
+            {"feature_set": "icdcs_2026_time_native"},
+            "Configured feature_set does not match the trained artifact semantics",
+            True,
+            False,
+        ),
+        (
+            {"model": "transformer"},
+            "Configured model does not match the trained artifact semantics",
+            False,
+            True,
+        ),
+    ],
+)
+def test_simulate_validation_rejects_semantic_bundle_mismatch(
+    tmp_path,
+    deep_merge,
+    override,
+    error_pattern,
+    use_mismatch_feature_set,
+    use_mismatch_model,
+    load_test_simulate_config,
+    load_test_train_config,
+    model_workflow_override,
+    seed_history_dataset,
+) -> None:
+    base_override = model_workflow_override()
+    train_config = load_test_train_config(tmp_path, override=base_override)
+    simulate_config = load_test_simulate_config(tmp_path, override=base_override)
+    mismatch_config = load_test_simulate_config(
+        tmp_path,
+        override=deep_merge(base_override, override),
+    )
+    seed_history_dataset(train_config)
+    run_train(train_config, reporter=NullReporter())
+    loaded_artifact = load_training_artifact(train_config.paths.artifact_root)
+
+    feature_set = (
+        mismatch_config.feature_set
+        if use_mismatch_feature_set
+        else simulate_config.feature_set
+    )
+    model = mismatch_config.model if use_mismatch_model else simulate_config.model
+
+    with pytest.raises(ValueError, match=error_pattern):
+        validate_artifact_semantics(
+            loaded_artifact.manifest,
+            problem=simulate_config.problem,
+            feature_set=feature_set,
+            prediction=simulate_config.prediction,
+            model=model,
+        )

@@ -3,23 +3,26 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
+from spice.config import coerce_feature_set_config
 from spice.features import (
     FeaturePrerequisites,
-    FeatureSelection,
-    build_feature_table,
-    resolve_feature_prerequisites,
+    compile_feature_contract,
 )
 
 
-def test_block_native_family_resolves_prerequisites_and_features() -> None:
-    selection = FeatureSelection(
-        feature_set_id="test_block_native",
-        feature_family_id="block_native",
-        feature_names=(
-            "elapsed_blocks",
-            "rolling_mean_log_base_fee_10",
-            "trend_slope_200",
-        ),
+def test_block_native_feature_contract_builds_table_with_family_owned_compile() -> None:
+    feature_contract = compile_feature_contract(
+        feature_set=coerce_feature_set_config(
+            {
+                "id": "test_block_native",
+                "family": {"id": "block_native"},
+                "outputs": [
+                    "elapsed_blocks",
+                    "rolling_mean_log_base_fee_10",
+                    "trend_slope_200",
+                ],
+            }
+        )
     )
     blocks = pl.DataFrame(
         {
@@ -32,15 +35,14 @@ def test_block_native_family_resolves_prerequisites_and_features() -> None:
         }
     )
 
-    prerequisites = resolve_feature_prerequisites(
-        selection.feature_family_id,
-        selection.feature_names,
-    )
-    feature_table = build_feature_table(blocks, selection=selection)
+    feature_table = feature_contract.build_table(blocks)
 
-    assert prerequisites == FeaturePrerequisites(history_seconds=0, warmup_rows=199)
+    assert feature_contract.feature_prerequisites == FeaturePrerequisites(
+        history_seconds=0,
+        warmup_rows=199,
+    )
     assert feature_table.feature_family_id == "block_native"
-    assert feature_table.feature_prerequisites == prerequisites
+    assert feature_table.feature_prerequisites == feature_contract.feature_prerequisites
     np.testing.assert_array_equal(
         feature_table.feature_matrix[:5, 0],
         np.array([0.0, 1.0, 2.0, 3.0, 4.0], dtype=np.float32),

@@ -76,6 +76,45 @@ class InputRepresentationSpec:
     prepare: Callable[..., PreparedRepresentation]
 
 
+@dataclass(frozen=True, slots=True)
+class CompiledRepresentationContract:
+    representation_id: str
+
+    def prepare(
+        self,
+        store: CompiledProblemStore,
+        sample_indices: IntVector,
+        *,
+        runtime_context: RepresentationRuntimeContext,
+    ) -> PreparedRepresentation:
+        spec = input_representation_spec(self.representation_id)
+        return spec.prepare(
+            store,
+            sample_indices,
+            runtime_context=runtime_context,
+        )
+
+    def build_loader(
+        self,
+        store: CompiledProblemStore,
+        sample_indices: IntVector,
+        *,
+        runtime_context: RepresentationRuntimeContext,
+        seed: int,
+        shuffle: bool = False,
+    ) -> PreparedRepresentationLoader:
+        prepared = self.prepare(
+            store,
+            sample_indices,
+            runtime_context=runtime_context,
+        )
+        return PreparedRepresentationLoader(
+            prepared,
+            seed=seed,
+            shuffle=shuffle,
+        )
+
+
 class PreparedRepresentationLoader:
     def __init__(
         self,
@@ -136,6 +175,11 @@ def input_representation_spec(representation_id: str) -> InputRepresentationSpec
         ) from exc
 
 
+def compile_representation_contract(representation_id: str) -> CompiledRepresentationContract:
+    spec = input_representation_spec(representation_id)
+    return CompiledRepresentationContract(representation_id=spec.id)
+
+
 def prepare_representation(
     representation_id: str,
     store: CompiledProblemStore,
@@ -143,8 +187,7 @@ def prepare_representation(
     *,
     runtime_context: RepresentationRuntimeContext,
 ) -> PreparedRepresentation:
-    spec = input_representation_spec(representation_id)
-    return spec.prepare(
+    return compile_representation_contract(representation_id).prepare(
         store,
         sample_indices,
         runtime_context=runtime_context,
@@ -160,14 +203,10 @@ def build_representation_loader(
     seed: int,
     shuffle: bool = False,
 ) -> PreparedRepresentationLoader:
-    prepared = prepare_representation(
-        representation_id,
+    return compile_representation_contract(representation_id).build_loader(
         store,
         sample_indices,
         runtime_context=runtime_context,
-    )
-    return PreparedRepresentationLoader(
-        prepared,
         seed=seed,
         shuffle=shuffle,
     )

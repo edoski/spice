@@ -19,9 +19,10 @@ from spice.acquisition.rpc import (
     Web3BlockClient,
 )
 from spice.core.reporting import NullReporter, PlainReporter
+from spice.features import compile_feature_contract
 from spice.storage.catalog import list_dataset_records
 from spice.storage.corpus import list_acquire_runs, load_dataset_summary
-from spice.temporal.contracts import resolve_problem_contract
+from spice.temporal.contracts import compile_problem_contract
 from spice.workflows.acquire import _DaemonThreadPoolExecutor
 from spice.workflows.acquire import run as run_acquire
 
@@ -82,9 +83,10 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     write_dataset_dir,
 ) -> None:
     config = load_test_acquire_config(tmp_path, override=acquire_override())
-    contract = resolve_problem_contract(
+    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    contract = compile_problem_contract(
         problem=config.problem,
-        feature_set=config.feature_set,
+        feature_contract=feature_contract,
     )
     evaluation_plan = _plan_for_window(
         TimestampRange(
@@ -163,8 +165,10 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     assert len(runs) == 1
     assert runs[0].problem.problem_id == config.problem.id
     assert runs[0].problem.compiler_id == config.problem.compiler.id
+    assert runs[0].problem.feature_set == config.feature_set
     assert runs[0].problem.feature_set_id == config.feature_set.id
     assert runs[0].problem.feature_family_id == config.feature_set.family.id
+    assert runs[0].problem.feature_graph_fingerprint == feature_contract.feature_graph_fingerprint
     assert runs[0].problem.feature_prerequisites == contract.feature_prerequisites
     assert runs[0].problem.required_history_seconds == contract.required_history_seconds
     assert runs[0].problem.valid_anchor_samples >= config.problem.sample_count

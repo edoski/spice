@@ -9,10 +9,9 @@ from typing import Literal, cast
 import numpy as np
 
 from ...features import (
+    CompiledFeatureContract,
     FeaturePrerequisites,
-    FeatureSelection,
     ResolvedFeatureTable,
-    resolve_feature_prerequisites,
 )
 from ..contracts import CompiledProblemContract
 from ..problem_store import CompiledProblemStore
@@ -99,20 +98,17 @@ class TimestampNativeCompiledProblemContract(CompiledProblemContract):
 
 def compile_problem(
     problem,
-    selection: FeatureSelection,
+    feature_contract: CompiledFeatureContract,
 ) -> CompiledProblemContract:
     return TimestampNativeCompiledProblemContract(
         compiler_id="timestamp_native",
         problem_id=problem.id,
-        feature_set_id=selection.feature_set_id,
-        feature_family_id=selection.feature_family_id,
+        feature_set_id=feature_contract.feature_set_id,
+        feature_family_id=feature_contract.feature_family_id,
         lookback_seconds=problem.lookback_seconds,
         sample_count=problem.sample_count,
         max_supported_delay_seconds=problem.max_supported_delay_seconds,
-        feature_prerequisites=resolve_feature_prerequisites(
-            selection.feature_family_id,
-            selection.feature_names,
-        ),
+        feature_prerequisites=feature_contract.feature_prerequisites,
     )
 
 

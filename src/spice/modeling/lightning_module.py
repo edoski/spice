@@ -19,11 +19,13 @@ class TemporalLightningModule(L.LightningModule):
         *,
         training_config: TrainingConfig,
         prediction_contract: CompiledPredictionContract,
+        prediction_training_state: object | None,
     ) -> None:
         super().__init__()
         self.model = model
         self.training_config = training_config
         self.prediction_contract = prediction_contract
+        self.prediction_training_state = prediction_training_state
         self.train_history: list[MetricSet] = []
         self.validation_history: list[MetricSet] = []
         self._train_batches: list[object] = []
@@ -67,21 +69,22 @@ class TemporalLightningModule(L.LightningModule):
 
     def _shared_step(self, batch, *, stage: str) -> torch.Tensor:
         outputs = self.model(**batch.model_kwargs())
-        objective_loss, batch_state = self.prediction_contract.compute_batch_loss_and_state(
+        loss, batch_state = self.prediction_contract.compute_batch_loss_and_state(
             outputs,
             batch.targets,
+            training_state=self.prediction_training_state,
         )
         metric_set = self.prediction_contract.summarize_epoch_metrics([batch_state])
         self.log(
-            f"{stage}/objective_loss",
-            objective_loss,
+            f"{stage}/loss",
+            loss,
             on_step=False,
             on_epoch=True,
             prog_bar=False,
         )
         self.log(
-            f"{stage}_objective_loss",
-            objective_loss,
+            f"{stage}_loss",
+            loss,
             on_step=False,
             on_epoch=True,
             prog_bar=False,
@@ -92,7 +95,7 @@ class TemporalLightningModule(L.LightningModule):
             self._train_batches.append(batch_state)
         else:
             self._validation_batches.append(batch_state)
-        return objective_loss
+        return loss
 
     def training_step(self, batch, _batch_idx: int) -> torch.Tensor:
         return self._shared_step(batch, stage="train")

@@ -7,25 +7,26 @@ import polars as pl
 import pytest
 import torch
 
-from spice.config import coerce_problem_spec
+from spice.config import coerce_feature_set_config, coerce_problem_spec
 from spice.core.reporting import NullReporter
-from spice.features import FeatureSelection, build_feature_table
+from spice.features import compile_feature_contract
 from spice.prediction import MetricSet
 from spice.prediction.families.candidate_offset_selection.batch import CandidateSlateTargetBatch
-from spice.prediction.families.candidate_offset_selection.loss import compute_objective_loss
-from spice.prediction.families.candidate_offset_selection.metrics import (
-    best_epoch,
-    objective_value,
-)
+from spice.prediction.families.candidate_offset_selection.loss import compute_selection_loss
+from spice.prediction.families.candidate_offset_selection.metrics import best_epoch
 from spice.prediction.families.candidate_offset_selection.replay import run_replay
-from spice.temporal.contracts import resolve_feature_contract
+from spice.temporal.contracts import compile_problem_contract
 
 
 def _build_test_store():
-    selection = FeatureSelection(
-        feature_set_id="test_timestamp_native",
-        feature_family_id="time_native",
-        feature_names=("seconds_since_previous_block", "elapsed_seconds"),
+    feature_contract = compile_feature_contract(
+        feature_set=coerce_feature_set_config(
+            {
+                "id": "test_timestamp_native",
+                "family": {"id": "time_native"},
+                "outputs": ["seconds_since_previous_block", "elapsed_seconds"],
+            }
+        )
     )
     blocks = pl.DataFrame(
         {
@@ -37,8 +38,8 @@ def _build_test_store():
             "chain_id": np.ones(7, dtype=np.int64),
         }
     )
-    feature_table = build_feature_table(blocks, selection=selection)
-    contract = resolve_feature_contract(
+    feature_table = feature_contract.build_table(blocks)
+    contract = compile_problem_contract(
         problem=coerce_problem_spec(
             {
                 "id": "test_timestamp_native",
@@ -48,13 +49,13 @@ def _build_test_store():
                 "compiler": {"id": "timestamp_native"},
             }
         ),
-        selection=selection,
+        feature_contract=feature_contract,
     )
     store, _ = contract.build_capability_store(feature_table)
     return store
 
 
-def test_objective_loss_prefers_cheaper_candidates_and_ignores_masked_slots() -> None:
+def test_selection_loss_prefers_cheaper_candidates_and_ignores_masked_slots() -> None:
     candidate_log_fees = torch.tensor(
         [[math.log(10.0), math.log(5.0), math.log(1000.0)]],
         dtype=torch.float32,
@@ -68,8 +69,8 @@ def test_objective_loss_prefers_cheaper_candidates_and_ignores_masked_slots() ->
         candidate_mask=candidate_mask,
     )
 
-    bad_loss = compute_objective_loss(logits_bad, targets)
-    good_loss = compute_objective_loss(logits_good, targets)
+    bad_loss = compute_selection_loss(logits_bad, targets)
+    good_loss = compute_selection_loss(logits_good, targets)
 
     assert good_loss.item() < bad_loss.item()
 
@@ -78,7 +79,7 @@ def test_prediction_selection_follows_validation_profit() -> None:
     history = [
         MetricSet(
             values={
-                "objective_loss": 0.90,
+                "total_loss": 0.90,
                 "exact_optimum_hit_rate": 0.30,
                 "cost_over_optimum": 0.25,
                 "profit_over_baseline": 0.04,
@@ -86,7 +87,7 @@ def test_prediction_selection_follows_validation_profit() -> None:
         ),
         MetricSet(
             values={
-                "objective_loss": 1.20,
+                "total_loss": 1.20,
                 "exact_optimum_hit_rate": 0.20,
                 "cost_over_optimum": 0.18,
                 "profit_over_baseline": 0.11,
@@ -94,7 +95,7 @@ def test_prediction_selection_follows_validation_profit() -> None:
         ),
         MetricSet(
             values={
-                "objective_loss": 0.70,
+                "total_loss": 0.70,
                 "exact_optimum_hit_rate": 0.40,
                 "cost_over_optimum": 0.20,
                 "profit_over_baseline": 0.08,
@@ -103,7 +104,7 @@ def test_prediction_selection_follows_validation_profit() -> None:
     ]
 
     assert best_epoch(history) == 2
-    assert objective_value(history[1]) == pytest.approx(0.11)
+    assert history[1].require("profit_over_baseline") == pytest.approx(0.11)
 
 
 def test_replay_summary_uses_event_weighted_totals() -> None:

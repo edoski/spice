@@ -9,7 +9,8 @@ import pytest
 import yaml
 
 from spice.config import TrainConfig, load_train_config
-from spice.temporal.contracts import resolve_problem_contract
+from spice.features import compile_feature_contract
+from spice.temporal.contracts import compile_problem_contract
 
 PRESET = "icdcs_2026"
 TEST_EVALUATION_DATE = date(2025, 11, 9)
@@ -114,9 +115,10 @@ def synthetic_block_interval_seconds(chain_name: str) -> int:
 
 
 def required_dataset_blocks(config: TrainConfig) -> int:
-    contract = resolve_problem_contract(
+    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    contract = compile_problem_contract(
         problem=config.problem,
-        feature_set=config.feature_set,
+        feature_contract=feature_contract,
     )
     block_interval_seconds = synthetic_block_interval_seconds(config.chain.name)
     required_blocks = (

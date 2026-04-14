@@ -1,7 +1,16 @@
 from __future__ import annotations
 
-from spice.config import ArtifactVariant, StudyConfig, coerce_prediction_config, coerce_problem_spec
-from spice.features import FeaturePrerequisites
+import pytest
+
+from spice.config import (
+    ArtifactVariant,
+    StudyConfig,
+    coerce_feature_set_config,
+    coerce_prediction_config,
+    coerce_problem_spec,
+)
+from spice.features import FeaturePrerequisites, compile_feature_contract
+from spice.modeling.artifacts import validate_artifact_semantics
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.results import (
     ArtifactChainMetadata,
@@ -50,13 +59,28 @@ def _prediction_contract():
     )
 
 
+def _feature_set_config():
+    return coerce_feature_set_config(
+        {
+            "id": "icdcs_2026_time_native",
+            "family": {
+                "id": "time_native",
+            },
+            "outputs": [
+                "seconds_since_previous_block",
+                "elapsed_seconds",
+            ],
+        }
+    )
+
+
 def test_training_artifact_summary_round_trip(tmp_path) -> None:
     db_path = tmp_path / ".spice" / "state.sqlite"
     prediction = _prediction_config()
     contract = _prediction_contract()
+    feature_set = _feature_set_config()
     manifest = TrainingArtifactManifest(
         artifact_id="artifact-1",
-        objective_id=contract.objective_id,
         prediction=prediction,
         metric_descriptors=list(contract.metric_descriptors),
         chain=ArtifactChainMetadata(name="ethereum"),
@@ -74,11 +98,9 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         variant=ArtifactVariant.BASELINE,
         study=StudyConfig(name="default"),
         study_id=None,
-        feature_family_id="time_native",
+        feature_set=feature_set,
         feature_prerequisites=FeaturePrerequisites(history_seconds=120, warmup_rows=0),
         max_candidate_slots=2,
-        feature_set_id="icdcs_2026",
-        feature_names=["seconds_since_previous_block", "elapsed_seconds"],
         feature_graph_fingerprint="fingerprint-1",
         model=LstmModelConfig(
             input_projection_dim=8,
@@ -96,7 +118,6 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
     )
     summary = TrainingSummary(
         artifact_id=manifest.artifact_id,
-        objective_id=manifest.objective_id,
         prediction_id=manifest.prediction_id,
         prediction_family_id=manifest.prediction_family_id,
         metric_descriptors=list(manifest.metric_descriptors),
@@ -124,10 +145,9 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         representation_id="sequence_inputs",
         storage_mode_id="materialized_dense",
         batch_planner_id="signature_bucketed",
-        family_execution_id="dense_recurrent_last_valid",
         best_validation_metrics=MetricSet(
             values={
-                "objective_loss": 0.25,
+                "total_loss": 0.25,
                 "exact_optimum_hit_rate": 0.5,
                 "cost_over_optimum": 0.1,
                 "profit_over_baseline": 0.2,
@@ -135,7 +155,7 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         ),
         test_metrics=MetricSet(
             values={
-                "objective_loss": 0.3,
+                "total_loss": 0.3,
                 "exact_optimum_hit_rate": 0.4,
                 "cost_over_optimum": 0.15,
                 "profit_over_baseline": 0.15,
@@ -147,7 +167,7 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
             epoch=1,
             train_metrics=MetricSet(
                 values={
-                    "objective_loss": 0.4,
+                    "total_loss": 0.4,
                     "exact_optimum_hit_rate": 0.3,
                     "cost_over_optimum": 0.2,
                     "profit_over_baseline": 0.1,
@@ -155,7 +175,7 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
             ),
             validation_metrics=MetricSet(
                 values={
-                    "objective_loss": 0.35,
+                    "total_loss": 0.35,
                     "exact_optimum_hit_rate": 0.4,
                     "cost_over_optimum": 0.15,
                     "profit_over_baseline": 0.12,
@@ -166,7 +186,7 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
             epoch=2,
             train_metrics=MetricSet(
                 values={
-                    "objective_loss": 0.3,
+                    "total_loss": 0.3,
                     "exact_optimum_hit_rate": 0.35,
                     "cost_over_optimum": 0.17,
                     "profit_over_baseline": 0.14,
@@ -174,7 +194,7 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
             ),
             validation_metrics=MetricSet(
                 values={
-                    "objective_loss": 0.25,
+                    "total_loss": 0.25,
                     "exact_optimum_hit_rate": 0.5,
                     "cost_over_optimum": 0.1,
                     "profit_over_baseline": 0.2,
@@ -193,8 +213,103 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
     loaded_epochs = list_training_epochs(db_path)
 
     assert loaded_manifest == manifest
+    assert loaded_manifest.feature_set == feature_set
     assert loaded_summary == summary
     assert loaded_epochs == epoch_rows
+
+
+def test_artifact_validation_uses_full_feature_set_and_catches_feature_drift() -> None:
+    feature_set = _feature_set_config()
+    feature_contract = compile_feature_contract(feature_set=feature_set)
+    prediction = _prediction_config()
+    model = LstmModelConfig(
+        input_projection_dim=8,
+        hidden_size=16,
+        num_layers=2,
+        dropout=0.1,
+        head_hidden_dim=8,
+    )
+    manifest = TrainingArtifactManifest(
+        artifact_id="artifact-1",
+        prediction=prediction,
+        metric_descriptors=list(_prediction_contract().metric_descriptors),
+        chain=ArtifactChainMetadata(name="ethereum"),
+        dataset_id="icdcs_2026",
+        dataset_name="icdcs_2026",
+        problem=coerce_problem_spec(
+            {
+                "id": "test_problem",
+                "lookback_seconds": 120,
+                "sample_count": 24,
+                "max_supported_delay_seconds": 36,
+                "compiler": {"id": "estimated_block"},
+            }
+        ),
+        variant=ArtifactVariant.BASELINE,
+        study=StudyConfig(name="default"),
+        study_id=None,
+        feature_set=feature_set,
+        feature_prerequisites=feature_contract.feature_prerequisites,
+        max_candidate_slots=2,
+        feature_graph_fingerprint=feature_contract.feature_graph_fingerprint,
+        model=model,
+        scaler=ScalerStats(means=[0.0, 1.0], scales=[1.0, 1.0]),
+        compiler_runtime_metadata={
+            "effective_block_interval_seconds": 12.0,
+            "lookback_steps": 10,
+            "capability_candidate_count": 4,
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Configured feature_set does not match the trained artifact semantics",
+    ):
+        validate_artifact_semantics(
+            manifest,
+            problem=manifest.problem,
+            feature_set=coerce_feature_set_config(
+                {
+                    "id": "icdcs_2026_time_native",
+                    "family": {"id": "time_native"},
+                    "outputs": ["elapsed_seconds"],
+                }
+            ),
+            prediction=manifest.prediction,
+            model=manifest.model,
+        )
+
+    drifted_manifest = TrainingArtifactManifest(
+        artifact_id=manifest.artifact_id,
+        prediction=manifest.prediction,
+        metric_descriptors=list(manifest.metric_descriptors),
+        chain=manifest.chain,
+        dataset_id=manifest.dataset_id,
+        dataset_name=manifest.dataset_name,
+        problem=manifest.problem,
+        variant=manifest.variant,
+        study=manifest.study,
+        study_id=manifest.study_id,
+        feature_set=manifest.feature_set,
+        feature_prerequisites=manifest.feature_prerequisites,
+        max_candidate_slots=manifest.max_candidate_slots,
+        feature_graph_fingerprint="stale-fingerprint",
+        model=manifest.model,
+        scaler=manifest.scaler,
+        compiler_runtime_metadata=dict(manifest.compiler_runtime_metadata),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Current feature graph does not match the trained artifact manifest",
+    ):
+        validate_artifact_semantics(
+            drifted_manifest,
+            problem=manifest.problem,
+            feature_set=feature_set,
+            prediction=manifest.prediction,
+            model=manifest.model,
+        )
 
 
 def test_simulation_artifact_summary_round_trip(tmp_path) -> None:
@@ -202,7 +317,6 @@ def test_simulation_artifact_summary_round_trip(tmp_path) -> None:
     contract = _prediction_contract()
     summary = SimulationSummaryRecord(
         artifact_id="artifact-1",
-        objective_id=contract.objective_id,
         prediction_id="candidate_offset_selection",
         prediction_family_id="candidate_offset_selection",
         metric_descriptors=list(contract.metric_descriptors),

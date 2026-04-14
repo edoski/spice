@@ -99,7 +99,9 @@ def _objective(
                 reporter=session.reporter,
                 persist_artifact=False,
             )
-    metric_value = spec.prediction_contract.objective_value(persisted.best_validation_metrics)
+    metric_value = spec.prediction_contract.optimization_value(
+        persisted.best_validation_metrics
+    )
     record_trial_best_epoch(trial, persisted.training_run.training_result.best_epoch)
     if config.tuning.enable_pruning:
         trial.report(metric_value, step=persisted.training_run.training_result.best_epoch)

@@ -29,10 +29,10 @@ from ..corpus.metadata import (
     provider_metadata,
 )
 from ..corpus.summary import acquire_dry_run_sections, acquisition_summary_sections
-from ..features import FeatureSelection, build_feature_table, make_feature_selection
+from ..features import CompiledFeatureContract, compile_feature_contract
 from ..storage.catalog import upsert_dataset_record
 from ..storage.corpus import write_dataset_state
-from ..temporal.contracts import CompiledProblemContract, resolve_problem_contract
+from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
 from ._shared import managed_workflow
 
 
@@ -49,11 +49,11 @@ def _workflow_facts(config: AcquireConfig) -> list[tuple[str, str]]:
 def _count_valid_history_samples(
     *,
     history_dir: Path,
-    selection: FeatureSelection,
+    feature_contract: CompiledFeatureContract,
     contract: CompiledProblemContract,
 ) -> int:
     blocks = load_block_frame(history_dir).sort("block_number")
-    feature_table = build_feature_table(blocks, selection=selection)
+    feature_table = feature_contract.build_table(blocks)
     return contract.count_valid_capability_samples(feature_table)
 
 
@@ -151,14 +151,10 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
     evaluation_dir = config.paths.evaluation_dir
     state_db_path = config.paths.corpus_state_db
     rpc_controller = RpcController.from_config(config.acquisition)
-    contract = resolve_problem_contract(
+    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    contract = compile_problem_contract(
         problem=config.problem,
-        feature_set=config.feature_set,
-    )
-    selection = make_feature_selection(
-        feature_set_id=config.feature_set.id,
-        feature_family_id=config.feature_set.family.id,
-        feature_names=tuple(config.feature_set.outputs),
+        feature_contract=feature_contract,
     )
     evaluation_window = evaluation_range(
         config.evaluation_window_start_timestamp,
@@ -266,7 +262,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     )
                     valid_anchor_samples = _count_valid_history_samples(
                         history_dir=history_result.path,
-                        selection=selection,
+                        feature_contract=feature_contract,
                         contract=contract,
                     )
                     if valid_anchor_samples >= contract.sample_count:
@@ -326,6 +322,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     config=config,
                     provider=current_provider,
                     contract=contract,
+                    feature_contract=feature_contract,
                     acquisition_runtime=rpc_controller.snapshot(),
                     acquired_history_window_seconds=history_window_seconds,
                     valid_anchor_samples=valid_anchor_samples,

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 import numpy as np
 import torch
@@ -104,25 +104,9 @@ class PredictionPreparedRepresentation:
 class CompiledPredictionContract:
     prediction_id: str
     prediction_family_id: str
-    objective_id: str
     metric_descriptors: tuple[MetricDescriptor, ...]
     primary_metric_id: str
-    direction: str
-    build_output_spec: Callable[[int], PredictionOutputSpec]
-    prepare_targets: Callable[[CompiledProblemStore, IntVector], PreparedPredictionTargets]
-    compute_batch_loss_and_state: Callable[
-        [ModelOutputs, PredictionTargetBatch],
-        tuple[torch.Tensor, object],
-    ]
-    summarize_epoch_metrics: Callable[[list[object]], MetricSet]
-    best_epoch: Callable[[list[MetricSet]], int]
-    objective_value: Callable[[MetricSet], float]
-    allocate_prediction_buffer: Callable[[int], object]
-    decode_into: Callable[[object, torch.Tensor, ModelOutputs, PredictionTargetBatch], None]
-    replay: Callable[
-        [CompiledProblemStore, object, IntVector, int, float, int, int, Reporter | None],
-        PredictionSimulationSummary,
-    ]
+    direction: Literal["maximize", "minimize"]
     supported_workflows: frozenset[str]
 
     @property
@@ -132,6 +116,67 @@ class CompiledPredictionContract:
     @property
     def early_stopping_monitor(self) -> str:
         return self.checkpoint_monitor
+
+    def build_output_spec(self, max_candidate_slots: int) -> PredictionOutputSpec:
+        raise NotImplementedError
+
+    def fit_training_state(
+        self,
+        store: CompiledProblemStore,
+        train_sample_indices: IntVector,
+    ) -> object | None:
+        del store, train_sample_indices
+        return None
+
+    def prepare_targets(
+        self,
+        store: CompiledProblemStore,
+        sample_indices: IntVector,
+    ) -> PreparedPredictionTargets:
+        raise NotImplementedError
+
+    def compute_batch_loss_and_state(
+        self,
+        outputs: ModelOutputs,
+        targets: PredictionTargetBatch,
+        *,
+        training_state: object | None,
+    ) -> tuple[torch.Tensor, object]:
+        raise NotImplementedError
+
+    def summarize_epoch_metrics(self, batch_states: list[object]) -> MetricSet:
+        raise NotImplementedError
+
+    def best_epoch(self, history: list[MetricSet]) -> int:
+        raise NotImplementedError
+
+    def optimization_value(self, metrics: MetricSet) -> float:
+        return metrics.require(self.primary_metric_id)
+
+    def allocate_prediction_buffer(self, sample_count: int) -> object:
+        raise NotImplementedError
+
+    def decode_into(
+        self,
+        predictions: object,
+        sample_positions: torch.Tensor,
+        outputs: ModelOutputs,
+        targets: PredictionTargetBatch,
+    ) -> None:
+        raise NotImplementedError
+
+    def replay(
+        self,
+        store: CompiledProblemStore,
+        predictions: object,
+        sample_indices: IntVector,
+        window_seconds: int,
+        arrival_rate_per_second: float,
+        repetitions: int,
+        seed: int,
+        reporter: Reporter | None,
+    ) -> PredictionSimulationSummary:
+        raise NotImplementedError
 
 
 def bind_prediction_representation(

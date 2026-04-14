@@ -9,7 +9,12 @@ from numpy.typing import NDArray
 from ..core.reporting import NullReporter, Reporter
 from ..prediction import CompiledPredictionContract
 from ..temporal.problem_store import CompiledProblemStore
-from ._runtime import build_prediction_loader, build_representation_runtime_context, resolve_device
+from ._runtime import (
+    CompiledRepresentationContract,
+    build_prediction_loader,
+    build_representation_runtime_context,
+    resolve_device,
+)
 from .models import TemporalModel
 
 IntVector = NDArray[np.int64]
@@ -18,8 +23,8 @@ IntVector = NDArray[np.int64]
 def predict_with_model(
     model: TemporalModel,
     *,
-    model_id: str,
     prediction_contract: CompiledPredictionContract,
+    representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
     sample_indices: IntVector,
     batch_size: int,
@@ -40,7 +45,7 @@ def predict_with_model(
     loader = build_prediction_loader(
         store,
         sample_indices,
-        model_id=model_id,
+        representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         runtime_context=runtime_context,
         seed=0,

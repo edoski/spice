@@ -12,7 +12,8 @@ from spice.config import (
     load_tune_config,
 )
 from spice.core.reporting import NullReporter
-from spice.temporal.contracts import resolve_problem_contract
+from spice.features import compile_feature_contract
+from spice.temporal.contracts import compile_problem_contract
 from spice.workflows.simulate import run as run_simulate
 from spice.workflows.train import run as run_train
 from spice.workflows.tune import run as run_tune
@@ -155,9 +156,10 @@ def _seed_dataset(path: Path, rows: list[dict[str, int]]) -> Path:
 
 
 def _seed_history_dataset(config) -> Path:
-    contract = resolve_problem_contract(
+    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    contract = compile_problem_contract(
         problem=config.problem,
-        feature_set=config.feature_set,
+        feature_contract=feature_contract,
     )
     block_interval_seconds = 12
     row_count = max(

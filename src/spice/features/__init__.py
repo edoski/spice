@@ -1,5 +1,9 @@
 """Family-aware Hamilton feature graph."""
 
+from .contracts import (
+    CompiledFeatureContract,
+    compile_feature_contract,
+)
 from .engine import (
     CanonicalBlockSeries,
     FeatureSelection,
@@ -22,6 +26,7 @@ from .families import (
 
 __all__ = [
     "CanonicalBlockSeries",
+    "CompiledFeatureContract",
     "FeatureFamilyConfig",
     "FeatureFamilySpec",
     "FeaturePrerequisites",
@@ -29,6 +34,7 @@ __all__ = [
     "ResolvedFeatureTable",
     "build_feature_driver",
     "build_feature_table",
+    "compile_feature_contract",
     "coerce_feature_family_config",
     "feature_family_spec",
     "feature_graph_fingerprint",

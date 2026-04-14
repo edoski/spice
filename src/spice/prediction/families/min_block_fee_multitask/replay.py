@@ -1,19 +1,15 @@
-"""Candidate-offset selection decode and replay helpers."""
+"""Paper-family decode and replay helpers."""
 
 from __future__ import annotations
 
-import numpy as np
 import torch
-from numpy.typing import NDArray
 
 from ....core.reporting import Reporter
 from ....temporal.problem_store import CompiledProblemStore
 from ...base import PredictionSimulationSummary
 from ...replay_utils import run_offset_replay
-from .batch import CandidateSlateTargetBatch
-from .outputs import candidate_logits, masked_candidate_logits
-
-IntVector = NDArray[np.int64]
+from .batch import MinBlockFeeTargetBatch
+from .outputs import OFFSET_LOGITS_HEAD_ID, masked_offset_logits
 
 
 def allocate_prediction_buffer(sample_count: int) -> list[int]:
@@ -24,11 +20,11 @@ def decode_into(
     predictions: object,
     sample_positions: torch.Tensor,
     outputs,
-    targets: CandidateSlateTargetBatch,
+    targets: MinBlockFeeTargetBatch,
 ) -> None:
     if not isinstance(predictions, list):
-        raise TypeError("candidate_offset_selection prediction buffer must be a list")
-    logits = masked_candidate_logits(candidate_logits(outputs), targets.candidate_mask)
+        raise TypeError("min_block_fee_multitask prediction buffer must be a list")
+    logits = masked_offset_logits(outputs.head(OFFSET_LOGITS_HEAD_ID), targets.candidate_mask)
     decoded = logits.argmax(dim=-1).cpu().tolist()
     positions = sample_positions.tolist()
     for sample_position, prediction in zip(positions, decoded, strict=True):
@@ -38,7 +34,7 @@ def decode_into(
 def run_replay(
     store: CompiledProblemStore,
     predicted_offsets: object,
-    sample_indices: IntVector,
+    sample_indices,
     window_seconds: int,
     arrival_rate_per_second: float,
     repetitions: int,
@@ -49,7 +45,7 @@ def run_replay(
         store,
         predicted_offsets,
         sample_indices,
-        family_id="candidate_offset_selection",
+        family_id="min_block_fee_multitask",
         window_seconds=window_seconds,
         arrival_rate_per_second=arrival_rate_per_second,
         repetitions=repetitions,

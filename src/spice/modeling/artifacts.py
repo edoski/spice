@@ -7,12 +7,14 @@ from pathlib import Path
 
 import torch
 
+from ..config import FeatureSetConfig, ModelConfig, PredictionConfig, ProblemSpec
 from ..core.constants import MODEL_STATE_FILENAME
 from ..core.files import write_path_atomic
-from ..features import FeatureSelection, feature_graph_fingerprint, make_feature_selection
+from ..features import CompiledFeatureContract, compile_feature_contract
 from ..prediction import compile_prediction_contract
 from ..storage.artifact import load_artifact_manifest, write_artifact_manifest
 from ..storage.engine import RootKind
+from ._runtime import CompiledRepresentationContract, compile_model_representation_contract
 from .families.registry import build_model
 from .models import TemporalModel
 from .pipeline import PreparedTrainingDataset, TrainingSpec
@@ -23,37 +25,35 @@ from .results import ArtifactChainMetadata, TrainingArtifactManifest
 class LoadedTrainingArtifact:
     manifest: TrainingArtifactManifest
     model: TemporalModel
+    representation_contract: CompiledRepresentationContract
 
 
-def feature_selection_from_manifest(manifest: TrainingArtifactManifest) -> FeatureSelection:
-    return make_feature_selection(
-        feature_set_id=manifest.feature_set_id,
-        feature_family_id=manifest.feature_family_id,
-        feature_names=tuple(manifest.feature_names),
-    )
+def feature_contract_from_manifest(manifest: TrainingArtifactManifest) -> CompiledFeatureContract:
+    return compile_feature_contract(feature_set=manifest.feature_set)
 
 
-def validate_artifact_feature_graph(
+def validate_artifact_semantics(
     manifest: TrainingArtifactManifest,
     *,
-    requested_feature_set_id: str | None = None,
-) -> FeatureSelection:
-    selection = feature_selection_from_manifest(manifest)
-    if (
-        requested_feature_set_id is not None
-        and requested_feature_set_id != selection.feature_set_id
-    ):
-        raise ValueError(
-            "Configured feature_set.id does not match the trained artifact: "
-            f"expected {selection.feature_set_id}, got {requested_feature_set_id}"
-        )
-    current_fingerprint = feature_graph_fingerprint(
-        selection.feature_family_id,
-        selection.feature_names,
-    )
-    if current_fingerprint != manifest.feature_graph_fingerprint:
+    problem: ProblemSpec,
+    feature_set: FeatureSetConfig,
+    prediction: PredictionConfig,
+    model: ModelConfig,
+) -> CompiledFeatureContract:
+    if manifest.problem.model_dump(mode="json") != problem.model_dump(mode="json"):
+        raise ValueError("Configured problem does not match the trained artifact semantics")
+    if manifest.prediction.model_dump(mode="json") != prediction.model_dump(mode="json"):
+        raise ValueError("Configured prediction does not match the trained artifact semantics")
+    if manifest.model.model_dump(mode="json") != model.model_dump(mode="json"):
+        raise ValueError("Configured model does not match the trained artifact semantics")
+    if manifest.feature_set.model_dump(mode="json") != feature_set.model_dump(mode="json"):
+        raise ValueError("Configured feature_set does not match the trained artifact semantics")
+    feature_contract = compile_feature_contract(feature_set=feature_set)
+    if feature_contract.feature_graph_fingerprint != manifest.feature_graph_fingerprint:
         raise ValueError("Current feature graph does not match the trained artifact manifest")
-    return selection
+    if feature_contract.feature_prerequisites != manifest.feature_prerequisites:
+        raise ValueError("Current feature prerequisites do not match the trained artifact manifest")
+    return feature_contract
 
 
 def build_training_artifact_manifest(
@@ -63,7 +63,6 @@ def build_training_artifact_manifest(
 ) -> TrainingArtifactManifest:
     return TrainingArtifactManifest(
         artifact_id=spec.artifact_id,
-        objective_id=spec.prediction_contract.objective_id,
         prediction=spec.prediction,
         metric_descriptors=list(spec.prediction_contract.metric_descriptors),
         chain=ArtifactChainMetadata(name=spec.chain.name),
@@ -73,11 +72,9 @@ def build_training_artifact_manifest(
         variant=spec.variant,
         study=spec.study,
         study_id=spec.study_id,
-        feature_family_id=prepared.feature_family_id,
+        feature_set=spec.feature_set,
         feature_prerequisites=prepared.feature_prerequisites,
         max_candidate_slots=prepared.max_candidate_slots,
-        feature_set_id=prepared.feature_set_id,
-        feature_names=list(prepared.feature_names),
         feature_graph_fingerprint=prepared.feature_graph_fingerprint,
         model=spec.model,
         scaler=prepared.scaler,
@@ -99,7 +96,11 @@ def load_training_artifact(artifact_dir: Path) -> LoadedTrainingArtifact:
     state_dict = torch.load(artifact_dir / MODEL_STATE_FILENAME, map_location="cpu")
     model.load_state_dict(state_dict)
     model.eval()
-    return LoadedTrainingArtifact(manifest=manifest, model=model)
+    return LoadedTrainingArtifact(
+        manifest=manifest,
+        model=model,
+        representation_contract=compile_model_representation_contract(manifest.model.id),
+    )
 
 
 def persist_training_artifact(

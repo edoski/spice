@@ -5,11 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..config.models import FeatureSetConfig, ProblemSpec
-from ..features import FeaturePrerequisites
+from ..config.models import ProblemSpec
+from ..features import CompiledFeatureContract, FeaturePrerequisites
 
 if TYPE_CHECKING:
-    from ..features import FeatureSelection, ResolvedFeatureTable
+    from ..features import ResolvedFeatureTable
     from .compilers import CompilerRuntimeMetadata
     from .problem_store import CompiledProblemStore
 
@@ -56,31 +56,14 @@ class CompiledProblemContract:
         raise NotImplementedError
 
 
-def resolve_feature_contract(
+def compile_problem_contract(
     *,
     problem: ProblemSpec,
-    selection: FeatureSelection,
+    feature_contract: CompiledFeatureContract,
 ) -> CompiledProblemContract:
     from .compilers.registry import problem_compiler_spec
 
     return problem_compiler_spec(problem.compiler.id).compile_problem(
         problem,
-        selection,
-    )
-
-
-def resolve_problem_contract(
-    *,
-    problem: ProblemSpec,
-    feature_set: FeatureSetConfig,
-) -> CompiledProblemContract:
-    from ..features import make_feature_selection
-
-    return resolve_feature_contract(
-        problem=problem,
-        selection=make_feature_selection(
-            feature_set_id=feature_set.id,
-            feature_family_id=feature_set.family.id,
-            feature_names=tuple(feature_set.outputs),
-        ),
+        feature_contract,
     )

@@ -1,4 +1,4 @@
-"""Current-family metric derivation."""
+"""Candidate-offset selection metric derivation."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ import torch
 
 from ...base import MetricDescriptor, MetricSet, WindowMetricSummary
 from .batch import CandidateSlateTargetBatch
-from .loss import compute_objective_loss
+from .loss import compute_selection_loss
 from .outputs import masked_candidate_logits
 
 
 @dataclass(frozen=True, slots=True)
 class CandidateSlateBatchState:
     count: int
-    objective_loss_sum: float
+    total_loss_sum: float
     exact_hit_count: int
     realized_fee_sum: float
     baseline_fee_sum: float
@@ -35,8 +35,8 @@ METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
         role="secondary",
     ),
     MetricDescriptor(
-        id="objective_loss",
-        label="objective loss",
+        id="total_loss",
+        label="total loss",
         role="diagnostic",
     ),
     MetricDescriptor(
@@ -73,7 +73,7 @@ def compute_batch_loss_and_state(
     logits: torch.Tensor,
     targets: CandidateSlateTargetBatch,
 ) -> tuple[torch.Tensor, CandidateSlateBatchState]:
-    objective_loss = compute_objective_loss(logits, targets)
+    total_loss = compute_selection_loss(logits, targets)
     predicted_candidate_index, optimal_candidate_index, realized_log_fee, optimal_log_fee = (
         _reference_tensors(logits.detach(), targets)
     )
@@ -81,9 +81,9 @@ def compute_batch_loss_and_state(
     baseline_fee = torch.exp(targets.candidate_log_fees[:, 0])
     optimum_fee = torch.exp(optimal_log_fee)
     count = int(targets.candidate_log_fees.shape[0])
-    return objective_loss, CandidateSlateBatchState(
+    return total_loss, CandidateSlateBatchState(
         count=count,
-        objective_loss_sum=float(objective_loss.detach().item()) * count,
+        total_loss_sum=float(total_loss.detach().item()) * count,
         exact_hit_count=int(
             (predicted_candidate_index == optimal_candidate_index).sum().item()
         ),
@@ -103,7 +103,7 @@ def summarize_epoch_metrics(batch_states: list[object]) -> MetricSet:
     optimal_fee_sum = sum(item.optimal_fee_sum for item in states)
     return MetricSet(
         values={
-            "objective_loss": sum(item.objective_loss_sum for item in states) / count,
+            "total_loss": sum(item.total_loss_sum for item in states) / count,
             "exact_optimum_hit_rate": sum(item.exact_hit_count for item in states) / count,
             "cost_over_optimum": (realized_fee_sum - optimal_fee_sum) / optimal_fee_sum,
             "profit_over_baseline": (baseline_fee_sum - realized_fee_sum) / baseline_fee_sum,
@@ -119,14 +119,10 @@ def best_epoch(history: list[MetricSet]) -> int:
         key=lambda index: (
             history[index].require("profit_over_baseline"),
             -history[index].require("cost_over_optimum"),
-            -history[index].require("objective_loss"),
+            -history[index].require("total_loss"),
         ),
     )
     return winner + 1
-
-
-def objective_value(metrics: MetricSet) -> float:
-    return metrics.require("profit_over_baseline")
 
 
 def summarize_window_metric(values: list[float]) -> WindowMetricSummary:

@@ -17,12 +17,12 @@ from ..core.reporting import NullReporter, Reporter, format_compact_number
 from ..prediction import CompiledPredictionContract, MetricSet
 from ..temporal.problem_store import CompiledProblemStore
 from ._runtime import (
+    CompiledRepresentationContract,
     build_prediction_loader,
     build_representation_runtime_context,
     prepare_prediction_representation,
     resolve_compile_enabled,
     resolve_device,
-    resolve_family_execution,
     resolve_trainer_precision,
     set_global_seed,
 )
@@ -45,7 +45,7 @@ class TrainingResult:
     representation_id: str
     storage_mode_id: str
     batch_planner_id: str
-    family_execution_id: str
+    prediction_training_state: object | None
 
 
 def _unwrap_compiled_model(model: TemporalModel) -> TemporalModel:
@@ -197,6 +197,7 @@ def train_model(
     *,
     model_config: ModelConfig,
     prediction_contract: CompiledPredictionContract,
+    representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
     train_sample_indices: IntVector,
     validation_sample_indices: IntVector,
@@ -230,14 +231,14 @@ def train_model(
     train_representation = prepare_prediction_representation(
         store,
         train_sample_indices,
-        model_id=model_config.id,
+        representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         runtime_context=runtime_context,
     )
     validation_representation = prepare_prediction_representation(
         store,
         validation_sample_indices,
-        model_id=model_config.id,
+        representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         runtime_context=runtime_context,
     )
@@ -247,11 +248,16 @@ def train_model(
         validation_representation=validation_representation,
         seed=training_config.seed,
     )
+    prediction_training_state = prediction_contract.fit_training_state(
+        store,
+        train_sample_indices,
+    )
 
     module = TemporalLightningModule(
         fit_model,
         training_config=training_config,
         prediction_contract=prediction_contract,
+        prediction_training_state=prediction_training_state,
     )
     monitor = prediction_contract.checkpoint_monitor
     mode = "max" if prediction_contract.direction == "maximize" else "min"
@@ -319,17 +325,18 @@ def train_model(
         representation_id=data_module.train_dataloader().representation_id,
         storage_mode_id=data_module.train_dataloader().storage_mode_id,
         batch_planner_id=data_module.train_dataloader().batch_planner_id,
-        family_execution_id=resolve_family_execution(model_config.id),
+        prediction_training_state=prediction_training_state,
     )
 
 
 def evaluate_model(
     model: torch.nn.Module,
     *,
-    model_id: str,
     prediction_contract: CompiledPredictionContract,
+    representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
     sample_indices: IntVector,
+    prediction_training_state: object | None,
     training_config: TrainingConfig,
     reporter: Reporter | None = None,
 ) -> MetricSet:
@@ -346,7 +353,7 @@ def evaluate_model(
     loader = build_prediction_loader(
         store,
         sample_indices,
-        model_id=model_id,
+        representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         runtime_context=runtime_context,
         seed=training_config.seed,
@@ -360,6 +367,7 @@ def evaluate_model(
             _, batch_state = prediction_contract.compute_batch_loss_and_state(
                 outputs,
                 device_batch.targets,
+                training_state=prediction_training_state,
             )
             batch_states.append(batch_state)
             reporter.update_task(task_id, advance=1)

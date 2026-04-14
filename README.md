@@ -87,7 +87,7 @@ Rules:
 - Feature prerequisites are derived from the selected feature graph as `history_seconds` and `warmup_rows`.
 - `acquire` expands raw history until the selected problem and feature graph produce enough valid anchor samples.
 - `train` and `simulate` validate that the selected feature graph matches the trained artifact.
-- Objective selection is internal for now. SPICE ships one code-defined objective: `profit_over_baseline`.
+- Prediction semantics are explicit config now. Shipped presets select a prediction family through `prediction.family.id`.
 
 ## Temporal Semantics
 
@@ -105,18 +105,27 @@ Internal semantics go through a problem-local compiler:
 The shipped `icdcs_2026` path uses `estimated_block` plus the `block_native` feature family.
 The `time_native` family remains available as an alternate path.
 
-## Objective Semantics
+## Prediction Semantics
 
-SPICE trains and evaluates against one canonical economic objective:
+Prediction semantics are family-owned under `src/spice/prediction/`.
 
-- primary objective: `profit_over_baseline`
-- first-class secondary metric: `cost_over_optimum`
-- diagnostics: `objective_loss`, `exact_optimum_hit_rate`
+Shipped families:
 
-The objective is code-defined and centralized under `src/spice/modeling/objective/`.
-Training, tuning, checkpoint selection, study manifests, artifact manifests, and simulation summaries all follow the same `objective_id`.
+- `candidate_offset_selection`
+  - one-head offset selection over the candidate slate
+  - primary training and tuning metric: `profit_over_baseline`
+- `min_block_fee_multitask`
+  - paper-faithful offset classification plus min-fee regression
+  - primary training and tuning metric: `total_loss`
 
-Current training uses a direct economic surrogate over the valid future candidate slate, not classification cross-entropy plus auxiliary fee regression.
+Replay remains economic for both families:
+
+- `profit_over_baseline`
+- `cost_over_optimum`
+- `baseline_cost_over_optimum`
+
+The shipped `icdcs_2026` preset now targets the paper path with `prediction: icdcs_2026_paper`.
+`icdcs_2026_offset_selection` remains available as the alternate current-family preset.
 
 ## Output Layout
 
@@ -135,7 +144,7 @@ Users query by selectors such as `--dataset`, `--study`, `--model`, `--problem`,
 Storage ids are deterministic internal ids. The catalog maps selectors to roots.
 Structured state is SQLite-only. SPICE does not persist generated JSON metadata or report files.
 Re-running `spice tune` with the same study resumes that study up to the requested total `--trial-count`.
-Study and artifact identity include the active `objective_id`, so changing objective semantics produces distinct stored outputs.
+Study and artifact identity include the full `prediction` payload, so changing prediction semantics produces distinct stored outputs.
 
 ## Current Model Boundary
 
@@ -152,12 +161,12 @@ Current sequence families share one semantic input representation:
 - `transformer_lstm`
 
 That shared representation is compiled into a masked/padded batch only at the model boundary.
-The current shared sequence batch contains:
+The current shared sequence batch contains only model inputs:
 
 - `inputs`
 - `input_mask`
-- `candidate_log_fees`
-- `candidate_mask`
+
+Prediction-family targets are compiled separately and attached after representation preparation.
 
 Economic references such as optimum index, baseline fee, and realized fee are derived by the objective package from that candidate slate. They are not persisted as separate batch payload.
 

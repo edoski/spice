@@ -136,7 +136,6 @@ register_model_spec(
     ModelSpec(
         id="transformer_lstm",
         input_representation="sequence_inputs",
-        family_execution_id="masked_transformer_dense_recurrent_last_valid",
         model_config_type=TransformerLstmModelConfig,
         tuning_space_type=TransformerLstmTuningSpaceModelConfig,
         tuned_params_type=TransformerLstmTunedModelParams,

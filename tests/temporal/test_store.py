@@ -3,16 +3,20 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from spice.config import coerce_problem_spec
-from spice.features import FeatureSelection, build_feature_table
-from spice.temporal.contracts import resolve_feature_contract
+from spice.config import coerce_feature_set_config, coerce_problem_spec
+from spice.features import compile_feature_contract
+from spice.temporal.contracts import compile_problem_contract
 
 
 def test_temporal_store_uses_real_timestamps_for_context_and_candidates() -> None:
-    selection = FeatureSelection(
-        feature_set_id="test_timestamp_native",
-        feature_family_id="time_native",
-        feature_names=("seconds_since_previous_block", "elapsed_seconds"),
+    feature_contract = compile_feature_contract(
+        feature_set=coerce_feature_set_config(
+            {
+                "id": "test_timestamp_native",
+                "family": {"id": "time_native"},
+                "outputs": ["seconds_since_previous_block", "elapsed_seconds"],
+            }
+        )
     )
     blocks = pl.DataFrame(
         {
@@ -24,8 +28,8 @@ def test_temporal_store_uses_real_timestamps_for_context_and_candidates() -> Non
             "chain_id": np.ones(7, dtype=np.int64),
         }
     )
-    feature_table = build_feature_table(blocks, selection=selection)
-    contract = resolve_feature_contract(
+    feature_table = feature_contract.build_table(blocks)
+    contract = compile_problem_contract(
         problem=coerce_problem_spec(
             {
                 "id": "test_timestamp_native",
@@ -35,7 +39,7 @@ def test_temporal_store_uses_real_timestamps_for_context_and_candidates() -> Non
                 "compiler": {"id": "timestamp_native"},
             }
         ),
-        selection=selection,
+        feature_contract=feature_contract,
     )
     store, _ = contract.build_capability_store(feature_table)
 
@@ -52,10 +56,14 @@ def test_temporal_store_uses_real_timestamps_for_context_and_candidates() -> Non
 
 
 def test_estimated_block_store_uses_corpus_calibration_for_row_geometry() -> None:
-    selection = FeatureSelection(
-        feature_set_id="test_estimated_block",
-        feature_family_id="time_native",
-        feature_names=("seconds_since_previous_block", "elapsed_seconds"),
+    feature_contract = compile_feature_contract(
+        feature_set=coerce_feature_set_config(
+            {
+                "id": "test_estimated_block",
+                "family": {"id": "time_native"},
+                "outputs": ["seconds_since_previous_block", "elapsed_seconds"],
+            }
+        )
     )
     blocks = pl.DataFrame(
         {
@@ -67,8 +75,8 @@ def test_estimated_block_store_uses_corpus_calibration_for_row_geometry() -> Non
             "chain_id": np.ones(8, dtype=np.int64),
         }
     )
-    feature_table = build_feature_table(blocks, selection=selection)
-    contract = resolve_feature_contract(
+    feature_table = feature_contract.build_table(blocks)
+    contract = compile_problem_contract(
         problem=coerce_problem_spec(
             {
                 "id": "test_estimated_block",
@@ -78,7 +86,7 @@ def test_estimated_block_store_uses_corpus_calibration_for_row_geometry() -> Non
                 "compiler": {"id": "estimated_block"},
             }
         ),
-        selection=selection,
+        feature_contract=feature_contract,
     )
 
     store, runtime_metadata = contract.build_capability_store(feature_table)

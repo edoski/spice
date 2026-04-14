@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING, cast
 
 from sqlalchemy.engine import RowMapping
 
-from ..config import ArtifactVariant, StudyConfig, coerce_prediction_config, coerce_problem_spec
+from ..config import (
+    ArtifactVariant,
+    StudyConfig,
+    coerce_feature_set_config,
+    coerce_prediction_config,
+    coerce_problem_spec,
+)
 from ..features import FeaturePrerequisites
 from ..prediction import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..temporal.scaling import ScalerStats
@@ -26,13 +32,6 @@ def mapping_payload(payload: object) -> dict[str, object]:
     if not isinstance(payload, Mapping):
         raise TypeError("Expected mapping payload")
     return dict(payload)
-
-
-def string_list_payload(payload: object) -> list[str]:
-    if not isinstance(payload, list):
-        raise TypeError("Expected list payload")
-    return [str(value) for value in payload]
-
 
 def _row_value(row: RowMapping, key: str) -> object:
     return row[key]
@@ -126,7 +125,6 @@ def artifact_manifest_values(manifest: TrainingArtifactManifest) -> dict[str, ob
     return {
         "singleton": 1,
         "artifact_id": manifest.artifact_id,
-        "objective_id": manifest.objective_id,
         "prediction_id": manifest.prediction_id,
         "prediction_family_id": manifest.prediction_family_id,
         "prediction": manifest.prediction.model_dump(mode="json"),
@@ -142,6 +140,7 @@ def artifact_manifest_values(manifest: TrainingArtifactManifest) -> dict[str, ob
         "model_id": manifest.model.id,
         "max_supported_delay_seconds": manifest.max_supported_delay_seconds,
         "lookback_seconds": manifest.lookback_seconds,
+        "feature_set": manifest.feature_set.model_dump(mode="json", exclude_none=True),
         "sample_count": manifest.sample_count,
         "feature_family_id": manifest.feature_family_id,
         "feature_prerequisites": manifest.feature_prerequisites.model_dump(mode="json"),
@@ -160,7 +159,6 @@ def artifact_manifest_from_row(row: RowMapping):
 
     return TrainingArtifactManifest(
         artifact_id=_row_str(row, "artifact_id"),
-        objective_id=_row_str(row, "objective_id"),
         prediction=coerce_prediction_config(mapping_payload(_row_value(row, "prediction"))),
         metric_descriptors=metric_descriptors_from_payload(_row_value(row, "metric_descriptors")),
         chain=ArtifactChainMetadata(name=_row_str(row, "chain_name")),
@@ -170,13 +168,11 @@ def artifact_manifest_from_row(row: RowMapping):
         variant=ArtifactVariant(_row_str(row, "variant")),
         study=study_config_from_name(_row_value(row, "study_name")),
         study_id=_row_optional_str(row, "study_id"),
-        feature_family_id=_row_str(row, "feature_family_id"),
+        feature_set=coerce_feature_set_config(mapping_payload(_row_value(row, "feature_set"))),
         feature_prerequisites=FeaturePrerequisites.model_validate(
             mapping_payload(_row_value(row, "feature_prerequisites"))
         ),
         max_candidate_slots=_row_int(row, "max_candidate_slots"),
-        feature_set_id=_row_str(row, "feature_set_id"),
-        feature_names=string_list_payload(_row_value(row, "feature_names")),
         feature_graph_fingerprint=_row_str(row, "feature_graph_fingerprint"),
         model=coerce_model_config(mapping_payload(_row_value(row, "model"))),
         scaler=ScalerStats.model_validate(mapping_payload(_row_value(row, "scaler"))),
@@ -188,7 +184,6 @@ def training_summary_values(summary: TrainingSummary) -> dict[str, object]:
     return {
         "singleton": 1,
         "artifact_id": summary.artifact_id,
-        "objective_id": summary.objective_id,
         "prediction_id": summary.prediction_id,
         "prediction_family_id": summary.prediction_family_id,
         "metric_descriptors": metric_descriptors_values(summary.metric_descriptors),
@@ -218,7 +213,6 @@ def training_summary_values(summary: TrainingSummary) -> dict[str, object]:
         "representation_id": summary.representation_id,
         "storage_mode_id": summary.storage_mode_id,
         "batch_planner_id": summary.batch_planner_id,
-        "family_execution_id": summary.family_execution_id,
         "best_validation_metrics": metric_set_values(summary.best_validation_metrics),
         "test_metrics": metric_set_values(summary.test_metrics),
     }
@@ -229,7 +223,6 @@ def training_summary_from_row(row: RowMapping):
 
     return TrainingSummary(
         artifact_id=_row_str(row, "artifact_id"),
-        objective_id=_row_str(row, "objective_id"),
         prediction_id=_row_str(row, "prediction_id"),
         prediction_family_id=_row_str(row, "prediction_family_id"),
         metric_descriptors=metric_descriptors_from_payload(_row_value(row, "metric_descriptors")),
@@ -263,7 +256,6 @@ def training_summary_from_row(row: RowMapping):
         representation_id=_row_str(row, "representation_id"),
         storage_mode_id=_row_str(row, "storage_mode_id"),
         batch_planner_id=_row_str(row, "batch_planner_id"),
-        family_execution_id=_row_str(row, "family_execution_id"),
         best_validation_metrics=metric_set_from_payload(_row_value(row, "best_validation_metrics")),
         test_metrics=metric_set_from_payload(_row_value(row, "test_metrics")),
     )
@@ -291,7 +283,6 @@ def simulation_summary_values(summary: SimulationSummaryRecord) -> dict[str, obj
     return {
         "singleton": 1,
         "artifact_id": summary.artifact_id,
-        "objective_id": summary.objective_id,
         "prediction_id": summary.prediction_id,
         "prediction_family_id": summary.prediction_family_id,
         "metric_descriptors": metric_descriptors_values(summary.metric_descriptors),
@@ -334,7 +325,6 @@ def simulation_summary_from_row(
     window_payload = mapping_payload(_row_value(row, "window_metrics"))
     return SimulationSummaryRecord(
         artifact_id=_row_str(row, "artifact_id"),
-        objective_id=_row_str(row, "objective_id"),
         prediction_id=_row_str(row, "prediction_id"),
         prediction_family_id=_row_str(row, "prediction_family_id"),
         metric_descriptors=metric_descriptors_from_payload(_row_value(row, "metric_descriptors")),
