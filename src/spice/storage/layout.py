@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..core.errors import ConfigResolutionError
 from .ids import artifact_storage_id, corpus_storage_id, study_storage_id
 
 if TYPE_CHECKING:
@@ -41,10 +42,6 @@ def build_path_layout(
     storage: StorageSpec,
     chain: ChainSpec,
     dataset: DatasetSpec,
-    feature_set_name: str | None = None,
-    model_name: str | None = None,
-    problem_name: str | None = None,
-    prediction_name: str | None = None,
     feature_set_payload: dict[str, object] | None = None,
     model_payload: dict[str, object] | None = None,
     problem_payload: dict[str, object] | None = None,
@@ -71,21 +68,12 @@ def build_path_layout(
 
     if include_artifacts:
         if (
-            feature_set_name is None
-            or model_name is None
-            or problem_name is None
-            or prediction_name is None
-        ):
-            raise ValueError(
-                "artifact paths require feature_set_name, model_name, problem_name, prediction_name"
-            )
-        if (
             feature_set_payload is None
             or model_payload is None
             or problem_payload is None
             or prediction_payload is None
         ):
-            raise ValueError(
+            raise ConfigResolutionError(
                 "artifact paths require feature_set_payload, model_payload, "
                 "problem_payload, prediction_payload"
             )

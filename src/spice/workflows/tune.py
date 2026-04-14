@@ -9,6 +9,7 @@ import optuna
 from optuna.trial import FrozenTrial, TrialState
 
 from ..config import TuneConfig
+from ..core.errors import ConfigResolutionError
 from ..core.reporting import Reporter, StageMetricDescriptor
 from ..core.runtime import ConsoleRuntime
 from ..modeling.families.registry import sample_tuned_parameters
@@ -125,7 +126,7 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
         study_state_db = config.paths.study_state_db
         study_id = config.paths.study_id
         if study_root is None or study_state_db is None or study_id is None:
-            raise ValueError("tuning workflow requires study output paths")
+            raise ConfigResolutionError("tuning workflow requires study output paths")
         study_reporter = session.runtime.stage_reporter(
             "study",
             label="study",

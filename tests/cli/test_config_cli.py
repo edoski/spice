@@ -5,11 +5,11 @@ from typing import cast
 
 import pytest
 import yaml
-from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from spice.cli import app
 from spice.config import SimulateConfig, WorkflowSelections, WorkflowTask, resolve_workflow_config
+from spice.core.errors import ConfigResolutionError
 
 runner = CliRunner()
 
@@ -71,7 +71,7 @@ def test_removed_group_is_gone_and_legacy_task_key_is_rejected(tmp_path, isolate
         encoding="utf-8",
     )
 
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+    with pytest.raises(ConfigResolutionError, match="Extra inputs are not permitted"):
         resolve_workflow_config(
             WorkflowTask.TRAIN,
             WorkflowSelections(

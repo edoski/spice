@@ -9,6 +9,7 @@ from spice.config import (
     coerce_prediction_config,
     coerce_problem_spec,
 )
+from spice.core.errors import SpiceOperatorError
 from spice.features import compile_feature_contract
 from spice.modeling.artifacts import validate_artifact_semantics
 from spice.modeling.families.lstm import LstmModelConfig
@@ -233,7 +234,7 @@ def test_artifact_validation_catches_feature_drift() -> None:
     feature_set = manifest.feature_set
 
     with pytest.raises(
-        ValueError,
+        SpiceOperatorError,
         match="Configured feature_set does not match the trained artifact semantics",
     ):
         validate_artifact_semantics(
@@ -280,7 +281,7 @@ def test_artifact_validation_catches_feature_drift() -> None:
     )
 
     with pytest.raises(
-        ValueError,
+        SpiceOperatorError,
         match="Current feature graph does not match the trained artifact manifest",
     ):
         validate_artifact_semantics(

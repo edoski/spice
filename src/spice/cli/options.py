@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated
 
 import typer
 
@@ -61,8 +61,3 @@ def print_sections(
             runtime.log_sectioned_summary(title, sections)
     finally:
         runtime.close()
-
-
-def fail(message: str) -> NoReturn:
-    typer.echo(message, err=True)
-    raise typer.Exit(code=1)

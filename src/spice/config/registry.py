@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import cast
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
+from ..core.errors import ConfigResolutionError
 from ..modeling.families.registry import coerce_model_config
 from .models import (
     ChainSpec,
@@ -154,14 +155,14 @@ def normalize_group_name(group: str) -> str:
         return _GROUP_BY_TOKEN[group].directory
     if group in _GROUP_BY_DIRECTORY:
         return group
-    raise ValueError(f"Unsupported config group: {group}")
+    raise ConfigResolutionError(f"Unsupported config group: {group}")
 
 
 def group_definition(group: str) -> ConfigGroupDefinition:
     normalized = normalize_group_name(group)
     if normalized in _GROUP_BY_DIRECTORY:
         return _GROUP_BY_DIRECTORY[normalized]
-    raise ValueError(f"Unsupported config group: {group}")
+    raise ConfigResolutionError(f"Unsupported config group: {group}")
 
 
 def group_path(group: str) -> Path:
@@ -173,18 +174,21 @@ def spec_path(group: str, name: str) -> Path:
 
 
 def load_yaml_mapping(path: Path) -> dict[str, object]:
-    payload: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        payload: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ConfigResolutionError(f"Invalid YAML: {path}") from exc
     if payload is None:
         return {}
     if not isinstance(payload, Mapping):
-        raise TypeError(f"Configuration must be a mapping: {path}")
+        raise ConfigResolutionError(f"Configuration must be a mapping: {path}")
     return _mapping_payload(cast(Mapping[object, object], payload))
 
 
 def load_named_group(name: str, group: str) -> dict[str, object]:
     path = spec_path(group, name)
     if not path.is_file():
-        raise FileNotFoundError(f"Unknown {normalize_group_name(group)} spec: {name}")
+        raise ConfigResolutionError(f"Unknown {normalize_group_name(group)} spec: {name}")
     return load_yaml_mapping(path)
 
 
@@ -214,7 +218,7 @@ def ensure_named_group_file(group_token: str, name: str) -> Path:
 def dump_canonical_yaml(value: BaseModel | dict[str, object]) -> str:
     payload = _canonicalize_value(value)
     if not isinstance(payload, dict):
-        raise TypeError("Canonical YAML root must be a mapping")
+        raise ConfigResolutionError("Canonical YAML root must be a mapping")
     return yaml.safe_dump(payload, sort_keys=False, allow_unicode=False)
 
 
@@ -232,7 +236,7 @@ def _seed_template(definition: ConfigGroupDefinition, *, name: str) -> dict[str,
     for candidate in _seed_candidate_paths(definition, name=name):
         if candidate.is_file():
             return load_yaml_mapping(candidate)
-    raise ValueError(f"Missing seed template for config group: {definition.directory}")
+    raise ConfigResolutionError(f"Missing seed template for config group: {definition.directory}")
 
 
 def _seed_candidate_paths(definition: ConfigGroupDefinition, *, name: str) -> tuple[Path, ...]:
@@ -260,7 +264,12 @@ def _validate_payload(
 ) -> BaseModel | dict[str, object]:
     if definition.validator is None:
         return _canonicalize_mapping(payload)
-    validated = definition.validator(dict(payload))
+    try:
+        validated = definition.validator(dict(payload))
+    except ConfigResolutionError:
+        raise
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise ConfigResolutionError(str(exc)) from exc
     _validate_identity(definition, name=name, value=validated)
     return validated
 
@@ -278,7 +287,7 @@ def _validate_identity(
     else:
         identity_value = value.get(definition.identity_field)
     if identity_value != name:
-        raise ValueError(
+        raise ConfigResolutionError(
             f"{definition.token} {definition.identity_field} must match spec name: {name}"
         )
 

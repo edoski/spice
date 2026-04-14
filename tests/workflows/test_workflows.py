@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from spice.core.errors import ConfigResolutionError, SpiceOperatorError
 from spice.core.reporting import NullReporter
 from spice.modeling.artifacts import load_training_artifact, validate_artifact_semantics
 from spice.storage.artifact import list_simulation_runs, load_simulation_summary
@@ -143,7 +144,10 @@ def test_tune_rejects_lower_requested_trial_budget(
         ),
     )
 
-    with pytest.raises(ValueError, match="Requested trial_count is lower than existing study size"):
+    with pytest.raises(
+        SpiceOperatorError,
+        match="Requested trial_count is lower than existing study size",
+    ):
         run_tune(lower_budget_config, reporter=NullReporter())
 
 
@@ -181,7 +185,7 @@ def test_tune_rejects_study_definition_drift(
     )
     drifted_config = load_test_tune_config(tmp_path, override=drifted_override)
 
-    with pytest.raises(ValueError, match="tuning_space"):
+    with pytest.raises(SpiceOperatorError, match="tuning_space"):
         run_tune(drifted_config, reporter=NullReporter())
 
 
@@ -212,7 +216,7 @@ def test_train_tuned_rejects_problem_drift_from_study(
         ),
     )
 
-    with pytest.raises(ValueError, match="problem"):
+    with pytest.raises(SpiceOperatorError, match="problem"):
         run_train(tuned_train_config, reporter=NullReporter())
 
 
@@ -290,7 +294,7 @@ def test_simulate_rejects_delay_request_above_capability(
         {"delay_seconds": 36},
     )
     with pytest.raises(
-        ValueError,
+        ConfigResolutionError,
         match="delay_seconds must be <= problem.max_delay_seconds",
     ):
         load_test_simulate_config(tmp_path, override=override)
@@ -341,7 +345,7 @@ def test_simulate_validation_rejects_semantic_bundle_mismatch(
     )
     model = mismatch_config.model if use_mismatch_model else simulate_config.model
 
-    with pytest.raises(ValueError, match=error_pattern):
+    with pytest.raises(SpiceOperatorError, match=error_pattern):
         validate_artifact_semantics(
             loaded_artifact.manifest,
             problem=simulate_config.problem,

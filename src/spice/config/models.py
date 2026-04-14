@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
@@ -16,6 +15,7 @@ from pydantic import (
     model_validator,
 )
 
+from ..core.errors import ConfigResolutionError
 from ..features import FeatureFamilyConfig, validate_feature_selection
 from ..modeling.families.base import (
     ConfigModel,
@@ -115,12 +115,12 @@ def coerce_problem_spec(payload: Mapping[str, object] | ProblemSpec) -> ProblemS
     )
     raw_compiler = raw_payload.get("compiler")
     if raw_compiler is None:
-        raise ValueError("problem.compiler is required")
+        raise ConfigResolutionError("problem.compiler is required")
     if not isinstance(raw_compiler, Mapping) and not isinstance(
         raw_compiler,
         ProblemCompilerConfig,
     ):
-        raise TypeError("problem.compiler must be a mapping")
+        raise ConfigResolutionError("problem.compiler must be a mapping")
     raw_payload["compiler"] = coerce_problem_compiler_config(raw_compiler)
     return ProblemSpec.model_validate(raw_payload)
 
@@ -221,9 +221,9 @@ def coerce_feature_set_config(payload: Mapping[str, object] | FeatureSetConfig) 
     )
     raw_family = raw_payload.get("family")
     if raw_family is None:
-        raise ValueError("feature_set.family is required")
+        raise ConfigResolutionError("feature_set.family is required")
     if not isinstance(raw_family, Mapping) and not isinstance(raw_family, FeatureFamilyConfig):
-        raise TypeError("feature_set.family must be a mapping")
+        raise ConfigResolutionError("feature_set.family must be a mapping")
     raw_payload["family"] = coerce_feature_family_config(raw_family)
     return FeatureSetConfig.model_validate(raw_payload)
 
@@ -246,9 +246,9 @@ def coerce_prediction_config(payload: Mapping[str, object] | PredictionConfig) -
     )
     raw_family = raw_payload.get("family")
     if raw_family is None:
-        raise ValueError("prediction.family is required")
+        raise ConfigResolutionError("prediction.family is required")
     if not isinstance(raw_family, Mapping) and not isinstance(raw_family, PredictionFamilyConfig):
-        raise TypeError("prediction.family must be a mapping")
+        raise ConfigResolutionError("prediction.family must be a mapping")
     raw_payload["family"] = coerce_prediction_family_config(raw_family)
     return PredictionConfig.model_validate(raw_payload)
 
@@ -331,52 +331,23 @@ class TuningConfig(ConfigModel):
 
 class ProviderEndpointSpec(ConfigModel):
     url: str | None = None
-    url_template: str | None = None
-    env_var: str | None = None
     reference: str | None = None
-    reference_template: str | None = None
 
     @model_validator(mode="after")
     def validate_source(self) -> Self:
-        source_count = sum(
-            value is not None for value in (self.url, self.url_template, self.env_var)
-        )
-        if source_count != 1:
-            raise ValueError(
-                "provider endpoint spec must declare exactly one of url, url_template, env_var"
-            )
-        if self.reference is not None and self.reference_template is not None:
-            raise ValueError(
-                "provider endpoint spec cannot declare both reference and reference_template"
-            )
+        if self.url is None:
+            raise ValueError("provider endpoint spec must declare url")
         return self
 
-    def resolve(self, *, api_key_envvar: str | None = None) -> tuple[str, str]:
-        if self.env_var is not None:
-            value = os.getenv(self.env_var, "")
-            if not value:
-                raise ValueError(f"Missing RPC endpoint env var: {self.env_var}")
-            return value, f"${self.env_var}"
-
-        if self.url is not None:
-            return self.url, self.reference or self.url
-
-        assert self.url_template is not None
-        if not api_key_envvar:
-            raise ValueError("Provider endpoint template requires api_key_envvar")
-        api_key = os.getenv(api_key_envvar, "")
-        if not api_key:
-            raise ValueError(f"Missing RPC API key env var: {api_key_envvar}")
-        endpoint = self.url_template.format(key=api_key)
-        reference_template = self.reference_template or self.url_template
-        return endpoint, reference_template.format(key=f"${api_key_envvar}")
+    def resolve(self) -> tuple[str, str]:
+        assert self.url is not None
+        return self.url, self.reference or self.url
 
 
 class ProviderRpcConfig(ConfigModel):
     timeout_seconds: float = Field(gt=0.0)
     retry_count: int = Field(ge=0)
     backoff_factor: float = Field(ge=0.0)
-    api_key_envvar: str | None = None
 
 
 class ProviderChainSpec(ConfigModel):
@@ -450,20 +421,16 @@ class ProviderSpec(ConfigModel):
         try:
             return self.chains[chain_name].endpoint
         except KeyError as exc:
-            raise ValueError(
+            raise ConfigResolutionError(
                 f"provider {self.name} does not define chain endpoint for {chain_name}"
             ) from exc
 
     def endpoint_for(self, chain_name: str) -> str:
-        endpoint, _ = self.endpoint_spec_for(chain_name).resolve(
-            api_key_envvar=self.rpc.api_key_envvar
-        )
+        endpoint, _ = self.endpoint_spec_for(chain_name).resolve()
         return endpoint
 
     def reference_for(self, chain_name: str) -> str:
-        _, reference = self.endpoint_spec_for(chain_name).resolve(
-            api_key_envvar=self.rpc.api_key_envvar
-        )
+        _, reference = self.endpoint_spec_for(chain_name).resolve()
         return reference
 
 
@@ -541,13 +508,9 @@ class ModelWorkflowConfig(WorkflowConfig):
             storage=self.storage,
             chain=self.chain,
             dataset=self.dataset,
-            feature_set_name=self.feature_set.id,
-            model_name=self.model.id,
-            problem_name=self.problem.id,
             feature_set_payload=self.feature_set.model_dump(mode="json", exclude_none=True),
             model_payload=self.model.model_dump(mode="json", exclude_none=True),
             problem_payload=self.problem.model_dump(mode="json", exclude_none=True),
-            prediction_name=self.prediction.id,
             prediction_payload=self.prediction.model_dump(mode="json", exclude_none=True),
             variant=self.artifact.variant,
             study_name=self.study.name,
@@ -572,9 +535,9 @@ class TuneConfig(ModelWorkflowConfig):
     @model_validator(mode="after")
     def validate_tuning_space(self) -> Self:
         if self.tuning_space.model.id != self.model.id:
-            raise ValueError("tuning_space.model.id must match model.id")
+            raise ConfigResolutionError("tuning_space.model.id must match model.id")
         if not self.tuning_space.has_candidates():
-            raise ValueError("tuning_space must declare at least one tunable parameter")
+            raise ConfigResolutionError("tuning_space must declare at least one tunable parameter")
         return self
 
 
@@ -587,7 +550,7 @@ class SimulateConfig(ModelWorkflowConfig):
     @model_validator(mode="after")
     def validate_delay(self) -> Self:
         if self.delay_seconds > self.problem.max_delay_seconds:
-            raise ValueError("delay_seconds must be <= problem.max_delay_seconds")
+            raise ConfigResolutionError("delay_seconds must be <= problem.max_delay_seconds")
         return self
 
 

@@ -9,7 +9,6 @@ runner = CliRunner()
 
 
 def test_acquire_cli_loads_specs_and_applies_selector_overrides(tmp_path, monkeypatch) -> None:
-    monkeypatch.setenv("AVALANCHE_RPC_URL", "https://avax.example.test")
     captured: dict[str, object] = {}
 
     def _capture(config) -> None:
@@ -26,7 +25,7 @@ def test_acquire_cli_loads_specs_and_applies_selector_overrides(tmp_path, monkey
             "--chain",
             "avalanche",
             "--provider",
-            "direct",
+            "publicnode",
             "--storage-root",
             str(tmp_path / "outputs"),
         ],
@@ -36,9 +35,12 @@ def test_acquire_cli_loads_specs_and_applies_selector_overrides(tmp_path, monkey
     config = captured["config"]
     assert config.chain.name == "avalanche"
     assert config.chain.runtime.chain_id == 43114
-    assert config.provider.name == "direct"
+    assert config.provider.name == "publicnode"
     assert config.provider.rpc.timeout_seconds == 30.0
-    assert config.provider.endpoint_for(config.chain.name) == "https://avax.example.test"
+    assert (
+        config.provider.endpoint_for(config.chain.name)
+        == "https://avalanche-c-chain-rpc.publicnode.com"
+    )
     assert config.acquisition.rpc.batch_size == 256
     assert config.dataset.name == "icdcs_2026"
     assert config.problem.sample_count == 400000

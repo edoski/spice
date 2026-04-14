@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..core.errors import StateLayoutError
 from . import (
     ARTIFACT_ROOT_KIND,
     DATASET_ROOT_KIND,
@@ -27,7 +28,7 @@ def describe_root(root: Path, *, detail: str | None = None) -> RootDescription:
         return describe_artifact_root(db_path, detail=detail)
     if root_kind == STUDY_ROOT_KIND:
         return describe_study_root(db_path, detail=detail)
-    raise ValueError(f"Unsupported root kind: {root_kind}")
+    raise StateLayoutError(f"Unsupported root kind: {root_kind}")
 
 
 def sectioned_summary(
@@ -39,4 +40,4 @@ def sectioned_summary(
         return "artifact summary", artifact_sections(description)
     if isinstance(description, StudyRootDescription):
         return "study summary", study_sections(description)
-    raise ValueError(f"Unsupported root description: {type(description).__name__}")
+    raise StateLayoutError(f"Unsupported root description: {type(description).__name__}")

@@ -8,6 +8,7 @@ import optuna
 from optuna.storages import RDBStorage
 
 from ..config import TuneConfig, TunedParameterSet
+from ..core.errors import MissingStateError, StateConflictError, StateLayoutError
 from ..modeling.families.registry import coerce_tuned_parameter_set
 from ..prediction import compile_prediction_contract
 from .engine import db_url
@@ -40,7 +41,9 @@ def study_storage(db_path: Path) -> RDBStorage:
 def load_study(db_path: Path, *, study_name: str) -> optuna.Study:
     manifest = load_study_manifest(db_path)
     if manifest.study_name != study_name:
-        raise ValueError(f"Study name mismatch: expected {manifest.study_name}, got {study_name}")
+        raise StateConflictError(
+            f"Study name mismatch: expected {manifest.study_name}, got {study_name}"
+        )
     return load_materialized_study(db_path, study_name=manifest.study_name)
 
 
@@ -53,7 +56,7 @@ def open_tuning_study(db_path: Path, *, config: TuneConfig) -> OpenStudy:
     else:
         mismatches = diff_study_manifests(stored_manifest, requested_manifest)
         if mismatches:
-            raise ValueError(
+            raise StateConflictError(
                 "Existing study definition does not match current request: " + ", ".join(mismatches)
             )
         manifest = stored_manifest
@@ -61,7 +64,7 @@ def open_tuning_study(db_path: Path, *, config: TuneConfig) -> OpenStudy:
     existing_trial_count = len(study.trials)
     target_trial_count = config.tuning.trial_count
     if target_trial_count < existing_trial_count:
-        raise ValueError(
+        raise StateConflictError(
             "Requested trial_count is lower than existing study size: "
             f"requested {target_trial_count}, existing {existing_trial_count}"
         )
@@ -77,11 +80,13 @@ def open_tuning_study(db_path: Path, *, config: TuneConfig) -> OpenStudy:
 def load_best_params(db_path: Path, *, study_name: str) -> TunedParameterSet:
     manifest = load_study_manifest(db_path)
     if manifest.study_name != study_name:
-        raise ValueError(f"Study name mismatch: expected {manifest.study_name}, got {study_name}")
+        raise StateConflictError(
+            f"Study name mismatch: expected {manifest.study_name}, got {study_name}"
+        )
     study = load_materialized_study(db_path, study_name=manifest.study_name)
     payload = study.best_trial.user_attrs.get(TRIAL_PARAMS_KEY)
     if not isinstance(payload, dict):
-        raise FileNotFoundError(f"Best tuning params are required but missing: {db_path}")
+        raise MissingStateError(f"Best tuning params are required but missing: {db_path}")
     return coerce_tuned_parameter_set(payload, model_id=manifest.model_id)
 
 
@@ -108,12 +113,14 @@ def record_trial_best_epoch(trial: optuna.Trial, best_epoch: int) -> None:
 def load_materialized_study(db_path: Path, *, study_name: str) -> optuna.Study:
     summaries = optuna.get_all_study_summaries(storage=study_storage(db_path))
     if not summaries:
-        raise ValueError(f"Missing materialized Optuna study: {db_path}")
+        raise MissingStateError(f"Missing materialized Optuna study: {db_path}")
     if len(summaries) != 1:
-        raise ValueError(f"Expected exactly one Optuna study in {db_path}, found {len(summaries)}")
+        raise StateLayoutError(
+            f"Expected exactly one Optuna study in {db_path}, found {len(summaries)}"
+        )
     summary = summaries[0]
     if summary.study_name != study_name:
-        raise ValueError(
+        raise StateLayoutError(
             "Materialized Optuna study name does not match stored manifest: "
             f"expected {study_name}, got {summary.study_name}"
         )

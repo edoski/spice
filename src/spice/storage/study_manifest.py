@@ -17,6 +17,12 @@ from ..config import (
     coerce_prediction_config,
     coerce_problem_spec,
 )
+from ..core.errors import (
+    ConfigResolutionError,
+    MissingStateError,
+    StateConflictError,
+    StateLayoutError,
+)
 from ..features import compile_feature_contract
 from ..modeling.families.registry import (
     coerce_model_config,
@@ -46,8 +52,10 @@ _STUDY_MANIFEST_STORE = SingletonPayloadStore(
 
 
 def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
+    """Build the canonical study manifest from one validated tuning request."""
+
     if config.paths.study_id is None:
-        raise ValueError("study_id is required for study manifests")
+        raise ConfigResolutionError("study_id is required for study manifests")
     feature_contract = compile_feature_contract(feature_set=config.feature_set)
     problem_contract = compile_problem_contract(
         problem=config.problem,
@@ -87,26 +95,30 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
 
 
 def insert_study_manifest(db_path: Path, *, manifest: StudyManifest) -> None:
+    """Insert the study manifest exactly once for a study root."""
+
     ensure_state_db(db_path, root_kind=STUDY_ROOT_KIND, tables=STUDY_TABLES)
     engine = create_state_engine(db_path)
     try:
         with engine.begin() as conn:
             existing = _STUDY_MANIFEST_STORE.load(conn)
             if existing is not None:
-                raise ValueError(f"Study manifest already exists: {db_path}")
+                raise StateConflictError(f"Study manifest already exists: {db_path}")
             _STUDY_MANIFEST_STORE.upsert(conn, manifest)
     finally:
         engine.dispose()
 
 
 def load_study_manifest(db_path: Path) -> StudyManifest:
+    """Load the canonical study manifest that owns persisted study provenance."""
+
     ensure_state_db(db_path, root_kind=STUDY_ROOT_KIND, tables=STUDY_TABLES)
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
             manifest = _STUDY_MANIFEST_STORE.load(conn)
         if manifest is None:
-            raise ValueError(f"Missing study manifest: {db_path}")
+            raise MissingStateError(f"Missing study manifest: {db_path}")
         return manifest
     finally:
         engine.dispose()
@@ -132,8 +144,10 @@ def diff_study_manifests(stored: StudyManifest, requested: StudyManifest) -> lis
 
 
 def validate_tuned_train_request(config: TrainConfig, *, manifest: StudyManifest) -> None:
+    """Reject tuned-artifact requests whose identity diverges from the stored study."""
+
     if config.paths.study_id is None:
-        raise ValueError("study_id is required for tuned artifacts")
+        raise ConfigResolutionError("study_id is required for tuned artifacts")
     stored_payload = {
         "study_name": manifest.study_name,
         "study_id": manifest.study_id,
@@ -148,7 +162,7 @@ def validate_tuned_train_request(config: TrainConfig, *, manifest: StudyManifest
     requested_payload = tuned_train_request_identity(config)
     mismatches = [key for key in stored_payload if stored_payload[key] != requested_payload[key]]
     if mismatches:
-        raise ValueError(
+        raise StateConflictError(
             "Tuned artifact request does not match study definition: " + ", ".join(mismatches)
         )
 
@@ -210,7 +224,7 @@ def coerce_study_tuning_space(payload: object, *, model: ModelConfig) -> TuningS
         raise TypeError("Study tuning_space payload must be a mapping")
     tuning_space = coerce_tuning_space_config(payload, model_config=model)
     if tuning_space is None:
-        raise ValueError("Study tuning_space payload is required")
+        raise StateLayoutError("Study tuning_space payload is required")
     return tuning_space
 
 

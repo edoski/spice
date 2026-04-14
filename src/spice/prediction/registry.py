@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Generic, TypeVar, cast
 
 from ..core.components import ComponentCatalog
+from ..core.errors import ConfigResolutionError
 from .base import PredictionFamilyConfig
 from .contracts import CompiledPredictionContract
 
@@ -40,8 +41,10 @@ _PREDICTION_FAMILY_SPECS.configure_builtin_loader(_load_builtin_prediction_famil
 def prediction_family_spec(family_id: str) -> PredictionFamilySpec[Any]:
     try:
         return _PREDICTION_FAMILY_SPECS.get(family_id)
-    except ValueError as exc:
-        raise ValueError(str(exc).replace("prediction family", "prediction.family.id")) from exc
+    except ConfigResolutionError as exc:
+        raise ConfigResolutionError(
+            str(exc).replace("prediction family", "prediction.family.id")
+        ) from exc
 
 
 def coerce_prediction_family_config(
@@ -52,11 +55,11 @@ def coerce_prediction_family_config(
         payload = raw_config.model_dump(mode="json")
     elif isinstance(raw_config, Mapping):
         if "id" not in raw_config:
-            raise ValueError("prediction.family.id is required")
+            raise ConfigResolutionError("prediction.family.id is required")
         family_id = str(raw_config["id"])
         payload = dict(raw_config)
     else:
-        raise TypeError("prediction.family must be a mapping")
+        raise ConfigResolutionError("prediction.family must be a mapping")
     return prediction_family_spec(family_id).config_type.model_validate(payload)
 
 

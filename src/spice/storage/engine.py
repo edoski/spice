@@ -12,6 +12,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection, create_engine
 from sqlalchemy.schema import Table
 
+from ..core.errors import MissingStateError, StateLayoutError
 from .schema import metadata, spice_meta
 
 
@@ -88,18 +89,18 @@ def touch_meta(conn: Connection, *, root_kind: RootKind) -> None:
 
 def detect_root_kind(path: Path) -> RootKind:
     if not path.is_file():
-        raise FileNotFoundError(f"Missing state database: {path}")
+        raise MissingStateError(f"Missing state database: {path}")
     engine = create_state_engine(path)
     try:
         inspector = inspect(engine)
         if not inspector.has_table(spice_meta.name):
-            raise FileNotFoundError(f"Missing SPICE state metadata: {path}")
+            raise MissingStateError(f"Missing SPICE state metadata: {path}")
         with engine.connect() as conn:
             row = conn.execute(
                 select(spice_meta.c.root_kind).where(spice_meta.c.singleton == 1)
             ).mappings().first()
         if row is None:
-            raise ValueError(f"Missing SPICE state metadata: {path}")
+            raise MissingStateError(f"Missing SPICE state metadata: {path}")
         return RootKind(str(row["root_kind"]))
     finally:
         engine.dispose()
@@ -120,7 +121,7 @@ def _ensure_root_kind(conn: Connection, *, root_kind: RootKind) -> None:
     if row is None:
         return
     if str(row["root_kind"]) != root_kind:
-        raise ValueError(
+        raise StateLayoutError(
             f"SPICE state root kind mismatch: expected {root_kind}, got {row['root_kind']}"
         )
 
@@ -131,7 +132,7 @@ def _ensure_table_shapes(conn: Connection, *, tables: Iterable[Table]) -> None:
         expected_columns = tuple(column.name for column in table.columns)
         actual_columns = tuple(column["name"] for column in inspector.get_columns(table.name))
         if actual_columns != expected_columns:
-            raise ValueError(
+            raise StateLayoutError(
                 "Unsupported SPICE state layout for table "
                 f"{table.name}: expected columns {expected_columns}, found {actual_columns}. "
                 "Delete and regenerate this state root."

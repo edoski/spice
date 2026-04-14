@@ -10,7 +10,7 @@ from typing import Annotated
 import typer
 
 from ...config.registry import ConfigGroup
-from ..options import fail
+from ...core.errors import SpiceOperatorError
 
 app = typer.Typer(
     help="Query and edit saved YAML config specs.",
@@ -68,10 +68,7 @@ def config_show_command(
 ) -> None:
     from ...config.registry import show_named_group
 
-    try:
-        typer.echo(show_named_group(group.value, name), nl=False)
-    except (FileNotFoundError, TypeError, ValueError) as exc:
-        fail(str(exc))
+    typer.echo(show_named_group(group.value, name), nl=False)
 
 
 @app.command(
@@ -92,8 +89,10 @@ def config_edit_command(
     from ...config.registry import ensure_named_group_file
 
     editor = _resolve_editor()
+    path = ensure_named_group_file(group.value, name)
     try:
-        path = ensure_named_group_file(group.value, name)
         subprocess.run([*shlex.split(editor), str(path)], check=True)
-    except (FileNotFoundError, TypeError, ValueError, subprocess.CalledProcessError) as exc:
-        fail(str(exc))
+    except FileNotFoundError as exc:
+        raise SpiceOperatorError(f"Editor not found: {editor}") from exc
+    except subprocess.CalledProcessError as exc:
+        raise SpiceOperatorError(f"Editor exited with status {exc.returncode}: {editor}") from exc

@@ -4,7 +4,6 @@ import asyncio
 import math
 from concurrent.futures.thread import _threads_queues
 from io import StringIO
-from pathlib import Path
 
 import pytest
 from rich.console import Console
@@ -17,6 +16,7 @@ from spice.acquisition.rpc import (
     RpcController,
     TimestampRange,
     Web3BlockClient,
+    pull_block_range,
 )
 from spice.core.reporting import NullReporter, PlainReporter, StageMetricValue
 from spice.features import compile_feature_contract
@@ -83,7 +83,6 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     load_test_acquire_config,
     acquire_override,
     make_block_rows,
-    write_dataset_dir,
 ) -> None:
     config = load_test_acquire_config(tmp_path, override=acquire_override())
     feature_contract = compile_feature_contract(feature_set=config.feature_set)
@@ -105,6 +104,7 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
         def __init__(self, provider, chain) -> None:
             del provider
             self.chain = chain
+            self._planned_windows: list[BlockPullPlan] = []
 
         async def close(self) -> None:
             return None
@@ -114,13 +114,17 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
             return 12.0
 
         async def plan_window(self, window: TimestampRange, *, chunk_size: int) -> BlockPullPlan:
-            if window == evaluation_plan.window:
-                return evaluation_plan
-            return _plan_for_window(
-                window,
-                start_block=100,
-                chunk_size=chunk_size,
+            plan = (
+                evaluation_plan
+                if window == evaluation_plan.window
+                else _plan_for_window(
+                    window,
+                    start_block=100,
+                    chunk_size=chunk_size,
+                )
             )
+            self._planned_windows.append(plan)
+            return plan
 
         def plan_block_range(
             self,
@@ -129,32 +133,29 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
             window: TimestampRange,
             chunk_size: int,
         ) -> BlockPullPlan:
-            return BlockPullPlan(
-                window=window,
+            plan = BlockPullPlan(
+                window,
                 block_range=block_range,
                 expected_rows=block_range.count,
                 expected_files=max(1, math.ceil(block_range.count / chunk_size)),
             )
-
-        async def pull_block_range(
-            self,
-            output_dir: Path,
-            *,
-            plan: BlockPullPlan,
-            chunk_size: int,
-            rpc_controller,
-            reporter,
-        ) -> BlockPullPlan:
-            del chunk_size, rpc_controller, reporter
-            rows = make_block_rows(
-                plan.expected_rows,
-                start_block=plan.block_range.start,
-                start_timestamp=plan.window.start,
-                chain_id=config.chain.runtime.chain_id,
-                block_interval_seconds=12,
-            )
-            write_dataset_dir(output_dir, rows)
+            self._planned_windows.append(plan)
             return plan
+
+        async def get_block_rows(self, block_numbers: list[int]):
+            first_block = block_numbers[0]
+            for plan in reversed(self._planned_windows):
+                if plan.block_range.start <= first_block < plan.block_range.end:
+                    return make_block_rows(
+                        len(block_numbers),
+                        start_block=first_block,
+                        start_timestamp=(
+                            plan.window.start + (first_block - plan.block_range.start) * 12
+                        ),
+                        chain_id=config.chain.runtime.chain_id,
+                        block_interval_seconds=12,
+                    )
+            raise AssertionError(f"missing plan for block {first_block}")
 
     monkeypatch.setattr("spice.workflows.acquire.Web3BlockClient", FakeAcquireClient)
 
@@ -286,7 +287,8 @@ def test_pull_block_range_emits_structured_progress_messages(
     client = FakeClient(config.provider, config.chain)
 
     asyncio.run(
-        client.pull_block_range(
+        pull_block_range(
+            client,
             tmp_path / "history",
             plan=plan,
             chunk_size=64,

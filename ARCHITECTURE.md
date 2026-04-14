@@ -58,12 +58,11 @@ Config loading lives in [src/spice/config](src/spice/config).
 Flow:
 
 1. The loader reads named specs from [src/spice/conf](src/spice/conf).
-2. `spice config` authors repo-local YAML specs directly under that tree.
+2. `spice config edit` authors repo-local YAML specs directly under that tree.
 3. `--preset` optionally selects a bundle of named defaults.
-4. `--config PATH` overlays plain YAML on top of that preset.
-5. Explicit CLI flags override both preset and file values.
-6. Pydantic validates the final request model.
-7. `PathLayout` derives deterministic storage ids and roots from `storage.root`.
+4. Explicit CLI selector and runtime flags override preset values.
+5. Pydantic validates the final request model.
+6. `PathLayout` derives deterministic storage ids and roots from `storage.root`.
 
 Selector rules:
 
@@ -77,9 +76,9 @@ Public temporal contract:
 - `dataset.evaluation_date` defines the fixed one-day UTC evaluation window.
 - `problem.lookback_seconds` defines real context span.
 - `problem.sample_count` defines training and tuning anchor count.
-- `problem.max_supported_delay_seconds` defines artifact capability.
+- `problem.max_delay_seconds` defines artifact capability.
 - `problem.compiler.id` selects the temporal compiler.
-- `execution.requested_delay_seconds` defines the runtime deadline inside that capability.
+- `delay_seconds` defines the runtime deadline inside that capability.
 
 No config field encodes nominal block time.
 `prediction.id` selects the named prediction config.
@@ -209,7 +208,7 @@ Future examples:
 SPICE CLI commands fall into three categories:
 
 1. workflow commands
-2. config authoring commands
+2. config query and edit commands
 3. state query and deletion commands
 
 Workflow commands:
@@ -233,23 +232,28 @@ These are selector-driven commands over existing state. They do not use workflow
 ### `config`
 
 - [models.py](src/spice/config/models.py): typed specs, workflow request models, path layout, provider resolution
-- [loader.py](src/spice/config/loader.py): named YAML loading, fixed-order merges, CLI/file override composition
-- `registry.py`: config group registry, canonical YAML serialization, create/update/delete helpers
+- [loader.py](src/spice/config/loader.py): preset + selector resolution into validated workflow configs
+- [registry.py](src/spice/config/registry.py): config group registry, canonical YAML serialization, query/edit seeding
 
 ### `core`
 
 - [console.py](src/spice/core/console.py): workflow reporting
 - [files.py](src/spice/core/files.py): atomic file and directory promotion helpers
+- [errors.py](src/spice/core/errors.py): operator-facing CLI and workflow error categories
 
 ### `storage`
 
 - `engine.py`: SQLAlchemy engine creation, SQLite PRAGMAs, `RootKind`, root-kind bootstrap
 - `schema.py`: SPICE-owned Core table definitions
 - `catalog.py`: global selector-to-root catalog
-- `corpus.py`: corpus summary + acquire-run persistence
+- `corpus.py`: dataset manifest + acquire-run persistence
 - `artifact.py`: manifest, training, and simulation table I/O
-- `study.py`: Optuna-backed study helpers and tuned-param loading
-- `inspect.py`: typed root descriptions and section rendering for `spice show`
+- `study_models.py`: study manifests, summaries, and trial DTOs
+- `study_manifest.py`: study manifest creation, persistence, and validation
+- `study_optuna.py`: Optuna-backed study access and tuned-param loading
+- `study_render.py`: study summary rendering
+- `inspect.py`: tiny selector-based root dispatcher for `spice show`
+- `inspect_dataset.py`, `inspect_artifact.py`, `inspect_study.py`: root-specific typed descriptions and sections
 
 ### `acquisition`
 
@@ -279,7 +283,7 @@ These are selector-driven commands over existing state. They do not use workflow
 - [pipeline.py](src/spice/modeling/pipeline.py): training and inference dataset preparation
 - [models.py](src/spice/modeling/models.py): baseline temporal models
 - [training.py](src/spice/modeling/training.py): trainer execution and metrics
-- [execution.py](src/spice/modeling/execution.py): persisted training flow
+- [persisted_training.py](src/spice/modeling/persisted_training.py): persisted training flow
 - [artifacts.py](src/spice/modeling/artifacts.py): model + manifest persistence and feature validation
 - [results.py](src/spice/modeling/results.py): typed training and simulation summary envelopes
 - [result_codecs.py](src/spice/modeling/result_codecs.py): typed runtime-to-storage codecs
@@ -318,7 +322,7 @@ Notes:
 - root identity is typed internally as `RootKind` with values `corpus`, `study`, `artifact`
 - study roots persist a typed study manifest plus Optuna state
 - studies and artifacts are separate roots
-- `spice config ...` is the human-facing config authoring path
+- `spice config list|show|edit` is the human-facing config path
 - `spice show dataset|study|artifact` is the human-facing inspection path
 - `spice delete dataset|study|artifact` is the cleanup path
 

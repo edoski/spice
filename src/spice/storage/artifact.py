@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, cast
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
+from ..core.errors import MissingStateError
 from ..modeling.result_codecs import (
     artifact_manifest_from_payload,
     artifact_manifest_payload,
@@ -81,6 +82,8 @@ def write_artifact_manifest(
     manifest: TrainingArtifactManifest,
     root_kind: RootKind,
 ) -> None:
+    """Persist the canonical artifact manifest before any runtime summaries are written."""
+
     ensure_state_db(db_path, root_kind=root_kind, tables=ARTIFACT_TABLES)
     engine = create_state_engine(db_path)
     try:
@@ -92,12 +95,14 @@ def write_artifact_manifest(
 
 
 def load_artifact_manifest(db_path: Path) -> TrainingArtifactManifest:
+    """Load the canonical artifact manifest that owns persisted artifact provenance."""
+
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
             manifest = _ARTIFACT_MANIFEST_STORE.load(conn)
         if manifest is None:
-            raise ValueError(f"Missing artifact manifest: {db_path}")
+            raise MissingStateError(f"Missing artifact manifest: {db_path}")
         return manifest
     finally:
         engine.dispose()
@@ -110,6 +115,8 @@ def write_training_state(
     summary: TrainingRuntimeSummary,
     epoch_rows: list[TrainingEpochRecord],
 ) -> None:
+    """Persist training runtime summary plus ordered epoch history for one artifact root."""
+
     ensure_state_db(db_path, root_kind=root_kind, tables=ARTIFACT_TABLES)
     engine = create_state_engine(db_path)
     try:
@@ -128,6 +135,8 @@ def write_training_state(
 
 
 def load_training_summary(db_path: Path) -> LoadedTrainingSummary | None:
+    """Load the training read model as manifest plus runtime summary."""
+
     if not table_exists(db_path, training_summary.name):
         return None
     from ..modeling.results import LoadedTrainingSummary
@@ -176,6 +185,8 @@ def write_simulation_state(
     root_kind: RootKind,
     summary: SimulationRuntimeSummary,
 ) -> None:
+    """Persist simulation runtime summary plus ordered run rows for one artifact root."""
+
     ensure_state_db(db_path, root_kind=root_kind, tables=ARTIFACT_TABLES)
     engine = create_state_engine(db_path)
     try:
@@ -194,6 +205,8 @@ def write_simulation_state(
 
 
 def load_simulation_summary(db_path: Path) -> LoadedSimulationSummary | None:
+    """Load the simulation read model as manifest plus runtime summary."""
+
     if not table_exists(db_path, simulation_summary.name):
         return None
     from ..modeling.results import LoadedSimulationSummary

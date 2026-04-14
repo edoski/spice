@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 
+from ...core.errors import SpiceOperatorError
 from ...storage.inspect import describe_root, sectioned_summary
 from ...storage.inspect_artifact import artifact_list_sections
 from ...storage.inspect_dataset import dataset_list_sections
@@ -39,7 +40,6 @@ from ..options import (
     StorageRootReadOption,
     StudyFilterOption,
     VariantFilterOption,
-    fail,
     print_sections,
     resolve_storage_root,
 )
@@ -135,10 +135,10 @@ def _show_records(
     selector: object,
 ) -> None:
     if not records:
-        fail(f"No {kind} matches found")
+        raise SpiceOperatorError(f"No {kind} matches found")
     if detail is not None and len(records) != 1:
         print_sections(f"{kind} matches", list_sections(records))
-        fail(
+        raise SpiceOperatorError(
             f"--detail requires exactly one {kind} match"
             f"{_narrowing_guidance(kind, records, selector=selector)}"
         )
@@ -156,10 +156,12 @@ def _handle_selector_error(
     *,
     list_sections,
     selector: object,
-) -> None:
+) -> NoReturn:
     if error.records:
         print_sections(f"{error.kind} matches", list_sections(list(error.records)))
-    fail(f"{error}{_narrowing_guidance(error.kind, error.records, selector=selector)}")
+    raise SpiceOperatorError(
+        f"{error}{_narrowing_guidance(error.kind, error.records, selector=selector)}"
+    )
 
 
 def _narrowing_guidance(kind: str, records: Sequence[object], *, selector: object) -> str:
@@ -176,12 +178,12 @@ def _narrowing_guidance(kind: str, records: Sequence[object], *, selector: objec
     return f". Try {', '.join(flags)}."
 
 
-def _handle_delete_blocked(error: DeleteBlockedError) -> None:
+def _handle_delete_blocked(error: DeleteBlockedError) -> NoReturn:
     if error.artifact_records:
         print_sections("artifact matches", artifact_list_sections(list(error.artifact_records)))
     if error.study_records:
         print_sections("study matches", study_list_sections(list(error.study_records)))
-    fail(str(error))
+    raise SpiceOperatorError(str(error))
 
 
 @show_app.command(
@@ -323,7 +325,6 @@ def delete_artifact_command(
         record = resolve_artifact_record(root, selector=selector)
     except SelectorResolutionError as error:
         _handle_selector_error(error, list_sections=artifact_list_sections, selector=selector)
-        return
     delete_artifact_record(root, record=record)
 
 
@@ -358,7 +359,6 @@ def delete_study_command(
         record = resolve_study_record(root, selector=selector)
     except SelectorResolutionError as error:
         _handle_selector_error(error, list_sections=study_list_sections, selector=selector)
-        return
     try:
         delete_study_record(root, record=record, cascade=cascade)
     except DeleteBlockedError as error:
@@ -387,7 +387,6 @@ def delete_dataset_command(
         record = resolve_dataset_record(root, selector=selector)
     except SelectorResolutionError as error:
         _handle_selector_error(error, list_sections=dataset_list_sections, selector=selector)
-        return
     try:
         delete_dataset_record(root, record=record, cascade=cascade)
     except DeleteBlockedError as error:

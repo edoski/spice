@@ -25,8 +25,7 @@ source .venv/bin/activate
 
 Provider credentials:
 
-- `direct`: export `ETHEREUM_RPC_URL`, `POLYGON_RPC_URL`, `AVALANCHE_RPC_URL`
-- `alchemy`: export `ALCHEMY_API_KEY`
+- `publicnode`: no credentials
 
 ## CLI
 
@@ -40,20 +39,13 @@ spice tune --preset icdcs_2026 --model lstm --feature-set icdcs_2026 --trial-cou
 spice simulate --preset icdcs_2026 --variant baseline
 spice config list provider
 spice config show dataset icdcs_2026
-spice config create chain my_chain --set runtime.chain_id=123 --set runtime.uses_poa_extra_data=false
-spice config update provider direct --set chains.my_chain.endpoint.env_var=MY_CHAIN_RPC_URL
-spice config delete preset old_preset
+spice config edit problem icdcs_2026
 spice show dataset
+spice show dataset --detail runs
 spice show artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --variant baseline
 spice show study --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --study default
 spice show study --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --study default --detail config
 spice delete artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --variant baseline
-```
-
-Override files stay plain YAML:
-
-```bash
-spice train --preset icdcs_2026 --config local/train.yaml
 ```
 
 ## Config
@@ -62,40 +54,39 @@ Config loading lives in [src/spice/config](src/spice/config).
 
 Named specs live under [src/spice/conf](src/spice/conf):
 
-- `preset/`: convenience bundles of named selectors
+- `preset/`: self-contained experiment presets
 - `dataset/`: evaluation-date selectors
 - `chain/`, `provider/`: chain and RPC specs
-- `problem/`, `execution/`: delay budgets and sampling contracts in real seconds
-- `model/`, `feature_set/`: modeling choices
-- `training/`, `split/`, `simulation/`, `acquisition/`, `tuning/`, `tuning_space/`: workflow profiles
+- `problem/`: delay budgets and sampling contracts in real seconds
+- `model/`, `feature_set/`, `prediction/`: modeling and prediction seams
+- `tuning_space/`: explicit tuning search spaces
 
-Core spec authoring goes through `spice config`:
+Config query and authoring go through `spice config`:
 
 - `spice config list <group>`
 - `spice config show <group> <name>`
-- `spice config create <group> <name> --set path=value ...`
-- `spice config update <group> <name> --set path=value ... --unset path ...`
-- `spice config delete <group> <name> [--force]`
+- `spice config edit <group> <name>`
 
 Rules:
 
-- Presets are optional. They are not the canonical schema.
-- `spice config` writes canonical YAML into `src/spice/conf/<group>/<name>.yaml`.
-- `problem.lookback_seconds` and `problem.max_supported_delay_seconds` are real wall-clock contracts.
+- Presets are the main workflow entrypoint and stay self-contained.
+- `spice config edit` opens the real YAML file in `$VISUAL`, else `$EDITOR`, else `nvim`.
+- `problem.lookback_seconds` and `problem.max_delay_seconds` are real wall-clock contracts.
 - `problem.compiler.id` selects the temporal compiler.
 - `feature_set.family.id` selects the feature family.
 - Feature prerequisites are derived from the selected feature graph as `history_seconds` and `warmup_rows`.
 - `acquire` expands raw history until the selected problem and feature graph produce enough valid anchor samples.
 - `train` and `simulate` validate that the selected feature graph matches the trained artifact.
-- Prediction semantics are explicit config now. Shipped presets select a prediction family through `prediction.family.id`.
+- `delay_seconds` selects the simulation deadline inside the artifact capability.
+- Prediction semantics are explicit config. Shipped presets select a prediction family through `prediction.family.id`.
 
 ## Temporal Semantics
 
 Public interfaces stay seconds-native:
 
 - `lookback_seconds`
-- `max_supported_delay_seconds`
-- `requested_delay_seconds`
+- `max_delay_seconds`
+- `delay_seconds`
 
 Internal semantics go through a problem-local compiler:
 
@@ -124,8 +115,7 @@ Replay remains economic for both families:
 - `cost_over_optimum`
 - `baseline_cost_over_optimum`
 
-The shipped `icdcs_2026` preset now targets the paper path with `prediction: icdcs_2026_paper`.
-`icdcs_2026_offset_selection` remains available as the alternate current-family preset.
+The shipped `icdcs_2026` preset targets the paper path with `prediction: icdcs_2026_paper`.
 
 ## Output Layout
 

@@ -3,30 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
 
 import aiohttp
 from web3 import AsyncWeb3
 from web3._utils.batching import sort_batch_response_by_response_ids
 from web3.middleware import ExtraDataToPOAMiddleware
-from web3.providers import AsyncIPCProvider
 from web3.providers.rpc import AsyncHTTPProvider
 from web3.providers.rpc.utils import ExceptionRetryConfiguration, check_if_retry_on_failure
 
 from ..config import ChainSpec, ProviderSpec
-
-
-def _ipc_path_from_endpoint(endpoint: str) -> str | None:
-    parsed = urlparse(endpoint)
-    if parsed.scheme == "file":
-        return unquote(parsed.path)
-
-    candidate = Path(endpoint)
-    if candidate.is_absolute():
-        return str(candidate)
-    return None
+from ..core.errors import ConfigResolutionError
 
 
 def _retry_configuration(provider: ProviderSpec) -> ExceptionRetryConfiguration:
@@ -144,25 +131,17 @@ class ManagedAsyncHTTPProvider(AsyncHTTPProvider):
 def build_async_web3(provider: ProviderSpec, chain: ChainSpec) -> AsyncWeb3:
     endpoint = provider.endpoint_for(chain.name)
 
-    if endpoint.startswith(("http://", "https://")):
-        web3 = AsyncWeb3(
-            ManagedAsyncHTTPProvider(
-                endpoint,
-                request_kwargs={"timeout": provider.rpc.timeout_seconds},
-                exception_retry_configuration=_retry_configuration(provider),
-            )
+    if not endpoint.startswith(("http://", "https://")):
+        raise ConfigResolutionError(
+            f"Unsupported RPC endpoint format for provider {provider.name}: {endpoint}"
         )
-    else:
-        ipc_path = _ipc_path_from_endpoint(endpoint)
-        if ipc_path is None:
-            raise ValueError(f"Unsupported RPC endpoint format: {endpoint}")
-        web3 = AsyncWeb3(
-            AsyncIPCProvider(
-                ipc_path,
-                request_timeout=provider.rpc.timeout_seconds,
-                max_connection_retries=provider.rpc.retry_count,
-            )
+    web3 = AsyncWeb3(
+        ManagedAsyncHTTPProvider(
+            endpoint,
+            request_kwargs={"timeout": provider.rpc.timeout_seconds},
+            exception_retry_configuration=_retry_configuration(provider),
         )
+    )
 
     if chain.runtime.uses_poa_extra_data:
         web3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)

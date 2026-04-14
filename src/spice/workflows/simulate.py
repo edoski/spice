@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..config import SimulateConfig
+from ..core.errors import ConfigResolutionError
 from ..core.reporting import Reporter
 from ..corpus.io import load_block_frame
 from ..modeling.artifacts import load_training_artifact, validate_artifact_semantics
@@ -43,7 +44,7 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
     history_block_path = config.paths.history_dir
     evaluation_block_path = config.paths.evaluation_dir
     if artifact_dir is None:
-        raise ValueError("simulation workflow requires artifact output paths")
+        raise ConfigResolutionError("simulation workflow requires artifact output paths")
     with managed_workflow(
         config,
         run_name=(
@@ -92,12 +93,12 @@ def run(config: SimulateConfig, *, reporter: Reporter | None = None) -> None:
                 family_config=config.prediction.family,
             )
             if "simulate" not in prediction_contract.supported_workflows:
-                raise ValueError(
+                raise ConfigResolutionError(
                     f"prediction family {prediction_contract.prediction_family_id} "
                     "does not support simulate"
                 )
             if config.delay_seconds > loaded_artifact.manifest.max_delay_seconds:
-                raise ValueError(
+                raise ConfigResolutionError(
                     "delay_seconds exceeds artifact capability: "
                     f"{config.delay_seconds} > {loaded_artifact.manifest.max_delay_seconds}"
                 )

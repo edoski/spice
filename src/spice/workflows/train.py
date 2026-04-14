@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..config import ArtifactVariant, TrainConfig
 from ..core.constants import MODEL_STATE_FILENAME
+from ..core.errors import ConfigResolutionError
 from ..core.files import remove_path
 from ..core.reporting import Reporter, StageMetricDescriptor
 from ..modeling.persisted_training import run_persisted_training
@@ -24,7 +25,7 @@ def _clean_training_outputs(config: TrainConfig, *, prune_empty_root: bool) -> N
     checkpoint_dir = config.paths.checkpoint_dir
     artifact_state_db = config.paths.artifact_state_db
     if artifact_root is None or checkpoint_dir is None:
-        raise ValueError("training workflow requires artifact output paths")
+        raise ConfigResolutionError("training workflow requires artifact output paths")
     paths = [
         checkpoint_dir,
         artifact_root / MODEL_STATE_FILENAME,
@@ -77,7 +78,7 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
         artifact_dir = active_config.paths.artifact_root
         history_block_path = active_config.paths.history_dir
         if artifact_dir is None:
-            raise ValueError("training workflow requires artifact output paths")
+            raise ConfigResolutionError("training workflow requires artifact output paths")
         stage_reporters = TrainingStageReporters(
             load=session.runtime.stage_reporter("load", label="load"),
             prepare=session.runtime.stage_reporter("prepare", label="prepare"),
@@ -117,7 +118,7 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
             artifact_state_db = active_config.paths.artifact_state_db
             artifact_id = active_config.paths.artifact_id
             if artifact_root is None or artifact_state_db is None or artifact_id is None:
-                raise ValueError("training workflow requires artifact output paths")
+                raise ConfigResolutionError("training workflow requires artifact output paths")
             upsert_artifact_record(
                 active_config.paths.catalog_db,
                 artifact_id=artifact_id,

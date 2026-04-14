@@ -83,6 +83,8 @@ class InputRepresentationSpec:
 
 @dataclass(frozen=True, slots=True)
 class CompiledRepresentationContract:
+    """Compiled model-input representation seam used by training and inference only."""
+
     representation_id: str
     prepare_impl: Callable[..., PreparedRepresentation[ModelInputBatch]]
 
@@ -179,6 +181,8 @@ def input_representation_spec(representation_id: str) -> InputRepresentationSpec
 
 
 def compile_representation_contract(representation_id: str) -> CompiledRepresentationContract:
+    """Compile one representation contract from the shared representation registry."""
+
     spec = input_representation_spec(representation_id)
     return spec.compile_contract()
 

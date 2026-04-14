@@ -17,6 +17,7 @@ from ...config.models import (
     TuningTrainingSearchSpace,
 )
 from ...core.components import ComponentCatalog
+from ...core.errors import ConfigResolutionError
 from ...prediction import PredictionOutputSpec
 from ..models import TemporalModel
 from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
@@ -67,8 +68,8 @@ _MODEL_SPECS.configure_builtin_loader(_load_builtin_model_specs)
 def model_spec(model_id: str) -> ModelSpec[Any, Any, Any]:
     try:
         return _MODEL_SPECS.get(model_id)
-    except ValueError as exc:
-        raise ValueError(str(exc).replace("Unknown model", "Unknown model.id")) from exc
+    except ConfigResolutionError as exc:
+        raise ConfigResolutionError(str(exc).replace("Unknown model", "Unknown model.id")) from exc
 
 
 def coerce_model_config(payload: Mapping[str, object] | ModelConfig[str]) -> ModelConfig[str]:
@@ -93,10 +94,10 @@ def coerce_tuning_space_config(
         payload.model_dump(mode="json") if isinstance(payload, TuningSpaceConfig) else dict(payload)
     )
     if "model" not in raw_payload:
-        raise ValueError("tuning_space.model is required")
+        raise ConfigResolutionError("tuning_space.model is required")
     raw_model_payload = raw_payload["model"]
     if not isinstance(raw_model_payload, Mapping):
-        raise TypeError("tuning_space.model must be a mapping")
+        raise ConfigResolutionError("tuning_space.model must be a mapping")
     model_id = _mapping_model_id(raw_model_payload)
     spec = model_spec(model_id)
     training_payload = raw_payload.get("training")
@@ -126,12 +127,12 @@ def coerce_tuned_parameter_set(
     model: TunedModelParams | None = None
     if model_payload is not None:
         if not isinstance(model_payload, Mapping):
-            raise TypeError("tuned model params must be a mapping")
+            raise ConfigResolutionError("tuned model params must be a mapping")
         resolved_model_id = _mapping_model_id(model_payload)
         spec = model_spec(resolved_model_id)
         model = spec.tuned_params_type.model_validate(dict(model_payload))
         if model_id is not None and resolved_model_id != model_id:
-            raise ValueError("Tuned model params id does not match model.id")
+            raise ConfigResolutionError("Tuned model params id does not match model.id")
     return TunedParameterSet(training=training, model=model)
 
 
@@ -213,5 +214,5 @@ def flatten_tuned_model_params(params: TunedParameterSet) -> dict[str, float | i
 def _mapping_model_id(payload: Mapping[str, object]) -> str:
     value = payload.get("id")
     if not isinstance(value, str):
-        raise ValueError("model.id is required")
+        raise ConfigResolutionError("model.id is required")
     return value

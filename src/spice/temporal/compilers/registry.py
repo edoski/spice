@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 from ...core.components import ComponentCatalog
+from ...core.errors import ConfigResolutionError
 from .base import ProblemCompilerConfig, ProblemCompilerSpec
 
 _PROBLEM_COMPILER_SPECS = ComponentCatalog[ProblemCompilerSpec[Any]](
@@ -28,8 +29,10 @@ _PROBLEM_COMPILER_SPECS.configure_builtin_loader(_load_builtin_problem_compilers
 def problem_compiler_spec(compiler_id: str) -> ProblemCompilerSpec[Any]:
     try:
         return _PROBLEM_COMPILER_SPECS.get(compiler_id)
-    except ValueError as exc:
-        raise ValueError(str(exc).replace("problem compiler", "problem.compiler.id")) from exc
+    except ConfigResolutionError as exc:
+        raise ConfigResolutionError(
+            str(exc).replace("problem compiler", "problem.compiler.id")
+        ) from exc
 
 
 def coerce_problem_compiler_config(
@@ -48,5 +51,5 @@ def coerce_problem_compiler_config(
 def _mapping_problem_compiler_id(payload: Mapping[str, object]) -> str:
     value = payload.get("id")
     if not isinstance(value, str):
-        raise ValueError("problem.compiler.id is required")
+        raise ConfigResolutionError("problem.compiler.id is required")
     return cast(str, value)

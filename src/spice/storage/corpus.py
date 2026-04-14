@@ -9,6 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
+from ..core.errors import MissingStateError
 from ..corpus.metadata import (
     AcquireRunFacts,
     AcquireRunRecord,
@@ -53,6 +54,8 @@ def write_dataset_state(
     manifest: DatasetManifest,
     acquire_run: AcquireRunRecord,
 ) -> None:
+    """Persist the dataset manifest once and append one acquire-run delta record."""
+
     ensure_state_db(db_path, root_kind=DATASET_ROOT_KIND, tables=DATASET_TABLES)
     engine = create_state_engine(db_path)
     try:
@@ -65,18 +68,22 @@ def write_dataset_state(
 
 
 def load_dataset_manifest(db_path: Path) -> DatasetManifest:
+    """Load the canonical dataset manifest that owns corpus provenance."""
+
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
             manifest = _DATASET_MANIFEST_STORE.load(conn)
         if manifest is None:
-            raise ValueError(f"Missing dataset manifest: {db_path}")
+            raise MissingStateError(f"Missing dataset manifest: {db_path}")
         return manifest
     finally:
         engine.dispose()
 
 
 def list_acquire_runs(db_path: Path) -> list[AcquireRunRecord]:
+    """List acquire-run deltas newest first without duplicating manifest provenance."""
+
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:

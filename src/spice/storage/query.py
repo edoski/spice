@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, TypeVar
+from typing import TypeVar
 
+from ..core.errors import DeleteBlockedError, SelectorResolutionError
 from ..core.files import prune_empty_directories, remove_path
 from .catalog import (
     CatalogArtifactRecord,
@@ -42,30 +43,6 @@ from .catalog import (
 from .layout import catalog_db_path
 
 T = TypeVar("T")
-
-
-class SelectorResolutionError(ValueError, Generic[T]):
-    def __init__(self, *, kind: str, records: list[T]) -> None:
-        self.kind = kind
-        self.records = tuple(records)
-        if records:
-            message = f"Expected exactly one {kind} match"
-        else:
-            message = f"No {kind} matches found"
-        super().__init__(message)
-
-
-class DeleteBlockedError(ValueError):
-    def __init__(
-        self,
-        *,
-        message: str,
-        artifact_records: list[CatalogArtifactRecord] | None = None,
-        study_records: list[CatalogStudyRecord] | None = None,
-    ) -> None:
-        self.artifact_records = tuple(artifact_records or ())
-        self.study_records = tuple(study_records or ())
-        super().__init__(message)
 
 
 @dataclass(frozen=True, slots=True)

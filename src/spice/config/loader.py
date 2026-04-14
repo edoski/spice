@@ -8,6 +8,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal, TypeVar, cast, overload
 
+from pydantic import ValidationError
+
+from ..core.errors import ConfigResolutionError
 from ..modeling.families.registry import coerce_model_config, coerce_tuning_space_config
 from .models import (
     AcquireConfig,
@@ -60,7 +63,7 @@ def load_named_tuning_space(name: str, *, model_config: ModelConfig[str]) -> Tun
         model_config=model_config,
     )
     if tuning_space is None:
-        raise ValueError(f"tuning space {name} resolved to None")
+        raise ConfigResolutionError(f"tuning space {name} resolved to None")
     return tuning_space
 
 
@@ -179,22 +182,31 @@ def resolve_workflow_config(
     workflow_kind: WorkflowTask | str,
     selections: WorkflowSelections,
 ) -> WorkflowConfig:
-    workflow = (
-        workflow_kind if isinstance(workflow_kind, WorkflowTask) else WorkflowTask(workflow_kind)
-    )
-    payload = _workflow_request(
-        workflow=workflow,
-        selections=selections,
-    )
-    if workflow is WorkflowTask.ACQUIRE:
-        return _resolve_acquire_config(payload)
-    if workflow is WorkflowTask.TRAIN:
-        return _resolve_train_config(payload)
-    if workflow is WorkflowTask.TUNE:
-        return _resolve_tune_config(payload)
-    if workflow is WorkflowTask.SIMULATE:
-        return _resolve_simulate_config(payload)
-    raise ValueError(f"Unsupported workflow: {workflow.value}")
+    """Resolve selector-driven workflow input into one validated workflow config."""
+
+    try:
+        workflow = (
+            workflow_kind
+            if isinstance(workflow_kind, WorkflowTask)
+            else WorkflowTask(workflow_kind)
+        )
+        payload = _workflow_request(
+            workflow=workflow,
+            selections=selections,
+        )
+        if workflow is WorkflowTask.ACQUIRE:
+            return _resolve_acquire_config(payload)
+        if workflow is WorkflowTask.TRAIN:
+            return _resolve_train_config(payload)
+        if workflow is WorkflowTask.TUNE:
+            return _resolve_tune_config(payload)
+        if workflow is WorkflowTask.SIMULATE:
+            return _resolve_simulate_config(payload)
+        raise ConfigResolutionError(f"Unsupported workflow: {workflow.value}")
+    except ConfigResolutionError:
+        raise
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise ConfigResolutionError(str(exc)) from exc
 
 
 def _workflow_request(
@@ -248,12 +260,12 @@ def _workflow_request(
 def _reject_unknown_top_level_keys(payload: Mapping[str, object]) -> None:
     unknown = sorted(set(payload) - _KNOWN_TOP_LEVEL_CONFIG_KEYS)
     if unknown:
-        raise ValueError(f"Unknown top-level config fields: {', '.join(unknown)}")
+        raise ConfigResolutionError(f"Unknown top-level config fields: {', '.join(unknown)}")
 
 
 def _require_payload_key(payload: Mapping[str, object], key: str) -> object:
     if key not in payload:
-        raise ValueError(f"Missing required workflow config field: {key}")
+        raise ConfigResolutionError(f"Missing required workflow config field: {key}")
     return payload[key]
 
 
@@ -264,7 +276,7 @@ def resolve_named_or_inline(raw: object, *, group: str, model_type: type[ModelT]
         return model_type.model_validate(
             _mapping_copy(cast(Mapping[object, object], raw), label=group)
         )
-    raise ValueError(f"{group} must be provided as a spec name or mapping")
+    raise ConfigResolutionError(f"{group} must be provided as a spec name or mapping")
 
 
 def resolve_inline(raw: object, *, label: str, model_type: type[ModelT]) -> ModelT:
@@ -272,7 +284,7 @@ def resolve_inline(raw: object, *, label: str, model_type: type[ModelT]) -> Mode
         return model_type.model_validate(
             _mapping_copy(cast(Mapping[object, object], raw), label=label)
         )
-    raise ValueError(f"{label} must be provided as a mapping")
+    raise ConfigResolutionError(f"{label} must be provided as a mapping")
 
 
 def resolve_problem(raw: object) -> ProblemSpec:
@@ -282,7 +294,7 @@ def resolve_problem(raw: object) -> ProblemSpec:
         return coerce_problem_spec(
             _mapping_copy(cast(Mapping[object, object], raw), label="problem")
         )
-    raise ValueError("problem must be provided as a spec name or mapping")
+    raise ConfigResolutionError("problem must be provided as a spec name or mapping")
 
 
 def resolve_feature_set(raw: object) -> FeatureSetConfig:
@@ -292,7 +304,7 @@ def resolve_feature_set(raw: object) -> FeatureSetConfig:
         return coerce_feature_set_config(
             _mapping_copy(cast(Mapping[object, object], raw), label="feature_set")
         )
-    raise ValueError("feature_set must be provided as a spec name or mapping")
+    raise ConfigResolutionError("feature_set must be provided as a spec name or mapping")
 
 
 def resolve_prediction(raw: object) -> PredictionConfig:
@@ -302,7 +314,7 @@ def resolve_prediction(raw: object) -> PredictionConfig:
         return coerce_prediction_config(
             _mapping_copy(cast(Mapping[object, object], raw), label="prediction")
         )
-    raise ValueError("prediction must be provided as a spec name or mapping")
+    raise ConfigResolutionError("prediction must be provided as a spec name or mapping")
 
 
 def resolve_storage(raw: object | None) -> StorageSpec:
@@ -314,7 +326,7 @@ def resolve_storage(raw: object | None) -> StorageSpec:
         return StorageSpec.model_validate(
             _mapping_copy(cast(Mapping[object, object], raw), label="storage")
         )
-    raise ValueError("storage must be a path or mapping")
+    raise ConfigResolutionError("storage must be a path or mapping")
 
 
 def _resolve_common(
@@ -334,7 +346,7 @@ def _resolve_provider(payload: dict[str, object], *, chain: ChainSpec) -> Provid
     )
     unknown_chains = sorted(set(provider.chains) - set(list_group_names("chain")))
     if unknown_chains:
-        raise ValueError(
+        raise ConfigResolutionError(
             f"provider {provider.name} declares unknown chains: {', '.join(unknown_chains)}"
         )
     provider.endpoint_for(chain.name)
@@ -364,7 +376,7 @@ def _resolve_model_workflow(
             _mapping_copy(cast(Mapping[object, object], model_raw), label="model")
         )
     else:
-        raise ValueError("model must be provided as a spec name or mapping")
+        raise ConfigResolutionError("model must be provided as a spec name or mapping")
     feature_set = resolve_feature_set(payload["feature_set"])
     prediction = resolve_prediction(payload["prediction"])
     study_raw = payload.get("study")
@@ -484,10 +496,10 @@ def _resolve_tune_config(payload: dict[str, object]) -> TuneConfig:
             model_config=model_spec,
         )
         if resolved_tuning_space is None:
-            raise ValueError("tuning_space is required for tune")
+            raise ConfigResolutionError("tuning_space is required for tune")
         tuning_space_spec = resolved_tuning_space
     else:
-        raise ValueError("tuning_space must be provided as a spec name or mapping")
+        raise ConfigResolutionError("tuning_space must be provided as a spec name or mapping")
     return TuneConfig(
         chain=chain_spec,
         dataset=dataset_spec,
@@ -529,7 +541,7 @@ def _resolve_simulate_config(payload: dict[str, object]) -> SimulateConfig:
     )
     delay_raw = _require_payload_key(payload, "delay_seconds")
     if not isinstance(delay_raw, int):
-        raise ValueError("delay_seconds must be an integer")
+        raise ConfigResolutionError("delay_seconds must be an integer")
     delay_seconds = delay_raw
     return SimulateConfig(
         chain=chain_spec,

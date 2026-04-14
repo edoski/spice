@@ -33,6 +33,8 @@ class ArtifactChainMetadata:
 
 @dataclass(frozen=True, slots=True)
 class TrainingArtifactManifest:
+    """Single-source persisted artifact provenance plus exact authored config payloads."""
+
     artifact_id: str
     prediction: PredictionConfig
     chain: ArtifactChainMetadata
@@ -122,6 +124,8 @@ class SplitSizes:
 
 @dataclass(frozen=True, slots=True)
 class TrainingRuntimeSummary:
+    """Runtime-only training outcomes stored separately from manifest provenance."""
+
     n_rows_available: int
     n_rows_used: int
     split_sizes: SplitSizes
@@ -137,6 +141,8 @@ class TrainingRuntimeSummary:
 
 @dataclass(frozen=True, slots=True)
 class LoadedTrainingSummary:
+    """Read model that pairs artifact provenance with one training runtime summary."""
+
     manifest: TrainingArtifactManifest
     runtime: TrainingRuntimeSummary
 
@@ -150,6 +156,8 @@ class TrainingEpochRecord:
 
 @dataclass(frozen=True, slots=True)
 class SimulationRuntimeSummary:
+    """Runtime-only simulation outcomes stored separately from manifest provenance."""
+
     delay_seconds: int
     simulation_window_seconds: int
     arrival_rate_per_second: float
@@ -165,6 +173,8 @@ class SimulationRuntimeSummary:
 
 @dataclass(frozen=True, slots=True)
 class LoadedSimulationSummary:
+    """Read model that pairs artifact provenance with one simulation runtime summary."""
+
     manifest: TrainingArtifactManifest
     runtime: SimulationRuntimeSummary
 

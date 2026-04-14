@@ -275,6 +275,19 @@ def test_show_detail_rejects_invalid_value_at_parse_time() -> None:
     assert "Invalid value for '--detail'" in result.output
 
 
+def test_show_missing_match_renders_compact_operator_error(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "spice.cli.commands.storage.list_dataset_records",
+        lambda *_args, **_kwargs: [],
+    )
+
+    result = runner.invoke(app, ["show", "dataset", "--dataset", "missing"])
+
+    assert result.exit_code == 1
+    assert "No dataset matches found" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_show_detail_guides_narrowing_flags(monkeypatch, tmp_path: Path) -> None:
     records = [
         CatalogStudyRecord(

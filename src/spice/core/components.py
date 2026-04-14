@@ -6,10 +6,14 @@ from collections.abc import Callable
 from importlib.metadata import entry_points
 from typing import Generic, TypeVar
 
+from .errors import ConfigResolutionError
+
 T = TypeVar("T")
 
 
 class ComponentCatalog(Generic[T]):
+    """Generic discovery catalog shared by SPICE plugin-like architectural seams."""
+
     def __init__(
         self,
         *,
@@ -24,25 +28,33 @@ class ComponentCatalog(Generic[T]):
         self._entry_points_loaded = False
 
     def configure_builtin_loader(self, loader: Callable[[], None]) -> None:
+        """Register the one-shot builtin loader for this seam."""
+
         self._builtin_loader = loader
 
     def register(self, component_id: str, component: T) -> None:
+        """Register one builtin or discovered component by stable short id."""
+
         existing = self._components.get(component_id)
         if existing is not None:
             raise ValueError(f"Duplicate {self.kind_label} id: {component_id}")
         self._components[component_id] = component
 
     def get(self, component_id: str) -> T:
+        """Resolve one component after builtin and optional entry-point discovery."""
+
         self._ensure_loaded()
         try:
             return self._components[component_id]
         except KeyError as exc:
             known = ", ".join(sorted(self._components)) or "<none>"
-            raise ValueError(
+            raise ConfigResolutionError(
                 f"Unknown {self.kind_label}: {component_id}. Known {self.kind_label}s: {known}"
             ) from exc
 
     def known_ids(self) -> tuple[str, ...]:
+        """List discovered ids for operator-facing error reporting and inspection."""
+
         self._ensure_loaded()
         return tuple(sorted(self._components))
 

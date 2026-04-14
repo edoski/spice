@@ -9,6 +9,7 @@ import torch
 
 from ..config import FeatureSetConfig, ModelConfig, PredictionConfig, ProblemSpec
 from ..core.constants import MODEL_STATE_FILENAME
+from ..core.errors import ConfigResolutionError
 from ..core.files import write_path_atomic
 from ..features import CompiledFeatureContract, compile_feature_contract
 from ..prediction import compile_prediction_contract
@@ -39,18 +40,30 @@ def validate_artifact_semantics(
     model: ModelConfig,
 ) -> CompiledFeatureContract:
     if manifest.problem.model_dump(mode="json") != problem.model_dump(mode="json"):
-        raise ValueError("Configured problem does not match the trained artifact semantics")
+        raise ConfigResolutionError(
+            "Configured problem does not match the trained artifact semantics"
+        )
     if manifest.prediction.model_dump(mode="json") != prediction.model_dump(mode="json"):
-        raise ValueError("Configured prediction does not match the trained artifact semantics")
+        raise ConfigResolutionError(
+            "Configured prediction does not match the trained artifact semantics"
+        )
     if manifest.model.model_dump(mode="json") != model.model_dump(mode="json"):
-        raise ValueError("Configured model does not match the trained artifact semantics")
+        raise ConfigResolutionError(
+            "Configured model does not match the trained artifact semantics"
+        )
     if manifest.feature_set.model_dump(mode="json") != feature_set.model_dump(mode="json"):
-        raise ValueError("Configured feature_set does not match the trained artifact semantics")
+        raise ConfigResolutionError(
+            "Configured feature_set does not match the trained artifact semantics"
+        )
     feature_contract = compile_feature_contract(feature_set=feature_set)
     if feature_contract.feature_graph_fingerprint != manifest.feature_graph_fingerprint:
-        raise ValueError("Current feature graph does not match the trained artifact manifest")
+        raise ConfigResolutionError(
+            "Current feature graph does not match the trained artifact manifest"
+        )
     if feature_contract.feature_prerequisites != manifest.feature_prerequisites:
-        raise ValueError("Current feature prerequisites do not match the trained artifact manifest")
+        raise ConfigResolutionError(
+            "Current feature prerequisites do not match the trained artifact manifest"
+        )
     return feature_contract
 
 

@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class FeatureSemantics:
+    """Normalized feature provenance derived once from the compiled feature contract."""
+
     feature_set_id: str
     feature_family_id: str
     feature_names: tuple[str, ...]
@@ -24,6 +26,8 @@ class FeatureSemantics:
 
 @dataclass(frozen=True, slots=True)
 class ProblemSemantics:
+    """Normalized temporal-compiler provenance for one compiled problem contract."""
+
     compiler_id: str
     problem_id: str
     lookback_seconds: int
@@ -33,6 +37,8 @@ class ProblemSemantics:
 
 @dataclass(frozen=True, slots=True)
 class PredictionSemantics:
+    """Family-owned prediction semantics that persist with studies and artifacts."""
+
     prediction_id: str
     prediction_family_id: str
     training_metric_descriptors: tuple[MetricDescriptor, ...]
@@ -45,17 +51,23 @@ class PredictionSemantics:
 
 @dataclass(frozen=True, slots=True)
 class RepresentationSemantics:
+    """Resolved model-input representation identity for persisted provenance."""
+
     representation_id: str
 
 
 @dataclass(frozen=True, slots=True)
 class CorpusSemantics:
+    """Canonical corpus provenance shared by dataset manifests and acquire runs."""
+
     problem: ProblemSemantics
     feature: FeatureSemantics
 
 
 @dataclass(frozen=True, slots=True)
 class StudySemantics:
+    """Canonical study provenance bundled from the compiled architectural seams."""
+
     problem: ProblemSemantics
     feature: FeatureSemantics
     prediction: PredictionSemantics
@@ -64,6 +76,8 @@ class StudySemantics:
 
 @dataclass(frozen=True, slots=True)
 class ArtifactSemantics:
+    """Canonical artifact provenance bundled from the compiled architectural seams."""
+
     problem: ProblemSemantics
     feature: FeatureSemantics
     prediction: PredictionSemantics
