@@ -83,10 +83,8 @@ def _default_precision(device: torch.device) -> TrainingPrecision:
         return TrainingPrecision.FP32
     if device.type == "mps":
         return TrainingPrecision.BF16_MIXED
-    if device.type == "cuda" and torch.cuda.is_bf16_supported():
-        return TrainingPrecision.BF16_MIXED
     if device.type == "cuda":
-        return TrainingPrecision.FP16_MIXED
+        return TrainingPrecision.FP32
     return TrainingPrecision.FP32
 
 

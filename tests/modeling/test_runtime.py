@@ -6,11 +6,12 @@ import torch
 import pytest
 
 from spice.core.errors import SpiceOperatorError
-from spice.config import CompileMode
+from spice.config import CompileMode, TrainingPrecision
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.families.transformer import TransformerModelConfig
 from spice.modeling.families.transformer_lstm import TransformerLstmModelConfig
 from spice.modeling._runtime import ensure_device_runtime_ready, resolve_compile_enabled
+from spice.modeling.families.registry import resolve_default_precision
 
 
 def test_resolve_compile_enabled_skips_auto_compile_on_small_cuda_gpu(
@@ -160,3 +161,23 @@ def test_transformer_auto_compile_policy_is_unchanged_on_big_cuda_gpu(monkeypatc
     )
 
     assert enabled is True
+
+
+def test_recurrent_families_default_to_fp32_on_cuda() -> None:
+    assert (
+        resolve_default_precision("lstm", torch.device("cuda"))
+        is TrainingPrecision.FP32
+    )
+    assert (
+        resolve_default_precision("transformer_lstm", torch.device("cuda"))
+        is TrainingPrecision.FP32
+    )
+
+
+def test_transformer_default_precision_policy_is_unchanged_on_cuda(monkeypatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: True)
+
+    assert (
+        resolve_default_precision("transformer", torch.device("cuda"))
+        is TrainingPrecision.BF16_MIXED
+    )

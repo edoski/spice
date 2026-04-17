@@ -130,6 +130,23 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     assert predictions == [0, 1, 2, 0]
 
 
+def test_min_block_fee_training_state_caches_resolved_device_tensors() -> None:
+    state = MinBlockFeeTrainingState(
+        class_weights=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32),
+        fee_mean=1.5,
+        fee_std=0.25,
+    )
+
+    first = state.resolve(device=torch.device("cpu"), dtype=torch.float32)
+    second = state.resolve(device=torch.device("cpu"), dtype=torch.float32)
+
+    assert first is second
+    assert first.class_weights.device.type == "cpu"
+    assert first.class_weights.dtype is torch.float32
+    assert first.fee_mean.item() == pytest.approx(1.5)
+    assert first.fee_std.item() == pytest.approx(0.25)
+
+
 def test_min_block_fee_multitask_honors_precomputed_paper_targets() -> None:
     store = CompiledProblemStore(
         feature_matrix=np.zeros((8, 1), dtype=np.float32),

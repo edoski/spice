@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 
@@ -80,7 +80,36 @@ class PreparedMinBlockFeeTargets:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedMinBlockFeeTrainingState:
+    class_weights: torch.Tensor
+    fee_mean: torch.Tensor
+    fee_std: torch.Tensor
+
+
+@dataclass(slots=True)
 class MinBlockFeeTrainingState:
     class_weights: torch.Tensor
     fee_mean: float = 0.0
     fee_std: float = 1.0
+    _resolved: dict[tuple[str, int | None, torch.dtype], ResolvedMinBlockFeeTrainingState] = (
+        field(default_factory=dict, init=False, repr=False)
+    )
+
+    def resolve(
+        self,
+        *,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> ResolvedMinBlockFeeTrainingState:
+        key = (device.type, device.index, dtype)
+        resolved = self._resolved.get(key)
+        if resolved is not None:
+            return resolved
+        non_blocking = device.type == "cuda"
+        resolved = ResolvedMinBlockFeeTrainingState(
+            class_weights=self.class_weights.to(device=device, dtype=dtype, non_blocking=non_blocking),
+            fee_mean=torch.tensor(self.fee_mean, device=device, dtype=dtype),
+            fee_std=torch.tensor(self.fee_std, device=device, dtype=dtype),
+        )
+        self._resolved[key] = resolved
+        return resolved
