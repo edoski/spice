@@ -203,7 +203,7 @@ def _render_sbatch_script(
         f"cd {repo_root}",
         f"source {venv_activate_path}",
         "export PYTHONUNBUFFERED=1",
-        cli_command,
+        f"exec {cli_command}",
     ]
     return "\n".join(lines) + "\n"
 

@@ -4,9 +4,14 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from types import SimpleNamespace
 
+from spice.config.models import ExecutionWorkflowSpec
 from spice.config.models import WorkflowTask
 from spice.remote.shell import build_remote_shell_argv, run_remote_command
-from spice.remote.workflows import RemoteJobSubmission, follow_remote_job
+from spice.remote.workflows import (
+    RemoteJobSubmission,
+    _render_sbatch_script,
+    follow_remote_job,
+)
 
 
 def _target() -> SimpleNamespace:
@@ -99,3 +104,32 @@ def test_follow_remote_job_uses_quoted_tail_command(monkeypatch, tmp_path: Path)
         ),
     ]
     assert captured["text"] is True
+
+
+def test_render_sbatch_script_execs_spice_command(tmp_path: Path) -> None:
+    target = SimpleNamespace(
+        spec=SimpleNamespace(
+            paths=SimpleNamespace(
+                repo_root=Path("/repo"),
+                venv_activate_path=Path("/venv/bin/activate"),
+                storage_root=Path("/storage"),
+                log_root=tmp_path,
+                spice_path=Path("/venv/bin/spice"),
+            )
+        )
+    )
+    script = _render_sbatch_script(
+        target=target,
+        task=WorkflowTask.TRAIN,
+        workflow_spec=ExecutionWorkflowSpec(
+            partition="l40",
+            gpus=1,
+            cpus_per_task=4,
+            memory_gb=24,
+            time_limit="00:10:00",
+        ),
+        cli_args=["--preset", "icdcs_2026_paper"],
+        log_path_template=tmp_path / "spice-train-%j.out",
+    )
+
+    assert "\nexec /venv/bin/spice train --preset icdcs_2026_paper --storage-root /storage\n" in script
