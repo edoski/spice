@@ -23,6 +23,7 @@ from .models import (
     EvaluationConfig,
     FeatureSetConfig,
     ModelConfig,
+    DatasetBuilderConfig,
     PredictionConfig,
     PresetSpec,
     ProblemSpec,
@@ -39,6 +40,7 @@ from .models import (
     WorkflowTask,
     apply_provider_acquisition_overrides,
     coerce_feature_set_config,
+    coerce_dataset_builder_config,
     coerce_prediction_config,
     coerce_problem_spec,
 )
@@ -262,6 +264,9 @@ def _workflow_request(
                 "model": selections.model
                 if workflow in {WorkflowTask.TRAIN, WorkflowTask.TUNE, WorkflowTask.EVALUATE}
                 else None,
+                "dataset_builder": selections.dataset_builder
+                if workflow in {WorkflowTask.TRAIN, WorkflowTask.TUNE, WorkflowTask.EVALUATE}
+                else None,
                 "feature_set": selections.feature_set,
                 "prediction": selections.prediction
                 if workflow in {WorkflowTask.TRAIN, WorkflowTask.TUNE, WorkflowTask.EVALUATE}
@@ -341,6 +346,16 @@ def resolve_feature_set(raw: object) -> FeatureSetConfig:
     raise ConfigResolutionError("feature_set must be provided as a spec name or mapping")
 
 
+def resolve_dataset_builder(raw: object) -> DatasetBuilderConfig:
+    if isinstance(raw, str):
+        return coerce_dataset_builder_config(load_named_group(raw, "dataset_builder"))
+    if isinstance(raw, Mapping):
+        return coerce_dataset_builder_config(
+            _mapping_copy(cast(Mapping[object, object], raw), label="dataset_builder")
+        )
+    raise ConfigResolutionError("dataset_builder must be provided as a spec name or mapping")
+
+
 def resolve_prediction(raw: object) -> PredictionConfig:
     if isinstance(raw, str):
         return coerce_prediction_config(load_named_group(raw, "prediction"))
@@ -395,6 +410,7 @@ def _resolve_model_workflow(
     StorageSpec,
     ProblemSpec,
     ModelConfig[str],
+    DatasetBuilderConfig,
     FeatureSetConfig,
     PredictionConfig,
     StudyConfig,
@@ -411,6 +427,7 @@ def _resolve_model_workflow(
         )
     else:
         raise ConfigResolutionError("model must be provided as a spec name or mapping")
+    dataset_builder = resolve_dataset_builder(_require_payload_key(payload, "dataset_builder"))
     feature_set = resolve_feature_set(payload["feature_set"])
     prediction = resolve_prediction(payload["prediction"])
     study_raw = payload.get("study")
@@ -426,7 +443,18 @@ def _resolve_model_workflow(
         if isinstance(artifact_raw, Mapping)
         else ArtifactConfig()
     )
-    return dataset, chain, storage, problem, model, feature_set, prediction, study, artifact
+    return (
+        dataset,
+        chain,
+        storage,
+        problem,
+        model,
+        dataset_builder,
+        feature_set,
+        prediction,
+        study,
+        artifact,
+    )
 
 
 def _resolve_acquire_config(payload: dict[str, object]) -> AcquireConfig:
@@ -461,6 +489,7 @@ def _resolve_train_config(payload: dict[str, object]) -> TrainConfig:
         storage_spec,
         problem_spec,
         model_spec,
+        dataset_builder_spec,
         feature_set_spec,
         prediction_spec,
         study_spec,
@@ -482,6 +511,7 @@ def _resolve_train_config(payload: dict[str, object]) -> TrainConfig:
         storage=storage_spec,
         problem=problem_spec,
         model=model_spec,
+        dataset_builder=dataset_builder_spec,
         feature_set=feature_set_spec,
         prediction=prediction_spec,
         study=study_spec,
@@ -498,6 +528,7 @@ def _resolve_tune_config(payload: dict[str, object]) -> TuneConfig:
         storage_spec,
         problem_spec,
         model_spec,
+        dataset_builder_spec,
         feature_set_spec,
         prediction_spec,
         study_spec,
@@ -540,6 +571,7 @@ def _resolve_tune_config(payload: dict[str, object]) -> TuneConfig:
         storage=storage_spec,
         problem=problem_spec,
         model=model_spec,
+        dataset_builder=dataset_builder_spec,
         feature_set=feature_set_spec,
         prediction=prediction_spec,
         study=study_spec,
@@ -558,6 +590,7 @@ def _resolve_evaluate_config(payload: dict[str, object]) -> EvaluateConfig:
         storage_spec,
         problem_spec,
         model_spec,
+        dataset_builder_spec,
         feature_set_spec,
         prediction_spec,
         study_spec,
@@ -583,6 +616,7 @@ def _resolve_evaluate_config(payload: dict[str, object]) -> EvaluateConfig:
         storage=storage_spec,
         problem=problem_spec,
         model=model_spec,
+        dataset_builder=dataset_builder_spec,
         feature_set=feature_set_spec,
         prediction=prediction_spec,
         study=study_spec,

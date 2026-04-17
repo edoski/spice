@@ -5,6 +5,7 @@ dataset: icdcs_2026
 provider: publicnode
 
 problem: icdcs_2026
+dataset_builder: standard_temporal
 feature_set: icdcs_2026
 prediction: icdcs_2026
 model: lstm

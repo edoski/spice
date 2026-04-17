@@ -5,6 +5,7 @@ import pytest
 from spice.config import (
     ArtifactVariant,
     StudyConfig,
+    coerce_dataset_builder_config,
     coerce_feature_set_config,
     coerce_prediction_config,
     coerce_problem_spec,
@@ -32,7 +33,11 @@ from spice.prediction import (
     WindowMetricSummary,
     compile_prediction_contract,
 )
-from spice.semantics import ArtifactSemantics, InputNormalizationSemantics
+from spice.semantics import (
+    ArtifactSemantics,
+    DatasetBuilderSemantics,
+    InputNormalizationSemantics,
+)
 from spice.storage.artifact import (
     list_evaluation_runs,
     list_evaluation_summaries,
@@ -102,6 +107,10 @@ def _feature_set_config():
     )
 
 
+def _dataset_builder_config():
+    return coerce_dataset_builder_config({"id": "standard_temporal"})
+
+
 def _problem_config():
     return coerce_problem_spec(
         {
@@ -144,6 +153,7 @@ def _manifest(
     )
     return TrainingArtifactManifest(
         artifact_id="artifact-1",
+        dataset_builder=_dataset_builder_config(),
         prediction=prediction,
         chain=ArtifactChainMetadata(name="ethereum"),
         dataset_id="icdcs_2026",
@@ -155,7 +165,7 @@ def _manifest(
         feature_set=feature_set,
         model=model,
         scaler=ScalerStats(means=[0.0, 1.0], scales=[1.0, 1.0]),
-        compiler_runtime_metadata={
+        builder_runtime_metadata={
             "candidate_interval_seconds": 12.0,
             "lookback_steps": 10,
             "capability_candidate_count": 4,
@@ -168,6 +178,7 @@ def _manifest(
                 input_normalization_id="window_weighted_standard"
             ),
             representation=representation_contract.semantics,
+            dataset_builder=DatasetBuilderSemantics(dataset_builder_id="standard_temporal"),
             max_candidate_slots=2,
         ),
     )
@@ -246,6 +257,7 @@ def test_artifact_validation_catches_feature_drift() -> None:
         validate_artifact_semantics(
             manifest,
             problem=manifest.problem,
+            dataset_builder=manifest.dataset_builder,
             feature_set=coerce_feature_set_config(
                 {
                     "id": "time_native_baseline",
@@ -259,6 +271,7 @@ def test_artifact_validation_catches_feature_drift() -> None:
 
     drifted_manifest = TrainingArtifactManifest(
         artifact_id=manifest.artifact_id,
+        dataset_builder=manifest.dataset_builder,
         prediction=manifest.prediction,
         chain=manifest.chain,
         dataset_id=manifest.dataset_id,
@@ -270,7 +283,7 @@ def test_artifact_validation_catches_feature_drift() -> None:
         feature_set=manifest.feature_set,
         model=manifest.model,
         scaler=manifest.scaler,
-        compiler_runtime_metadata=dict(manifest.compiler_runtime_metadata),
+        builder_runtime_metadata=dict(manifest.builder_runtime_metadata),
         semantics=ArtifactSemantics(
             problem=manifest.semantics.problem,
             feature=manifest.semantics.feature.__class__(
@@ -283,6 +296,7 @@ def test_artifact_validation_catches_feature_drift() -> None:
             prediction=manifest.semantics.prediction,
             input_normalization=manifest.semantics.input_normalization,
             representation=manifest.semantics.representation,
+            dataset_builder=manifest.semantics.dataset_builder,
             max_candidate_slots=manifest.semantics.max_candidate_slots,
         ),
     )
@@ -294,6 +308,7 @@ def test_artifact_validation_catches_feature_drift() -> None:
         validate_artifact_semantics(
             drifted_manifest,
             problem=manifest.problem,
+            dataset_builder=manifest.dataset_builder,
             feature_set=feature_set,
             prediction=manifest.prediction,
             model=manifest.model,

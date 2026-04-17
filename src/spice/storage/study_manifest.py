@@ -7,6 +7,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from ..config import (
+    coerce_dataset_builder_config,
     ModelConfig,
     SplitConfig,
     TrainConfig,
@@ -24,6 +25,7 @@ from ..core.errors import (
     StateLayoutError,
 )
 from ..features import compile_feature_contract
+from ..modeling.dataset_builders import compile_dataset_builder_contract
 from ..modeling.families.registry import (
     coerce_model_config,
     coerce_tuning_space_config,
@@ -67,6 +69,7 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
         prediction_id=config.prediction.id,
         family_config=config.prediction.family,
     )
+    dataset_builder_contract = compile_dataset_builder_contract(config.dataset_builder)
     input_normalization_contract = compile_input_normalization_contract(
         config.training.input_normalization
     )
@@ -75,6 +78,7 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
     )
     return StudyManifest(
         study_id=config.paths.study_id,
+        dataset_builder=config.dataset_builder,
         prediction=config.prediction,
         study_name=config.study.name,
         chain_name=config.chain.name,
@@ -96,6 +100,7 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
             prediction=prediction_contract.semantics,
             input_normalization=input_normalization_contract.semantics,
             representation=representation_contract.semantics,
+            dataset_builder=dataset_builder_contract.semantics,
         ),
     )
 
@@ -157,6 +162,7 @@ def validate_tuned_train_request(config: TrainConfig, *, manifest: StudyManifest
     stored_payload = {
         "study_name": manifest.study_name,
         "study_id": manifest.study_id,
+        "dataset_builder": manifest.dataset_builder.model_dump(mode="json", exclude_none=True),
         "prediction": manifest.prediction.model_dump(mode="json"),
         "chain_name": manifest.chain_name,
         "dataset_id": manifest.dataset_id,
@@ -177,6 +183,7 @@ def study_manifest_identity_payload(manifest: StudyManifest) -> dict[str, object
     return {
         "study_name": manifest.study_name,
         "study_id": manifest.study_id,
+        "dataset_builder": manifest.dataset_builder.model_dump(mode="json", exclude_none=True),
         "prediction": manifest.prediction.model_dump(mode="json"),
         "chain_name": manifest.chain_name,
         "dataset_id": manifest.dataset_id,
@@ -206,6 +213,7 @@ def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
     semantics_payload = mapping(payload["semantics"])
     return StudyManifest(
         study_id=str(payload["study_id"]),
+        dataset_builder=coerce_dataset_builder_config(mapping(payload["dataset_builder"])),
         prediction=coerce_prediction_config(mapping(payload["prediction"])),
         study_name=str(payload["study_name"]),
         chain_name=str(payload["chain_name"]),

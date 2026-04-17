@@ -111,6 +111,7 @@ def test_train_configs_with_distinct_semantic_bundles_get_distinct_artifact_ids(
 
     assert prod_config.paths.artifact_id != repro_config.paths.artifact_id
     assert prod_config.paths.artifact_root != repro_config.paths.artifact_root
+    assert prod_config.dataset_builder.id != repro_config.dataset_builder.id
 
 
 def test_tune_then_train_tuned_smoke(
@@ -419,6 +420,7 @@ def test_evaluate_validation_rejects_semantic_bundle_mismatch(
         validate_artifact_semantics(
             loaded_artifact.manifest,
             problem=evaluate_config.problem,
+            dataset_builder=evaluate_config.dataset_builder,
             feature_set=feature_set,
             prediction=evaluate_config.prediction,
             model=model,

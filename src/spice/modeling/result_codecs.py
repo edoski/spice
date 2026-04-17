@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from ..config import (
     ArtifactVariant,
+    coerce_dataset_builder_config,
     StudyConfig,
     coerce_feature_set_config,
     coerce_prediction_config,
@@ -18,6 +19,7 @@ from ..prediction import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..semantics import (
     ArtifactSemantics,
     CorpusSemantics,
+    DatasetBuilderSemantics,
     FeatureSemantics,
     InputNormalizationSemantics,
     PredictionSemantics,
@@ -102,6 +104,7 @@ def metric_descriptors_from_payload(payload: object) -> tuple[MetricDescriptor, 
 def artifact_manifest_payload(manifest: TrainingArtifactManifest) -> dict[str, object]:
     return {
         "artifact_id": manifest.artifact_id,
+        "dataset_builder": manifest.dataset_builder.model_dump(mode="json", exclude_none=True),
         "prediction": manifest.prediction.model_dump(mode="json"),
         "chain_name": manifest.chain.name,
         "dataset_id": manifest.dataset_id,
@@ -113,7 +116,7 @@ def artifact_manifest_payload(manifest: TrainingArtifactManifest) -> dict[str, o
         "feature_set": manifest.feature_set.model_dump(mode="json", exclude_none=True),
         "model": manifest.model.model_dump(mode="json", exclude_none=True),
         "scaler": manifest.scaler.model_dump(mode="json", exclude_none=True),
-        "compiler_runtime_metadata": dict(manifest.compiler_runtime_metadata),
+        "builder_runtime_metadata": dict(manifest.builder_runtime_metadata),
         "semantics": artifact_semantics_payload(manifest.semantics),
     }
 
@@ -123,6 +126,9 @@ def artifact_manifest_from_payload(payload: dict[str, object]):
 
     return TrainingArtifactManifest(
         artifact_id=str(payload["artifact_id"]),
+        dataset_builder=coerce_dataset_builder_config(
+            mapping_payload(payload["dataset_builder"])
+        ),
         prediction=coerce_prediction_config(mapping_payload(payload["prediction"])),
         chain=ArtifactChainMetadata(name=str(payload["chain_name"])),
         dataset_id=str(payload["dataset_id"]),
@@ -134,7 +140,7 @@ def artifact_manifest_from_payload(payload: dict[str, object]):
         feature_set=coerce_feature_set_config(mapping_payload(payload["feature_set"])),
         model=coerce_model_config(mapping_payload(payload["model"])),
         scaler=ScalerStats.model_validate(mapping_payload(payload["scaler"])),
-        compiler_runtime_metadata=mapping_payload(payload["compiler_runtime_metadata"]),
+        builder_runtime_metadata=mapping_payload(payload["builder_runtime_metadata"]),
         semantics=artifact_semantics_from_payload(mapping_payload(payload["semantics"])),
     )
 
@@ -271,6 +277,7 @@ def artifact_semantics_payload(semantics: ArtifactSemantics) -> dict[str, object
             semantics.input_normalization
         ),
         "representation": representation_semantics_payload(semantics.representation),
+        "dataset_builder": dataset_builder_semantics_payload(semantics.dataset_builder),
         "max_candidate_slots": semantics.max_candidate_slots,
     }
 
@@ -290,6 +297,9 @@ def artifact_semantics_from_payload(payload: dict[str, object]) -> ArtifactSeman
         ),
         representation=representation_semantics_from_payload(
             mapping_payload(payload["representation"])
+        ),
+        dataset_builder=dataset_builder_semantics_from_payload(
+            mapping_payload(payload["dataset_builder"])
         ),
         max_candidate_slots=_int_value(payload["max_candidate_slots"]),
     )
@@ -318,6 +328,7 @@ def study_semantics_payload(semantics: StudySemantics) -> dict[str, object]:
             semantics.input_normalization
         ),
         "representation": representation_semantics_payload(semantics.representation),
+        "dataset_builder": dataset_builder_semantics_payload(semantics.dataset_builder),
     }
 
 
@@ -336,6 +347,9 @@ def study_semantics_from_payload(payload: dict[str, object]) -> StudySemantics:
         ),
         representation=representation_semantics_from_payload(
             mapping_payload(payload["representation"])
+        ),
+        dataset_builder=dataset_builder_semantics_from_payload(
+            mapping_payload(payload["dataset_builder"])
         ),
     )
 
@@ -456,6 +470,14 @@ def representation_semantics_payload(semantics: RepresentationSemantics) -> dict
 
 def representation_semantics_from_payload(payload: dict[str, object]) -> RepresentationSemantics:
     return RepresentationSemantics(representation_id=str(payload["representation_id"]))
+
+
+def dataset_builder_semantics_payload(semantics: DatasetBuilderSemantics) -> dict[str, object]:
+    return {"dataset_builder_id": semantics.dataset_builder_id}
+
+
+def dataset_builder_semantics_from_payload(payload: dict[str, object]) -> DatasetBuilderSemantics:
+    return DatasetBuilderSemantics(dataset_builder_id=str(payload["dataset_builder_id"]))
 
 
 def _int_value(value: object) -> int:

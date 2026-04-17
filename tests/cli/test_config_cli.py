@@ -160,6 +160,7 @@ def test_train_loader_resolves_paper_benchmark_preset(
 
     assert config.problem.id == "icdcs_2026_paper"
     assert config.problem.compiler.id == "timestamp_native"
+    assert config.dataset_builder.id == "paper_classification_temporal"
     assert config.feature_set.id == "icdcs_2026_paper"
     assert config.prediction.id == "icdcs_2026_paper"
     assert config.model.id == "lstm"

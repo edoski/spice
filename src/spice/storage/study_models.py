@@ -10,6 +10,7 @@ import optuna
 from optuna.trial import FrozenTrial, TrialState
 
 from ..config import (
+    DatasetBuilderConfig,
     FeatureSetConfig,
     ModelConfig,
     PredictionConfig,
@@ -38,6 +39,7 @@ class StudyTrialState(StrEnum):
 @dataclass(frozen=True, slots=True)
 class StudyManifest:
     study_id: str
+    dataset_builder: DatasetBuilderConfig
     prediction: PredictionConfig
     study_name: str
     chain_name: str
@@ -62,6 +64,10 @@ class StudyManifest:
     @property
     def feature_set_id(self) -> str:
         return self.semantics.feature.feature_set_id
+
+    @property
+    def dataset_builder_id(self) -> str:
+        return self.semantics.dataset_builder.dataset_builder_id
 
     @property
     def prediction_id(self) -> str:
@@ -188,6 +194,7 @@ def tuned_train_request_identity(config: TrainConfig) -> dict[str, object]:
     return {
         "study_name": config.study.name,
         "study_id": config.paths.study_id,
+        "dataset_builder": config.dataset_builder.model_dump(mode="json", exclude_none=True),
         "prediction": config.prediction.model_dump(mode="json"),
         "chain_name": config.chain.name,
         "dataset_id": config.paths.corpus_id,

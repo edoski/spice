@@ -15,6 +15,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from ..core.errors import ConfigResolutionError
+from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.registry import coerce_model_config
 from .models import (
     ChainSpec,
@@ -35,6 +36,7 @@ _CONF_ROOT = _PACKAGE_CONF_ROOT
 class ConfigGroup(StrEnum):
     CHAIN = "chain"
     DATASET = "dataset"
+    DATASET_BUILDER = "dataset-builder"
     EXECUTION = "execution"
     FEATURE_SET = "feature-set"
     MODEL = "model"
@@ -80,6 +82,14 @@ _GROUP_DEFINITIONS = (
         identity_field="name",
         validator=_identity_validator(DatasetSpec),
         seed_template_name="icdcs_2026",
+        seed_from_requested_name=True,
+    ),
+    ConfigGroupDefinition(
+        token=ConfigGroup.DATASET_BUILDER.value,
+        directory="dataset_builder",
+        identity_field="id",
+        validator=lambda payload: coerce_dataset_builder_config(payload),
+        seed_template_name="standard_temporal",
         seed_from_requested_name=True,
     ),
     ConfigGroupDefinition(

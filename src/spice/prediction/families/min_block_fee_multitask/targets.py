@@ -23,18 +23,42 @@ def prepare_min_block_fee_targets(
     candidate_ends = store.candidate_end_rows[sample_indices]
     candidate_counts = candidate_ends - (anchor_rows + 1)
     batch_size = int(sample_indices.shape[0])
-    max_candidate_slots = int(candidate_counts.max())
-    candidate_mask = np.zeros((batch_size, max_candidate_slots), dtype=np.bool_)
-    min_block_offsets = np.zeros(batch_size, dtype=np.int64)
-    min_block_log_fees = np.zeros(batch_size, dtype=np.float32)
+    fixed_class_space = store.fixed_candidate_class_space
+    max_candidate_slots = (
+        int(store.max_candidate_slots) if fixed_class_space else int(candidate_counts.max())
+    )
+    candidate_mask = np.ones((batch_size, max_candidate_slots), dtype=np.bool_)
+    if not fixed_class_space:
+        candidate_mask.fill(False)
+    if store.precomputed_min_block_offsets is not None:
+        min_block_offsets = store.precomputed_min_block_offsets[sample_indices].astype(
+            np.int64,
+            copy=False,
+        )
+    else:
+        min_block_offsets = np.zeros(batch_size, dtype=np.int64)
+    if store.precomputed_min_block_log_fees is not None:
+        min_block_log_fees = store.precomputed_min_block_log_fees[sample_indices].astype(
+            np.float32,
+            copy=False,
+        )
+    else:
+        min_block_log_fees = np.zeros(batch_size, dtype=np.float32)
     for row, sample_index in enumerate(sample_indices):
         anchor_row = int(store.anchor_rows[sample_index])
         candidate_end = int(store.candidate_end_rows[sample_index])
         candidate_values = store.log_base_fees[anchor_row + 1 : candidate_end]
-        candidate_mask[row, : candidate_values.shape[0]] = True
-        min_offset = int(np.argmin(candidate_values))
-        min_block_offsets[row] = min_offset
-        min_block_log_fees[row] = float(candidate_values[min_offset])
+        if not fixed_class_space:
+            candidate_mask[row, : candidate_values.shape[0]] = True
+        if (
+            store.precomputed_min_block_offsets is None
+            or store.precomputed_min_block_log_fees is None
+        ):
+            min_offset = int(np.argmin(candidate_values))
+            if fixed_class_space:
+                min_offset = min(min_offset, max_candidate_slots - 1)
+            min_block_offsets[row] = min_offset
+            min_block_log_fees[row] = float(candidate_values[min_offset])
     return PreparedMinBlockFeeTargets(
         candidate_mask=torch.from_numpy(candidate_mask),
         min_block_offsets=torch.from_numpy(min_block_offsets),

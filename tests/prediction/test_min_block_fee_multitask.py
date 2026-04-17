@@ -130,6 +130,36 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     assert predictions == [0, 1, 2, 0]
 
 
+def test_min_block_fee_multitask_honors_precomputed_paper_targets() -> None:
+    store = CompiledProblemStore(
+        feature_matrix=np.zeros((8, 1), dtype=np.float32),
+        log_base_fees=np.log(np.array([10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0], dtype=np.float32)),
+        timestamps=np.arange(8, dtype=np.int64),
+        anchor_rows=np.array([0, 1, 2], dtype=np.int64),
+        context_start_rows=np.zeros(3, dtype=np.int64),
+        candidate_end_rows=np.array([5, 6, 7], dtype=np.int64),
+        max_candidate_slots=3,
+        precomputed_min_block_offsets=np.array([0, 2, 2], dtype=np.int64),
+        precomputed_min_block_log_fees=np.log1p(np.array([9.0, 5.0, 3.0], dtype=np.float32)),
+        fixed_candidate_class_space=True,
+    )
+    contract = _contract()
+    sample_indices = np.arange(store.n_samples, dtype=np.int64)
+
+    prepared_targets = contract.prepare_targets(store, sample_indices)
+    batch = prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64))
+
+    np.testing.assert_array_equal(
+        batch.min_block_offsets.cpu().numpy(),
+        np.array([0, 2, 2], dtype=np.int64),
+    )
+    np.testing.assert_array_equal(
+        batch.candidate_mask.cpu().numpy(),
+        np.ones((3, 3), dtype=np.bool_),
+    )
+    assert batch.min_block_log_fees[1].item() == pytest.approx(math.log1p(5.0))
+
+
 def pytest_approx(value: float):
     return pytest.approx(value)
 

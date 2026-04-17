@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from ..config import (
     ArtifactVariant,
+    DatasetBuilderConfig,
     FeatureSetConfig,
     ModelConfig,
     PredictionConfig,
@@ -32,6 +33,7 @@ class TrainingArtifactManifest:
     """Single-source persisted artifact provenance plus exact authored config payloads."""
 
     artifact_id: str
+    dataset_builder: DatasetBuilderConfig
     prediction: PredictionConfig
     chain: ArtifactChainMetadata
     dataset_id: str
@@ -43,7 +45,7 @@ class TrainingArtifactManifest:
     feature_set: FeatureSetConfig
     model: ModelConfig[str]
     scaler: ScalerStats
-    compiler_runtime_metadata: dict[str, object]
+    builder_runtime_metadata: dict[str, object]
     semantics: ArtifactSemantics
 
     @property
@@ -101,6 +103,10 @@ class TrainingArtifactManifest:
     @property
     def representation_id(self) -> str:
         return self.semantics.representation.representation_id
+
+    @property
+    def dataset_builder_id(self) -> str:
+        return self.semantics.dataset_builder.dataset_builder_id
 
     @property
     def input_normalization_id(self) -> str:

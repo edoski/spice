@@ -18,6 +18,10 @@ from pydantic import (
 from ..core.errors import ConfigResolutionError
 from ..evaluation import EvaluatorConfig, coerce_evaluator_config
 from ..features import FeatureFamilyConfig, validate_feature_selection
+from ..modeling.dataset_builders import (
+    DatasetBuilderConfig,
+    coerce_dataset_builder_config,
+)
 from ..modeling.families.base import (
     ConfigModel,
     ModelConfig,
@@ -590,10 +594,20 @@ class AcquireConfig(WorkflowConfig):
 class ModelWorkflowConfig(WorkflowConfig):
     problem: ProblemSpec
     model: SerializeAsAny[ModelConfig]
+    dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     feature_set: FeatureSetConfig
     prediction: PredictionConfig
     study: StudyConfig = Field(default_factory=StudyConfig)
     artifact: ArtifactConfig = Field(default_factory=ArtifactConfig)
+
+    @field_validator("dataset_builder", mode="before")
+    @classmethod
+    def validate_dataset_builder(cls, value: object) -> DatasetBuilderConfig:
+        if isinstance(value, Mapping):
+            return coerce_dataset_builder_config(value)
+        if isinstance(value, DatasetBuilderConfig):
+            return coerce_dataset_builder_config(value)
+        raise TypeError("dataset_builder must be a mapping or config model")
 
     @property
     def paths(self) -> PathLayout:
@@ -603,6 +617,7 @@ class ModelWorkflowConfig(WorkflowConfig):
             storage=self.storage,
             chain=self.chain,
             dataset=self.dataset,
+            dataset_builder_payload=self.dataset_builder.model_dump(mode="json", exclude_none=True),
             feature_set_payload=self.feature_set.model_dump(mode="json", exclude_none=True),
             model_payload=self.model.model_dump(mode="json", exclude_none=True),
             problem_payload=self.problem.model_dump(mode="json", exclude_none=True),
@@ -657,6 +672,7 @@ class PresetSpec(ConfigModel):
     chain: str | None = None
     provider: str | None = None
     model: str | None = None
+    dataset_builder: str | None = None
     feature_set: str | None = None
     prediction: str | None = None
     acquisition: AcquisitionConfig | None = None
@@ -677,6 +693,7 @@ class WorkflowSelections(ConfigModel):
     problem: str | None = None
     provider: str | None = None
     model: str | None = None
+    dataset_builder: str | None = None
     feature_set: str | None = None
     prediction: str | None = None
     study: str | None = None

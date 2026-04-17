@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
@@ -22,6 +22,10 @@ from ..config import (
 )
 from ..core.reporting import NullReporter, Reporter
 from ..corpus.io import load_block_frame
+from ..modeling.dataset_builders import (
+    CompiledDatasetBuilderContract,
+    compile_dataset_builder_contract,
+)
 from ..features import (
     CompiledFeatureContract,
     compile_feature_contract,
@@ -41,11 +45,8 @@ from ..temporal.problem_store import (
     CompiledProblemStore,
     DatasetSplitIndices,
     IntVector,
-    chronological_split_indices,
-    filter_sample_indices_by_timestamp_window,
-    tail_sample_indices,
 )
-from ..temporal.scaling import ScalerStats, transform_feature_matrix
+from ..temporal.scaling import ScalerStats
 from ._runtime import CompiledRepresentationContract
 from .families.registry import build_model, resolve_model_representation_id
 from .models import TemporalModel
@@ -60,6 +61,8 @@ class TrainingSpec:
     dataset_name: str
     artifact_id: str
     problem: ProblemSpec
+    dataset_builder: DatasetBuilderConfig
+    dataset_builder_contract: CompiledDatasetBuilderContract
     feature_contract: CompiledFeatureContract
     contract: CompiledProblemContract
     feature_set: FeatureSetConfig
@@ -75,6 +78,18 @@ class TrainingSpec:
     study_id: str | None = None
 
 
+@dataclass(slots=True)
+class InferencePreparationSpec:
+    feature_contract: CompiledFeatureContract
+    contract: CompiledProblemContract
+    delay_seconds: int
+    builder_runtime_metadata: ProblemRuntimeMetadata
+    scaler: ScalerStats
+    max_candidate_slots: int
+    window_start_timestamp: int
+    window_end_timestamp: int
+
+
 def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
     variant = ArtifactVariant.TUNED if isinstance(config, TuneConfig) else config.artifact.variant
     feature_contract = compile_feature_contract(feature_set=config.feature_set)
@@ -87,6 +102,7 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
         prediction_id=config.prediction.id,
         family_config=config.prediction.family,
     )
+    dataset_builder_contract = compile_dataset_builder_contract(config.dataset_builder)
     input_normalization_contract = compile_input_normalization_contract(
         config.training.input_normalization
     )
@@ -105,6 +121,8 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
             else config.paths.study_id or "trial"
         ),
         problem=config.problem,
+        dataset_builder=config.dataset_builder,
+        dataset_builder_contract=dataset_builder_contract,
         feature_contract=feature_contract,
         contract=contract,
         feature_set=config.feature_set,
@@ -132,7 +150,7 @@ class PreparedTrainingDataset:
     store: CompiledProblemStore
     split_indices: DatasetSplitIndices
     scaler: ScalerStats
-    compiler_runtime_metadata: ProblemRuntimeMetadata
+    builder_runtime_metadata: ProblemRuntimeMetadata
 
     @property
     def n_features(self) -> int:
@@ -184,7 +202,7 @@ class TrainingStageReporters:
         )
 
 
-def _selected_row_span(store: CompiledProblemStore, sample_indices: IntVector) -> tuple[int, int]:
+def selected_row_span(store: CompiledProblemStore, sample_indices: IntVector) -> tuple[int, int]:
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
     first_sample = int(sample_indices[0])
@@ -199,90 +217,36 @@ def prepare_training_dataset(
     *,
     spec: TrainingSpec,
 ) -> PreparedTrainingDataset:
-    sorted_blocks = blocks.sort("block_number")
-    if sorted_blocks.height == 0:
-        raise ValueError("Training dataset is empty")
-    feature_table = spec.feature_contract.build_table(sorted_blocks)
-    if feature_table.feature_prerequisites != spec.contract.feature_prerequisites:
-        raise ValueError(
-            "Resolved feature prerequisites do not match the current feature graph: "
-            f"expected {spec.contract.feature_prerequisites.model_dump(mode='json')}, "
-            f"got {feature_table.feature_prerequisites.model_dump(mode='json')}"
-        )
-    store, compiler_runtime_metadata = spec.contract.build_capability_store(feature_table)
-    selected_sample_indices = tail_sample_indices(store, sample_count=spec.problem.sample_count)
-    split_positions = chronological_split_indices(spec.problem.sample_count, spec.split)
-    split_indices = DatasetSplitIndices(
-        train=selected_sample_indices[split_positions.train],
-        validation=selected_sample_indices[split_positions.validation],
-        test=selected_sample_indices[split_positions.test],
-    )
-    scaler = spec.input_normalization_contract.fit_scaler(
-        store.feature_matrix,
-        context_start_rows=store.context_start_rows,
-        anchor_rows=store.anchor_rows,
-        sample_indices=split_indices.train,
-    )
-    scaled_store = replace(
-        store,
-        feature_matrix=transform_feature_matrix(store.feature_matrix, scaler),
-    )
-    used_start, used_end = _selected_row_span(store, selected_sample_indices)
-    return PreparedTrainingDataset(
-        n_rows_available=sorted_blocks.height,
-        n_rows_used=used_end - used_start,
-        sample_count=spec.problem.sample_count,
-        feature=spec.feature_contract.semantics,
-        store=scaled_store,
-        split_indices=split_indices,
-        scaler=scaler,
-        compiler_runtime_metadata=compiler_runtime_metadata,
-    )
+    return spec.dataset_builder_contract.prepare_training_dataset(blocks, spec=spec)
 
 
 def prepare_inference_dataset(
     history_blocks: pl.DataFrame,
     evaluation_blocks: pl.DataFrame,
     *,
+    dataset_builder_contract: CompiledDatasetBuilderContract,
     feature_contract: CompiledFeatureContract,
     contract: CompiledProblemContract,
     delay_seconds: int,
-    compiler_runtime_metadata: ProblemRuntimeMetadata,
+    builder_runtime_metadata: ProblemRuntimeMetadata,
     scaler: ScalerStats,
     max_candidate_slots: int,
     window_start_timestamp: int,
     window_end_timestamp: int,
 ) -> PreparedInferenceDataset:
-    sorted_history_blocks = history_blocks.sort("block_number")
-    if sorted_history_blocks.height == 0:
-        raise ValueError("History dataset is empty")
-    combined_blocks = pl.concat([sorted_history_blocks, evaluation_blocks.sort("block_number")])
-    feature_table = feature_contract.build_table(combined_blocks)
-    store = contract.build_delay_store(
-        feature_table,
-        delay_seconds,
-        compiler_runtime_metadata=compiler_runtime_metadata,
-        max_candidate_slots=max_candidate_slots,
-    )
-    sample_indices = filter_sample_indices_by_timestamp_window(
-        store,
-        start_timestamp=window_start_timestamp,
-        end_timestamp=window_end_timestamp,
-    )
-    if sample_indices.size == 0:
-        raise ValueError("Evaluation dataset produced no valid inference examples")
-
-    scaled_store = replace(
-        store,
-        feature_matrix=transform_feature_matrix(store.feature_matrix, scaler),
-    )
-    return PreparedInferenceDataset(
-        n_history_rows=history_blocks.height,
-        n_evaluation_rows=evaluation_blocks.height,
-        sample_count=int(sample_indices.shape[0]),
-        feature=feature_contract.semantics,
-        store=scaled_store,
-        sample_indices=sample_indices,
+    return dataset_builder_contract.prepare_inference_dataset(
+        history_blocks,
+        evaluation_blocks,
+        spec=InferencePreparationSpec(
+            feature_contract=feature_contract,
+            contract=contract,
+            delay_seconds=delay_seconds,
+            builder_runtime_metadata=builder_runtime_metadata,
+            scaler=scaler,
+            max_candidate_slots=max_candidate_slots,
+            window_start_timestamp=window_start_timestamp,
+            window_end_timestamp=window_end_timestamp,
+        ),
     )
 
 

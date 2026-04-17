@@ -42,6 +42,7 @@ def build_path_layout(
     storage: StorageSpec,
     chain: ChainSpec,
     dataset: DatasetSpec,
+    dataset_builder_payload: dict[str, object] | None = None,
     feature_set_payload: dict[str, object] | None = None,
     model_payload: dict[str, object] | None = None,
     problem_payload: dict[str, object] | None = None,
@@ -69,18 +70,20 @@ def build_path_layout(
     if include_artifacts:
         if (
             feature_set_payload is None
+            or dataset_builder_payload is None
             or model_payload is None
             or problem_payload is None
             or prediction_payload is None
         ):
             raise ConfigResolutionError(
-                "artifact paths require feature_set_payload, model_payload, "
+                "artifact paths require dataset_builder_payload, feature_set_payload, model_payload, "
                 "problem_payload, prediction_payload"
             )
         if tuning_mode or resolved_variant is ArtifactVariant.TUNED:
             study_id = study_storage_id(
                 chain_name=chain.name,
                 corpus_id=corpus_id,
+                dataset_builder=dataset_builder_payload,
                 feature_set=feature_set_payload,
                 model=model_payload,
                 problem=problem_payload,
@@ -93,6 +96,7 @@ def build_path_layout(
             artifact_id = artifact_storage_id(
                 chain_name=chain.name,
                 corpus_id=corpus_id,
+                dataset_builder=dataset_builder_payload,
                 feature_set=feature_set_payload,
                 model=model_payload,
                 problem=problem_payload,

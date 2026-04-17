@@ -72,13 +72,15 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
         ):
             load_task = load_reporter.start_task("load evaluation inputs")
             loaded_artifact = load_training_artifact(artifact_dir)
-            feature_contract = validate_artifact_semantics(
+            validated = validate_artifact_semantics(
                 loaded_artifact.manifest,
                 problem=config.problem,
+                dataset_builder=config.dataset_builder,
                 feature_set=config.feature_set,
                 prediction=config.prediction,
                 model=config.model,
             )
+            feature_contract = validated.feature_contract
             history_blocks = load_block_frame(history_block_path)
             evaluation_blocks = load_block_frame(evaluation_block_path)
             load_reporter.finish_task(
@@ -109,10 +111,11 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
             prepared = prepare_inference_dataset(
                 history_blocks,
                 evaluation_blocks,
+                dataset_builder_contract=validated.dataset_builder_contract,
                 feature_contract=feature_contract,
                 contract=contract,
                 delay_seconds=config.delay_seconds,
-                compiler_runtime_metadata=loaded_artifact.manifest.compiler_runtime_metadata,
+                builder_runtime_metadata=loaded_artifact.manifest.builder_runtime_metadata,
                 scaler=loaded_artifact.manifest.scaler,
                 max_candidate_slots=loaded_artifact.manifest.max_candidate_slots,
                 window_start_timestamp=config.evaluation_window_start_timestamp,

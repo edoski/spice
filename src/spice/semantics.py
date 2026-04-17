@@ -63,6 +63,13 @@ class RepresentationSemantics:
 
 
 @dataclass(frozen=True, slots=True)
+class DatasetBuilderSemantics:
+    """Resolved dataset-builder identity for persisted provenance."""
+
+    dataset_builder_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class CorpusSemantics:
     """Canonical corpus provenance shared by dataset manifests and acquire runs."""
 
@@ -79,6 +86,7 @@ class StudySemantics:
     prediction: PredictionSemantics
     input_normalization: InputNormalizationSemantics
     representation: RepresentationSemantics
+    dataset_builder: DatasetBuilderSemantics
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,4 +98,5 @@ class ArtifactSemantics:
     prediction: PredictionSemantics
     input_normalization: InputNormalizationSemantics
     representation: RepresentationSemantics
+    dataset_builder: DatasetBuilderSemantics
     max_candidate_slots: int
