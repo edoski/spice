@@ -20,6 +20,7 @@ from .models import (
     ChainSpec,
     ConfigModel,
     DatasetSpec,
+    ExecutionSpec,
     PresetSpec,
     ProviderSpec,
     coerce_feature_set_config,
@@ -34,6 +35,7 @@ _CONF_ROOT = _PACKAGE_CONF_ROOT
 class ConfigGroup(StrEnum):
     CHAIN = "chain"
     DATASET = "dataset"
+    EXECUTION = "execution"
     FEATURE_SET = "feature-set"
     MODEL = "model"
     PREDICTION = "prediction"
@@ -78,6 +80,14 @@ _GROUP_DEFINITIONS = (
         identity_field="name",
         validator=_identity_validator(DatasetSpec),
         seed_template_name="icdcs_2026",
+        seed_from_requested_name=True,
+    ),
+    ConfigGroupDefinition(
+        token=ConfigGroup.EXECUTION.value,
+        directory="execution",
+        identity_field="id",
+        validator=_identity_validator(ExecutionSpec),
+        seed_template_name="disi_l40",
         seed_from_requested_name=True,
     ),
     ConfigGroupDefinition(

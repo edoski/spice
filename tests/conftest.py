@@ -8,8 +8,8 @@ import pytest
 
 from spice.config import (
     AcquireConfig,
-    PresetSpec,
     EvaluateConfig,
+    PresetSpec,
     TrainConfig,
     TuneConfig,
     WorkflowSelections,

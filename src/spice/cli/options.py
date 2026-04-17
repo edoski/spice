@@ -21,6 +21,10 @@ FeatureSetFilterOption = Annotated[
     str | None,
     typer.Option("--feature-set", metavar="FEATURE_SET", help="Filter by feature set."),
 ]
+PredictionFilterOption = Annotated[
+    str | None,
+    typer.Option("--prediction", metavar="PREDICTION", help="Filter by prediction config."),
+]
 ModelFilterOption = Annotated[
     str | None,
     typer.Option("--model", metavar="MODEL", help="Filter by model."),
@@ -44,6 +48,10 @@ StorageRootReadOption = Annotated[
 StorageRootDeleteOption = Annotated[
     Path | None,
     typer.Option("--storage-root", metavar="PATH", help="Delete from a non-default output root."),
+]
+RemoteOption = Annotated[
+    bool,
+    typer.Option("--remote", help="Run against the remote university cluster."),
 ]
 
 

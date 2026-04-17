@@ -5,11 +5,15 @@ from __future__ import annotations
 from typing import Literal
 
 from ..scaling import fit_window_weighted_standard_scaler
-from .base import CompiledInputNormalizationContract, InputNormalizationConfig, InputNormalizationSpec
+from .base import (
+    CompiledInputNormalizationContract,
+    InputNormalizationConfig,
+    InputNormalizationSpec,
+)
 from .registry import register_input_normalization_spec
 
 
-class WindowWeightedStandardConfig(InputNormalizationConfig):
+class WindowWeightedStandardConfig(InputNormalizationConfig[Literal["window_weighted_standard"]]):
     id: Literal["window_weighted_standard"] = "window_weighted_standard"
 
 

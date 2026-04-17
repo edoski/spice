@@ -5,11 +5,15 @@ from __future__ import annotations
 from typing import Literal
 
 from ..scaling import fit_row_standard_scaler
-from .base import CompiledInputNormalizationContract, InputNormalizationConfig, InputNormalizationSpec
+from .base import (
+    CompiledInputNormalizationContract,
+    InputNormalizationConfig,
+    InputNormalizationSpec,
+)
 from .registry import register_input_normalization_spec
 
 
-class RowStandardConfig(InputNormalizationConfig):
+class RowStandardConfig(InputNormalizationConfig[Literal["row_standard"]]):
     id: Literal["row_standard"] = "row_standard"
 
 

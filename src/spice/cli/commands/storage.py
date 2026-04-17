@@ -10,6 +10,7 @@ from typing import Annotated, NoReturn
 import typer
 
 from ...core.errors import SpiceOperatorError
+from ...remote import resolve_remote_target, run_remote_cli
 from ...storage.inspect import describe_root, sectioned_summary
 from ...storage.inspect_artifact import artifact_list_sections
 from ...storage.inspect_dataset import dataset_list_sections
@@ -35,7 +36,9 @@ from ..options import (
     DatasetFilterOption,
     FeatureSetFilterOption,
     ModelFilterOption,
+    PredictionFilterOption,
     ProblemFilterOption,
+    RemoteOption,
     StorageRootDeleteOption,
     StorageRootReadOption,
     StudyFilterOption,
@@ -103,6 +106,7 @@ _SELECTOR_FLAGS: dict[str, dict[str, str]] = {
         "chain_name": "--chain",
         "dataset_name": "--dataset",
         "feature_set_id": "--feature-set",
+        "prediction_id": "--prediction",
         "model_id": "--model",
         "problem_id": "--problem",
         "study_name": "--study",
@@ -111,6 +115,7 @@ _SELECTOR_FLAGS: dict[str, dict[str, str]] = {
         "chain_name": "--chain",
         "dataset_name": "--dataset",
         "feature_set_id": "--feature-set",
+        "prediction_id": "--prediction",
         "model_id": "--model",
         "problem_id": "--problem",
         "variant": "--variant",
@@ -186,6 +191,24 @@ def _handle_delete_blocked(error: DeleteBlockedError) -> NoReturn:
     raise SpiceOperatorError(str(error))
 
 
+def _show_remote(args: list[str], *, storage_root: Path | None) -> None:
+    if storage_root is not None:
+        raise SpiceOperatorError("--storage-root is not supported with --remote")
+    target = resolve_remote_target()
+    result = run_remote_cli(
+        target,
+        [
+            *args,
+            "--storage-root",
+            str(target.spec.paths.storage_root),
+        ],
+    )
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout).strip()
+        raise SpiceOperatorError(message or "remote show failed")
+    typer.echo(result.stdout, nl=False)
+
+
 @show_app.command(
     "dataset",
     short_help="Show datasets.",
@@ -196,7 +219,18 @@ def show_dataset_command(
     dataset: DatasetFilterOption = None,
     storage_root: StorageRootReadOption = None,
     detail: DatasetDetailOption = None,
+    remote: RemoteOption = False,
 ) -> None:
+    if remote:
+        args = ["show", "dataset"]
+        if chain is not None:
+            args.extend(["--chain", chain])
+        if dataset is not None:
+            args.extend(["--dataset", dataset])
+        if detail is not None:
+            args.extend(["--detail", detail.value])
+        _show_remote(args, storage_root=storage_root)
+        return
     root = resolve_storage_root(storage_root)
     selector = DatasetSelector(chain_name=chain, dataset_name=dataset)
     records = list_dataset_records(
@@ -222,17 +256,40 @@ def show_study_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
     feature_set: FeatureSetFilterOption = None,
+    prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootReadOption = None,
     detail: StudyDetailOption = None,
+    remote: RemoteOption = False,
 ) -> None:
+    if remote:
+        args = ["show", "study"]
+        if chain is not None:
+            args.extend(["--chain", chain])
+        if dataset is not None:
+            args.extend(["--dataset", dataset])
+        if feature_set is not None:
+            args.extend(["--feature-set", feature_set])
+        if prediction is not None:
+            args.extend(["--prediction", prediction])
+        if model is not None:
+            args.extend(["--model", model])
+        if problem is not None:
+            args.extend(["--problem", problem])
+        if study is not None:
+            args.extend(["--study", study])
+        if detail is not None:
+            args.extend(["--detail", detail.value])
+        _show_remote(args, storage_root=storage_root)
+        return
     root = resolve_storage_root(storage_root)
     selector = StudySelector(
         chain_name=chain,
         dataset_name=dataset,
         feature_set_id=feature_set,
+        prediction_id=prediction,
         model_id=model,
         problem_id=problem,
         study_name=study,
@@ -245,7 +302,8 @@ def show_study_command(
         kind="study",
         records=records,
         has_filters=any(
-            value is not None for value in (chain, dataset, feature_set, model, problem, study)
+            value is not None
+            for value in (chain, dataset, feature_set, prediction, model, problem, study)
         ),
         detail=None if detail is None else detail.value,
         list_sections=study_list_sections,
@@ -262,18 +320,43 @@ def show_artifact_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
     feature_set: FeatureSetFilterOption = None,
+    prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
     variant: VariantFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootReadOption = None,
     detail: ArtifactDetailOption = None,
+    remote: RemoteOption = False,
 ) -> None:
+    if remote:
+        args = ["show", "artifact"]
+        if chain is not None:
+            args.extend(["--chain", chain])
+        if dataset is not None:
+            args.extend(["--dataset", dataset])
+        if feature_set is not None:
+            args.extend(["--feature-set", feature_set])
+        if prediction is not None:
+            args.extend(["--prediction", prediction])
+        if model is not None:
+            args.extend(["--model", model])
+        if problem is not None:
+            args.extend(["--problem", problem])
+        if variant is not None:
+            args.extend(["--variant", variant])
+        if study is not None:
+            args.extend(["--study", study])
+        if detail is not None:
+            args.extend(["--detail", detail.value])
+        _show_remote(args, storage_root=storage_root)
+        return
     root = resolve_storage_root(storage_root)
     selector = ArtifactSelector(
         chain_name=chain,
         dataset_name=dataset,
         feature_set_id=feature_set,
+        prediction_id=prediction,
         model_id=model,
         problem_id=problem,
         variant=variant,
@@ -288,7 +371,7 @@ def show_artifact_command(
         records=records,
         has_filters=any(
             value is not None
-            for value in (chain, dataset, feature_set, model, problem, variant, study)
+            for value in (chain, dataset, feature_set, prediction, model, problem, variant, study)
         ),
         detail=None if detail is None else detail.value,
         list_sections=artifact_list_sections,
@@ -305,6 +388,7 @@ def delete_artifact_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
     feature_set: FeatureSetFilterOption = None,
+    prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
     variant: VariantFilterOption = None,
@@ -316,6 +400,7 @@ def delete_artifact_command(
         chain_name=chain,
         dataset_name=dataset,
         feature_set_id=feature_set,
+        prediction_id=prediction,
         model_id=model,
         problem_id=problem,
         variant=variant,
@@ -337,6 +422,7 @@ def delete_study_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
     feature_set: FeatureSetFilterOption = None,
+    prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
     study: StudyFilterOption = None,
@@ -351,6 +437,7 @@ def delete_study_command(
         chain_name=chain,
         dataset_name=dataset,
         feature_set_id=feature_set,
+        prediction_id=prediction,
         model_id=model,
         problem_id=problem,
         study_name=study,

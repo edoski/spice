@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
 
+from ...core.errors import SpiceOperatorError
 from ...core.reporting import NullReporter, Reporter
 from ...temporal.problem_store import CompiledProblemStore
 from ..base import EvaluationSummary, EvaluatorConfig
@@ -96,12 +97,16 @@ class PoissonReplayCompiledEvaluator(CompiledEvaluatorContract):
                 message=f"events={run.n_events}",
             )
 
+        if not runs:
+            raise SpiceOperatorError(
+                "poisson_replay produced no valid arrivals; adjust the evaluator rate or window"
+            )
         summary = summarize_runs(runs)
         reporter.finish_task(task_id, message=f"total_events={summary.total_events}")
         return summary
 
 
-class PoissonReplayEvaluatorConfig(EvaluatorConfig):
+class PoissonReplayEvaluatorConfig(EvaluatorConfig[Literal["poisson_replay"]]):
     id: Literal["poisson_replay"] = "poisson_replay"
     window_seconds: int = Field(gt=0)
     arrival_rate_per_second: float = Field(gt=0.0)

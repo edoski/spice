@@ -10,8 +10,8 @@ from spice.config import (
     coerce_problem_spec,
 )
 from spice.core.errors import SpiceOperatorError
-from spice.features import compile_feature_contract
 from spice.evaluation import EvaluationRun
+from spice.features import compile_feature_contract
 from spice.modeling.artifacts import validate_artifact_semantics
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.families.registry import resolve_model_representation_id
@@ -34,8 +34,8 @@ from spice.prediction import (
 )
 from spice.semantics import ArtifactSemantics, InputNormalizationSemantics
 from spice.storage.artifact import (
-    list_evaluation_summaries,
     list_evaluation_runs,
+    list_evaluation_summaries,
     list_training_epochs,
     load_artifact_manifest,
     load_evaluation_summary,

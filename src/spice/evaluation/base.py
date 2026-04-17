@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -20,8 +20,11 @@ class EvaluationConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
-class EvaluatorConfig(EvaluationConfigModel):
-    id: str
+EvaluatorIdT = TypeVar("EvaluatorIdT", bound=str)
+
+
+class EvaluatorConfig(EvaluationConfigModel, Generic[EvaluatorIdT]):
+    id: EvaluatorIdT
 
     @field_validator("id")
     @classmethod

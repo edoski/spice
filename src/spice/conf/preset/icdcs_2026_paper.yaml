@@ -1,4 +1,5 @@
 # Non-default paper benchmark preset.
+execution: disi_l40
 chain: ethereum
 dataset: icdcs_2026
 provider: publicnode

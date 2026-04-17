@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, Protocol, TypeVar
 
 from pydantic import field_validator
 
@@ -19,8 +19,11 @@ def _validate_path_segment(value: str, *, label: str) -> str:
     return value
 
 
-class InputNormalizationConfig(ConfigModel):
-    id: str
+InputNormalizationIdT = TypeVar("InputNormalizationIdT", bound=str)
+
+
+class InputNormalizationConfig(ConfigModel, Generic[InputNormalizationIdT]):
+    id: InputNormalizationIdT
 
     @field_validator("id")
     @classmethod
@@ -28,10 +31,21 @@ class InputNormalizationConfig(ConfigModel):
         return _validate_path_segment(value, label="training.input_normalization.id")
 
 
+class FitScalerFn(Protocol):
+    def __call__(
+        self,
+        feature_matrix: FloatMatrix,
+        *,
+        context_start_rows: IntVector,
+        anchor_rows: IntVector,
+        sample_indices: IntVector,
+    ) -> ScalerStats: ...
+
+
 @dataclass(frozen=True, slots=True)
 class CompiledInputNormalizationContract:
     input_normalization_id: str
-    fit_scaler_fn: Callable[[FloatMatrix, IntVector, IntVector, IntVector], ScalerStats]
+    fit_scaler_fn: FitScalerFn
 
     @property
     def semantics(self) -> InputNormalizationSemantics:

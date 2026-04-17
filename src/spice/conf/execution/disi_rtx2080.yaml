@@ -1,0 +1,30 @@
+id: disi_rtx2080
+backend: slurm_over_ssh
+ssh:
+  host: giano.cs.unibo.it
+  user: edoardo.galli3
+paths:
+  repo_root: /home/students/edoardo.galli3/spice
+  venv_root: /scratch.hpc/edoardo.galli3/venvs/spice-cu118-uv
+  storage_root: /scratch.hpc/edoardo.galli3/spice/outputs
+  log_root: /scratch.hpc/edoardo.galli3/slurm
+workflows:
+  train:
+    partition: rtx2080
+    gpus: 1
+    cpus_per_task: 8
+    memory_gb: 32
+    time_limit: "12:00:00"
+  tune:
+    partition: rtx2080
+    gpus: 1
+    cpus_per_task: 8
+    memory_gb: 32
+    time_limit: "12:00:00"
+  evaluate:
+    partition: rtx2080
+    gpus: 1
+    cpus_per_task: 4
+    memory_gb: 16
+    time_limit: "04:00:00"
+follow_by_default: true

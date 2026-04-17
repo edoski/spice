@@ -44,7 +44,7 @@ class PaperFullsetCompiledEvaluator(CompiledEvaluatorContract):
         return summarize_runs([run])
 
 
-class PaperFullsetEvaluatorConfig(EvaluatorConfig):
+class PaperFullsetEvaluatorConfig(EvaluatorConfig[Literal["paper_fullset"]]):
     id: Literal["paper_fullset"] = "paper_fullset"
 
 

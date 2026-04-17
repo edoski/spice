@@ -97,6 +97,67 @@ class StorageSpec(ConfigModel):
     root: Path = Path("outputs")
 
 
+class ExecutionBackend(StrEnum):
+    SLURM_OVER_SSH = "slurm_over_ssh"
+
+
+class ExecutionSshSpec(ConfigModel):
+    host: str
+    user: str
+
+
+class ExecutionPathsSpec(ConfigModel):
+    repo_root: Path
+    venv_root: Path
+    storage_root: Path
+    log_root: Path
+
+    @property
+    def venv_activate_path(self) -> Path:
+        return self.venv_root / "bin" / "activate"
+
+    @property
+    def python_path(self) -> Path:
+        return self.venv_root / "bin" / "python"
+
+    @property
+    def spice_path(self) -> Path:
+        return self.venv_root / "bin" / "spice"
+
+
+class ExecutionWorkflowSpec(ConfigModel):
+    partition: str
+    gpus: int = Field(gt=0)
+    cpus_per_task: int = Field(gt=0)
+    memory_gb: int = Field(gt=0)
+    time_limit: str
+
+    @field_validator("partition")
+    @classmethod
+    def validate_partition(cls, value: str) -> str:
+        return _validate_path_segment(value, label="execution.workflows.partition")
+
+
+class ExecutionWorkflowSet(ConfigModel):
+    train: ExecutionWorkflowSpec
+    tune: ExecutionWorkflowSpec
+    evaluate: ExecutionWorkflowSpec
+
+
+class ExecutionSpec(ConfigModel):
+    id: str
+    backend: ExecutionBackend = ExecutionBackend.SLURM_OVER_SSH
+    ssh: ExecutionSshSpec
+    paths: ExecutionPathsSpec
+    workflows: ExecutionWorkflowSet
+    follow_by_default: bool = True
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return _validate_path_segment(value, label="execution.id")
+
+
 class ProblemSpec(ConfigModel):
     id: str
     lookback_seconds: int = Field(gt=0)
@@ -155,7 +216,7 @@ class TrainingConfig(ConfigModel):
     seed: int = Field(ge=0)
     deterministic: bool
     log_every_n_steps: int = Field(gt=0)
-    input_normalization: SerializeAsAny["InputNormalizationConfig"] = Field(
+    input_normalization: SerializeAsAny[InputNormalizationConfig] = Field(
         default_factory=lambda: _default_input_normalization_config()
     )
     precision: TrainingPrecision
@@ -166,17 +227,19 @@ class TrainingConfig(ConfigModel):
     def validate_input_normalization(
         cls,
         value: object,
-    ) -> "InputNormalizationConfig":
+    ) -> InputNormalizationConfig:
         from ..temporal.input_normalization import coerce_input_normalization_config
 
         if value is None:
             return _default_input_normalization_config()
         if isinstance(value, Mapping):
             return coerce_input_normalization_config(value)
-        return coerce_input_normalization_config(value)
+        if isinstance(value, InputNormalizationConfig):
+            return coerce_input_normalization_config(value)
+        raise TypeError("training.input_normalization must be a mapping or config model")
 
 
-def _default_input_normalization_config() -> "InputNormalizationConfig":
+def _default_input_normalization_config() -> InputNormalizationConfig:
     from ..temporal.input_normalization import coerce_input_normalization_config
 
     return coerce_input_normalization_config({"id": "window_weighted_standard"})
@@ -217,7 +280,9 @@ class EvaluationConfig(ConfigModel):
     def validate_evaluator(cls, value: object) -> EvaluatorConfig:
         if isinstance(value, Mapping):
             return coerce_evaluator_config(value)
-        return coerce_evaluator_config(value)
+        if isinstance(value, EvaluatorConfig):
+            return coerce_evaluator_config(value)
+        raise TypeError("evaluation.evaluator must be a mapping or config model")
 
 
 class FeatureSetConfig(ConfigModel):
@@ -585,6 +650,7 @@ class EvaluateConfig(ModelWorkflowConfig):
 
 
 class PresetSpec(ConfigModel):
+    execution: str | None = None
     dataset: str | None = None
     problem: str | None = None
     delay_seconds: int | None = Field(default=None, gt=0)

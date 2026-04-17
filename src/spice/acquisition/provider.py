@@ -11,6 +11,7 @@ from web3._utils.batching import sort_batch_response_by_response_ids
 from web3.middleware import ExtraDataToPOAMiddleware
 from web3.providers.rpc import AsyncHTTPProvider
 from web3.providers.rpc.utils import ExceptionRetryConfiguration, check_if_retry_on_failure
+from web3.types import RPCEndpoint
 
 from ..config import ChainSpec, ProviderSpec
 from ..core.errors import ConfigResolutionError
@@ -87,7 +88,7 @@ class ManagedAsyncHTTPProvider(AsyncHTTPProvider):
         self,
         request_data: bytes,
         *,
-        method: str | None = None,
+        method: RPCEndpoint | None = None,
     ) -> bytes:
         if (
             self.exception_retry_configuration is not None
