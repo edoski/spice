@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+from pathlib import Path
+from subprocess import CompletedProcess
+from types import SimpleNamespace
+
+from spice.config.models import WorkflowTask
+from spice.remote.shell import build_remote_shell_argv, run_remote_command
+from spice.remote.workflows import RemoteJobSubmission, follow_remote_job
+
+
+def _target() -> SimpleNamespace:
+    return SimpleNamespace(
+        ssh_destination="edoardo.galli3@giano.cs.unibo.it",
+        spec=SimpleNamespace(follow_by_default=True),
+    )
+
+
+def test_build_remote_shell_argv_quotes_full_command() -> None:
+    argv = build_remote_shell_argv(_target(), "mkdir -p /scratch/test && cat | sbatch")
+
+    assert argv == [
+        "ssh",
+        "edoardo.galli3@giano.cs.unibo.it",
+        "bash",
+        "-lc",
+        "'mkdir -p /scratch/test && cat | sbatch'",
+    ]
+
+
+def test_run_remote_command_passes_quoted_command(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        captured["args"] = args[0]
+        captured["kwargs"] = kwargs
+        return CompletedProcess(args=args[0], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("spice.remote.shell.subprocess.run", fake_run)
+
+    result = run_remote_command(_target(), "mkdir -p /scratch/test && cat | sbatch")
+
+    assert result.returncode == 0
+    assert captured["args"] == [
+        "ssh",
+        "edoardo.galli3@giano.cs.unibo.it",
+        "bash",
+        "-lc",
+        "'mkdir -p /scratch/test && cat | sbatch'",
+    ]
+
+
+def test_follow_remote_job_uses_quoted_tail_command(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    class FakePopen:
+        def __init__(self, args, *, text):
+            captured["args"] = args
+            captured["text"] = text
+
+        def poll(self):
+            return 0
+
+        def terminate(self) -> None:
+            return None
+
+        def wait(self, timeout=None) -> int:
+            return 0
+
+    monkeypatch.setattr("spice.remote.workflows.subprocess.Popen", FakePopen)
+    monkeypatch.setattr("spice.remote.workflows.read_remote_job_state", lambda _submission: None)
+    monkeypatch.setattr(
+        "spice.remote.workflows.read_remote_job_final_state",
+        lambda _submission: "COMPLETED",
+    )
+
+    submission = RemoteJobSubmission(
+        task=WorkflowTask.TRAIN,
+        execution_name="disi_l40",
+        target=_target(),
+        job_id="12345",
+        log_path=tmp_path / "spice-train-12345.out",
+    )
+
+    state = follow_remote_job(submission)
+
+    assert state == "COMPLETED"
+    assert captured["args"] == [
+        "ssh",
+        "edoardo.galli3@giano.cs.unibo.it",
+        "bash",
+        "-lc",
+        (
+            "'while [ ! -f "
+            + str(submission.log_path)
+            + " ]; do sleep 2; done; tail -n +1 -F "
+            + str(submission.log_path)
+            + "'"
+        ),
+    ]
+    assert captured["text"] is True

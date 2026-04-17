@@ -24,6 +24,16 @@ class RemoteExecutionTarget:
         return f"{self.spec.ssh.user}@{self.spec.ssh.host}"
 
 
+def build_remote_shell_argv(target: RemoteExecutionTarget, command: str) -> list[str]:
+    return [
+        "ssh",
+        target.ssh_destination,
+        "bash",
+        "-lc",
+        shlex.quote(command),
+    ]
+
+
 def resolve_remote_target(name: str | None = None) -> RemoteExecutionTarget:
     resolved_name = DEFAULT_REMOTE_EXECUTION_NAME if name is None else name
     payload = load_named_group(resolved_name, "execution")
@@ -73,7 +83,7 @@ def run_remote_command(
     capture_output: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["ssh", target.ssh_destination, "bash", "-lc", command],
+        build_remote_shell_argv(target, command),
         input=input_text,
         text=True,
         capture_output=capture_output,

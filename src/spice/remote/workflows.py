@@ -13,6 +13,7 @@ from ..config import ExecutionWorkflowSpec, WorkflowTask
 from ..core.errors import SpiceOperatorError
 from .shell import (
     RemoteExecutionTarget,
+    build_remote_shell_argv,
     ensure_remote_success,
     resolve_remote_target,
     run_remote_command,
@@ -87,18 +88,15 @@ def submit_remote_workflow(
 
 def follow_remote_job(submission: RemoteJobSubmission) -> str | None:
     tail_process = subprocess.Popen(
-        [
-            "ssh",
-            submission.target.ssh_destination,
-            "bash",
-            "-lc",
+        build_remote_shell_argv(
+            submission.target,
             (
                 "while [ ! -f "
                 f"{shlex.quote(str(submission.log_path))}"
                 " ]; do sleep 2; done; "
                 f"tail -n +1 -F {shlex.quote(str(submission.log_path))}"
             ),
-        ],
+        ),
         text=True,
     )
     try:
