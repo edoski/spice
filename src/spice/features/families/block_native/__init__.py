@@ -12,7 +12,7 @@ class BlockNativeFeatureFamilyConfig(FeatureFamilyConfig):
 
 
 register_feature_family_spec(
-    FeatureFamilySpec[BlockNativeFeatureFamilyConfig](
+    FeatureFamilySpec(
         id="block_native",
         config_type=BlockNativeFeatureFamilyConfig,
         modules=(base, rolling, trend),

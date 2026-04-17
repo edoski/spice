@@ -182,7 +182,7 @@ def _build_timestamp_problem_store(
 
 
 register_problem_compiler_spec(
-    ProblemCompilerSpec[TimestampNativeCompilerConfig](
+    ProblemCompilerSpec(
         id="timestamp_native",
         config_type=TimestampNativeCompilerConfig,
         compile_problem=compile_problem,

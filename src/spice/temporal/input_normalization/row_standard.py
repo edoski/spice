@@ -26,7 +26,7 @@ def _compile(config: RowStandardConfig) -> CompiledInputNormalizationContract:
 
 
 register_input_normalization_spec(
-    InputNormalizationSpec[RowStandardConfig](
+    InputNormalizationSpec(
         id="row_standard",
         config_type=RowStandardConfig,
         compile=_compile,

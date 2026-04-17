@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+import textwrap
+
 import pytest
 
 from spice.config import (
@@ -244,6 +248,57 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
     assert loaded_summary.manifest == manifest
     assert loaded_summary.runtime == summary
     assert loaded_epochs == epoch_rows
+
+
+def test_runtime_generic_subscripts_are_not_used_in_storage_and_seam_registration(
+) -> None:
+    script = textwrap.dedent(
+        """
+        import importlib
+
+        import spice.features.families.registry as feature_registry
+        import spice.storage.payloads as payloads
+        import spice.temporal.compilers.registry as compiler_registry
+        import spice.temporal.input_normalization.registry as input_norm_registry
+        from spice.features.families.base import FeatureFamilySpec
+        from spice.temporal.compilers.base import ProblemCompilerSpec
+        from spice.temporal.input_normalization.base import InputNormalizationSpec
+
+        modules = [
+            "spice.storage.artifact",
+            "spice.features.families.block_native",
+            "spice.features.families.time_native",
+            "spice.temporal.compilers.estimated_block",
+            "spice.temporal.compilers.timestamp_native",
+            "spice.temporal.input_normalization.row_standard",
+            "spice.temporal.input_normalization.window_weighted_standard",
+        ]
+
+        def _boom(label):
+            def _inner(cls, item):
+                raise AssertionError(f"runtime generic subscript used: {label}")
+            return classmethod(_inner)
+
+        feature_registry.register_feature_family_spec = lambda _spec: None
+        compiler_registry.register_problem_compiler_spec = lambda _spec: None
+        input_norm_registry.register_input_normalization_spec = lambda _spec: None
+
+        payloads.PayloadCodec.__class_getitem__ = _boom("PayloadCodec.__class_getitem__")
+        FeatureFamilySpec.__class_getitem__ = _boom("FeatureFamilySpec.__class_getitem__")
+        ProblemCompilerSpec.__class_getitem__ = _boom("ProblemCompilerSpec.__class_getitem__")
+        InputNormalizationSpec.__class_getitem__ = _boom("InputNormalizationSpec.__class_getitem__")
+
+        for module_name in modules:
+            importlib.reload(importlib.import_module(module_name))
+        """
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
 
 
 def test_artifact_validation_catches_feature_drift() -> None:

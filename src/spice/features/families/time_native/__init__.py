@@ -12,7 +12,7 @@ class TimeNativeFeatureFamilyConfig(FeatureFamilyConfig):
 
 
 register_feature_family_spec(
-    FeatureFamilySpec[TimeNativeFeatureFamilyConfig](
+    FeatureFamilySpec(
         id="time_native",
         config_type=TimeNativeFeatureFamilyConfig,
         modules=(base, rolling, trend, paper),

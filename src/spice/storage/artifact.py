@@ -50,7 +50,7 @@ if TYPE_CHECKING:
         TrainingRuntimeSummary,
     )
 
-_RAW_PAYLOAD_CODEC = PayloadCodec[dict[str, object]](
+_RAW_PAYLOAD_CODEC: PayloadCodec[dict[str, object]] = PayloadCodec(
     encode=lambda payload: payload,
     decode=lambda payload: payload,
 )

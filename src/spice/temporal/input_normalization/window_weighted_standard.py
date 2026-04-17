@@ -26,7 +26,7 @@ def _compile(config: WindowWeightedStandardConfig) -> CompiledInputNormalization
 
 
 register_input_normalization_spec(
-    InputNormalizationSpec[WindowWeightedStandardConfig](
+    InputNormalizationSpec(
         id="window_weighted_standard",
         config_type=WindowWeightedStandardConfig,
         compile=_compile,

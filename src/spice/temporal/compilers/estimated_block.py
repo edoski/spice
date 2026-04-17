@@ -350,7 +350,7 @@ def _runtime_candidate_interval_seconds(metadata: ProblemRuntimeMetadata) -> flo
 
 
 register_problem_compiler_spec(
-    ProblemCompilerSpec[EstimatedBlockCompilerConfig](
+    ProblemCompilerSpec(
         id="estimated_block",
         config_type=EstimatedBlockCompilerConfig,
         compile_problem=compile_problem,
