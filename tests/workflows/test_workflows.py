@@ -354,6 +354,67 @@ def test_evaluate_workflow_supports_both_prediction_families(
     assert summary.runtime.metric_descriptors
 
 
+def test_evaluate_workflow_smoke_paper_preset(
+    tmp_path,
+    load_workflow_config,
+    seed_evaluation_dataset,
+    seed_history_dataset,
+) -> None:
+    override = {
+        "chain": "ethereum",
+        "dataset": {"evaluation_date": "2025-11-09"},
+        "dataset_builder": "paper_classification_temporal",
+        "feature_set": "icdcs_2026_paper",
+        "problem": {
+            "id": "icdcs_2026_paper",
+            "lookback_seconds": 600,
+            "sample_count": 8192,
+            "max_delay_seconds": 36,
+            "compiler": {"id": "timestamp_native"},
+        },
+        "prediction": "icdcs_2026_paper",
+        "model": "lstm_paper",
+        "training": {
+            "device": "cpu",
+            "batch_size": 8,
+            "max_epochs": 1,
+            "log_every_n_steps": 1,
+            "precision": "fp32",
+            "compile": "off",
+            "early_stopping": {
+                "patience": 1,
+                "min_delta": 0.0,
+            },
+        },
+        "evaluation": {"evaluator": {"id": "paper_fullset"}},
+    }
+    train_config = cast(
+        TrainConfig,
+        load_workflow_config(
+            WorkflowTask.TRAIN,
+            workspace=tmp_path,
+            preset="icdcs_2026_paper",
+            override=override,
+        ),
+    )
+    evaluate_config = load_workflow_config(
+        WorkflowTask.EVALUATE,
+        workspace=tmp_path,
+        preset="icdcs_2026_paper",
+        override=override,
+    )
+    seed_history_dataset(train_config)
+    seed_evaluation_dataset(evaluate_config)
+
+    run_train(train_config, reporter=NullReporter())
+    run_evaluate(evaluate_config, reporter=NullReporter())
+
+    summary = load_evaluation_summary(evaluate_config.paths.artifact_state_db)
+    assert summary is not None
+    assert summary.manifest.dataset_builder_id == "paper_classification_temporal"
+    assert summary.runtime.evaluator_id == "paper_fullset"
+
+
 def test_evaluate_rejects_delay_request_above_capability(
     tmp_path,
     deep_merge,

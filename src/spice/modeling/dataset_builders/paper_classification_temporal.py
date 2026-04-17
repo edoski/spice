@@ -333,9 +333,17 @@ def prepare_inference_dataset(
     seq_len = int(builder_runtime_metadata["seq_len"])
     combined_blocks = pl.concat([history_blocks, evaluation_blocks]).sort("block_number")
     feature_table = spec.feature_contract.build_table(_prepare_blocks(combined_blocks))
-    feature_matrix, log_base_fees, timestamps = _drop_invalid_feature_rows(
+    try:
+        paper_log_fee_index = feature_table.feature_names.index("log_base_fee_per_gas")
+    except ValueError as exc:
+        raise ValueError(
+            "paper builder requires feature_set output 'log_base_fee_per_gas'"
+        ) from exc
+    paper_log_base_fees = feature_table.feature_matrix[:, paper_log_fee_index]
+    feature_matrix, log_base_fees, _, timestamps = _drop_invalid_feature_rows(
         feature_table.feature_matrix,
         feature_table.series.log_base_fees,
+        paper_log_base_fees,
         feature_table.series.timestamps,
     )
     if feature_matrix.shape[0] < seq_len:
