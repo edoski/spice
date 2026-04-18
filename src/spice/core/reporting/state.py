@@ -47,19 +47,3 @@ class _StageState:
     last_emitted_metric_values: dict[str, str] = field(default_factory=dict)
     last_emitted_completed: int | None = None
     last_emitted_bucket: int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class _StageLayout:
-    stage_width: int
-    status_width: int
-    progress_bar_width: int
-    show_counts: bool
-    show_rate: bool
-    show_eta: bool
-    show_detail: bool
-    metric_columns: tuple[StageMetricDescriptor, ...] = ()
-
-    @property
-    def progress_width(self) -> int:
-        return self.progress_bar_width + 5

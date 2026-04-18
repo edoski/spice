@@ -13,6 +13,7 @@ from ._runtime import (
     CompiledRepresentationContract,
     build_prediction_batch_source,
     build_representation_runtime_context,
+    configure_torch_backends,
     ensure_device_runtime_ready,
     resolve_device,
 )
@@ -59,16 +60,20 @@ def predict_with_model(
     loader = batch_source_plan.source
     task_id = reporter.start_task("predict", total=len(loader), unit="batches")
     predictions = prediction_contract.allocate_decoded_offsets(int(sample_indices.shape[0]))
-    with torch.no_grad():
-        for batch in loader:
-            device_batch = batch.to_device(resolved_device)
-            outputs = model(**device_batch.model_kwargs())
-            prediction_contract.decode_selected_offsets_into(
-                predictions,
-                batch.sample_positions,
-                outputs,
-                device_batch.targets,
-            )
-            reporter.update_task(task_id, advance=1)
+    with configure_torch_backends(
+        resolved_device=resolved_device,
+        deterministic=None,
+    ):
+        with torch.no_grad():
+            for batch in loader:
+                device_batch = batch.to_device(resolved_device)
+                outputs = model(**device_batch.model_kwargs())
+                prediction_contract.decode_selected_offsets_into(
+                    predictions,
+                    batch.sample_positions,
+                    outputs,
+                    device_batch.targets,
+                )
+                reporter.update_task(task_id, advance=1)
     reporter.finish_task(task_id)
     return predictions

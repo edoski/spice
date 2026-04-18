@@ -7,7 +7,6 @@ from io import StringIO
 
 import aiohttp
 import pytest
-from rich.console import Console
 from web3.providers.rpc.utils import ExceptionRetryConfiguration
 
 import spice.workflows.acquire as acquire_workflow
@@ -203,7 +202,7 @@ def test_acquire_cancellation_during_planning_logs_warning(
 ) -> None:
     config = load_test_acquire_config(tmp_path, override=acquire_override())
     output = StringIO()
-    reporter = PlainReporter(console=Console(file=output, force_terminal=False, width=160))
+    reporter = PlainReporter(stream=output)
 
     class FakeAcquireClient:
         def __init__(self, provider, chain) -> None:

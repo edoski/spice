@@ -1,22 +1,23 @@
-"""Training utilities backed by Lightning."""
+"""Native PyTorch training and evaluation utilities."""
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
-import lightning as L
 import numpy as np
 import torch
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from numpy.typing import NDArray
 
 from ..config import ModelConfig, TrainingConfig
+from ..core.files import write_path_atomic
 from ..core.reporting import (
     NullReporter,
     Reporter,
     StageMetricValue,
+    format_compact_count,
 )
 from ..prediction import CompiledPredictionContract, MetricSet
 from ..temporal.problem_store import CompiledProblemStore
@@ -24,16 +25,15 @@ from ._runtime import (
     CompiledRepresentationContract,
     build_prediction_batch_source,
     build_representation_runtime_context,
+    configure_torch_backends,
+    ensure_device_runtime_ready,
     prepare_prediction_representation,
     resolve_compile_enabled,
     resolve_device,
     resolve_trainer_precision,
     set_global_seed,
-    ensure_device_runtime_ready,
 )
-from .batch_sources import BatchSourcePlan
-from .datamodule import TemporalDataModule
-from .lightning_module import TemporalLightningModule
+from .batch_sources import BatchSourcePlan, PreparedBatchSource
 from .models import TemporalModel
 
 IntVector = NDArray[np.int64]
@@ -61,154 +61,216 @@ def _unwrap_compiled_model(model: TemporalModel) -> TemporalModel:
     return cast(TemporalModel, getattr(model, "_orig_mod", model))
 
 
-class ReporterProgressCallback(L.Callback):
-    def __init__(
-        self,
-        reporter: Reporter,
-        *,
-        max_epochs: int,
-        log_every_n_steps: int,
-        prediction_contract: CompiledPredictionContract,
-    ) -> None:
-        super().__init__()
-        self._reporter = reporter
-        self._max_epochs = max_epochs
-        self._log_every_n_steps = log_every_n_steps
-        self._prediction_contract = prediction_contract
-        self._task_id: int | None = None
-        self._total_batches = 0
-        self._train_batches_per_epoch = 0
+@dataclass(slots=True)
+class _ProgressReporter:
+    reporter: Reporter
+    max_epochs: int
+    log_every_n_steps: int
+    prediction_contract: CompiledPredictionContract
+    task_id: int | None = None
+    total_batches: int = 0
+    train_batches_per_epoch: int = 0
 
-    def on_train_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
-        del pl_module
-        train_batches = trainer.num_training_batches
-        if not isinstance(train_batches, int) or train_batches <= 0:
-            self._task_id = self._reporter.start_task("train epochs")
+    def start(self, *, train_batches_per_epoch: int) -> None:
+        if train_batches_per_epoch <= 0:
+            self.task_id = self.reporter.start_task("train epochs")
             return
-        self._train_batches_per_epoch = train_batches
-        self._total_batches = train_batches * self._max_epochs
-        self._task_id = self._reporter.start_task(
+        self.train_batches_per_epoch = train_batches_per_epoch
+        self.total_batches = train_batches_per_epoch * self.max_epochs
+        self.task_id = self.reporter.start_task(
             "train epochs",
-            total=self._total_batches,
+            total=self.total_batches,
             unit="batches",
         )
 
     def on_train_batch_end(
         self,
-        trainer: L.Trainer,
-        pl_module: L.LightningModule,
-        outputs,
-        batch,
+        *,
+        epoch: int,
         batch_idx: int,
+        metrics: MetricSet,
     ) -> None:
-        del batch, outputs
-        if self._task_id is None:
+        if self.task_id is None:
             return
-        if (batch_idx + 1) % self._log_every_n_steps != 0 and batch_idx + 1 < max(
+        if (batch_idx + 1) % self.log_every_n_steps != 0 and batch_idx + 1 < max(
             1,
-            self._train_batches_per_epoch,
+            self.train_batches_per_epoch,
         ):
             return
-        if not isinstance(pl_module, TemporalLightningModule):
-            return
-        snapshot = pl_module.train_progress_snapshot()
-        if snapshot is None:
-            return
         completed = None
-        if self._train_batches_per_epoch > 0:
+        if self.train_batches_per_epoch > 0:
             completed = min(
-                self._total_batches,
-                trainer.current_epoch * self._train_batches_per_epoch + batch_idx + 1,
+                self.total_batches,
+                (epoch - 1) * self.train_batches_per_epoch + batch_idx + 1,
             )
-        metrics = [
-            StageMetricValue(
-                id=_EPOCH_STAGE_METRIC_ID,
-                value=f"{trainer.current_epoch + 1}/{self._max_epochs}",
-            )
-        ]
-        message = "batch " + _format_compact_progress(
-            batch_idx + 1,
-            max(1, self._train_batches_per_epoch),
-        )
-        metrics.extend(self._prediction_contract.format_progress_metrics(snapshot))
-        self._reporter.update_task(
-            self._task_id,
+        self.reporter.update_task(
+            self.task_id,
             completed=completed,
-            message=message,
-            metrics=metrics,
+            message=f"batch {_format_compact_progress(batch_idx + 1, max(1, self.train_batches_per_epoch))}",
+            metrics=(
+                StageMetricValue(
+                    id=_EPOCH_STAGE_METRIC_ID,
+                    value=f"{epoch}/{self.max_epochs}",
+                ),
+                *self.prediction_contract.format_progress_metrics(metrics),
+            ),
         )
 
-    def on_validation_epoch_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
-        if self._task_id is None:
+    def on_validation_epoch_end(self, *, epoch: int, metrics: MetricSet) -> None:
+        if self.task_id is None:
             return
-        metrics = getattr(pl_module, "validation_history", None)
-        if not metrics:
-            return
-        latest = metrics[-1]
         completed = None
-        if self._train_batches_per_epoch > 0:
-            completed = min(
-                self._total_batches,
-                (trainer.current_epoch + 1) * self._train_batches_per_epoch,
-            )
-        metrics = (
-            StageMetricValue(
-                id=_EPOCH_STAGE_METRIC_ID,
-                value=f"{trainer.current_epoch + 1}/{self._max_epochs}",
-            ),
-            *self._prediction_contract.format_progress_metrics(latest),
-        )
-        self._reporter.update_task(
-            self._task_id,
+        if self.train_batches_per_epoch > 0:
+            completed = min(self.total_batches, epoch * self.train_batches_per_epoch)
+        self.reporter.update_task(
+            self.task_id,
             completed=completed,
             message="validation",
-            metrics=metrics,
+            metrics=(
+                StageMetricValue(
+                    id=_EPOCH_STAGE_METRIC_ID,
+                    value=f"{epoch}/{self.max_epochs}",
+                ),
+                *self.prediction_contract.format_progress_metrics(metrics),
+            ),
         )
 
-    def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
-        del trainer
-        if self._task_id is None:
+    def finish(self, *, best_epoch: int) -> None:
+        if self.task_id is None:
             return
-        validation_history = getattr(pl_module, "validation_history", [])
-        self._reporter.finish_task(
-            self._task_id,
-            message=f"best epoch {_best_epoch(validation_history, self._prediction_contract)}",
+        self.reporter.finish_task(
+            self.task_id,
+            message=f"best epoch {best_epoch}",
         )
-        self._task_id = None
-
-
-def _format_compact_count(value: int) -> str:
-    if value >= 1_000_000:
-        return f"{value / 1_000_000:.2f}M"
-    if value >= 100_000:
-        return f"{value / 1_000:.0f}k"
-    if value >= 10_000:
-        return f"{value / 1_000:.1f}k"
-    if value >= 1_000:
-        return f"{value / 1_000:.2f}k"
-    return f"{value:,}"
+        self.task_id = None
 
 
 def _format_compact_progress(completed: int, total: int) -> str:
-    return f"{_format_compact_count(completed)}/{_format_compact_count(total)}"
+    return f"{format_compact_count(completed)}/{format_compact_count(total)}"
 
 
-def _trainer_device_args(device_name: str) -> tuple[str, int | str | list[int]]:
-    resolved = resolve_device(device_name)
-    if resolved.type == "cuda":
-        if resolved.index is None:
-            return "gpu", 1
-        return "gpu", [resolved.index]
-    if resolved.type == "mps":
-        return "mps", 1
-    return "cpu", 1
+def _is_improvement(
+    current_value: float,
+    best_value: float | None,
+    *,
+    direction: str,
+    min_delta: float,
+) -> bool:
+    if best_value is None:
+        return True
+    if direction == "maximize":
+        return current_value > best_value + min_delta
+    return current_value < best_value - min_delta
 
 
-def _best_epoch(
-    validation_history: list[MetricSet],
+def _clone_cpu_state(model: TemporalModel) -> dict[str, torch.Tensor]:
+    return {
+        key: value.detach().cpu().clone()
+        for key, value in model.state_dict().items()
+    }
+
+
+def _checkpoint_path(
+    artifact_dir: Path,
+    *,
+    epoch: int,
+    monitor: str,
+    value: float,
+) -> Path:
+    return artifact_dir / "checkpoints" / f"epoch={epoch:02d}-{monitor}={value:.6f}.pt"
+
+
+def _write_checkpoint(path: Path, state_dict: dict[str, torch.Tensor]) -> None:
+    def _write(tmp_path: Path) -> None:
+        torch.save(state_dict, tmp_path)
+
+    write_path_atomic(path, _write)
+
+
+def _autocast_context(
+    *,
+    resolved_device: torch.device,
+    precision: str,
+):
+    if precision == "32-true":
+        return nullcontext()
+    if precision == "16-mixed":
+        if resolved_device.type != "cuda":
+            raise ValueError("fp16 mixed precision is only supported on CUDA")
+        return torch.autocast(device_type="cuda", dtype=torch.float16)
+    if precision == "bf16-mixed":
+        if resolved_device.type not in {"cpu", "cuda"}:
+            raise ValueError("bf16 mixed precision is only supported on CPU or CUDA")
+        return torch.autocast(device_type=resolved_device.type, dtype=torch.bfloat16)
+    raise ValueError(f"Unsupported resolved precision: {precision}")
+
+
+def _build_grad_scaler(
+    *,
+    resolved_device: torch.device,
+    precision: str,
+) -> torch.amp.GradScaler | None:
+    if resolved_device.type != "cuda" or precision != "16-mixed":
+        return None
+    return torch.amp.GradScaler("cuda")
+
+
+def _run_epoch(
+    model: TemporalModel,
+    *,
+    loader: PreparedBatchSource,
+    resolved_device: torch.device,
+    precision: str,
     prediction_contract: CompiledPredictionContract,
-) -> int:
-    return prediction_contract.best_epoch(validation_history)
+    prediction_training_state: object | None,
+    optimizer: torch.optim.Optimizer | None,
+    grad_scaler: torch.amp.GradScaler | None,
+    gradient_clip_norm: float | None,
+    training: bool,
+    progress: _ProgressReporter | None = None,
+    epoch: int | None = None,
+) -> MetricSet:
+    accumulator = prediction_contract.create_epoch_accumulator("train" if training else "validation")
+    if training:
+        model.train()
+    else:
+        model.eval()
+    grad_enabled = training
+    with torch.set_grad_enabled(grad_enabled):
+        for batch_idx, batch in enumerate(loader):
+            device_batch = batch.to_device(resolved_device)
+            if optimizer is not None:
+                optimizer.zero_grad(set_to_none=True)
+            with _autocast_context(resolved_device=resolved_device, precision=precision):
+                outputs = model(**device_batch.model_kwargs())
+                loss, batch_state = prediction_contract.compute_batch_loss_and_state(
+                    outputs,
+                    device_batch.targets,
+                    training_state=prediction_training_state,
+                )
+            accumulator.update(batch_state)
+            if training:
+                if optimizer is None:
+                    raise RuntimeError("optimizer is required for training epochs")
+                if grad_scaler is not None:
+                    grad_scaler.scale(loss).backward()
+                    grad_scaler.unscale_(optimizer)
+                    if gradient_clip_norm is not None:
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
+                    grad_scaler.step(optimizer)
+                    grad_scaler.update()
+                else:
+                    loss.backward()
+                    if gradient_clip_norm is not None:
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
+                    optimizer.step()
+                if progress is not None and epoch is not None:
+                    progress.on_train_batch_end(
+                        epoch=epoch,
+                        batch_idx=batch_idx,
+                        metrics=accumulator.snapshot(),
+                    )
+    return accumulator.finalize()
 
 
 def train_model(
@@ -229,26 +291,24 @@ def train_model(
         raise ValueError("Train and validation sample selections must both be non-empty")
 
     set_global_seed(training_config.seed)
-    L.seed_everything(training_config.seed, workers=True)
-    device = resolve_device(training_config.device)
+    resolved_device = resolve_device(training_config.device)
     ensure_device_runtime_ready(
         requested_device=training_config.device,
-        resolved_device=device,
+        resolved_device=resolved_device,
     )
     precision = resolve_trainer_precision(
         training_config,
-        device=device,
+        device=resolved_device,
         model_config=model_config,
     )
     compile_enabled = resolve_compile_enabled(
         training_config,
-        device=device,
+        device=resolved_device,
         precision=precision,
         model_config=model_config,
     )
-    fit_model = cast(TemporalModel, torch.compile(model) if compile_enabled else model)
     runtime_context = build_representation_runtime_context(
-        device=device,
+        device=resolved_device,
         batch_size=training_config.batch_size,
     )
     train_representation = prepare_prediction_representation(
@@ -268,97 +328,129 @@ def train_model(
     train_batch_source_plan = _plan_training_batch_source(
         train_representation,
         runtime_context=runtime_context,
-        device=device,
+        device=resolved_device,
         seed=training_config.seed,
         shuffle=True,
     )
     validation_batch_source_plan = _plan_training_batch_source(
         validation_representation,
         runtime_context=runtime_context,
-        device=device,
+        device=resolved_device,
         seed=training_config.seed,
         shuffle=False,
     )
 
-    data_module = TemporalDataModule(
-        train_batch_source=train_batch_source_plan.source,
-        validation_batch_source=validation_batch_source_plan.source,
-    )
     prediction_training_state = prediction_contract.fit_training_state(
         store,
         train_sample_indices,
     )
-
-    module = TemporalLightningModule(
-        fit_model,
-        training_config=training_config,
-        prediction_contract=prediction_contract,
-        prediction_training_state=prediction_training_state,
+    model.to(resolved_device)
+    fit_model = cast(TemporalModel, torch.compile(model) if compile_enabled else model)
+    optimizer = torch.optim.AdamW(
+        fit_model.parameters(),
+        lr=training_config.learning_rate,
+        weight_decay=training_config.weight_decay,
     )
-    monitor = prediction_contract.checkpoint_monitor
-    mode = "max" if prediction_contract.direction == "maximize" else "min"
-    checkpoint_callback = ModelCheckpoint(
-        dirpath=artifact_dir / "checkpoints",
-        filename=f"epoch={{epoch:02d}}-{monitor}={{{monitor}:.6f}}",
-        monitor=monitor,
-        mode=mode,
-        save_top_k=1,
-        save_last=False,
+    grad_scaler = _build_grad_scaler(
+        resolved_device=resolved_device,
+        precision=precision,
     )
-    early_stopping = EarlyStopping(
-        monitor=monitor,
-        mode=mode,
-        patience=training_config.early_stopping.patience,
-        min_delta=training_config.early_stopping.min_delta,
-    )
-    accelerator, devices = _trainer_device_args(training_config.device)
-    callbacks: list[L.Callback] = [
-        checkpoint_callback,
-        early_stopping,
-        ReporterProgressCallback(
-            reporter,
-            max_epochs=training_config.max_epochs,
-            log_every_n_steps=training_config.log_every_n_steps,
-            prediction_contract=prediction_contract,
-        ),
-    ]
-    trainer = L.Trainer(
-        accelerator=accelerator,
-        devices=devices,
+    progress = _ProgressReporter(
+        reporter=reporter,
         max_epochs=training_config.max_epochs,
-        callbacks=callbacks,
-        deterministic=training_config.deterministic,
-        gradient_clip_val=training_config.gradient_clip_norm,
-        logger=False,
-        enable_checkpointing=True,
-        enable_progress_bar=False,
-        enable_model_summary=False,
         log_every_n_steps=training_config.log_every_n_steps,
-        num_sanity_val_steps=0,
-        default_root_dir=str(artifact_dir),
-        precision=cast(Any, precision),
+        prediction_contract=prediction_contract,
     )
-    trainer.fit(module, datamodule=data_module)
+    progress.start(train_batches_per_epoch=len(train_batch_source_plan.source))
 
-    if checkpoint_callback.best_model_path:
-        state = torch.load(checkpoint_callback.best_model_path, map_location="cpu")
-        module.load_state_dict(state["state_dict"])
-    trained_model = _unwrap_compiled_model(module.model)
-    if trained_model is not model:
-        model.load_state_dict(trained_model.state_dict())
-    best_epoch = _best_epoch(module.validation_history, prediction_contract)
+    train_history: list[MetricSet] = []
+    validation_history: list[MetricSet] = []
+    best_state: dict[str, torch.Tensor] | None = None
+    best_value: float | None = None
+    best_epoch = 0
+    epochs_without_improvement = 0
+
+    with configure_torch_backends(
+        resolved_device=resolved_device,
+        deterministic=training_config.deterministic,
+    ):
+        for epoch in range(1, training_config.max_epochs + 1):
+            train_metrics = _run_epoch(
+                fit_model,
+                loader=train_batch_source_plan.source,
+                resolved_device=resolved_device,
+                precision=precision,
+                prediction_contract=prediction_contract,
+                prediction_training_state=prediction_training_state,
+                optimizer=optimizer,
+                grad_scaler=grad_scaler,
+                gradient_clip_norm=training_config.gradient_clip_norm,
+                training=True,
+                progress=progress,
+                epoch=epoch,
+            )
+            validation_metrics = _run_epoch(
+                fit_model,
+                loader=validation_batch_source_plan.source,
+                resolved_device=resolved_device,
+                precision=precision,
+                prediction_contract=prediction_contract,
+                prediction_training_state=prediction_training_state,
+                optimizer=None,
+                grad_scaler=None,
+                gradient_clip_norm=None,
+                training=False,
+            )
+            train_history.append(train_metrics)
+            validation_history.append(validation_metrics)
+            progress.on_validation_epoch_end(epoch=epoch, metrics=validation_metrics)
+
+            current_value = prediction_contract.optimization_value(validation_metrics)
+            if _is_improvement(
+                current_value,
+                best_value,
+                direction=prediction_contract.direction,
+                min_delta=training_config.early_stopping.min_delta,
+            ):
+                best_value = current_value
+                best_state = _clone_cpu_state(_unwrap_compiled_model(fit_model))
+                best_epoch = epoch
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+
+            if epochs_without_improvement >= training_config.early_stopping.patience:
+                break
+
+    if best_state is None:
+        best_epoch = prediction_contract.best_epoch(validation_history)
+        best_state = _clone_cpu_state(_unwrap_compiled_model(fit_model))
+        best_value = prediction_contract.optimization_value(
+            validation_history[best_epoch - 1]
+        )
+    else:
+        best_epoch = prediction_contract.best_epoch(validation_history)
+        best_value = prediction_contract.optimization_value(
+            validation_history[best_epoch - 1]
+        )
+    model.load_state_dict(best_state)
+    best_checkpoint_path = _checkpoint_path(
+        artifact_dir,
+        epoch=best_epoch,
+        monitor=prediction_contract.checkpoint_monitor,
+        value=best_value,
+    )
+    _write_checkpoint(best_checkpoint_path, best_state)
+    progress.finish(best_epoch=best_epoch)
+
     return TrainingResult(
         best_epoch=best_epoch,
-        train_history=module.train_history,
-        validation_history=module.validation_history,
-        best_checkpoint_path=(
-            Path(checkpoint_callback.best_model_path)
-            if checkpoint_callback.best_model_path
-            else None
-        ),
+        train_history=train_history,
+        validation_history=validation_history,
+        best_checkpoint_path=best_checkpoint_path,
         resolved_precision=precision,
         compiled=compile_enabled,
-        resolved_device=device.type,
+        resolved_device=resolved_device.type,
         representation_id=train_representation.representation_id,
         loader_strategy_id=train_batch_source_plan.loader_strategy_id,
         input_storage_mode_id=train_batch_source_plan.input_storage_mode_id,
@@ -371,6 +463,7 @@ def train_model(
 def evaluate_model(
     model: torch.nn.Module,
     *,
+    model_config: ModelConfig,
     prediction_contract: CompiledPredictionContract,
     representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
@@ -382,15 +475,19 @@ def evaluate_model(
     reporter = reporter or NullReporter()
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
-    device = resolve_device(training_config.device)
+    resolved_device = resolve_device(training_config.device)
     ensure_device_runtime_ready(
         requested_device=training_config.device,
-        resolved_device=device,
+        resolved_device=resolved_device,
     )
-    model.to(device)
-    model.eval()
+    precision = resolve_trainer_precision(
+        training_config,
+        device=resolved_device,
+        model_config=model_config,
+    )
+    model.to(resolved_device)
     runtime_context = build_representation_runtime_context(
-        device=device,
+        device=resolved_device,
         batch_size=training_config.batch_size,
     )
     batch_source_plan = build_prediction_batch_source(
@@ -399,24 +496,54 @@ def evaluate_model(
         representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         runtime_context=runtime_context,
-        resolved_device=device,
+        resolved_device=resolved_device,
         seed=training_config.seed,
     )
     loader = batch_source_plan.source
     task_id = reporter.start_task("evaluate model", total=len(loader), unit="batches")
+    with configure_torch_backends(
+        resolved_device=resolved_device,
+        deterministic=training_config.deterministic,
+    ):
+        metrics = _run_evaluation_loader(
+            cast(TemporalModel, model),
+            loader=loader,
+            resolved_device=resolved_device,
+            precision=precision,
+            prediction_contract=prediction_contract,
+            prediction_training_state=prediction_training_state,
+            reporter=reporter,
+            task_id=task_id,
+        )
+    reporter.finish_task(task_id)
+    return metrics
+
+
+def _run_evaluation_loader(
+    model: TemporalModel,
+    *,
+    loader: PreparedBatchSource,
+    resolved_device: torch.device,
+    precision: str,
+    prediction_contract: CompiledPredictionContract,
+    prediction_training_state: object | None,
+    reporter: Reporter,
+    task_id: int,
+) -> MetricSet:
+    model.eval()
     accumulator = prediction_contract.create_epoch_accumulator("evaluation")
     with torch.no_grad():
         for batch in loader:
-            device_batch = batch.to_device(device)
-            outputs = model(**device_batch.model_kwargs())
-            _, batch_state = prediction_contract.compute_batch_loss_and_state(
-                outputs,
-                device_batch.targets,
-                training_state=prediction_training_state,
-            )
+            device_batch = batch.to_device(resolved_device)
+            with _autocast_context(resolved_device=resolved_device, precision=precision):
+                outputs = model(**device_batch.model_kwargs())
+                _, batch_state = prediction_contract.compute_batch_loss_and_state(
+                    outputs,
+                    device_batch.targets,
+                    training_state=prediction_training_state,
+                )
             accumulator.update(batch_state)
             reporter.update_task(task_id, advance=1)
-    reporter.finish_task(task_id)
     return accumulator.finalize()
 
 

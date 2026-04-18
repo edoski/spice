@@ -1,11 +1,11 @@
-"""Plain and shared reporter implementations."""
+"""Plain reporter implementations."""
 
 from __future__ import annotations
 
+import sys
 import time
 from collections.abc import Iterable
-
-from rich.console import Console
+from io import TextIOBase
 
 from .metrics import (
     _ACTIVE_STAGE_STATUSES,
@@ -22,6 +22,7 @@ class NullReporter:
     """Silent reporter used by library entrypoints and tests."""
 
     def log(self, message: str, *, level: str = "info") -> None:
+        del message, level
         return None
 
     def start_task(
@@ -130,10 +131,6 @@ class _BoundStageReporter(NullReporter):
         self._running_status = running_status
         self._done_status = done_status
 
-    @property
-    def console(self) -> Console:
-        return self._owner.console
-
     def log(self, message: str, *, level: str = "info") -> None:
         self._owner.log(message, level=level)
 
@@ -241,13 +238,10 @@ class _BoundStageReporter(NullReporter):
             metric_descriptors=metric_descriptors,
         )
 
-    def close(self) -> None:
-        return None
-
 
 class _BaseWorkflowReporter(NullReporter):
-    def __init__(self, console: Console | None = None) -> None:
-        self.console = console or Console()
+    def __init__(self, *, stream: TextIOBase | None = None) -> None:
+        self.stream = stream or sys.stdout
         self._workflow_title: str | None = None
         self._workflow_facts: list[tuple[str, str]] = []
         self._stages: dict[str, _StageState] = {}
@@ -255,15 +249,12 @@ class _BaseWorkflowReporter(NullReporter):
         self._task_bindings: dict[ReporterTask, _TaskBinding] = {}
 
     def log(self, message: str, *, level: str = "info") -> None:
-        style = None
         prefix = ""
         if level == "warning":
-            style = "yellow"
             prefix = "warning: "
         elif level == "error":
-            style = "bold red"
             prefix = "error: "
-        self.console.print(f"{prefix}{message}", style=style, markup=False)
+        self._emit(f"{prefix}{message}")
 
     def start_task(
         self,
@@ -443,14 +434,17 @@ class _BaseWorkflowReporter(NullReporter):
                 self._update_stage_rate(stage, previous_completed=previous_completed)
             else:
                 stage.last_progress_completed = stage.completed
-        metric_values = tuple(metrics)
-        stage.metric_values = {metric.id: metric.value for metric in metric_values}
+        stage.metric_values = {metric.id: metric.value for metric in metrics}
         if message is not None:
             stage.detail = message
         self._on_stage_change(stage)
 
     def close(self) -> None:
-        return None
+        self.stream.flush()
+
+    def _emit(self, line: str) -> None:
+        self.stream.write(f"{line}\n")
+        self.stream.flush()
 
     def _start_bound_task(
         self,
@@ -527,9 +521,7 @@ class _BaseWorkflowReporter(NullReporter):
         raise NotImplementedError
 
     def _update_stage_rate(self, stage: _StageState, *, previous_completed: int) -> None:
-        if stage.started_at is None:
-            return
-        if stage.unit is None:
+        if stage.started_at is None or stage.unit is None:
             return
         now = time.monotonic()
         elapsed = max(0.0, now - stage.started_at)
@@ -539,11 +531,7 @@ class _BaseWorkflowReporter(NullReporter):
             stage.last_progress_at = now
             stage.last_progress_completed = stage.completed
             return
-        checkpoint_at = (
-            stage.last_progress_at
-            if stage.last_progress_at is not None
-            else stage.started_at
-        )
+        checkpoint_at = stage.last_progress_at if stage.last_progress_at is not None else stage.started_at
         delta_elapsed = max(0.0, now - checkpoint_at)
         delta_completed = stage.completed - stage.last_progress_completed
         if delta_elapsed > 0.0 and delta_completed > 0:
@@ -555,22 +543,22 @@ class _BaseWorkflowReporter(NullReporter):
 
 
 class PlainReporter(_BaseWorkflowReporter):
-    """Line-oriented reporter for non-interactive output."""
+    """Line-oriented reporter for local and remote workflows."""
 
-    def __init__(self, console: Console | None = None) -> None:
-        super().__init__(console=console)
+    def __init__(self, *, stream: TextIOBase | None = None) -> None:
+        super().__init__(stream=stream)
 
     def _on_workflow_configured(self) -> None:
         if self._workflow_title is None:
             return
-        self.console.print(self._workflow_title, markup=False)
+        self._emit(self._workflow_title)
         for label, value in self._workflow_facts:
-            self.console.print(f"{label}: {value}", markup=False)
+            self._emit(f"{label}: {value}")
 
     def _on_stage_change(self, stage: _StageState) -> None:
         if not self._should_emit(stage):
             return
-        self.console.print(self._format_stage_line(stage), markup=False)
+        self._emit(self._format_stage_line(stage))
         stage.last_emitted_status = stage.status
         stage.last_emitted_detail = stage.detail
         stage.last_emitted_metric_values = dict(stage.metric_values)
@@ -592,8 +580,7 @@ class PlainReporter(_BaseWorkflowReporter):
         )
 
     def _format_stage_line(self, stage: _StageState) -> str:
-        status = stage.status
-        pieces = [f"{stage.label} [{status}]"]
+        pieces = [f"{stage.label} [{stage.status}]"]
         if stage.total is not None:
             suffix = "" if stage.unit is None else f" {stage.unit}"
             pieces.append(
@@ -610,7 +597,6 @@ class PlainReporter(_BaseWorkflowReporter):
         ]
         if metric_tokens:
             pieces.append(" ".join(metric_tokens))
-        detail = stage.detail
-        if detail:
-            pieces.append(detail)
+        if stage.detail:
+            pieces.append(stage.detail)
         return " - ".join(pieces)

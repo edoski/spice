@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import random
 import subprocess
+from contextlib import contextmanager
 
 import numpy as np
 import torch
@@ -74,6 +75,38 @@ def set_global_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+
+
+@contextmanager
+def configure_torch_backends(
+    *,
+    resolved_device: torch.device,
+    deterministic: bool | None,
+):
+    previous_matmul_precision = torch.get_float32_matmul_precision()
+    previous_cudnn_deterministic = torch.backends.cudnn.deterministic
+    previous_cudnn_benchmark = torch.backends.cudnn.benchmark
+    previous_cuda_matmul_allow_tf32 = (
+        torch.backends.cuda.matmul.allow_tf32 if hasattr(torch.backends, "cuda") else None
+    )
+    previous_cudnn_allow_tf32 = torch.backends.cudnn.allow_tf32
+    try:
+        if resolved_device.type == "cuda":
+            torch.set_float32_matmul_precision("high")
+            if previous_cuda_matmul_allow_tf32 is not None:
+                torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+        if deterministic is not None:
+            torch.backends.cudnn.deterministic = deterministic
+            torch.backends.cudnn.benchmark = not deterministic
+        yield
+    finally:
+        torch.set_float32_matmul_precision(previous_matmul_precision)
+        torch.backends.cudnn.deterministic = previous_cudnn_deterministic
+        torch.backends.cudnn.benchmark = previous_cudnn_benchmark
+        torch.backends.cudnn.allow_tf32 = previous_cudnn_allow_tf32
+        if previous_cuda_matmul_allow_tf32 is not None:
+            torch.backends.cuda.matmul.allow_tf32 = previous_cuda_matmul_allow_tf32
 
 
 def resolve_trainer_precision(

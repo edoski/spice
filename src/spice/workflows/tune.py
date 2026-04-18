@@ -11,7 +11,7 @@ from optuna.trial import FrozenTrial, TrialState
 from ..config import TuneConfig
 from ..core.errors import ConfigResolutionError
 from ..core.reporting import Reporter, StageMetricDescriptor
-from ..core.runtime import ConsoleRuntime
+from ..core.runtime import WorkflowRuntime
 from ..modeling.families.registry import sample_tuned_parameters
 from ..modeling.persisted_training import run_persisted_training
 from ..modeling.pipeline import TrainingStageReporters, build_training_spec
@@ -71,7 +71,7 @@ def _objective(
     trial: optuna.Trial,
     *,
     study_root: Path,
-    runtime: ConsoleRuntime,
+    runtime: WorkflowRuntime,
     trial_reporter: Reporter,
 ) -> float:
     assert base_config.tuning_space is not None

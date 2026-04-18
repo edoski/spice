@@ -36,6 +36,7 @@ def test_training_summary_metrics_match_replayed_saved_artifact(
 
     validation_metrics = evaluate_model(
         loaded_artifact.model,
+        model_config=spec.model,
         prediction_contract=spec.prediction_contract,
         representation_contract=loaded_artifact.representation_contract,
         store=prepared.store,
@@ -46,6 +47,7 @@ def test_training_summary_metrics_match_replayed_saved_artifact(
     )
     test_metrics = evaluate_model(
         loaded_artifact.model,
+        model_config=spec.model,
         prediction_contract=spec.prediction_contract,
         representation_contract=loaded_artifact.representation_contract,
         store=prepared.store,

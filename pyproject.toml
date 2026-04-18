@@ -18,11 +18,9 @@ dependencies = [
   "torch>=2.5",
   "pydantic>=2.12",
   "PyYAML>=6.0",
-  "rich>=14.3",
   "scikit-learn>=1.8",
   "sf-hamilton>=1.89",
   "typer>=0.16",
-  "lightning>=2.6",
   "optuna>=4.8",
   "SQLAlchemy>=2.0",
   "web3>=7.15",
@@ -66,8 +64,5 @@ select = ["E", "F", "I", "UP", "B"]
 testpaths = ["tests"]
 filterwarnings = [
   "ignore:websockets\\.legacy is deprecated.*:DeprecationWarning:websockets\\.legacy",
-  "ignore:GPU available but not used.*:UserWarning:lightning\\.pytorch\\.trainer\\.setup",
   "ignore:.*LeafSpec.*",
-  "ignore:The 'train_dataloader' does not have many workers.*:UserWarning:lightning\\.pytorch\\.trainer\\.connectors\\.data_connector",
-  "ignore:The 'val_dataloader' does not have many workers.*:UserWarning:lightning\\.pytorch\\.trainer\\.connectors\\.data_connector",
 ]

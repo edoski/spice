@@ -8,12 +8,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 from ..core.reporting import Reporter
-from ..core.runtime import ConsoleRuntime, create_console_runtime
+from ..core.runtime import WorkflowRuntime, create_workflow_runtime
 
 
 @dataclass(slots=True)
 class WorkflowSession:
-    runtime: ConsoleRuntime
+    runtime: WorkflowRuntime
     reporter: Reporter
 
 
@@ -103,9 +103,9 @@ def managed_workflow(
     config: object,
     *,
     run_name: str,
-    runtime: ConsoleRuntime | None = None,
+    runtime: WorkflowRuntime | None = None,
     reporter: Reporter | None = None,
-    default_runtime_factory: Callable[..., ConsoleRuntime] = create_console_runtime,
+    default_runtime_factory: Callable[..., WorkflowRuntime] = create_workflow_runtime,
     nested: bool = False,
 ) -> Iterator[WorkflowSession]:
     del config, run_name, nested

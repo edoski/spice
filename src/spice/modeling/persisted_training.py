@@ -43,6 +43,7 @@ def _evaluate_split_metrics(
     prepared = training_run.prepared
     best_validation_metrics = evaluate_model(
         model,
+        model_config=spec.model,
         prediction_contract=spec.prediction_contract,
         representation_contract=spec.representation_contract,
         store=prepared.store,
@@ -53,6 +54,7 @@ def _evaluate_split_metrics(
     )
     test_metrics = evaluate_model(
         model,
+        model_config=spec.model,
         prediction_contract=spec.prediction_contract,
         representation_contract=spec.representation_contract,
         store=prepared.store,

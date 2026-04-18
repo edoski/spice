@@ -1,4 +1,4 @@
-"""Workflow runtime and native logging bridge."""
+"""Workflow runtime and logging bridge."""
 
 from __future__ import annotations
 
@@ -7,41 +7,18 @@ import re
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from io import StringIO
-
-from rich.console import Console
-from rich.logging import RichHandler
-from rich.panel import Panel
-from rich.table import Table
+from io import TextIOBase
 
 from .reporting import (
     PlainReporter,
     Reporter,
-    RichReporter,
     StageMetricDescriptor,
     StageMetricValue,
 )
-from .reporting.metrics import _with_top_terminal_spacer
 
-_LIGHTNING_LOGGER_NAMES = (
-    "lightning",
-    "lightning.pytorch",
-    "lightning.pytorch.utilities.rank_zero",
-    "lightning.fabric",
-    "lightning.fabric.utilities.rank_zero",
-    "lightning_fabric",
-)
-_NATIVE_NOISE_PATTERNS = (
+_NOISE_PATTERNS = (
     re.compile(r"^Seed set to \d+$"),
-    re.compile(r"^GPU available: .*"),
-    re.compile(r"^TPU available: .*"),
-    re.compile(r"^Successfully disconnected from: .*"),
     re.compile(r"litlogger", re.IGNORECASE),
-    re.compile(r"`Trainer\.fit` stopped: `max_epochs=.*` reached\."),
-    re.compile(r"GPU available but not used"),
-    re.compile(r"`isinstance\(treespec, LeafSpec\)` is deprecated"),
-    re.compile(r"The 'train_dataloader' does not have many workers"),
-    re.compile(r"The 'val_dataloader' does not have many workers"),
 )
 
 
@@ -55,30 +32,38 @@ class _LoggerState:
 class _NativeLogFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
-        return not any(pattern.search(message) for pattern in _NATIVE_NOISE_PATTERNS)
+        return not any(pattern.search(message) for pattern in _NOISE_PATTERNS)
 
 
-class ConsoleRuntime:
-    """Workflow-scoped console owner with native log bridging."""
+class _ReporterLogHandler(logging.Handler):
+    def __init__(self, reporter: Reporter) -> None:
+        super().__init__(level=logging.INFO)
+        self._reporter = reporter
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = self.format(record)
+        level = "error" if record.levelno >= logging.ERROR else "warning" if record.levelno >= logging.WARNING else "info"
+        self._reporter.log(message, level=level)
+
+
+class WorkflowRuntime:
+    """Workflow-scoped reporter owner with stdlib log bridging."""
 
     def __init__(
         self,
         *,
-        console: Console | None = None,
         reporter: Reporter | None = None,
+        stream: TextIOBase | None = None,
     ) -> None:
-        active_console = console or _console_from_reporter(reporter) or Console()
-        self.console = active_console
-        self.reporter = reporter or create_reporter(active_console)
+        self.reporter = reporter or create_reporter(stream=stream)
         self._owns_reporter = reporter is None
         self._activation_depth = 0
         self._root_state: _LoggerState | None = None
         self._pywarnings_state: _LoggerState | None = None
-        self._lightning_states: dict[str, _LoggerState] = {}
-        self._root_handler: RichHandler | None = None
+        self._root_handler: _ReporterLogHandler | None = None
 
     @contextmanager
-    def activate(self) -> Iterator[ConsoleRuntime]:
+    def activate(self) -> Iterator[WorkflowRuntime]:
         first_entry = self._activation_depth == 0
         self._activation_depth += 1
         if first_entry:
@@ -94,7 +79,6 @@ class ConsoleRuntime:
     def optuna_logging(self) -> Iterator[None]:
         import optuna
 
-        optuna.logging.get_verbosity()
         logger = logging.getLogger("optuna")
         state = _LoggerState(list(logger.handlers), logger.level, logger.propagate)
         optuna.logging.disable_default_handler()
@@ -167,25 +151,6 @@ class ConsoleRuntime:
         title: str,
         sections: list[tuple[str, list[tuple[str, str]]]],
     ) -> None:
-        if self.console.is_terminal:
-            self.reporter.close()
-            body = Table.grid(expand=True)
-            body.add_column()
-            for index, (section_title, rows) in enumerate(sections):
-                if index > 0:
-                    body.add_row("")
-                section = Table.grid(padding=(0, 1))
-                section.add_column(style="bold cyan", justify="right", no_wrap=True)
-                section.add_column()
-                for label, value in rows:
-                    section.add_row(label, value)
-                body.add_row(f"[bold]{section_title}[/bold]")
-                body.add_row(section)
-            self.console.print(
-                _with_top_terminal_spacer(Panel(body, title=title, border_style="cyan"))
-            )
-            return
-
         self.reporter.log(title)
         for section_title, rows in sections:
             self.reporter.log(f"{section_title}:")
@@ -207,15 +172,11 @@ class ConsoleRuntime:
             propagate=root_logger.propagate,
         )
         root_logger.handlers.clear()
-        self._root_handler = RichHandler(
-            console=self.console,
-            show_time=False,
-            show_path=False,
-            markup=False,
-        )
+        self._root_handler = _ReporterLogHandler(self.reporter)
         self._root_handler.addFilter(_NativeLogFilter())
         root_logger.addHandler(self._root_handler)
         root_logger.setLevel(logging.INFO)
+        root_logger.propagate = False
 
         pywarnings_logger = logging.getLogger("py.warnings")
         self._pywarnings_state = _LoggerState(
@@ -227,18 +188,6 @@ class ConsoleRuntime:
         pywarnings_logger.setLevel(logging.WARNING)
         pywarnings_logger.propagate = True
         logging.captureWarnings(True)
-
-        self._lightning_states = {}
-        for name in _LIGHTNING_LOGGER_NAMES:
-            logger = logging.getLogger(name)
-            self._lightning_states[name] = _LoggerState(
-                handlers=list(logger.handlers),
-                level=logger.level,
-                propagate=logger.propagate,
-            )
-            logger.handlers.clear()
-            logger.setLevel(logging.INFO)
-            logger.propagate = True
 
     def _restore_logging_bridge(self) -> None:
         logging.captureWarnings(False)
@@ -252,15 +201,6 @@ class ConsoleRuntime:
             pywarnings_logger.propagate = self._pywarnings_state.propagate
             self._pywarnings_state = None
 
-        for name, state in self._lightning_states.items():
-            logger = logging.getLogger(name)
-            logger.handlers.clear()
-            for handler in state.handlers:
-                logger.addHandler(handler)
-            logger.setLevel(state.level)
-            logger.propagate = state.propagate
-        self._lightning_states = {}
-
         if self._root_state is not None:
             root_logger = logging.getLogger()
             root_logger.handlers.clear()
@@ -272,25 +212,13 @@ class ConsoleRuntime:
         self._root_handler = None
 
 
-def create_reporter(console: Console | None = None) -> Reporter:
-    active_console = console or Console()
-    if active_console.is_terminal:
-        return RichReporter(console=active_console)
-    return PlainReporter(console=active_console)
+def create_reporter(*, stream: TextIOBase | None = None) -> Reporter:
+    return PlainReporter(stream=stream)
 
 
-def create_console_runtime(
+def create_workflow_runtime(
     *,
-    console: Console | None = None,
     reporter: Reporter | None = None,
-) -> ConsoleRuntime:
-    return ConsoleRuntime(console=console, reporter=reporter)
-
-
-def _console_from_reporter(reporter: Reporter | None) -> Console | None:
-    if reporter is None:
-        return None
-    candidate = getattr(reporter, "console", None)
-    if isinstance(candidate, Console):
-        return candidate
-    return Console(file=StringIO(), force_terminal=False, width=120)
+    stream: TextIOBase | None = None,
+) -> WorkflowRuntime:
+    return WorkflowRuntime(reporter=reporter, stream=stream)
