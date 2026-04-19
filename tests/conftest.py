@@ -121,6 +121,8 @@ def model_workflow_override():
 def tune_override():
     def _override() -> dict[str, object]:
         tuning_space = _named_group_copy("lstm_default", "tuning_space")
+        tuning_space.pop("problem", None)
+        tuning_space.pop("prediction", None)
         tuning_space["training"] = {
             "learning_rate": [0.0001, 0.0003],
             "weight_decay": [0.0, 0.01],

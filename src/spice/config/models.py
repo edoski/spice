@@ -387,13 +387,78 @@ class TuningTrainingSearchSpace(ConfigModel):
         return self
 
 
+class TuningProblemSearchSpace(ConfigModel):
+    lookback_seconds: list[int] | None = Field(default=None, min_length=1)
+
+    @field_validator("lookback_seconds")
+    @classmethod
+    def validate_lookback_seconds_candidates(
+        cls,
+        values: list[int] | None,
+    ) -> list[int] | None:
+        if values is not None and any(value <= 0 for value in values):
+            raise ValueError("tuning_space.problem.lookback_seconds values must be positive")
+        return values
+
+    @model_validator(mode="after")
+    def validate_non_empty_group(self) -> Self:
+        if self.lookback_seconds is None:
+            raise ValueError("tuning_space.problem must declare at least one field")
+        return self
+
+
+class TuningPredictionSearchSpace(ConfigModel):
+    classification_loss_weight: list[float] | None = Field(default=None, min_length=1)
+    regression_loss_weight: list[float] | None = Field(default=None, min_length=1)
+
+    @field_validator("classification_loss_weight")
+    @classmethod
+    def validate_classification_loss_weight_candidates(
+        cls,
+        values: list[float] | None,
+    ) -> list[float] | None:
+        if values is not None and any(value <= 0.0 for value in values):
+            raise ValueError(
+                "tuning_space.prediction.classification_loss_weight values must be positive"
+            )
+        return values
+
+    @field_validator("regression_loss_weight")
+    @classmethod
+    def validate_regression_loss_weight_candidates(
+        cls,
+        values: list[float] | None,
+    ) -> list[float] | None:
+        if values is not None and any(value <= 0.0 for value in values):
+            raise ValueError(
+                "tuning_space.prediction.regression_loss_weight values must be positive"
+            )
+        return values
+
+    @model_validator(mode="after")
+    def validate_non_empty_group(self) -> Self:
+        if (
+            self.classification_loss_weight is None
+            and self.regression_loss_weight is None
+        ):
+            raise ValueError("tuning_space.prediction must declare at least one field")
+        return self
+
+
 class TuningSpaceConfig(ConfigModel):
     training: TuningTrainingSearchSpace | None = None
+    problem: TuningProblemSearchSpace | None = None
+    prediction: TuningPredictionSearchSpace | None = None
     model: SerializeAsAny[ModelTuningSpaceConfig]
 
     def has_candidates(self) -> bool:
         model_candidates = self.model.model_dump(exclude={"id"}, exclude_none=True)
-        return self.training is not None or bool(model_candidates)
+        return (
+            self.training is not None
+            or self.problem is not None
+            or self.prediction is not None
+            or bool(model_candidates)
+        )
 
 
 class TunedTrainingParams(ConfigModel):
@@ -407,13 +472,44 @@ class TunedTrainingParams(ConfigModel):
         return self
 
 
+class TunedProblemParams(ConfigModel):
+    lookback_seconds: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_non_empty_group(self) -> Self:
+        if self.lookback_seconds is None:
+            raise ValueError("tuned problem params must declare at least one field")
+        return self
+
+
+class TunedPredictionParams(ConfigModel):
+    classification_loss_weight: float | None = Field(default=None, gt=0.0)
+    regression_loss_weight: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_non_empty_group(self) -> Self:
+        if (
+            self.classification_loss_weight is None
+            and self.regression_loss_weight is None
+        ):
+            raise ValueError("tuned prediction params must declare at least one field")
+        return self
+
+
 class TunedParameterSet(ConfigModel):
     training: TunedTrainingParams | None = None
+    problem: TunedProblemParams | None = None
+    prediction: TunedPredictionParams | None = None
     model: SerializeAsAny[TunedModelParams] | None = None
 
     @model_validator(mode="after")
     def validate_non_empty_param_set(self) -> Self:
-        if self.training is None and self.model is None:
+        if (
+            self.training is None
+            and self.problem is None
+            and self.prediction is None
+            and self.model is None
+        ):
             raise ValueError("tuned parameter set must declare at least one parameter group")
         return self
 

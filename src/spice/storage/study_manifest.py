@@ -8,6 +8,8 @@ from sqlalchemy import select
 
 from ..config import (
     ModelConfig,
+    PredictionConfig,
+    ProblemSpec,
     SplitConfig,
     TrainConfig,
     TrainingConfig,
@@ -259,20 +261,22 @@ def manifest_payload(manifest: StudyManifest) -> dict[str, object]:
 
 def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
     model = coerce_model_config(mapping_payload(payload["model"], label="study.model"))
+    problem = coerce_problem_spec(mapping_payload(payload["problem"], label="study.problem"))
+    prediction = coerce_prediction_config(
+        mapping_payload(payload["prediction"], label="study.prediction")
+    )
     semantics_payload = mapping_payload(payload["semantics"], label="study.semantics")
     return StudyManifest(
         study_id=str(payload["study_id"]),
         dataset_builder=coerce_dataset_builder_config(
             mapping_payload(payload["dataset_builder"], label="study.dataset_builder")
         ),
-        prediction=coerce_prediction_config(
-            mapping_payload(payload["prediction"], label="study.prediction")
-        ),
+        prediction=prediction,
         study_name=str(payload["study_name"]),
         chain_name=str(payload["chain_name"]),
         dataset_id=str(payload["dataset_id"]),
         dataset_name=str(payload["dataset_name"]),
-        problem=coerce_problem_spec(mapping_payload(payload["problem"], label="study.problem")),
+        problem=problem,
         feature_set=coerce_feature_set_config(
             mapping_payload(payload["feature_set"], label="study.feature_set")
         ),
@@ -285,15 +289,28 @@ def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
         sampler_seed=coerce_int(payload["sampler_seed"], label="sampler_seed"),
         pruner_name=str(payload["pruner_name"]),
         enable_pruning=bool(payload["enable_pruning"]),
-        tuning_space=coerce_study_tuning_space(payload["tuning_space"], model=model),
+        tuning_space=coerce_study_tuning_space(
+            payload["tuning_space"],
+            model=model,
+            problem=problem,
+            prediction=prediction,
+        ),
         semantics=study_semantics_from_payload(semantics_payload),
     )
 
 
-def coerce_study_tuning_space(payload: object, *, model: ModelConfig) -> TuningSpaceConfig:
+def coerce_study_tuning_space(
+    payload: object,
+    *,
+    model: ModelConfig,
+    problem: ProblemSpec,
+    prediction: PredictionConfig,
+) -> TuningSpaceConfig:
     tuning_space = coerce_tuning_space_config(
         mapping_payload(payload, label="study.tuning_space"),
         model_config=model,
+        problem_config=problem,
+        prediction_config=prediction,
     )
     if tuning_space is None:
         raise StateLayoutError("Study tuning_space payload is required")

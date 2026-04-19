@@ -10,10 +10,16 @@ import optuna
 import torch
 
 from ...config.models import (
+    PredictionConfig,
+    ProblemSpec,
     TrainingPrecision,
     TunedParameterSet,
+    TunedPredictionParams,
+    TunedProblemParams,
     TunedTrainingParams,
     TuningSpaceConfig,
+    TuningPredictionSearchSpace,
+    TuningProblemSearchSpace,
     TuningTrainingSearchSpace,
 )
 from ...core.errors import ConfigResolutionError
@@ -79,6 +85,8 @@ def coerce_tuning_space_config(
     payload: Mapping[str, object] | TuningSpaceConfig | None,
     *,
     model_config: ModelConfig[str],
+    problem_config: ProblemSpec | None = None,
+    prediction_config: PredictionConfig | None = None,
 ) -> TuningSpaceConfig | None:
     if payload is None:
         return None
@@ -98,9 +106,29 @@ def coerce_tuning_space_config(
         if training_payload is None
         else TuningTrainingSearchSpace.model_validate(training_payload)
     )
+    problem_payload = raw_payload.get("problem")
+    problem = (
+        None
+        if problem_payload is None
+        else _coerce_problem_tuning_space(problem_payload, problem_config=problem_config)
+    )
+    prediction_payload = raw_payload.get("prediction")
+    prediction = (
+        None
+        if prediction_payload is None
+        else _coerce_prediction_tuning_space(
+            prediction_payload,
+            prediction_config=prediction_config,
+        )
+    )
     model = spec.tuning_space_type.model_validate(dict(raw_model_payload))
     spec.validate_tuning_space(cast(Any, model_config), cast(Any, model))
-    return TuningSpaceConfig(training=training, model=model)
+    return TuningSpaceConfig(
+        training=training,
+        problem=problem,
+        prediction=prediction,
+        model=model,
+    )
 
 
 def coerce_tuned_parameter_set(
@@ -112,9 +140,19 @@ def coerce_tuned_parameter_set(
         payload.model_dump(mode="json") if isinstance(payload, TunedParameterSet) else dict(payload)
     )
     training_payload = raw_payload.get("training")
+    problem_payload = raw_payload.get("problem")
+    prediction_payload = raw_payload.get("prediction")
     model_payload = raw_payload.get("model")
     training = (
         None if training_payload is None else TunedTrainingParams.model_validate(training_payload)
+    )
+    problem = (
+        None if problem_payload is None else TunedProblemParams.model_validate(problem_payload)
+    )
+    prediction = (
+        None
+        if prediction_payload is None
+        else TunedPredictionParams.model_validate(prediction_payload)
     )
     model: TunedModelParams | None = None
     if model_payload is not None:
@@ -125,7 +163,12 @@ def coerce_tuned_parameter_set(
         model = spec.tuned_params_type.model_validate(dict(model_payload))
         if model_id is not None and resolved_model_id != model_id:
             raise ConfigResolutionError("Tuned model params id does not match model.id")
-    return TunedParameterSet(training=training, model=model)
+    return TunedParameterSet(
+        training=training,
+        problem=problem,
+        prediction=prediction,
+        model=model,
+    )
 
 
 def build_model(
@@ -156,6 +199,8 @@ def sample_tuned_parameters(
     tuning_space: TuningSpaceConfig,
 ) -> TunedParameterSet:
     training_params: TunedTrainingParams | None = None
+    problem_params: TunedProblemParams | None = None
+    prediction_params: TunedPredictionParams | None = None
     if tuning_space.training is not None:
         training_values: dict[str, float] = {}
         if tuning_space.training.learning_rate is not None:
@@ -174,9 +219,43 @@ def sample_tuned_parameters(
             )
         if training_values:
             training_params = TunedTrainingParams.model_validate(training_values)
+    if tuning_space.problem is not None:
+        problem_values: dict[str, int] = {}
+        if tuning_space.problem.lookback_seconds is not None:
+            problem_values["lookback_seconds"] = int(
+                trial.suggest_categorical(
+                    "problem.lookback_seconds",
+                    tuning_space.problem.lookback_seconds,
+                )
+            )
+        if problem_values:
+            problem_params = TunedProblemParams.model_validate(problem_values)
+    if tuning_space.prediction is not None:
+        prediction_values: dict[str, float] = {}
+        if tuning_space.prediction.classification_loss_weight is not None:
+            prediction_values["classification_loss_weight"] = float(
+                trial.suggest_categorical(
+                    "prediction.classification_loss_weight",
+                    tuning_space.prediction.classification_loss_weight,
+                )
+            )
+        if tuning_space.prediction.regression_loss_weight is not None:
+            prediction_values["regression_loss_weight"] = float(
+                trial.suggest_categorical(
+                    "prediction.regression_loss_weight",
+                    tuning_space.prediction.regression_loss_weight,
+                )
+            )
+        if prediction_values:
+            prediction_params = TunedPredictionParams.model_validate(prediction_values)
     spec = model_spec(tuning_space.model.id)
     model_params = spec.sample_model_params(trial, cast(Any, tuning_space.model))
-    return TunedParameterSet(training=training_params, model=model_params)
+    return TunedParameterSet(
+        training=training_params,
+        problem=problem_params,
+        prediction=prediction_params,
+        model=model_params,
+    )
 
 
 def apply_tuned_parameters(
@@ -196,11 +275,65 @@ def flatten_tuned_model_params(params: TunedParameterSet) -> dict[str, float | i
             flat["training.learning_rate"] = params.training.learning_rate
         if params.training.weight_decay is not None:
             flat["training.weight_decay"] = params.training.weight_decay
+    if params.problem is not None and params.problem.lookback_seconds is not None:
+        flat["problem.lookback_seconds"] = params.problem.lookback_seconds
+    if params.prediction is not None:
+        if params.prediction.classification_loss_weight is not None:
+            flat["prediction.classification_loss_weight"] = (
+                params.prediction.classification_loss_weight
+            )
+        if params.prediction.regression_loss_weight is not None:
+            flat["prediction.regression_loss_weight"] = (
+                params.prediction.regression_loss_weight
+            )
     if params.model is not None:
         for key, value in params.model.model_dump(exclude={"id"}, exclude_none=True).items():
             if isinstance(value, (int, float)):
                 flat[f"model.{key}"] = value
     return flat
+
+
+def _coerce_problem_tuning_space(
+    payload: object,
+    *,
+    problem_config: ProblemSpec | None,
+) -> TuningProblemSearchSpace:
+    if problem_config is None:
+        raise ConfigResolutionError(
+            "problem_config is required when tuning_space.problem is provided"
+        )
+    return TuningProblemSearchSpace.model_validate(payload)
+
+
+def _coerce_prediction_tuning_space(
+    payload: object,
+    *,
+    prediction_config: PredictionConfig | None,
+) -> TuningPredictionSearchSpace:
+    if prediction_config is None:
+        raise ConfigResolutionError(
+            "prediction_config is required when tuning_space.prediction is provided"
+        )
+    prediction = TuningPredictionSearchSpace.model_validate(payload)
+    family = prediction_config.family
+    unsupported_fields: list[str] = []
+    if (
+        prediction.classification_loss_weight is not None
+        and not hasattr(family, "classification_loss_weight")
+    ):
+        unsupported_fields.append("classification_loss_weight")
+    if (
+        prediction.regression_loss_weight is not None
+        and not hasattr(family, "regression_loss_weight")
+    ):
+        unsupported_fields.append("regression_loss_weight")
+    if unsupported_fields:
+        joined = ", ".join(unsupported_fields)
+        raise ConfigResolutionError(
+            "tuning_space.prediction fields are unsupported for "
+            f"prediction.family.id={family.id}: {joined}"
+        )
+    return prediction
 
 
 def _mapping_model_id(payload: Mapping[str, object]) -> str:

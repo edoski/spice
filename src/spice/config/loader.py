@@ -54,10 +54,18 @@ ModelT = TypeVar("ModelT", bound=ConfigModel)
 WorkflowConfig = AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig
 
 
-def load_named_tuning_space(name: str, *, model_config: ModelConfig[str]) -> TuningSpaceConfig:
+def load_named_tuning_space(
+    name: str,
+    *,
+    model_config: ModelConfig[str],
+    problem_config: ProblemSpec,
+    prediction_config: PredictionConfig,
+) -> TuningSpaceConfig:
     tuning_space = coerce_tuning_space_config(
         load_named_group(name, _TUNING_SPACE_GROUP),
         model_config=model_config,
+        problem_config=problem_config,
+        prediction_config=prediction_config,
     )
     if tuning_space is None:
         raise ConfigResolutionError(f"tuning space {name} resolved to None")
@@ -302,13 +310,22 @@ def _resolve_tuning_space(
     raw: object,
     *,
     model_config: ModelConfig[str],
+    problem_config: ProblemSpec,
+    prediction_config: PredictionConfig,
 ) -> TuningSpaceConfig:
     if isinstance(raw, str):
-        return load_named_tuning_space(raw, model_config=model_config)
+        return load_named_tuning_space(
+            raw,
+            model_config=model_config,
+            problem_config=problem_config,
+            prediction_config=prediction_config,
+        )
     if isinstance(raw, Mapping):
         resolved = coerce_tuning_space_config(
             _mapping_copy(cast(Mapping[object, object], raw)),
             model_config=model_config,
+            problem_config=problem_config,
+            prediction_config=prediction_config,
         )
         if resolved is None:
             raise ConfigResolutionError("tuning_space is required for tune")
@@ -491,6 +508,8 @@ def _resolve_tune_config(payload: dict[str, object]) -> TuneConfig:
     tuning_space_spec = _resolve_tuning_space(
         _require_payload_key(payload, "tuning_space"),
         model_config=model_spec,
+        problem_config=problem_spec,
+        prediction_config=prediction_spec,
     )
     return TuneConfig(
         chain=chain_spec,
