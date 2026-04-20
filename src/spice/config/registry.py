@@ -16,6 +16,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..core.errors import ConfigResolutionError
 from ..modeling.families.registry import coerce_model_config
+from ..objectives import coerce_objective_config
 from .models import (
     ChainSpec,
     DatasetSpec,
@@ -41,6 +42,7 @@ class ConfigGroup(StrEnum):
     EXECUTION = "execution"
     FEATURE_SET = "feature-set"
     MODEL = "model"
+    OBJECTIVE = "objective"
     PREDICTION = "prediction"
     PRESET = "preset"
     PROBLEM = "problem"
@@ -115,6 +117,14 @@ _GROUP_SPECS = (
         validate=coerce_model_config,
         identity_field="id",
         seed_from_requested_name=True,
+    ),
+    GroupSpec(
+        token=ConfigGroup.OBJECTIVE.value,
+        directory="objective",
+        seed_name="validation_total_loss",
+        validate=coerce_objective_config,
+        identity_field="id",
+        seed_from_requested_name=False,
     ),
     GroupSpec(
         token=ConfigGroup.PREDICTION.value,

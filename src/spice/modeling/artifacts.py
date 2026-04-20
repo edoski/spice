@@ -11,6 +11,7 @@ from ..config import (
     DatasetBuilderConfig,
     FeatureSetConfig,
     ModelConfig,
+    ObjectiveConfig,
     PredictionConfig,
     ProblemSpec,
 )
@@ -55,6 +56,7 @@ def validate_artifact_semantics(
     dataset_builder: DatasetBuilderConfig,
     feature_set: FeatureSetConfig,
     prediction: PredictionConfig,
+    objective: ObjectiveConfig,
     model: ModelConfig,
 ) -> ValidatedArtifactPreparation:
     if manifest.problem.model_dump(mode="json") != problem.model_dump(mode="json"):
@@ -68,6 +70,10 @@ def validate_artifact_semantics(
     if manifest.prediction.model_dump(mode="json") != prediction.model_dump(mode="json"):
         raise ConfigResolutionError(
             "Configured prediction does not match the trained artifact semantics"
+        )
+    if manifest.objective.model_dump(mode="json") != objective.model_dump(mode="json"):
+        raise ConfigResolutionError(
+            "Configured objective does not match the trained artifact semantics"
         )
     if manifest.model.model_dump(mode="json") != model.model_dump(mode="json"):
         raise ConfigResolutionError(
@@ -101,6 +107,7 @@ def build_training_artifact_manifest(
         artifact_id=spec.artifact_id,
         dataset_builder=spec.dataset_builder,
         prediction=spec.prediction,
+        objective=spec.objective,
         chain_name=spec.chain.name,
         dataset_id=spec.dataset_id,
         dataset_name=spec.dataset_name,
@@ -115,6 +122,7 @@ def build_training_artifact_manifest(
         semantics=ArtifactSemantics(
             problem=spec.contract.semantics,
             realization_policy=spec.contract.realization_policy.semantics,
+            objective=spec.objective_contract.semantics,
             feature=spec.feature_contract.semantics,
             prediction=spec.prediction_contract.semantics,
             input_normalization=spec.input_normalization_contract.semantics,

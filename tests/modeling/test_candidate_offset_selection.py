@@ -12,10 +12,8 @@ from spice.core.reporting import NullReporter
 from spice.evaluation import coerce_evaluator_config, compile_evaluator_contract
 from spice.features import compile_feature_contract
 from spice.modeling.evaluation import run_prediction_evaluation
-from spice.prediction import MetricSet
 from spice.prediction.families.candidate_offset_selection.batch import CandidateSlateTargetBatch
 from spice.prediction.families.candidate_offset_selection.loss import compute_selection_loss
-from spice.prediction.families.candidate_offset_selection.metrics import best_epoch
 from spice.temporal import (
     coerce_realization_policy_config,
     compile_realization_policy_contract,
@@ -79,45 +77,15 @@ def test_selection_loss_prefers_cheaper_candidates_and_ignores_masked_slots() ->
     targets = CandidateSlateTargetBatch(
         candidate_log_fees=candidate_log_fees,
         candidate_mask=candidate_mask,
+        optimum_offsets=torch.tensor([1], dtype=torch.int64),
+        optimum_log_fees=torch.tensor([math.log(5.0)], dtype=torch.float32),
+        baseline_candidate_indices=torch.tensor([0], dtype=torch.int64),
     )
 
     bad_loss = compute_selection_loss(logits_bad, targets)
     good_loss = compute_selection_loss(logits_good, targets)
 
     assert good_loss.item() < bad_loss.item()
-
-
-def test_prediction_selection_follows_validation_profit() -> None:
-    history = [
-        MetricSet(
-            values={
-                "total_loss": 0.90,
-                "exact_optimum_hit_rate": 0.30,
-                "cost_over_optimum": 0.25,
-                "profit_over_baseline": 0.04,
-            }
-        ),
-        MetricSet(
-            values={
-                "total_loss": 1.20,
-                "exact_optimum_hit_rate": 0.20,
-                "cost_over_optimum": 0.18,
-                "profit_over_baseline": 0.11,
-            }
-        ),
-        MetricSet(
-            values={
-                "total_loss": 0.70,
-                "exact_optimum_hit_rate": 0.40,
-                "cost_over_optimum": 0.20,
-                "profit_over_baseline": 0.08,
-            }
-        ),
-    ]
-
-    assert best_epoch(history) == 2
-    assert history[1].require("profit_over_baseline") == pytest.approx(0.11)
-
 
 def test_poisson_replay_summary_uses_event_weighted_totals() -> None:
     store = _build_test_store()

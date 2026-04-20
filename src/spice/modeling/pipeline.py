@@ -13,6 +13,7 @@ from ..config import (
     DatasetBuilderConfig,
     FeatureSetConfig,
     ModelConfig,
+    ObjectiveConfig,
     PredictionConfig,
     ProblemSpec,
     SplitConfig,
@@ -32,6 +33,7 @@ from ..modeling.dataset_builders import (
     CompiledDatasetBuilderContract,
     compile_dataset_builder_contract,
 )
+from ..objectives import CompiledObjectiveContract, compile_objective_contract
 from ..prediction import CompiledPredictionContract, compile_prediction_contract
 from ..semantics import FeatureSemantics
 from ..storage.layout import resolve_workflow_paths
@@ -67,7 +69,9 @@ class TrainingSpec:
     contract: CompiledProblemContract
     feature_set: FeatureSetConfig
     prediction: PredictionConfig
+    objective: ObjectiveConfig
     prediction_contract: CompiledPredictionContract
+    objective_contract: CompiledObjectiveContract
     input_normalization_contract: CompiledInputNormalizationContract
     representation_contract: CompiledRepresentationContract
     model: ModelConfig
@@ -103,6 +107,9 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
         prediction_id=config.prediction.id,
         family_config=config.prediction.family,
     )
+    if config.objective is None:
+        raise ValueError("objective is required for train and tune specs")
+    objective_contract = compile_objective_contract(config.objective)
     dataset_builder_contract = compile_dataset_builder_contract(config.dataset_builder)
     input_normalization_contract = compile_input_normalization_contract(
         config.training.input_normalization
@@ -128,7 +135,9 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
         contract=contract,
         feature_set=config.feature_set,
         prediction=config.prediction,
+        objective=config.objective,
         prediction_contract=prediction_contract,
+        objective_contract=objective_contract,
         input_normalization_contract=input_normalization_contract,
         representation_contract=compile_representation_contract(
             resolve_model_representation_id(config.model)
@@ -283,6 +292,7 @@ def run_training(
         model,
         model_config=spec.model,
         prediction_contract=spec.prediction_contract,
+        objective_contract=spec.objective_contract,
         realization_policy=prepared.realization_policy,
         representation_contract=spec.representation_contract,
         store=prepared.store,

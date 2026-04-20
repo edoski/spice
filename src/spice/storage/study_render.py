@@ -27,7 +27,14 @@ def study_summary_sections(
         (
             "best trial",
             [
-                ("monitor", summary.manifest.semantics.prediction.primary_metric_id),
+                (
+                    "objective",
+                    (
+                        f"{summary.manifest.semantics.objective.objective_id}:"
+                        f"{summary.manifest.semantics.objective.metric_id}"
+                    ),
+                ),
+                ("direction", summary.manifest.semantics.objective.direction),
                 (
                     "value",
                     "n/a"

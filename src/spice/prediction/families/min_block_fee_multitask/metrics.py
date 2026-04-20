@@ -109,21 +109,6 @@ def create_epoch_accumulator() -> MinBlockFeeEpochAccumulator:
     return MinBlockFeeEpochAccumulator()
 
 
-def best_epoch(history: list[MetricSet]) -> int:
-    if not history:
-        return 1
-    winner = min(
-        range(len(history)),
-        key=lambda index: (
-            history[index].require("total_loss"),
-            -history[index].require("offset_accuracy"),
-            history[index].require("classification_loss"),
-            history[index].require("regression_loss"),
-        ),
-    )
-    return winner + 1
-
-
 def inverse_frequency_class_weights(
     offsets: np.ndarray,
     *,

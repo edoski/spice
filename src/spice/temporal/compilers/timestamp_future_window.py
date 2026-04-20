@@ -98,6 +98,7 @@ class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
             lookback_seconds=self.lookback_seconds,
             delay_seconds=self.max_delay_seconds,
             fixed_action_count=capability_action_count,
+            requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
         return (
             store,
@@ -131,6 +132,7 @@ class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
             lookback_seconds=self.lookback_seconds,
             delay_seconds=delay_seconds,
             fixed_action_count=max_candidate_slots,
+            requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
 
 
@@ -176,6 +178,7 @@ def _build_timestamp_future_window_store(
     lookback_seconds: int,
     delay_seconds: int,
     fixed_action_count: int,
+    requires_post_window_row: bool = False,
 ) -> CompiledProblemStore:
     if lookback_seconds <= 0:
         raise ValueError("lookback_seconds must be positive")
@@ -203,7 +206,11 @@ def _build_timestamp_future_window_store(
     ) >= feature_prerequisites.history_seconds
     warmup_ready = context_start_rows >= feature_prerequisites.warmup_rows
     future_ready = candidate_counts > 0
-    post_window_ready = candidate_end_rows < timestamps.shape[0]
+    post_window_ready = (
+        candidate_end_rows < timestamps.shape[0]
+        if requires_post_window_row
+        else np.ones_like(candidate_counts, dtype=np.bool_)
+    )
     valid_anchor_mask = context_history_ready & warmup_ready & future_ready & post_window_ready
     anchor_rows = anchor_candidates[valid_anchor_mask].astype(np.int64, copy=False)
     if anchor_rows.size == 0:

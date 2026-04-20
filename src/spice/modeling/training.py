@@ -19,6 +19,7 @@ from ..core.reporting import (
     StageMetricValue,
     format_compact_count,
 )
+from ..objectives import CompiledObjectiveContract, ObjectiveEvaluationContext
 from ..prediction import CompiledPredictionContract, MetricSet
 from ..temporal.problem_store import CompiledProblemStore
 from ..temporal.realization import CompiledRealizationPolicyContract
@@ -44,8 +45,11 @@ _EPOCH_STAGE_METRIC_ID = "epoch"
 @dataclass(slots=True)
 class TrainingResult:
     best_epoch: int
+    objective_metric_id: str
+    best_objective_value: float
     train_history: list[MetricSet]
     validation_history: list[MetricSet]
+    objective_history: list[MetricSet]
     best_checkpoint_path: Path | None
     resolved_precision: str
     compiled: bool
@@ -159,13 +163,13 @@ def _is_improvement(
     best_epoch: int,
     history: list[MetricSet],
     direction: str,
-    primary_metric_id: str,
+    metric_id: str,
     min_delta: float,
 ) -> bool:
     if current_epoch == best_epoch:
         return True
-    current_value = history[current_epoch - 1].require(primary_metric_id)
-    best_value = history[best_epoch - 1].require(primary_metric_id)
+    current_value = history[current_epoch - 1].require(metric_id)
+    best_value = history[best_epoch - 1].require(metric_id)
     if direction == "maximize":
         return current_value > best_value + min_delta
     return current_value < best_value - min_delta
@@ -289,6 +293,7 @@ def train_model(
     *,
     model_config: ModelConfig,
     prediction_contract: CompiledPredictionContract,
+    objective_contract: CompiledObjectiveContract,
     realization_policy: CompiledRealizationPolicyContract,
     representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
@@ -380,6 +385,7 @@ def train_model(
 
     train_history: list[MetricSet] = []
     validation_history: list[MetricSet] = []
+    objective_history: list[MetricSet] = []
     best_state: dict[str, torch.Tensor] | None = None
     best_epoch = 0
     epochs_without_improvement = 0
@@ -417,15 +423,33 @@ def train_model(
             )
             train_history.append(train_metrics)
             validation_history.append(validation_metrics)
+            objective_metrics = objective_contract.evaluate_metrics(
+                validation_metrics,
+                context=ObjectiveEvaluationContext(
+                    model=fit_model,
+                    prediction_contract=prediction_contract,
+                    representation_contract=representation_contract,
+                    realization_policy=realization_policy,
+                    store=store,
+                    sample_indices=validation_sample_indices,
+                    batch_size=training_config.batch_size,
+                    device=training_config.device,
+                    reporter=None,
+                ),
+            )
+            objective_history.append(objective_metrics)
             progress.on_validation_epoch_end(epoch=epoch, metrics=validation_metrics)
 
-            current_best_epoch = prediction_contract.best_epoch(validation_history)
+            current_best_epoch = _best_epoch_from_objective_history(
+                objective_history,
+                objective_contract=objective_contract,
+            )
             if _is_improvement(
                 current_epoch=epoch,
                 best_epoch=current_best_epoch,
-                history=validation_history,
-                direction=prediction_contract.direction,
-                primary_metric_id=prediction_contract.primary_metric_id,
+                history=objective_history,
+                direction=objective_contract.direction,
+                metric_id=objective_contract.metric_id,
                 min_delta=training_config.early_stopping.min_delta,
             ):
                 best_state = _clone_cpu_state(_unwrap_compiled_model(fit_model))
@@ -438,16 +462,22 @@ def train_model(
                 break
 
     if best_state is None:
-        best_epoch = prediction_contract.best_epoch(validation_history)
+        best_epoch = _best_epoch_from_objective_history(
+            objective_history,
+            objective_contract=objective_contract,
+        )
         best_state = _clone_cpu_state(_unwrap_compiled_model(fit_model))
     else:
-        best_epoch = prediction_contract.best_epoch(validation_history)
-    best_value = prediction_contract.optimization_value(validation_history[best_epoch - 1])
+        best_epoch = _best_epoch_from_objective_history(
+            objective_history,
+            objective_contract=objective_contract,
+        )
+    best_value = objective_contract.value(objective_history[best_epoch - 1])
     model.load_state_dict(best_state)
     best_checkpoint_path = _checkpoint_path(
         artifact_dir,
         epoch=best_epoch,
-        monitor=prediction_contract.checkpoint_monitor,
+        monitor=objective_contract.checkpoint_monitor,
         value=best_value,
     )
     _write_checkpoint(best_checkpoint_path, best_state)
@@ -455,8 +485,11 @@ def train_model(
 
     return TrainingResult(
         best_epoch=best_epoch,
+        objective_metric_id=objective_contract.metric_id,
+        best_objective_value=best_value,
         train_history=train_history,
         validation_history=validation_history,
+        objective_history=objective_history,
         best_checkpoint_path=best_checkpoint_path,
         resolved_precision=precision,
         compiled=compile_enabled,
@@ -468,6 +501,26 @@ def train_model(
         batch_planner_id=train_batch_source_plan.batch_planner_id,
         prediction_training_state=prediction_training_state,
     )
+
+
+def _best_epoch_from_objective_history(
+    history: list[MetricSet],
+    *,
+    objective_contract: CompiledObjectiveContract,
+) -> int:
+    if not history:
+        return 1
+    if objective_contract.direction == "maximize":
+        winner = max(
+            range(len(history)),
+            key=lambda index: objective_contract.value(history[index]),
+        )
+    else:
+        winner = min(
+            range(len(history)),
+            key=lambda index: objective_contract.value(history[index]),
+        )
+    return winner + 1
 
 
 def evaluate_model(

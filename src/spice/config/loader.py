@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from ..core.errors import ConfigResolutionError
 from ..modeling.families.registry import coerce_model_config, coerce_tuning_space_config
+from ..objectives import ObjectiveConfig, coerce_objective_config
 from .models import (
     AcquireConfig,
     AcquisitionConfig,
@@ -292,6 +293,15 @@ def resolve_evaluation(raw: object) -> EvaluationConfig:
     return resolve_named_or_inline(raw, group="evaluation", model_type=EvaluationConfig)
 
 
+def resolve_objective(raw: object) -> ObjectiveConfig:
+    return _resolve_named_or_mapping(
+        raw,
+        group="objective",
+        label="objective",
+        parse_mapping=coerce_objective_config,
+    )
+
+
 def resolve_prediction(raw: object) -> PredictionConfig:
     return _resolve_named_or_mapping(
         raw,
@@ -380,6 +390,7 @@ def _resolve_model_workflow(
     DatasetBuilderConfig,
     FeatureSetConfig,
     PredictionConfig,
+    ObjectiveConfig | None,
     StudyConfig,
     ArtifactConfig,
 ]:
@@ -389,6 +400,8 @@ def _resolve_model_workflow(
     dataset_builder = resolve_dataset_builder(_require_payload_key(payload, "dataset_builder"))
     feature_set = resolve_feature_set(payload["feature_set"])
     prediction = resolve_prediction(payload["prediction"])
+    objective_raw = payload.get("objective")
+    objective = None if objective_raw is None else resolve_objective(objective_raw)
     study_raw = payload.get("study")
     if isinstance(study_raw, Mapping):
         study = StudyConfig.model_validate(study_raw)
@@ -411,6 +424,7 @@ def _resolve_model_workflow(
         dataset_builder,
         feature_set,
         prediction,
+        objective,
         study,
         artifact,
     )
@@ -451,6 +465,7 @@ def _resolve_train_config(payload: dict[str, object]) -> TrainConfig:
         dataset_builder_spec,
         feature_set_spec,
         prediction_spec,
+        objective_spec,
         study_spec,
         artifact_spec,
     ) = _resolve_model_workflow(payload)
@@ -473,6 +488,7 @@ def _resolve_train_config(payload: dict[str, object]) -> TrainConfig:
         dataset_builder=dataset_builder_spec,
         feature_set=feature_set_spec,
         prediction=prediction_spec,
+        objective=objective_spec,
         study=study_spec,
         artifact=artifact_spec,
         training=training_spec,
@@ -490,6 +506,7 @@ def _resolve_tune_config(payload: dict[str, object]) -> TuneConfig:
         dataset_builder_spec,
         feature_set_spec,
         prediction_spec,
+        objective_spec,
         study_spec,
         artifact_spec,
     ) = _resolve_model_workflow(payload)
@@ -524,6 +541,7 @@ def _resolve_tune_config(payload: dict[str, object]) -> TuneConfig:
         dataset_builder=dataset_builder_spec,
         feature_set=feature_set_spec,
         prediction=prediction_spec,
+        objective=objective_spec,
         study=study_spec,
         artifact=artifact_spec,
         training=training_spec,
@@ -543,6 +561,7 @@ def _resolve_evaluate_config(payload: dict[str, object]) -> EvaluateConfig:
         dataset_builder_spec,
         feature_set_spec,
         prediction_spec,
+        objective_spec,
         study_spec,
         artifact_spec,
     ) = _resolve_model_workflow(payload)
@@ -565,6 +584,7 @@ def _resolve_evaluate_config(payload: dict[str, object]) -> EvaluateConfig:
         dataset_builder=dataset_builder_spec,
         feature_set=feature_set_spec,
         prediction=prediction_spec,
+        objective=objective_spec,
         study=study_spec,
         artifact=artifact_spec,
         training=training_spec,

@@ -19,10 +19,11 @@ def test_tuning_objective_controls_study_direction(
         "timeout_seconds": None,
         "sampler_seed": 2026,
         "enable_pruning": False,
-        "objective": {
-            "metric_id": "offset_accuracy",
-            "direction": "maximize",
-        },
+    }
+    override["objective"] = {
+        "id": "validation_training_metric",
+        "metric_id": "offset_accuracy",
+        "direction": "maximize",
     }
     config = cast(
         TuneConfig,
@@ -37,5 +38,4 @@ def test_tuning_objective_controls_study_direction(
     access = open_tuning_study(resolve_workflow_paths(config).study_state_db, config=config)
 
     assert access.study.direction.name == "MAXIMIZE"
-    assert access.manifest.tuning_objective is not None
-    assert access.manifest.tuning_objective.metric_id == "offset_accuracy"
+    assert access.manifest.objective.metric_id == "offset_accuracy"

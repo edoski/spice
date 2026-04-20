@@ -73,8 +73,8 @@ def test_training_summary_metrics_match_replayed_saved_artifact(
     epochs = list_training_epochs(paths.artifact_state_db)
     assert epochs
     assert epochs[summary.runtime.best_epoch - 1].epoch == summary.runtime.best_epoch
-    primary_metric_id = spec.prediction_contract.primary_metric_id
-    best_epoch_metrics = epochs[summary.runtime.best_epoch - 1].validation_metrics
-    assert best_epoch_metrics.require(primary_metric_id) == pytest.approx(
-        summary.runtime.best_validation_metrics.require(primary_metric_id)
+    objective_metric_id = summary.runtime.best_objective_metric_id
+    best_epoch_metrics = epochs[summary.runtime.best_epoch - 1].objective_metrics
+    assert best_epoch_metrics.require(objective_metric_id) == pytest.approx(
+        summary.runtime.best_objective_metrics.require(objective_metric_id)
     )

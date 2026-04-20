@@ -43,6 +43,16 @@ class RealizationPolicySemantics:
 
 
 @dataclass(frozen=True, slots=True)
+class ObjectiveSemantics:
+    """Resolved workflow-owned optimization-objective identity for provenance."""
+
+    objective_id: str
+    metric_id: str
+    direction: Literal["maximize", "minimize"]
+    evaluator_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class PredictionSemantics:
     """Family-owned prediction semantics that persist with studies and artifacts."""
 
@@ -90,6 +100,7 @@ class StudySemantics:
 
     problem: ProblemSemantics
     realization_policy: RealizationPolicySemantics
+    objective: ObjectiveSemantics
     feature: FeatureSemantics
     prediction: PredictionSemantics
     input_normalization: InputNormalizationSemantics
@@ -103,6 +114,7 @@ class ArtifactSemantics:
 
     problem: ProblemSemantics
     realization_policy: RealizationPolicySemantics
+    objective: ObjectiveSemantics
     feature: FeatureSemantics
     prediction: PredictionSemantics
     input_normalization: InputNormalizationSemantics

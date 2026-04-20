@@ -22,6 +22,7 @@ IntVector = NDArray[np.int64]
 BoolMatrix = NDArray[np.bool_]
 BoolVector = NDArray[np.bool_]
 FloatVector = NDArray[np.float32]
+FloatMatrix = NDArray[np.float32]
 
 
 class RealizationPolicyConfig(ConfigModel):
@@ -36,8 +37,10 @@ class RealizationPolicyConfig(ConfigModel):
 @dataclass(frozen=True, slots=True)
 class PreparedSupervisedRealizationTargets:
     candidate_mask: BoolMatrix
+    candidate_log_fees: FloatMatrix
     optimum_offsets: IntVector
     optimum_log_fees: FloatVector
+    baseline_candidate_indices: IntVector
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +66,7 @@ RealizeSelectionsFn = Callable[
 @dataclass(frozen=True, slots=True)
 class CompiledRealizationPolicyContract:
     realization_policy_id: str
+    requires_post_window_row: bool
     prepare_supervised_targets_fn: PrepareSupervisedTargetsFn
     realize_selections_fn: RealizeSelectionsFn
 

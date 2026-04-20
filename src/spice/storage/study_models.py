@@ -13,12 +13,12 @@ from ..config import (
     DatasetBuilderConfig,
     FeatureSetConfig,
     ModelConfig,
+    ObjectiveConfig,
     PredictionConfig,
     ProblemSpec,
     SplitConfig,
     TrainingConfig,
     TunedParameterSet,
-    TuningObjectiveConfig,
     TuningSpaceConfig,
 )
 from ..modeling.families.registry import coerce_tuned_parameter_set
@@ -54,7 +54,7 @@ class StudyManifest:
     sampler_seed: int
     pruner_name: str
     enable_pruning: bool
-    tuning_objective: TuningObjectiveConfig | None
+    objective: ObjectiveConfig
     tuning_space: TuningSpaceConfig
     semantics: StudySemantics
 

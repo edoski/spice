@@ -69,6 +69,7 @@ class TimestampNativeCompiledProblemContract(CompiledProblemContract):
                     delay_seconds=self.max_delay_seconds,
                     feature_prerequisites=self.feature_prerequisites,
                 ),
+                requires_post_window_row=self.realization_policy.requires_post_window_row,
             ),
             TimestampRuntimeMetadata(),
         )
@@ -98,6 +99,7 @@ class TimestampNativeCompiledProblemContract(CompiledProblemContract):
                 feature_prerequisites=self.feature_prerequisites,
             ),
             max_candidate_slots=max_candidate_slots,
+            requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
 
 
@@ -126,6 +128,7 @@ def _build_timestamp_problem_store(
     *,
     window: TimestampSamplingWindow,
     max_candidate_slots: int | None = None,
+    requires_post_window_row: bool = False,
 ) -> CompiledProblemStore:
     if window.lookback_seconds <= 0:
         raise ValueError("lookback_seconds must be positive")
@@ -154,7 +157,14 @@ def _build_timestamp_problem_store(
         timestamps[context_start_rows] - timestamps[0]
     ) >= window.feature_prerequisites.history_seconds
     warmup_ready = context_start_rows >= window.feature_prerequisites.warmup_rows
-    valid_anchor_mask = context_history_ready & warmup_ready & (candidate_counts > 0)
+    post_window_ready = (
+        candidate_end_rows < timestamps.shape[0]
+        if requires_post_window_row
+        else np.ones_like(candidate_counts, dtype=np.bool_)
+    )
+    valid_anchor_mask = (
+        context_history_ready & warmup_ready & (candidate_counts > 0) & post_window_ready
+    )
     anchor_rows = anchor_candidates[valid_anchor_mask].astype(np.int64, copy=False)
     if anchor_rows.size == 0:
         raise ValueError("Feature table is too short to produce any supervised samples")

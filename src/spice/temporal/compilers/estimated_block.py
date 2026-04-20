@@ -127,6 +127,7 @@ class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
             feature_prerequisites=self.feature_prerequisites,
             lookback_steps=lookback_steps,
             candidate_count=capability_candidate_count,
+            requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
         return (
             store,
@@ -168,6 +169,7 @@ class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
             lookback_steps=lookback_steps,
             candidate_count=candidate_count,
             max_candidate_slots=max_candidate_slots,
+            requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
 
 
@@ -218,6 +220,7 @@ def _build_estimated_block_problem_store(
     lookback_steps: int,
     candidate_count: int,
     max_candidate_slots: int | None = None,
+    requires_post_window_row: bool = False,
 ) -> CompiledProblemStore:
     if lookback_steps <= 0:
         raise ValueError("lookback_steps must be positive")
@@ -238,7 +241,14 @@ def _build_estimated_block_problem_store(
     warmup_ready = required_prior_rows & (context_start_rows >= feature_prerequisites.warmup_rows)
     candidate_end_rows = anchor_candidates + 1 + candidate_count
     future_ready = candidate_end_rows <= timestamps.shape[0]
-    valid_anchor_mask = required_prior_rows & history_ready & warmup_ready & future_ready
+    post_window_ready = (
+        candidate_end_rows < timestamps.shape[0]
+        if requires_post_window_row
+        else np.ones_like(future_ready, dtype=np.bool_)
+    )
+    valid_anchor_mask = (
+        required_prior_rows & history_ready & warmup_ready & future_ready & post_window_ready
+    )
     anchor_rows = anchor_candidates[valid_anchor_mask].astype(np.int64, copy=False)
     if anchor_rows.size == 0:
         raise ValueError("Feature table is too short to produce any supervised samples")

@@ -14,7 +14,6 @@ from ..config import (
     TrainConfig,
     TrainingConfig,
     TuneConfig,
-    TuningObjectiveConfig,
     TuningSpaceConfig,
     coerce_dataset_builder_config,
     coerce_feature_set_config,
@@ -36,6 +35,7 @@ from ..modeling.families.registry import (
 )
 from ..modeling.representations import compile_representation_contract
 from ..modeling.result_codecs import study_semantics_from_payload, study_semantics_payload
+from ..objectives import coerce_objective_config, compile_objective_contract
 from ..prediction import compile_prediction_contract
 from ..semantics import StudySemantics
 from ..temporal.contracts import compile_problem_contract
@@ -85,6 +85,7 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
         study_id=paths.study_id,
         dataset_builder=config.dataset_builder,
         prediction=config.prediction,
+        objective=config.objective,
         study_name=config.study.name,
         chain_name=config.chain.name,
         dataset_id=paths.corpus_id,
@@ -98,11 +99,11 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
         sampler_seed=config.tuning.sampler_seed,
         pruner_name=pruner_name(config.tuning.enable_pruning),
         enable_pruning=config.tuning.enable_pruning,
-        tuning_objective=config.tuning.objective,
         tuning_space=config.tuning_space,
         semantics=StudySemantics(
             problem=problem_contract.semantics,
             realization_policy=problem_contract.realization_policy.semantics,
+            objective=compile_objective_contract(config.objective).semantics,
             feature=feature_contract.semantics,
             prediction=prediction_contract.semantics,
             input_normalization=input_normalization_contract.semantics,
@@ -189,11 +190,7 @@ def study_manifest_identity_payload(manifest: StudyManifest) -> dict[str, object
         "sampler_seed": manifest.sampler_seed,
         "pruner_name": manifest.pruner_name,
         "enable_pruning": manifest.enable_pruning,
-        "tuning_objective": (
-            None
-            if manifest.tuning_objective is None
-            else manifest.tuning_objective.model_dump(mode="json")
-        ),
+        "objective": manifest.objective.model_dump(mode="json", exclude_none=True),
         "tuning_space": manifest.tuning_space.model_dump(mode="json", exclude_none=True),
     }
 
@@ -204,6 +201,7 @@ def _study_request_identity_payload(
     study_id: str | None,
     dataset_builder_payload: dict[str, object],
     prediction_payload: dict[str, object],
+    objective_payload: dict[str, object],
     chain_name: str,
     dataset_id: str,
     dataset_name: str,
@@ -216,6 +214,7 @@ def _study_request_identity_payload(
         "study_id": study_id,
         "dataset_builder": dataset_builder_payload,
         "prediction": prediction_payload,
+        "objective": objective_payload,
         "chain_name": chain_name,
         "dataset_id": dataset_id,
         "dataset_name": dataset_name,
@@ -231,6 +230,7 @@ def _study_manifest_request_payload(manifest: StudyManifest) -> dict[str, object
         study_id=manifest.study_id,
         dataset_builder_payload=manifest.dataset_builder.model_dump(mode="json", exclude_none=True),
         prediction_payload=manifest.prediction.model_dump(mode="json"),
+        objective_payload=manifest.objective.model_dump(mode="json", exclude_none=True),
         chain_name=manifest.chain_name,
         dataset_id=manifest.dataset_id,
         dataset_name=manifest.dataset_name,
@@ -251,6 +251,7 @@ def _train_request_identity_payload(
         study_id=study_id,
         dataset_builder_payload=config.dataset_builder.model_dump(mode="json", exclude_none=True),
         prediction_payload=config.prediction.model_dump(mode="json"),
+        objective_payload=config.objective.model_dump(mode="json", exclude_none=True),
         chain_name=config.chain.name,
         dataset_id=dataset_id,
         dataset_name=config.dataset.name,
@@ -280,6 +281,9 @@ def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
             mapping_payload(payload["dataset_builder"], label="study.dataset_builder")
         ),
         prediction=prediction,
+        objective=coerce_objective_config(
+            mapping_payload(payload["objective"], label="study.objective")
+        ),
         study_name=str(payload["study_name"]),
         chain_name=str(payload["chain_name"]),
         dataset_id=str(payload["dataset_id"]),
@@ -297,7 +301,6 @@ def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
         sampler_seed=coerce_int(payload["sampler_seed"], label="sampler_seed"),
         pruner_name=str(payload["pruner_name"]),
         enable_pruning=bool(payload["enable_pruning"]),
-        tuning_objective=coerce_tuning_objective(payload.get("tuning_objective")),
         tuning_space=coerce_study_tuning_space(
             payload["tuning_space"],
             model=model,
@@ -324,15 +327,6 @@ def coerce_study_tuning_space(
     if tuning_space is None:
         raise StateLayoutError("Study tuning_space payload is required")
     return tuning_space
-
-
-def coerce_tuning_objective(payload: object) -> TuningObjectiveConfig | None:
-    if payload is None:
-        return None
-    return TuningObjectiveConfig.model_validate(
-        mapping_payload(payload, label="study.tuning_objective")
-    )
-
 
 def pruner_name(enable_pruning: bool) -> str:
     return "MedianPruner" if enable_pruning else "NopPruner"

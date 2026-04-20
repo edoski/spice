@@ -27,6 +27,7 @@ from spice.modeling.results import (
     TrainingRuntimeSummary,
 )
 from spice.modeling.summary import evaluation_summary_sections
+from spice.objectives import coerce_objective_config
 from spice.prediction import (
     MetricDescriptor,
     MetricSet,
@@ -37,6 +38,7 @@ from spice.semantics import (
     ArtifactSemantics,
     DatasetBuilderSemantics,
     InputNormalizationSemantics,
+    ObjectiveSemantics,
 )
 from spice.storage.artifact import (
     list_evaluation_runs,
@@ -111,6 +113,16 @@ def _dataset_builder_config():
     return coerce_dataset_builder_config({"id": "standard_temporal"})
 
 
+def _objective_config():
+    return coerce_objective_config(
+        {
+            "id": "validation_training_metric",
+            "metric_id": "total_loss",
+            "direction": "minimize",
+        }
+    )
+
+
 def _problem_config():
     return coerce_problem_spec(
         {
@@ -156,6 +168,7 @@ def _manifest(
         artifact_id="artifact-1",
         dataset_builder=_dataset_builder_config(),
         prediction=prediction,
+        objective=_objective_config(),
         chain_name="ethereum",
         dataset_id="icdcs_2026",
         dataset_name="icdcs_2026",
@@ -180,9 +193,15 @@ def _manifest(
         ),
         semantics=ArtifactSemantics(
             problem=problem_contract.semantics,
+            realization_policy=problem_contract.realization_policy.semantics,
+            objective=ObjectiveSemantics(
+                objective_id="validation_training_metric",
+                metric_id="total_loss",
+                direction="minimize",
+                evaluator_id=None,
+            ),
             feature=feature_contract.semantics,
             prediction=prediction_contract.semantics,
-            realization_policy=problem_contract.realization_policy.semantics,
             input_normalization=InputNormalizationSemantics(
                 input_normalization_id="window_weighted_standard"
             ),
@@ -208,6 +227,13 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         input_storage_mode_id="materialized_host",
         target_storage_mode_id="materialized_host",
         batch_planner_id="signature_bucketed",
+        best_objective_metric_id="total_loss",
+        best_objective_value=0.25,
+        best_objective_metrics=MetricSet(
+            values={
+                "total_loss": 0.25,
+            }
+        ),
         best_validation_metrics=MetricSet(
             values={
                 "total_loss": 0.25,
@@ -230,11 +256,13 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
             epoch=1,
             train_metrics=MetricSet(values={"total_loss": 0.4}),
             validation_metrics=MetricSet(values={"total_loss": 0.35}),
+            objective_metrics=MetricSet(values={"total_loss": 0.35}),
         ),
         TrainingEpochRecord(
             epoch=2,
             train_metrics=MetricSet(values={"total_loss": 0.3}),
             validation_metrics=MetricSet(values={"total_loss": 0.25}),
+            objective_metrics=MetricSet(values={"total_loss": 0.25}),
         ),
     ]
 
@@ -277,6 +305,7 @@ def test_artifact_validation_catches_feature_drift() -> None:
                 }
             ),
             prediction=manifest.prediction,
+            objective=manifest.objective,
             model=manifest.model,
         )
 
@@ -284,6 +313,7 @@ def test_artifact_validation_catches_feature_drift() -> None:
         artifact_id=manifest.artifact_id,
         dataset_builder=manifest.dataset_builder,
         prediction=manifest.prediction,
+        objective=manifest.objective,
         chain_name=manifest.chain_name,
         dataset_id=manifest.dataset_id,
         dataset_name=manifest.dataset_name,
@@ -295,22 +325,23 @@ def test_artifact_validation_catches_feature_drift() -> None:
         model=manifest.model,
         scaler=manifest.scaler,
         builder_runtime_metadata=manifest.builder_runtime_metadata,
-            semantics=ArtifactSemantics(
-                problem=manifest.semantics.problem,
-                feature=manifest.semantics.feature.__class__(
-                    feature_set_id=manifest.semantics.feature.feature_set_id,
-                    feature_family_id=manifest.semantics.feature.feature_family_id,
+        semantics=ArtifactSemantics(
+            problem=manifest.semantics.problem,
+            realization_policy=manifest.semantics.realization_policy,
+            objective=manifest.semantics.objective,
+            feature=manifest.semantics.feature.__class__(
+                feature_set_id=manifest.semantics.feature.feature_set_id,
+                feature_family_id=manifest.semantics.feature.feature_family_id,
                 feature_names=manifest.semantics.feature.feature_names,
                 feature_graph_fingerprint="stale-fingerprint",
                 feature_prerequisites=manifest.semantics.feature.feature_prerequisites,
-                ),
-                prediction=manifest.semantics.prediction,
-                realization_policy=manifest.semantics.realization_policy,
-                input_normalization=manifest.semantics.input_normalization,
-                representation=manifest.semantics.representation,
-                dataset_builder=manifest.semantics.dataset_builder,
-                max_candidate_slots=manifest.semantics.max_candidate_slots,
             ),
+            prediction=manifest.semantics.prediction,
+            input_normalization=manifest.semantics.input_normalization,
+            representation=manifest.semantics.representation,
+            dataset_builder=manifest.semantics.dataset_builder,
+            max_candidate_slots=manifest.semantics.max_candidate_slots,
+        ),
     )
 
     with pytest.raises(
@@ -323,6 +354,7 @@ def test_artifact_validation_catches_feature_drift() -> None:
             dataset_builder=manifest.dataset_builder,
             feature_set=feature_set,
             prediction=manifest.prediction,
+            objective=manifest.objective,
             model=manifest.model,
         )
 

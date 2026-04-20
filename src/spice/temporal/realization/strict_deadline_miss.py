@@ -28,8 +28,10 @@ def _prepare_supervised_targets(
     batch_size = int(resolved_indices.shape[0])
     max_candidate_slots = int(store.max_candidate_slots)
     candidate_mask = np.zeros((batch_size, max_candidate_slots), dtype=np.bool_)
+    candidate_log_fees = np.zeros((batch_size, max_candidate_slots), dtype=np.float32)
     optimum_offsets = np.empty(batch_size, dtype=np.int64)
     optimum_log_fees = np.empty(batch_size, dtype=np.float32)
+    baseline_candidate_indices = np.zeros(batch_size, dtype=np.int64)
     for row, sample_index in enumerate(resolved_indices):
         anchor_row = int(store.anchor_rows[sample_index])
         candidate_end = int(store.candidate_end_rows[sample_index])
@@ -43,13 +45,16 @@ def _prepare_supervised_targets(
                 "future candidates"
             )
         candidate_mask[row, :candidate_count] = True
+        candidate_log_fees[row, :candidate_count] = candidate_values
         min_offset = int(np.argmin(candidate_values))
         optimum_offsets[row] = min_offset
         optimum_log_fees[row] = float(candidate_values[min_offset])
     return PreparedSupervisedRealizationTargets(
         candidate_mask=candidate_mask,
+        candidate_log_fees=candidate_log_fees,
         optimum_offsets=optimum_offsets,
         optimum_log_fees=optimum_log_fees,
+        baseline_candidate_indices=baseline_candidate_indices,
     )
 
 
@@ -100,6 +105,7 @@ def compile_realization_policy(
         raise ValueError("realization_policy.id must be strict_deadline_miss")
     return CompiledRealizationPolicyContract(
         realization_policy_id="strict_deadline_miss",
+        requires_post_window_row=True,
         prepare_supervised_targets_fn=_prepare_supervised_targets,
         realize_selections_fn=_realize_selections,
     )

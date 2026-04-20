@@ -1,5 +1,6 @@
 """Public configuration API."""
 
+from ..objectives import ObjectiveConfig, ObjectiveDirection
 from ..temporal.realization import RealizationPolicyConfig
 from .loader import resolve_workflow_config
 from .models import (
@@ -40,8 +41,6 @@ from .models import (
     TunedProblemParams,
     TunedTrainingParams,
     TuningConfig,
-    TuningObjectiveConfig,
-    TuningObjectiveDirection,
     TuningPredictionSearchSpace,
     TuningProblemSearchSpace,
     TuningSpaceConfig,
@@ -77,6 +76,8 @@ __all__ = [
     "FeatureSetConfig",
     "ModelConfig",
     "ModelTuningSpaceConfig",
+    "ObjectiveConfig",
+    "ObjectiveDirection",
     "PredictionConfig",
     "PresetSpec",
     "ProviderSpec",
@@ -95,8 +96,6 @@ __all__ = [
     "TunedProblemParams",
     "TunedTrainingParams",
     "TuningConfig",
-    "TuningObjectiveConfig",
-    "TuningObjectiveDirection",
     "TuningPredictionSearchSpace",
     "TuningProblemSearchSpace",
     "TuningSpaceConfig",

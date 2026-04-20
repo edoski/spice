@@ -23,16 +23,10 @@ def prepare_candidate_slate_targets(
         raise ValueError("sample_indices must be non-empty")
     sample_indices = sample_indices.astype(np.int64, copy=False)
     supervised = realization_policy.prepare_supervised_targets(store, sample_indices)
-    batch_size = int(sample_indices.shape[0])
-    max_candidate_slots = int(store.max_candidate_slots)
-    candidate_log_fees = np.zeros((batch_size, max_candidate_slots), dtype=np.float32)
-    candidate_mask = supervised.candidate_mask
-    for row, sample_index in enumerate(sample_indices):
-        anchor_row = int(store.anchor_rows[sample_index])
-        candidate_count = int(candidate_mask[row].sum())
-        candidate_values = store.log_base_fees[anchor_row + 1 : anchor_row + 1 + candidate_count]
-        candidate_log_fees[row, : candidate_values.shape[0]] = candidate_values
     return PreparedCandidateSlateTargets(
-        candidate_log_fees=torch.from_numpy(candidate_log_fees),
-        candidate_mask=torch.from_numpy(candidate_mask),
+        candidate_log_fees=torch.from_numpy(supervised.candidate_log_fees),
+        candidate_mask=torch.from_numpy(supervised.candidate_mask),
+        optimum_offsets=torch.from_numpy(supervised.optimum_offsets),
+        optimum_log_fees=torch.from_numpy(supervised.optimum_log_fees),
+        baseline_candidate_indices=torch.from_numpy(supervised.baseline_candidate_indices),
     )

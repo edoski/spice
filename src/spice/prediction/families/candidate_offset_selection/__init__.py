@@ -19,7 +19,6 @@ from .batch import CandidateSlateTargetBatch
 from .config import CandidateOffsetSelectionFamilyConfig
 from .metrics import (
     TRAINING_METRIC_DESCRIPTORS,
-    best_epoch,
     compute_batch_loss_and_state,
     create_epoch_accumulator,
 )
@@ -98,7 +97,6 @@ def compile_prediction_family(
         prepare_targets_fn=_prepare_targets,
         compute_batch_loss_and_state_fn=_compute_batch_loss_and_state,
         create_epoch_accumulator_fn=_create_epoch_accumulator,
-        select_best_epoch_fn=best_epoch,
         allocate_decoded_offsets_fn=_allocate_decoded_offsets,
         decode_selected_offsets_into_fn=_decode_selected_offsets_into,
     )

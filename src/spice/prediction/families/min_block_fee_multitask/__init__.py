@@ -23,7 +23,6 @@ from .batch import (
 from .config import MinBlockFeeMultitaskFamilyConfig
 from .metrics import (
     TRAINING_METRIC_DESCRIPTORS,
-    best_epoch,
     compute_batch_loss_and_state,
     create_epoch_accumulator,
     inverse_frequency_class_weights,
@@ -163,7 +162,6 @@ def compile_prediction_family(
             )
         ),
         create_epoch_accumulator_fn=_create_epoch_accumulator,
-        select_best_epoch_fn=best_epoch,
         allocate_decoded_offsets_fn=_allocate_decoded_offsets,
         decode_selected_offsets_into_fn=_decode_selected_offsets_into,
     )

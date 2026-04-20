@@ -7,6 +7,7 @@ problem: icdcs_2026_paper_truth
 dataset_builder: professor_temporal
 feature_set: icdcs_2026_professor
 prediction: icdcs_2026
+objective: paper_profit_replay_2h
 model: lstm
 tuning_space: lstm_professor
 
@@ -43,12 +44,7 @@ training:
 split:
   train_fraction: 0.8
   validation_fraction: 0.1
-evaluation:
-  evaluator:
-    id: paper_windowed
-    window_seconds: 7200
-    repetitions: 50
-    seed: 2026
+evaluation: paper_replay_2h
 delay_seconds: 36
 
 tuning:
@@ -56,6 +52,3 @@ tuning:
   timeout_seconds: null
   sampler_seed: 2026
   enable_pruning: true
-  objective:
-    metric_id: offset_accuracy
-    direction: maximize

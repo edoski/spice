@@ -14,6 +14,9 @@ def compute_selection_loss(
 ) -> torch.Tensor:
     masked_logits = masked_candidate_logits(logits, targets.candidate_mask)
     policy = torch.softmax(masked_logits, dim=-1)
-    baseline_log_fee = targets.candidate_log_fees[:, 0].unsqueeze(-1)
+    baseline_log_fee = targets.candidate_log_fees.gather(
+        dim=1,
+        index=targets.baseline_candidate_indices.unsqueeze(-1),
+    )
     relative_fee = torch.exp(targets.candidate_log_fees - baseline_log_fee)
     return (policy * relative_fee).sum(dim=-1).mean()

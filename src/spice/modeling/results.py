@@ -12,6 +12,7 @@ from ..config import (
     DatasetBuilderConfig,
     FeatureSetConfig,
     ModelConfig,
+    ObjectiveConfig,
     PredictionConfig,
     ProblemSpec,
     StudyConfig,
@@ -31,6 +32,7 @@ class TrainingArtifactManifest:
     artifact_id: str
     dataset_builder: DatasetBuilderConfig
     prediction: PredictionConfig
+    objective: ObjectiveConfig
     chain_name: str
     dataset_id: str
     dataset_name: str
@@ -135,6 +137,9 @@ class TrainingRuntimeSummary:
     input_storage_mode_id: str
     target_storage_mode_id: str
     batch_planner_id: str
+    best_objective_metric_id: str
+    best_objective_value: float
+    best_objective_metrics: MetricSet
     best_validation_metrics: MetricSet
     test_metrics: MetricSet
 
@@ -152,6 +157,7 @@ class TrainingEpochRecord:
     epoch: int
     train_metrics: MetricSet
     validation_metrics: MetricSet
+    objective_metrics: MetricSet
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,10 +188,11 @@ class LoadedEvaluationSummary:
 
 
 def iter_epoch_records(result: TrainingRunResult) -> Iterator[TrainingEpochRecord]:
-    for index, (train_metrics, validation_metrics) in enumerate(
+    for index, (train_metrics, validation_metrics, objective_metrics) in enumerate(
         zip(
             result.training_result.train_history,
             result.training_result.validation_history,
+            result.training_result.objective_history,
             strict=True,
         ),
         start=1,
@@ -194,6 +201,7 @@ def iter_epoch_records(result: TrainingRunResult) -> Iterator[TrainingEpochRecor
             epoch=index,
             train_metrics=train_metrics,
             validation_metrics=validation_metrics,
+            objective_metrics=objective_metrics,
         )
 
 
@@ -220,6 +228,11 @@ def build_training_runtime_summary(
         input_storage_mode_id=result.training_result.input_storage_mode_id,
         target_storage_mode_id=result.training_result.target_storage_mode_id,
         batch_planner_id=result.training_result.batch_planner_id,
+        best_objective_metric_id=result.training_result.objective_metric_id,
+        best_objective_value=result.training_result.best_objective_value,
+        best_objective_metrics=result.training_result.objective_history[
+            result.training_result.best_epoch - 1
+        ],
         best_validation_metrics=best_validation_metrics,
         test_metrics=test_metrics,
     )

@@ -82,7 +82,6 @@ ComputeBatchLossAndStateFn = Callable[
     tuple[torch.Tensor, object],
 ]
 CreateEpochAccumulatorFn = Callable[[str], EpochMetricAccumulator]
-SelectBestEpochFn = Callable[[list[MetricSet]], int]
 AllocateDecodedOffsetsFn = Callable[[int], DecodedOffsets]
 DecodeSelectedOffsetsIntoFn = Callable[[DecodedOffsets, torch.Tensor, Any], None]
 
@@ -181,7 +180,6 @@ class CompiledPredictionContract:
     prepare_targets_fn: PrepareTargetsFn
     compute_batch_loss_and_state_fn: ComputeBatchLossAndStateFn
     create_epoch_accumulator_fn: CreateEpochAccumulatorFn
-    select_best_epoch_fn: SelectBestEpochFn
     allocate_decoded_offsets_fn: AllocateDecodedOffsetsFn
     decode_selected_offsets_into_fn: DecodeSelectedOffsetsIntoFn
     fit_training_state_fn: FitTrainingStateFn | None = None
@@ -197,14 +195,6 @@ class CompiledPredictionContract:
             direction=self.direction,
             supported_workflows=self.supported_workflows,
         )
-
-    @property
-    def checkpoint_monitor(self) -> str:
-        return f"validation_{self.primary_metric_id}"
-
-    @property
-    def early_stopping_monitor(self) -> str:
-        return self.checkpoint_monitor
 
     def build_output_spec(self, max_candidate_slots: int) -> PredictionOutputSpec:
         return self.build_output_spec_fn(max_candidate_slots)
@@ -240,12 +230,6 @@ class CompiledPredictionContract:
 
     def create_epoch_accumulator(self, stage: str) -> EpochMetricAccumulator:
         return self.create_epoch_accumulator_fn(stage)
-
-    def best_epoch(self, history: list[MetricSet]) -> int:
-        return self.select_best_epoch_fn(history)
-
-    def optimization_value(self, metrics: MetricSet) -> float:
-        return metrics.require(self.primary_metric_id)
 
     def format_progress_metrics(self, metrics: MetricSet) -> tuple[StageMetricValue, ...]:
         return tuple(

@@ -40,6 +40,15 @@ def training_summary_sections(
             [
                 ("lookback", f"{manifest.lookback_seconds}s"),
                 ("best epoch", str(runtime.best_epoch)),
+                (
+                    "objective",
+                    (
+                        f"{manifest.semantics.objective.objective_id}:"
+                        f"{runtime.best_objective_metric_id}"
+                    ),
+                ),
+                ("objective direction", manifest.semantics.objective.direction),
+                ("best objective", f"{runtime.best_objective_value:.4f}"),
                 ("device", runtime.resolved_device),
                 ("precision", runtime.resolved_precision),
                 ("compile", "on" if runtime.compiled else "off"),
@@ -61,6 +70,10 @@ def training_summary_sections(
                         f"test={runtime.split_sizes.test_samples:,}"
                     ),
                 ),
+                *[
+                    (f"objective {key}", f"{value:.4f}")
+                    for key, value in sorted(runtime.best_objective_metrics.values.items())
+                ],
                 *[
                     (f"validation {label}", value)
                     for label, value in metric_fields(

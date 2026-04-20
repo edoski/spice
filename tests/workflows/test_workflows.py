@@ -431,5 +431,6 @@ def test_evaluate_validation_rejects_semantic_bundle_mismatch(
             dataset_builder=evaluate_config.dataset_builder,
             feature_set=feature_set,
             prediction=evaluate_config.prediction,
+            objective=evaluate_config.objective,
             model=model,
         )

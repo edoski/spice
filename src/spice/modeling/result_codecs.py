@@ -18,6 +18,7 @@ from ..config import (
 from ..core.reporting import StageMetricDescriptor
 from ..evaluation import EvaluationRun
 from ..features import FeaturePrerequisites
+from ..objectives import coerce_objective_config
 from ..prediction import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..semantics import (
     ArtifactSemantics,
@@ -25,6 +26,7 @@ from ..semantics import (
     DatasetBuilderSemantics,
     FeatureSemantics,
     InputNormalizationSemantics,
+    ObjectiveSemantics,
     PredictionSemantics,
     ProblemSemantics,
     RealizationPolicySemantics,
@@ -56,6 +58,7 @@ _FEATURE_SEMANTICS_ADAPTER = TypeAdapter(FeatureSemantics)
 _PREDICTION_SEMANTICS_ADAPTER = TypeAdapter(PredictionSemantics)
 _INPUT_NORMALIZATION_SEMANTICS_ADAPTER = TypeAdapter(InputNormalizationSemantics)
 _REALIZATION_POLICY_SEMANTICS_ADAPTER = TypeAdapter(RealizationPolicySemantics)
+_OBJECTIVE_SEMANTICS_ADAPTER = TypeAdapter(ObjectiveSemantics)
 _REPRESENTATION_SEMANTICS_ADAPTER = TypeAdapter(RepresentationSemantics)
 _DATASET_BUILDER_SEMANTICS_ADAPTER = TypeAdapter(DatasetBuilderSemantics)
 _CORPUS_SEMANTICS_ADAPTER = TypeAdapter(CorpusSemantics)
@@ -74,6 +77,7 @@ for _adapter in (
     _PREDICTION_SEMANTICS_ADAPTER,
     _INPUT_NORMALIZATION_SEMANTICS_ADAPTER,
     _REALIZATION_POLICY_SEMANTICS_ADAPTER,
+    _OBJECTIVE_SEMANTICS_ADAPTER,
     _REPRESENTATION_SEMANTICS_ADAPTER,
     _DATASET_BUILDER_SEMANTICS_ADAPTER,
     _CORPUS_SEMANTICS_ADAPTER,
@@ -145,6 +149,7 @@ class ArtifactManifestPayload(CodecPayloadModel):
     artifact_id: str
     dataset_builder: dict[str, object]
     prediction: dict[str, object]
+    objective: dict[str, object]
     chain_name: str
     dataset_id: str
     dataset_name: str
@@ -164,6 +169,7 @@ class ArtifactManifestPayload(CodecPayloadModel):
             artifact_id=manifest.artifact_id,
             dataset_builder=manifest.dataset_builder.model_dump(mode="json", exclude_none=True),
             prediction=manifest.prediction.model_dump(mode="json"),
+            objective=manifest.objective.model_dump(mode="json", exclude_none=True),
             chain_name=manifest.chain_name,
             dataset_id=manifest.dataset_id,
             dataset_name=manifest.dataset_name,
@@ -185,6 +191,7 @@ class ArtifactManifestPayload(CodecPayloadModel):
             artifact_id=self.artifact_id,
             dataset_builder=coerce_dataset_builder_config(self.dataset_builder),
             prediction=coerce_prediction_config(self.prediction),
+            objective=coerce_objective_config(self.objective),
             chain_name=self.chain_name,
             dataset_id=self.dataset_id,
             dataset_name=self.dataset_name,
@@ -216,6 +223,9 @@ class TrainingSummaryPayload(CodecPayloadModel):
     input_storage_mode_id: str
     target_storage_mode_id: str
     batch_planner_id: str
+    best_objective_metric_id: str
+    best_objective_value: float
+    best_objective_metrics: dict[str, float]
     best_validation_metrics: dict[str, float]
     test_metrics: dict[str, float]
 
@@ -235,6 +245,9 @@ class TrainingSummaryPayload(CodecPayloadModel):
             input_storage_mode_id=summary.input_storage_mode_id,
             target_storage_mode_id=summary.target_storage_mode_id,
             batch_planner_id=summary.batch_planner_id,
+            best_objective_metric_id=summary.best_objective_metric_id,
+            best_objective_value=summary.best_objective_value,
+            best_objective_metrics=_metric_values_payload(summary.best_objective_metrics),
             best_validation_metrics=_metric_values_payload(summary.best_validation_metrics),
             test_metrics=_metric_values_payload(summary.test_metrics),
         )
@@ -258,6 +271,9 @@ class TrainingSummaryPayload(CodecPayloadModel):
             input_storage_mode_id=self.input_storage_mode_id,
             target_storage_mode_id=self.target_storage_mode_id,
             batch_planner_id=self.batch_planner_id,
+            best_objective_metric_id=self.best_objective_metric_id,
+            best_objective_value=self.best_objective_value,
+            best_objective_metrics=MetricSet(values=self.best_objective_metrics),
             best_validation_metrics=MetricSet(values=self.best_validation_metrics),
             test_metrics=MetricSet(values=self.test_metrics),
         )
@@ -266,12 +282,14 @@ class TrainingSummaryPayload(CodecPayloadModel):
 class TrainingEpochPayload(CodecPayloadModel):
     train_metrics: dict[str, float]
     validation_metrics: dict[str, float]
+    objective_metrics: dict[str, float]
 
     @classmethod
     def from_record(cls, record: TrainingEpochRecord) -> TrainingEpochPayload:
         return cls(
             train_metrics=_metric_values_payload(record.train_metrics),
             validation_metrics=_metric_values_payload(record.validation_metrics),
+            objective_metrics=_metric_values_payload(record.objective_metrics),
         )
 
     def to_record(self, *, epoch: int) -> TrainingEpochRecord:
@@ -281,6 +299,7 @@ class TrainingEpochPayload(CodecPayloadModel):
             epoch=epoch,
             train_metrics=MetricSet(values=self.train_metrics),
             validation_metrics=MetricSet(values=self.validation_metrics),
+            objective_metrics=MetricSet(values=self.objective_metrics),
         )
 
 

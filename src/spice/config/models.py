@@ -28,6 +28,7 @@ from ..modeling.families.base import (
     ModelTuningSpaceConfig,
     TunedModelParams,
 )
+from ..objectives import ObjectiveConfig, coerce_objective_config
 from ..prediction import PredictionFamilyConfig
 from ..temporal.compilers import ProblemCompilerConfig
 from ..temporal.input_normalization import InputNormalizationConfig
@@ -57,11 +58,6 @@ class CompileMode(StrEnum):
 class ArtifactVariant(StrEnum):
     BASELINE = "baseline"
     TUNED = "tuned"
-
-
-class TuningObjectiveDirection(StrEnum):
-    MAXIMIZE = "maximize"
-    MINIMIZE = "minimize"
 
 
 def _validate_path_segment(value: str, *, label: str) -> str:
@@ -537,17 +533,6 @@ class TuningConfig(ConfigModel):
     timeout_seconds: int | None = Field(default=None, gt=0)
     sampler_seed: int = Field(ge=0)
     enable_pruning: bool
-    objective: TuningObjectiveConfig | None = None
-
-
-class TuningObjectiveConfig(ConfigModel):
-    metric_id: str
-    direction: TuningObjectiveDirection
-
-    @field_validator("metric_id")
-    @classmethod
-    def validate_metric_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="tuning.objective.metric_id")
 
 
 class ProviderEndpointSpec(ConfigModel):
@@ -712,6 +697,7 @@ class ModelWorkflowConfig(WorkflowConfig):
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     feature_set: FeatureSetConfig
     prediction: PredictionConfig
+    objective: SerializeAsAny[ObjectiveConfig] | None = None
     study: StudyConfig = Field(default_factory=StudyConfig)
     artifact: ArtifactConfig = Field(default_factory=ArtifactConfig)
 
@@ -724,10 +710,31 @@ class ModelWorkflowConfig(WorkflowConfig):
             return coerce_dataset_builder_config(value)
         raise TypeError("dataset_builder must be a mapping or config model")
 
+    @field_validator("objective", mode="before")
+    @classmethod
+    def validate_objective_field(cls, value: object) -> ObjectiveConfig | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            from ..config.registry import load_named_group
+
+            return coerce_objective_config(load_named_group(value, "objective"))
+        if isinstance(value, Mapping):
+            return coerce_objective_config(value)
+        if isinstance(value, ObjectiveConfig):
+            return coerce_objective_config(value)
+        raise TypeError("objective must be a spec name, mapping, or config model")
+
 class TrainConfig(ModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.TRAIN
     split: SplitConfig
     training: TrainingConfig
+
+    @model_validator(mode="after")
+    def validate_required_objective(self) -> Self:
+        if self.objective is None:
+            raise ConfigResolutionError("objective is required for train")
+        return self
 
 
 class TuneConfig(ModelWorkflowConfig):
@@ -738,7 +745,9 @@ class TuneConfig(ModelWorkflowConfig):
     tuning_space: TuningSpaceConfig
 
     @model_validator(mode="after")
-    def validate_tuning_space(self) -> Self:
+    def validate_required_objective_and_tuning_space(self) -> Self:
+        if self.objective is None:
+            raise ConfigResolutionError("objective is required for tune")
         if self.tuning_space.model.id != self.model.id:
             raise ConfigResolutionError("tuning_space.model.id must match model.id")
         if not self.tuning_space.has_candidates():
@@ -753,7 +762,9 @@ class EvaluateConfig(ModelWorkflowConfig):
     delay_seconds: int = Field(gt=0)
 
     @model_validator(mode="after")
-    def validate_delay(self) -> Self:
+    def validate_required_objective_and_delay(self) -> Self:
+        if self.objective is None:
+            raise ConfigResolutionError("objective is required for evaluate")
         if self.delay_seconds > self.problem.max_delay_seconds:
             raise ConfigResolutionError("delay_seconds must be <= problem.max_delay_seconds")
         return self
@@ -770,10 +781,11 @@ class PresetSpec(ConfigModel):
     dataset_builder: str | None = None
     feature_set: str | None = None
     prediction: str | None = None
+    objective: str | dict[str, object] | None = None
     acquisition: AcquisitionConfig | None = None
     training: TrainingConfig | None = None
     split: SplitConfig | None = None
-    evaluation: EvaluationConfig | None = None
+    evaluation: str | EvaluationConfig | None = None
     tuning: TuningConfig | None = None
     tuning_space: str | TuningSpaceConfig | None = None
     storage: StorageSpec | None = None

@@ -1,0 +1,3 @@
+id: validation_training_metric
+metric_id: total_loss
+direction: minimize

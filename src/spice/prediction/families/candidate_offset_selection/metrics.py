@@ -84,20 +84,13 @@ def _reference_tensors(
     targets: CandidateSlateTargetBatch,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     masked_logits = masked_candidate_logits(logits, targets.candidate_mask)
-    masked_candidate_fees = targets.candidate_log_fees.masked_fill(
-        ~targets.candidate_mask,
-        torch.finfo(targets.candidate_log_fees.dtype).max,
-    )
     predicted_candidate_index = masked_logits.argmax(dim=-1)
-    optimal_candidate_index = masked_candidate_fees.argmin(dim=-1)
+    optimal_candidate_index = targets.optimum_offsets
     realized_log_fee = targets.candidate_log_fees.gather(
         dim=1,
         index=predicted_candidate_index.unsqueeze(-1),
     ).squeeze(-1)
-    optimal_log_fee = masked_candidate_fees.gather(
-        dim=1,
-        index=optimal_candidate_index.unsqueeze(-1),
-    ).squeeze(-1)
+    optimal_log_fee = targets.optimum_log_fees
     return predicted_candidate_index, optimal_candidate_index, realized_log_fee, optimal_log_fee
 
 
@@ -110,7 +103,12 @@ def compute_batch_loss_and_state(
         _reference_tensors(logits.detach(), targets)
     )
     realized_fee = torch.exp(realized_log_fee)
-    baseline_fee = torch.exp(targets.candidate_log_fees[:, 0])
+    baseline_fee = torch.exp(
+        targets.candidate_log_fees.gather(
+            dim=1,
+            index=targets.baseline_candidate_indices.unsqueeze(-1),
+        ).squeeze(-1)
+    )
     optimum_fee = torch.exp(optimal_log_fee)
     count = int(targets.candidate_log_fees.shape[0])
     return total_loss, CandidateSlateBatchState(
@@ -127,20 +125,6 @@ def compute_batch_loss_and_state(
 
 def create_epoch_accumulator() -> CandidateSlateEpochAccumulator:
     return CandidateSlateEpochAccumulator()
-
-
-def best_epoch(history: list[MetricSet]) -> int:
-    if not history:
-        return 1
-    winner = max(
-        range(len(history)),
-        key=lambda index: (
-            history[index].require("profit_over_baseline"),
-            -history[index].require("cost_over_optimum"),
-            -history[index].require("total_loss"),
-        ),
-    )
-    return winner + 1
 
 
 def _metric_set_from_totals(

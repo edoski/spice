@@ -68,6 +68,7 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
                 dataset_builder=config.dataset_builder,
                 feature_set=config.feature_set,
                 prediction=config.prediction,
+                objective=config.objective,
                 model=config.model,
             )
             feature_contract = validated.feature_contract
