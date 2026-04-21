@@ -8,13 +8,10 @@ from pathlib import Path
 
 import polars as pl
 
-from ..config import (
+from ..config.models import (
     ArtifactVariant,
     ChainSpec,
-    DatasetBuilderConfig,
     FeatureSetConfig,
-    ModelConfig,
-    ObjectiveConfig,
     PredictionConfig,
     ProblemSpec,
     SplitConfig,
@@ -24,24 +21,13 @@ from ..config import (
     TuneConfig,
 )
 from ..corpus.io import load_block_frame
-from ..features import (
-    CompiledFeatureContract,
-    compile_feature_contract,
-)
-from ..modeling.dataset_builders import (
-    BuilderRuntimeMetadata,
-    CompiledDatasetBuilderContract,
-    compile_dataset_builder_contract,
-)
-from ..objectives import CompiledObjectiveContract, compile_objective_contract
-from ..prediction import CompiledPredictionContract, compile_prediction_contract
+from ..features import CompiledFeatureContract
+from ..objectives import CompiledObjectiveContract, ObjectiveConfig
+from ..prediction import CompiledPredictionContract
 from ..semantics import FeatureSemantics
 from ..storage.layout import resolve_workflow_paths
-from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
-from ..temporal.input_normalization import (
-    CompiledInputNormalizationContract,
-    compile_input_normalization_contract,
-)
+from ..temporal.contracts import CompiledProblemContract
+from ..temporal.input_normalization import CompiledInputNormalizationContract
 from ..temporal.problem_store import (
     CompiledProblemStore,
     DatasetSplitIndices,
@@ -49,13 +35,16 @@ from ..temporal.problem_store import (
 )
 from ..temporal.realization import CompiledRealizationPolicyContract
 from ..temporal.scaling import ScalerStats
+from ._training_context import compile_training_context
+from .dataset_builders import (
+    BuilderRuntimeMetadata,
+    CompiledDatasetBuilderContract,
+    DatasetBuilderConfig,
+)
+from .families.base import ModelConfig
 from .families.registry import build_model
 from .models import TemporalModel
-from .representations import (
-    SEQUENCE_INPUT_REPRESENTATION_ID,
-    CompiledRepresentationContract,
-    compile_representation_contract,
-)
+from .representations import CompiledRepresentationContract
 from .training import (
     EarlyStopCallback,
     EpochEndCallback,
@@ -105,25 +94,12 @@ class InferencePreparationSpec:
 def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
     paths = resolve_workflow_paths(config)
     variant = ArtifactVariant.TUNED if isinstance(config, TuneConfig) else config.artifact.variant
-    feature_contract = compile_feature_contract(feature_set=config.feature_set)
-    contract = compile_problem_contract(
-        problem=config.problem,
-        feature_contract=feature_contract,
-        chain_runtime=config.chain.runtime,
-    )
-    prediction_contract = compile_prediction_contract(
-        prediction_id=config.prediction.id,
-        family_config=config.prediction.family,
-    )
-    objective_contract = compile_objective_contract(config.objective)
-    dataset_builder_contract = compile_dataset_builder_contract(config.dataset_builder)
-    input_normalization_contract = compile_input_normalization_contract(
-        config.training.input_normalization
-    )
-    if config.workflow.value not in prediction_contract.supported_workflows:
+    context = compile_training_context(config)
+    if config.workflow.value not in context.prediction_contract.supported_workflows:
         raise ValueError(
-            f"prediction family {prediction_contract.prediction_family_id} does not support "
-            f"{config.workflow.value}"
+            "prediction family "
+            f"{context.prediction_contract.prediction_family_id} "
+            f"does not support {config.workflow.value}"
         )
     return TrainingSpec(
         chain=config.chain,
@@ -136,16 +112,16 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
         ),
         problem=config.problem,
         dataset_builder=config.dataset_builder,
-        dataset_builder_contract=dataset_builder_contract,
-        feature_contract=feature_contract,
-        contract=contract,
+        dataset_builder_contract=context.dataset_builder_contract,
+        feature_contract=context.feature_contract,
+        contract=context.problem_contract,
         feature_set=config.feature_set,
         prediction=config.prediction,
         objective=config.objective,
-        prediction_contract=prediction_contract,
-        objective_contract=objective_contract,
-        input_normalization_contract=input_normalization_contract,
-        representation_contract=compile_representation_contract(SEQUENCE_INPUT_REPRESENTATION_ID),
+        prediction_contract=context.prediction_contract,
+        objective_contract=context.objective_contract,
+        input_normalization_contract=context.input_normalization_contract,
+        representation_contract=context.representation_contract,
         model=config.model,
         variant=variant,
         study=config.study if variant is ArtifactVariant.TUNED else None,

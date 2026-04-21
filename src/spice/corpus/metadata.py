@@ -9,7 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from ..acquisition.rpc import AcquisitionRuntimeSnapshot
-from ..config import AcquireConfig
+from ..config.models import AcquireConfig
 from ..corpus.io import iter_block_files
 from ..corpus.validation import BlockDatasetValidationReport
 from ..features import CompiledFeatureContract

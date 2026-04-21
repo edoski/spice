@@ -12,13 +12,13 @@ import pytest
 from spice.config import (
     AcquireConfig,
     EvaluateConfig,
-    PresetSpec,
     TrainConfig,
     TuneConfig,
-    WorkflowSelections,
+    WorkflowRequest,
     WorkflowTask,
     resolve_workflow_config,
 )
+from spice.config.presets import PresetOverlay
 from spice.config.registry import (
     dump_canonical_yaml,
     load_named_group,
@@ -27,8 +27,8 @@ from spice.config.registry import (
 )
 
 _CONF_ROOT = Path(__file__).resolve().parents[1] / "src" / "spice" / "conf"
-_SELECTION_GROUP_KEYS = frozenset(WorkflowSelections.model_fields) & frozenset(named_group_keys())
-_PRESET_FIELDS = frozenset(PresetSpec.model_fields)
+_SELECTION_GROUP_KEYS = frozenset(WorkflowRequest.model_fields) & frozenset(named_group_keys())
+_PRESET_FIELDS = frozenset(PresetOverlay.model_fields)
 TEST_EVALUATION_DATE = date(2025, 11, 9)
 _IDENTITY_FIELDS = {
     "chain": "name",
@@ -215,14 +215,6 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
         preset: str = "icdcs_2026",
         override: Mapping[str, object] | None = None,
         chain: str | None = None,
-        dataset: str | None = None,
-        problem: str | None = None,
-        provider: str | None = None,
-        model: str | None = None,
-        dataset_builder: str | None = None,
-        feature_set: str | None = None,
-        prediction: str | None = None,
-        evaluation: str | None = None,
         study: str | None = None,
         variant: str | None = None,
         delay_seconds: int | None = None,
@@ -240,14 +232,6 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
                 key: value
                 for key, value in {
                     "chain": chain,
-                    "dataset": dataset,
-                    "problem": problem,
-                    "provider": provider,
-                    "model": model,
-                    "dataset_builder": dataset_builder,
-                    "feature_set": feature_set,
-                    "prediction": prediction,
-                    "evaluation": evaluation,
                     "study": study,
                     "variant": variant,
                     "delay_seconds": delay_seconds,
@@ -275,7 +259,7 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
                     continue
                 selection_values[key] = value
                 continue
-            if key in WorkflowSelections.model_fields and not isinstance(value, Mapping):
+            if key in WorkflowRequest.model_fields and not isinstance(value, Mapping):
                 selection_values[key] = value
                 continue
             if key in _PRESET_FIELDS:
@@ -302,7 +286,7 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
         _write_named_spec(conf_root, group="preset", name=preset_name, payload=preset_payload)
         selection_values["preset"] = preset_name
         return resolve_workflow_config(
-            workflow, WorkflowSelections.model_validate(selection_values)
+            workflow, WorkflowRequest.model_validate(selection_values)
         )
 
     return _load

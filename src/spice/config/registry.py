@@ -15,14 +15,13 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from ..core.errors import ConfigResolutionError
+from ..execution.models import ExecutionSpec
 from ..modeling.families.registry import coerce_model_config
 from ..objectives import coerce_objective_config
 from .models import (
     ChainSpec,
     DatasetSpec,
     EvaluationConfig,
-    ExecutionSpec,
-    PresetSpec,
     ProviderSpec,
     coerce_dataset_builder_config,
     coerce_feature_set_config,
@@ -61,16 +60,22 @@ class GroupSpec:
     validate: ValidateGroupPayload
     identity_field: str | None = None
     seed_from_requested_name: bool = False
+    public: bool = False
+
+
+def _validate_preset_overlay(payload: dict[str, object]) -> BaseModel:
+    from .presets import PresetOverlay
+
+    return PresetOverlay.model_validate(payload)
 
 
 _GROUP_SPECS = (
     GroupSpec(
-        token=ConfigGroup.CHAIN.value,
-        directory="chain",
-        seed_name="ethereum",
-        validate=ChainSpec.model_validate,
-        identity_field="name",
-        seed_from_requested_name=True,
+        token=ConfigGroup.PRESET.value,
+        directory="preset",
+        seed_name="icdcs_2026",
+        validate=_validate_preset_overlay,
+        public=True,
     ),
     GroupSpec(
         token=ConfigGroup.DATASET.value,
@@ -79,6 +84,34 @@ _GROUP_SPECS = (
         validate=DatasetSpec.model_validate,
         identity_field="name",
         seed_from_requested_name=True,
+        public=True,
+    ),
+    GroupSpec(
+        token=ConfigGroup.CHAIN.value,
+        directory="chain",
+        seed_name="ethereum",
+        validate=ChainSpec.model_validate,
+        identity_field="name",
+        seed_from_requested_name=True,
+        public=True,
+    ),
+    GroupSpec(
+        token=ConfigGroup.PROBLEM.value,
+        directory="problem",
+        seed_name="icdcs_2026",
+        validate=coerce_problem_spec,
+        identity_field="id",
+        seed_from_requested_name=True,
+        public=True,
+    ),
+    GroupSpec(
+        token=ConfigGroup.PROVIDER.value,
+        directory="provider",
+        seed_name="publicnode",
+        validate=ProviderSpec.model_validate,
+        identity_field="name",
+        seed_from_requested_name=True,
+        public=True,
     ),
     GroupSpec(
         token=ConfigGroup.DATASET_BUILDER.value,
@@ -133,28 +166,6 @@ _GROUP_SPECS = (
         seed_from_requested_name=True,
     ),
     GroupSpec(
-        token=ConfigGroup.PRESET.value,
-        directory="preset",
-        seed_name="icdcs_2026",
-        validate=PresetSpec.model_validate,
-    ),
-    GroupSpec(
-        token=ConfigGroup.PROBLEM.value,
-        directory="problem",
-        seed_name="icdcs_2026",
-        validate=coerce_problem_spec,
-        identity_field="id",
-        seed_from_requested_name=True,
-    ),
-    GroupSpec(
-        token=ConfigGroup.PROVIDER.value,
-        directory="provider",
-        seed_name="publicnode",
-        validate=ProviderSpec.model_validate,
-        identity_field="name",
-        seed_from_requested_name=True,
-    ),
-    GroupSpec(
         token=ConfigGroup.TUNING_SPACE.value,
         directory="tuning_space",
         seed_name="lstm_default",
@@ -167,6 +178,10 @@ _GROUP_SPEC_BY_DIRECTORY = {spec.directory: spec for spec in _GROUP_SPECS}
 _NAMED_GROUP_KEYS = tuple(
     spec.directory for spec in _GROUP_SPECS if spec.directory != "preset"
 )
+_PUBLIC_GROUP_TOKENS = tuple(spec.token for spec in _GROUP_SPECS if spec.public)
+_PUBLIC_GROUP_DIRECTORIES = tuple(
+    _GROUP_SPEC_BY_TOKEN[token].directory for token in _PUBLIC_GROUP_TOKENS
+)
 
 
 def config_root() -> Path:
@@ -175,6 +190,14 @@ def config_root() -> Path:
 
 def named_group_keys() -> tuple[str, ...]:
     return _NAMED_GROUP_KEYS
+
+
+def public_group_tokens() -> tuple[str, ...]:
+    return _PUBLIC_GROUP_TOKENS
+
+
+def public_group_help() -> str:
+    return "One of: " + ", ".join(public_group_tokens()) + "."
 
 
 def _group_spec(group: str) -> GroupSpec:
@@ -187,6 +210,13 @@ def _group_spec(group: str) -> GroupSpec:
 
 def normalize_group_name(group: str) -> str:
     return _group_spec(group).directory
+
+
+def normalize_public_group_name(group: str) -> str:
+    spec = _group_spec(group)
+    if spec.directory not in _PUBLIC_GROUP_DIRECTORIES:
+        raise ConfigResolutionError(f"Config group is internal-only: {spec.token}")
+    return spec.directory
 
 
 def group_path(group: str) -> Path:

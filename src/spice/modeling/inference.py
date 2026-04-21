@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from ..config import ModelConfig
 from ..prediction import (
     CompiledPredictionContract,
     DecodedOffsets,
@@ -16,6 +15,7 @@ from ._runtime import (
     resolve_training_precision,
     run_model_forward_pass,
 )
+from .families.base import ModelConfig
 from .models import TemporalModel
 from .representations import CompiledRepresentationContract
 

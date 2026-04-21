@@ -9,7 +9,7 @@ from typing import SupportsInt, TypedDict, cast
 import polars as pl
 from polars.datatypes.classes import DataTypeClass
 
-from ..config import ChainSpec
+from ..config.models import ChainSpec
 
 RpcBlock = Mapping[str, object]
 

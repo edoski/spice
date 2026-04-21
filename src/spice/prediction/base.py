@@ -7,11 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-
-def _validate_path_segment(value: str, *, label: str) -> str:
-    if not value or "/" in value or "\\" in value:
-        raise ValueError(f"{label} must be a non-empty path segment")
-    return value
+from ..core.closed_dispatch import validate_path_segment
 
 
 class PredictionConfigModel(BaseModel):
@@ -24,7 +20,7 @@ class PredictionFamilyConfig(PredictionConfigModel):
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="prediction.family.id")
+        return validate_path_segment(value, label="prediction.family.id")
 
 
 @dataclass(frozen=True, slots=True)

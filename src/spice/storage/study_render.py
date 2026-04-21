@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..config import TunedParameterSet
+from ..config.models import TunedParameterSet
 from ..core.rendering import metric_string
 from .study_models import StudySummary
 

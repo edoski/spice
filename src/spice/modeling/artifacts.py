@@ -6,27 +6,30 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
+from pydantic import BaseModel
 
-from ..config import (
-    DatasetBuilderConfig,
+from ..config.models import (
     FeatureSetConfig,
-    ModelConfig,
-    ObjectiveConfig,
     PredictionConfig,
     ProblemSpec,
+    SplitConfig,
+    TrainingConfig,
 )
 from ..core.constants import MODEL_STATE_FILENAME
 from ..core.errors import ConfigResolutionError
 from ..core.files import write_path_atomic
 from ..features import CompiledFeatureContract, compile_feature_contract
+from ..objectives import ObjectiveConfig
 from ..prediction import compile_prediction_contract
 from ..semantics import ArtifactSemantics
 from ..storage.artifact import load_artifact_manifest, write_artifact_manifest
 from ..storage.engine import RootKind
 from .dataset_builders import (
     CompiledDatasetBuilderContract,
+    DatasetBuilderConfig,
     compile_dataset_builder_contract,
 )
+from .families.base import ModelConfig
 from .families.registry import build_model
 from .models import TemporalModel
 from .pipeline import PreparedTrainingDataset, TrainingSpec
@@ -57,30 +60,23 @@ def validate_artifact_semantics(
     prediction: PredictionConfig,
     objective: ObjectiveConfig,
     model: ModelConfig,
+    split: SplitConfig,
+    training: TrainingConfig,
 ) -> ValidatedArtifactPreparation:
-    if manifest.problem.model_dump(mode="json") != problem.model_dump(mode="json"):
-        raise ConfigResolutionError(
-            "Configured problem does not match the trained artifact semantics"
-        )
-    if manifest.dataset_builder.model_dump(mode="json") != dataset_builder.model_dump(mode="json"):
-        raise ConfigResolutionError(
-            "Configured dataset_builder does not match the trained artifact semantics"
-        )
-    if manifest.prediction.model_dump(mode="json") != prediction.model_dump(mode="json"):
-        raise ConfigResolutionError(
-            "Configured prediction does not match the trained artifact semantics"
-        )
-    if manifest.objective.model_dump(mode="json") != objective.model_dump(mode="json"):
-        raise ConfigResolutionError(
-            "Configured objective does not match the trained artifact semantics"
-        )
-    if manifest.model.model_dump(mode="json") != model.model_dump(mode="json"):
-        raise ConfigResolutionError(
-            "Configured model does not match the trained artifact semantics"
-        )
-    if manifest.feature_set.model_dump(mode="json") != feature_set.model_dump(mode="json"):
-        raise ConfigResolutionError(
-            "Configured feature_set does not match the trained artifact semantics"
+    for label, stored_value, configured_value in (
+        ("problem", manifest.problem, problem),
+        ("dataset_builder", manifest.dataset_builder, dataset_builder),
+        ("prediction", manifest.prediction, prediction),
+        ("objective", manifest.objective, objective),
+        ("model", manifest.model, model),
+        ("feature_set", manifest.feature_set, feature_set),
+        ("split", manifest.split, split),
+        ("training", manifest.training, training),
+    ):
+        _require_matching_config(
+            label=label,
+            stored_value=stored_value,
+            configured_value=configured_value,
         )
     feature_contract = compile_feature_contract(feature_set=feature_set)
     if feature_contract.feature_graph_fingerprint != manifest.feature_graph_fingerprint:
@@ -95,6 +91,18 @@ def validate_artifact_semantics(
         feature_contract=feature_contract,
         dataset_builder_contract=compile_dataset_builder_contract(manifest.dataset_builder),
     )
+
+
+def _require_matching_config(
+    *,
+    label: str,
+    stored_value: BaseModel,
+    configured_value: BaseModel,
+) -> None:
+    if stored_value.model_dump(mode="json") != configured_value.model_dump(mode="json"):
+        raise ConfigResolutionError(
+            f"Configured {label} does not match the trained artifact semantics"
+        )
 
 
 def build_training_artifact_manifest(
@@ -116,6 +124,8 @@ def build_training_artifact_manifest(
         study_id=spec.study_id,
         feature_set=spec.feature_set,
         model=spec.model,
+        split=spec.split,
+        training=spec.training,
         scaler=prepared.scaler,
         builder_runtime_metadata=prepared.builder_runtime_metadata,
         semantics=ArtifactSemantics(

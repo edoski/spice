@@ -12,17 +12,12 @@ import polars as pl
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ...core.closed_dispatch import validate_path_segment
+
 if TYPE_CHECKING:
     from ..core import CanonicalBlockSeries
 
 FloatVector = NDArray[np.float64]
-
-
-def _validate_path_segment(value: str, *, label: str) -> str:
-    if not value or "/" in value or "\\" in value:
-        raise ValueError(f"{label} must be a non-empty path segment")
-    return value
-
 
 class FeatureConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
@@ -34,7 +29,7 @@ class FeatureFamilyConfig(FeatureConfigModel):
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="feature_set.family.id")
+        return validate_path_segment(value, label="feature_set.family.id")
 
 
 class FeaturePrerequisites(FeatureConfigModel):

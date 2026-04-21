@@ -13,7 +13,7 @@ from web3.providers.rpc import AsyncHTTPProvider
 from web3.providers.rpc.utils import ExceptionRetryConfiguration, check_if_retry_on_failure
 from web3.types import RPCEndpoint, RPCResponse
 
-from ..config import ChainSpec, ProviderSpec
+from ..config.models import ChainSpec, ProviderSpec
 from ..core.errors import ConfigResolutionError
 
 

@@ -10,23 +10,14 @@ import yaml
 from typer.testing import CliRunner
 
 from spice.cli import app
-from spice.config import (
-    AcquireConfig,
-    EvaluateConfig,
-    TrainConfig,
-    TuneConfig,
-    WorkflowTask,
-    load_named_group,
-)
-from spice.core.errors import ConfigResolutionError
-from spice.execution import ExecutionJobSubmission
-from spice.storage.ids import corpus_storage_id
+from spice.config import AcquireConfig, EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
+from spice.execution.slurm_ssh import ExecutionJobSubmission
 from spice.storage.layout import resolve_workflow_paths
 
 runner = CliRunner()
 
 
-def test_acquire_cli_loads_specs_and_applies_selector_overrides(tmp_path, monkeypatch) -> None:
+def test_acquire_cli_resolves_request_surface(tmp_path, monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     def _capture(config) -> None:
@@ -42,10 +33,9 @@ def test_acquire_cli_loads_specs_and_applies_selector_overrides(tmp_path, monkey
             "icdcs_2026",
             "--chain",
             "avalanche",
-            "--provider",
-            "publicnode",
             "--storage-root",
             str(tmp_path / "outputs"),
+            "--dry-run",
         ],
     )
 
@@ -53,29 +43,63 @@ def test_acquire_cli_loads_specs_and_applies_selector_overrides(tmp_path, monkey
     config = cast(AcquireConfig, captured["config"])
     paths = resolve_workflow_paths(config)
     assert config.chain.name == "avalanche"
-    assert config.chain.runtime.chain_id == 43114
     assert config.provider.name == "publicnode"
-    assert config.provider.rpc.timeout_seconds == 30.0
-    assert (
-        config.provider.endpoint_for(config.chain.name)
-        == "https://avalanche-c-chain-rpc.publicnode.com"
-    )
-    assert config.acquisition.rpc.batch_size == 256
-    assert config.dataset.name == "icdcs_2026"
-    assert config.problem.sample_count == 400000
-    assert config.feature_set.id == "icdcs_2026"
+    assert config.acquisition.dry_run is True
     assert paths.output_root == tmp_path / "outputs"
-    assert paths.history_dir == (
-        tmp_path
-        / "outputs"
-        / "corpora"
-        / "avalanche"
-        / corpus_storage_id(chain_name="avalanche", dataset_name="icdcs_2026")
-        / "history"
+
+
+@pytest.mark.parametrize(
+    ("command", "runner_path", "args"),
+    [
+        (
+            "train",
+            "spice.workflows.train.run",
+            ["--study", "experiment", "--variant", "baseline"],
+        ),
+        (
+            "tune",
+            "spice.workflows.tune.run",
+            ["--trial-count", "2"],
+        ),
+        (
+            "evaluate",
+            "spice.workflows.evaluate.run",
+            ["--study", "experiment", "--variant", "baseline", "--delay-seconds", "12"],
+        ),
+    ],
+)
+def test_model_workflow_cli_resolves_local_request_surface(
+    tmp_path: Path,
+    monkeypatch,
+    command: str,
+    runner_path: str,
+    args: list[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _capture(config) -> None:
+        captured["config"] = config
+
+    monkeypatch.setattr(runner_path, _capture)
+
+    result = runner.invoke(
+        app,
+        [command, "--preset", "icdcs_2026", *args, "--storage-root", str(tmp_path / "outputs")],
     )
 
+    assert result.exit_code == 0, result.stdout
+    config = cast(TrainConfig | TuneConfig | EvaluateConfig, captured["config"])
+    assert resolve_workflow_paths(config).output_root == tmp_path / "outputs"
+    if isinstance(config, TuneConfig):
+        assert config.tuning.trial_count == 2
+        return
+    assert config.study.name == "experiment"
+    assert config.artifact.variant.value == "baseline"
+    if isinstance(config, EvaluateConfig):
+        assert config.delay_seconds == 12
 
-def test_config_list_and_show_commands(isolate_conf_root) -> None:
+
+def test_config_public_commands_only(isolate_conf_root) -> None:
     isolate_conf_root()
 
     list_result = runner.invoke(app, ["config", "list", "dataset"])
@@ -89,32 +113,15 @@ def test_config_list_and_show_commands(isolate_conf_root) -> None:
         "evaluation_date": "2025-11-09",
     }
 
-    evaluation_list = runner.invoke(app, ["config", "list", "evaluation"])
-    assert evaluation_list.exit_code == 0, evaluation_list.stdout
-    assert set(evaluation_list.stdout.splitlines()) >= {"paper_fullset", "paper_windowed_2h"}
-
-    evaluation_show = runner.invoke(app, ["config", "show", "evaluation", "paper_windowed_2h"])
-    assert evaluation_show.exit_code == 0, evaluation_show.stdout
-    assert yaml.safe_load(evaluation_show.stdout) == {
-        "evaluator": {
-            "id": "paper_windowed",
-            "window_seconds": 7200,
-            "repetitions": 50,
-            "seed": 2026,
-        }
-    }
-
-    prediction_show = runner.invoke(app, ["config", "show", "prediction", "icdcs_2026_tuned"])
-    assert prediction_show.exit_code == 0, prediction_show.stdout
-    assert yaml.safe_load(prediction_show.stdout)["id"] == "icdcs_2026_tuned"
-
-    model_show = runner.invoke(app, ["config", "show", "model", "lstm_icdcs_2026"])
-    assert model_show.exit_code == 0, model_show.stdout
-    assert yaml.safe_load(model_show.stdout)["id"] == "lstm"
+    internal_result = runner.invoke(app, ["config", "list", "evaluation"])
+    assert internal_result.exit_code != 0
+    assert "Config group is internal-only: evaluation" in internal_result.output
 
 
 def test_config_edit_seeds_missing_file_and_uses_editor(
-    tmp_path, isolate_conf_root, monkeypatch
+    tmp_path: Path,
+    isolate_conf_root,
+    monkeypatch,
 ) -> None:
     conf_root = isolate_conf_root()
     log_path = tmp_path / "editor.log"
@@ -123,7 +130,7 @@ def test_config_edit_seeds_missing_file_and_uses_editor(
         "\n".join(
             [
                 "#!/bin/sh",
-                f'echo "$1" > "{log_path}"',
+                f'echo \"$1\" > \"{log_path}\"',
                 "exit 0",
             ]
         )
@@ -142,164 +149,17 @@ def test_config_edit_seeds_missing_file_and_uses_editor(
     assert log_path.read_text(encoding="utf-8").strip() == str(created_path)
     assert yaml.safe_load(created_path.read_text(encoding="utf-8"))["id"] == "phase2_problem"
 
-def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root) -> None:
-    conf_root = isolate_conf_root()
-    aliased_problem = conf_root / "problem" / "aliased_problem.yaml"
-    aliased_problem.write_text(
-        yaml.safe_dump(
-            {
-                "id": "different_problem",
-                "lookback_seconds": 900,
-                "sample_count": 400000,
-                "max_delay_seconds": 36,
-                "compiler": {
-                    "id": "estimated_block",
-                    "lookback_interval_source": "nominal_chain_runtime",
-                    "candidate_interval_source": "calibrated",
-                    "calibrated_interval_statistic": "mean",
-                },
-                "realization_policy": {"id": "strict_deadline_miss"},
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
 
-    with pytest.raises(
-        ConfigResolutionError,
-        match="problem id must match spec name: aliased_problem",
-    ):
-        load_named_group("aliased_problem", "problem")
-
-
-def test_evaluate_loader_uses_delay_seconds_and_named_override(
-    tmp_path,
-    load_workflow_config,
-    model_workflow_override,
-) -> None:
-    override = model_workflow_override(
-        compiler_id="timestamp_native",
-        max_delay_seconds=24,
-        delay_seconds=12,
-    )
-    override["evaluation"] = "paper_windowed_2h"
-    config = cast(
-        EvaluateConfig,
-        load_workflow_config(
-            WorkflowTask.EVALUATE,
-            workspace=tmp_path,
-            preset="icdcs_2026",
-            override=override,
-            dataset_builder="professor_temporal",
-        ),
-    )
-
-    assert config.problem.id == "test_problem"
-    assert config.problem.max_delay_seconds == 24
-    assert config.delay_seconds == 12
-    assert config.dataset_builder.id == "professor_temporal"
-    assert config.feature_set.id == "time_native_baseline"
-    assert config.evaluation.evaluator.id == "paper_windowed"
-    assert config.evaluation.evaluator.model_dump(mode="json") == {
-        "id": "paper_windowed",
-        "window_seconds": 7200,
-        "repetitions": 50,
-        "seed": 2026,
-    }
-
-
-def test_train_loader_resolves_production_preset(
-    tmp_path,
-    load_workflow_config,
-) -> None:
-    config = cast(
-        TrainConfig,
-        load_workflow_config(
-            WorkflowTask.TRAIN,
-            workspace=tmp_path,
-            preset="icdcs_2026",
-            override={
-                "dataset": {
-                    "name": "icdcs_2026",
-                    "evaluation_date": "2025-11-09",
-                },
-                "training": {
-                    "learning_rate": 0.0003,
-                    "weight_decay": 0.01,
-                    "batch_size": 8,
-                    "max_epochs": 1,
-                    "gradient_clip_norm": 1.0,
-                    "seed": 2026,
-                    "deterministic": True,
-                    "log_every_n_steps": 1,
-                    "input_normalization": {"id": "row_standard"},
-                    "early_stopping": {"patience": 1, "min_delta": 0.0},
-                },
-                "split": {
-                    "train_fraction": 0.8,
-                    "validation_fraction": 0.1,
-                },
-            },
-        ),
-    )
-
-    assert config.problem.id == "icdcs_2026"
-    assert config.problem.compiler.id == "estimated_block"
-    assert config.dataset_builder.id == "standard_temporal"
-    assert config.feature_set.id == "icdcs_2026"
-    assert config.prediction.id == "icdcs_2026_tuned"
-    assert config.model.id == "lstm"
-    assert config.model.hidden_size == 128
-
-
-@pytest.mark.parametrize(
-    ("command", "runner_path"),
-    [
-        ("train", "spice.workflows.train.run"),
-        ("tune", "spice.workflows.tune.run"),
-        ("evaluate", "spice.workflows.evaluate.run"),
-    ],
-)
-def test_model_workflow_cli_accepts_dataset_builder_and_evaluation_selectors(
-    tmp_path,
+def test_train_submit_cli_preflights_and_routes_to_execution_backend(
     monkeypatch,
-    command: str,
-    runner_path: str,
 ) -> None:
-    captured: dict[str, object] = {}
+    from spice.cli.commands import workflows as workflow_commands
 
-    def _capture(config) -> None:
-        captured["config"] = config
+    events: list[tuple[str, object]] = []
 
-    monkeypatch.setattr(runner_path, _capture)
-
-    result = runner.invoke(
-        app,
-        [
-            command,
-            "--preset",
-            "icdcs_2026",
-            "--dataset-builder",
-            "professor_temporal",
-            "--evaluation",
-            "paper_windowed_2h",
-            "--storage-root",
-            str(tmp_path / "outputs"),
-        ],
-    )
-
-    assert result.exit_code == 0, result.stdout
-    config = cast(TrainConfig | TuneConfig | EvaluateConfig, captured["config"])
-    assert config.dataset_builder.id == "professor_temporal"
-    if isinstance(config, EvaluateConfig):
-        assert config.evaluation.evaluator.id == "paper_windowed"
-
-
-def test_train_submit_cli_routes_to_execution_backend(tmp_path, monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def _fail_local(_config) -> None:
-        raise AssertionError("local workflow should not run when --submit is set")
+    def _fake_resolve(task: WorkflowTask, request) -> object:
+        events.append(("resolve", (task, request)))
+        return SimpleNamespace()
 
     def _fake_submit(
         task: WorkflowTask,
@@ -307,9 +167,7 @@ def test_train_submit_cli_routes_to_execution_backend(tmp_path, monkeypatch) -> 
         cli_args: list[str],
         dependency: str | None = None,
     ) -> ExecutionJobSubmission:
-        captured["task"] = task
-        captured["cli_args"] = cli_args
-        captured["dependency"] = dependency
+        events.append(("submit", (task, cli_args, dependency)))
         return ExecutionJobSubmission(
             task=task,
             target=SimpleNamespace(spec=SimpleNamespace(follow_by_default=False)),
@@ -317,8 +175,8 @@ def test_train_submit_cli_routes_to_execution_backend(tmp_path, monkeypatch) -> 
             log_path=Path("/remote/logs/spice-train-12345.out"),
         )
 
-    monkeypatch.setattr("spice.workflows.train.run", _fail_local)
-    monkeypatch.setattr("spice.cli.commands.workflows.submit_execution_workflow", _fake_submit)
+    monkeypatch.setattr(workflow_commands, "resolve_workflow_config", _fake_resolve)
+    monkeypatch.setattr(workflow_commands, "submit_execution_workflow", _fake_submit)
 
     result = runner.invoke(
         app,
@@ -335,9 +193,18 @@ def test_train_submit_cli_routes_to_execution_backend(tmp_path, monkeypatch) -> 
     )
 
     assert result.exit_code == 0, result.stdout
-    assert captured["task"] is WorkflowTask.TRAIN
-    assert captured["dependency"] is None
-    assert captured["cli_args"] == [
+    assert [event[0] for event in events] == ["resolve", "submit"]
+    resolved_task, request = cast(tuple[WorkflowTask, object], events[0][1])
+    assert resolved_task is WorkflowTask.TRAIN
+    assert request.study == "default"
+    assert request.variant == "baseline"
+    submitted_task, cli_args, dependency = cast(
+        tuple[WorkflowTask, list[str], str | None],
+        events[1][1],
+    )
+    assert submitted_task is WorkflowTask.TRAIN
+    assert dependency is None
+    assert cli_args == [
         "--preset",
         "icdcs_2026",
         "--study",

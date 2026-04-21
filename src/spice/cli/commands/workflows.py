@@ -10,9 +10,10 @@ from typing import Annotated
 
 import typer
 
-from ...config import WorkflowSelections, WorkflowTask, resolve_workflow_config
+from ...config.models import WorkflowTask
+from ...config.resolution import WorkflowRequest, resolve_workflow_config
 from ...core.errors import SpiceOperatorError
-from ...execution import follow_execution_job, submit_execution_workflow
+from ...execution.slurm_ssh import follow_execution_job, submit_execution_workflow
 
 
 def _selection_option(*param_decls: str, metavar: str, help: str) -> object:
@@ -47,10 +48,12 @@ def _build_cli_args(*options: tuple[str, str | int | Path | None]) -> list[str]:
 def _submit_selected_workflow(
     *,
     task: WorkflowTask,
+    request: WorkflowRequest,
     dependency: str | None,
     detach: bool,
     cli_options: list[tuple[str, str | int | Path | None]],
 ) -> None:
+    resolve_workflow_config(task, request)
     submission = submit_execution_workflow(
         task,
         cli_args=_build_cli_args(*cli_options),
@@ -99,9 +102,40 @@ def _run_resolved_workflow(
     *,
     task: WorkflowTask,
     runner: Callable[..., None],
-    selections: WorkflowSelections,
+    request: WorkflowRequest,
 ) -> None:
-    runner(resolve_workflow_config(task, selections))
+    runner(resolve_workflow_config(task, request))
+
+
+def _build_model_workflow_request(
+    *,
+    preset: str | None,
+    chain: str | None,
+    study: str | None = None,
+    variant: str | None = None,
+    delay_seconds: int | None = None,
+    trial_count: int | None = None,
+    storage_root: Path | None = None,
+) -> tuple[WorkflowRequest, list[tuple[str, str | int | Path | None]]]:
+    return (
+        WorkflowRequest(
+            preset=preset,
+            chain=chain,
+            study=study,
+            variant=variant,
+            delay_seconds=delay_seconds,
+            trial_count=trial_count,
+            storage_root=storage_root,
+        ),
+        [
+            ("--preset", preset),
+            ("--chain", chain),
+            ("--study", study),
+            ("--variant", variant),
+            ("--delay-seconds", delay_seconds),
+            ("--trial-count", trial_count),
+        ],
+    )
 
 
 def acquire_command(
@@ -110,32 +144,12 @@ def acquire_command(
         _selection_option(
             "--preset",
             metavar="PRESET",
-            help="Apply a named preset before selector overrides.",
+            help="Resolve a named workflow preset.",
         ),
-    ] = None,
-    dataset: Annotated[
-        str | None,
-        _selection_option("--dataset", metavar="DATASET", help="Use a named dataset spec."),
-    ] = None,
-    problem: Annotated[
-        str | None,
-        _selection_option("--problem", metavar="PROBLEM", help="Use a named problem spec."),
     ] = None,
     chain: Annotated[
         str | None,
         _selection_option("--chain", metavar="CHAIN", help="Override the target chain."),
-    ] = None,
-    provider: Annotated[
-        str | None,
-        _selection_option("--provider", metavar="PROVIDER", help="Override the RPC provider."),
-    ] = None,
-    feature_set: Annotated[
-        str | None,
-        _selection_option(
-            "--feature-set",
-            metavar="FEATURE_SET",
-            help="Use a named feature selection.",
-        ),
     ] = None,
     storage_root: Annotated[
         Path | None,
@@ -159,13 +173,9 @@ def acquire_command(
     acquire.run(
         resolve_workflow_config(
             WorkflowTask.ACQUIRE,
-            WorkflowSelections(
+            WorkflowRequest(
                 preset=preset,
-                dataset=dataset,
-                problem=problem,
                 chain=chain,
-                provider=provider,
-                feature_set=feature_set,
                 storage_root=storage_root,
                 dry_run=dry_run,
             ),
@@ -179,48 +189,12 @@ def train_command(
         _selection_option(
             "--preset",
             metavar="PRESET",
-            help="Apply a named preset before selector overrides.",
+            help="Resolve a named workflow preset.",
         ),
-    ] = None,
-    dataset: Annotated[
-        str | None,
-        _selection_option("--dataset", metavar="DATASET", help="Use a named dataset spec."),
-    ] = None,
-    problem: Annotated[
-        str | None,
-        _selection_option("--problem", metavar="PROBLEM", help="Use a named problem spec."),
     ] = None,
     chain: Annotated[
         str | None,
         _selection_option("--chain", metavar="CHAIN", help="Override the target chain."),
-    ] = None,
-    model: Annotated[
-        str | None,
-        _selection_option("--model", metavar="MODEL", help="Use a named model config."),
-    ] = None,
-    dataset_builder: Annotated[
-        str | None,
-        _selection_option(
-            "--dataset-builder",
-            metavar="DATASET_BUILDER",
-            help="Use a named dataset builder config.",
-        ),
-    ] = None,
-    feature_set: Annotated[
-        str | None,
-        _selection_option(
-            "--feature-set",
-            metavar="FEATURE_SET",
-            help="Use a named feature selection.",
-        ),
-    ] = None,
-    prediction: Annotated[
-        str | None,
-        _selection_option(
-            "--prediction",
-            metavar="PREDICTION",
-            help="Use a named prediction config.",
-        ),
     ] = None,
     study: Annotated[
         str | None,
@@ -229,14 +203,6 @@ def train_command(
     variant: Annotated[
         str | None,
         _selection_option("--variant", metavar="VARIANT", help="Override the artifact variant."),
-    ] = None,
-    evaluation: Annotated[
-        str | None,
-        _selection_option(
-            "--evaluation",
-            metavar="EVALUATION",
-            help="Use a named evaluation config.",
-        ),
     ] = None,
     storage_root: Annotated[
         Path | None,
@@ -279,43 +245,32 @@ def train_command(
         detach=detach,
         storage_root=storage_root,
     )
+    submit_request, cli_options = _build_model_workflow_request(
+        preset=preset,
+        chain=chain,
+        study=study,
+        variant=variant,
+    )
     if submit:
         _submit_selected_workflow(
             task=WorkflowTask.TRAIN,
+            request=submit_request,
             dependency=dependency,
             detach=detach,
-            cli_options=[
-                ("--preset", preset),
-                ("--dataset", dataset),
-                ("--problem", problem),
-                ("--chain", chain),
-                ("--model", model),
-                ("--dataset-builder", dataset_builder),
-                ("--feature-set", feature_set),
-                ("--prediction", prediction),
-                ("--evaluation", evaluation),
-                ("--study", study),
-                ("--variant", variant),
-            ],
+            cli_options=cli_options,
         )
         return
+    local_request, _ = _build_model_workflow_request(
+        preset=preset,
+        chain=chain,
+        study=study,
+        variant=variant,
+        storage_root=storage_root,
+    )
     _run_resolved_workflow(
         task=WorkflowTask.TRAIN,
         runner=train.run,
-        selections=WorkflowSelections(
-            preset=preset,
-            dataset=dataset,
-            problem=problem,
-            chain=chain,
-            model=model,
-            dataset_builder=dataset_builder,
-            feature_set=feature_set,
-            prediction=prediction,
-            evaluation=evaluation,
-            storage_root=storage_root,
-            variant=variant,
-            study=study,
-        ),
+        request=local_request,
     )
 
 
@@ -325,52 +280,12 @@ def tune_command(
         _selection_option(
             "--preset",
             metavar="PRESET",
-            help="Apply a named preset before selector overrides.",
+            help="Resolve a named workflow preset.",
         ),
-    ] = None,
-    dataset: Annotated[
-        str | None,
-        _selection_option("--dataset", metavar="DATASET", help="Use a named dataset spec."),
-    ] = None,
-    problem: Annotated[
-        str | None,
-        _selection_option("--problem", metavar="PROBLEM", help="Use a named problem spec."),
     ] = None,
     chain: Annotated[
         str | None,
         _selection_option("--chain", metavar="CHAIN", help="Override the target chain."),
-    ] = None,
-    model: Annotated[
-        str | None,
-        _selection_option("--model", metavar="MODEL", help="Use a named model config."),
-    ] = None,
-    dataset_builder: Annotated[
-        str | None,
-        _selection_option(
-            "--dataset-builder",
-            metavar="DATASET_BUILDER",
-            help="Use a named dataset builder config.",
-        ),
-    ] = None,
-    feature_set: Annotated[
-        str | None,
-        _selection_option(
-            "--feature-set",
-            metavar="FEATURE_SET",
-            help="Use a named feature selection.",
-        ),
-    ] = None,
-    prediction: Annotated[
-        str | None,
-        _selection_option(
-            "--prediction",
-            metavar="PREDICTION",
-            help="Use a named prediction config.",
-        ),
-    ] = None,
-    study: Annotated[
-        str | None,
-        _selection_option("--study", metavar="STUDY", help="Override the study name."),
     ] = None,
     trial_count: Annotated[
         int | None,
@@ -378,14 +293,6 @@ def tune_command(
             "--trial-count",
             metavar="COUNT",
             help="Override the requested trial count.",
-        ),
-    ] = None,
-    evaluation: Annotated[
-        str | None,
-        _selection_option(
-            "--evaluation",
-            metavar="EVALUATION",
-            help="Use a named evaluation config.",
         ),
     ] = None,
     storage_root: Annotated[
@@ -429,43 +336,30 @@ def tune_command(
         detach=detach,
         storage_root=storage_root,
     )
+    submit_request, cli_options = _build_model_workflow_request(
+        preset=preset,
+        chain=chain,
+        trial_count=trial_count,
+    )
     if submit:
         _submit_selected_workflow(
             task=WorkflowTask.TUNE,
+            request=submit_request,
             dependency=dependency,
             detach=detach,
-            cli_options=[
-                ("--preset", preset),
-                ("--dataset", dataset),
-                ("--problem", problem),
-                ("--chain", chain),
-                ("--model", model),
-                ("--dataset-builder", dataset_builder),
-                ("--feature-set", feature_set),
-                ("--prediction", prediction),
-                ("--evaluation", evaluation),
-                ("--study", study),
-                ("--trial-count", trial_count),
-            ],
+            cli_options=cli_options,
         )
         return
+    local_request, _ = _build_model_workflow_request(
+        preset=preset,
+        chain=chain,
+        trial_count=trial_count,
+        storage_root=storage_root,
+    )
     _run_resolved_workflow(
         task=WorkflowTask.TUNE,
         runner=tune.run,
-        selections=WorkflowSelections(
-            preset=preset,
-            dataset=dataset,
-            problem=problem,
-            chain=chain,
-            model=model,
-            dataset_builder=dataset_builder,
-            feature_set=feature_set,
-            prediction=prediction,
-            evaluation=evaluation,
-            storage_root=storage_root,
-            study=study,
-            trial_count=trial_count,
-        ),
+        request=local_request,
     )
 
 
@@ -475,48 +369,12 @@ def evaluate_command(
         _selection_option(
             "--preset",
             metavar="PRESET",
-            help="Apply a named preset before selector overrides.",
+            help="Resolve a named workflow preset.",
         ),
-    ] = None,
-    dataset: Annotated[
-        str | None,
-        _selection_option("--dataset", metavar="DATASET", help="Use a named dataset spec."),
-    ] = None,
-    problem: Annotated[
-        str | None,
-        _selection_option("--problem", metavar="PROBLEM", help="Use a named problem spec."),
     ] = None,
     chain: Annotated[
         str | None,
         _selection_option("--chain", metavar="CHAIN", help="Override the target chain."),
-    ] = None,
-    model: Annotated[
-        str | None,
-        _selection_option("--model", metavar="MODEL", help="Use a named model config."),
-    ] = None,
-    dataset_builder: Annotated[
-        str | None,
-        _selection_option(
-            "--dataset-builder",
-            metavar="DATASET_BUILDER",
-            help="Use a named dataset builder config.",
-        ),
-    ] = None,
-    feature_set: Annotated[
-        str | None,
-        _selection_option(
-            "--feature-set",
-            metavar="FEATURE_SET",
-            help="Use a named feature selection.",
-        ),
-    ] = None,
-    prediction: Annotated[
-        str | None,
-        _selection_option(
-            "--prediction",
-            metavar="PREDICTION",
-            help="Use a named prediction config.",
-        ),
     ] = None,
     study: Annotated[
         str | None,
@@ -525,14 +383,6 @@ def evaluate_command(
     variant: Annotated[
         str | None,
         _selection_option("--variant", metavar="VARIANT", help="Override the artifact variant."),
-    ] = None,
-    evaluation: Annotated[
-        str | None,
-        _selection_option(
-            "--evaluation",
-            metavar="EVALUATION",
-            help="Use a named evaluation config.",
-        ),
     ] = None,
     delay_seconds: Annotated[
         int | None,
@@ -583,43 +433,32 @@ def evaluate_command(
         detach=detach,
         storage_root=storage_root,
     )
+    submit_request, cli_options = _build_model_workflow_request(
+        preset=preset,
+        chain=chain,
+        study=study,
+        variant=variant,
+        delay_seconds=delay_seconds,
+    )
     if submit:
         _submit_selected_workflow(
             task=WorkflowTask.EVALUATE,
+            request=submit_request,
             dependency=dependency,
             detach=detach,
-            cli_options=[
-                ("--preset", preset),
-                ("--dataset", dataset),
-                ("--problem", problem),
-                ("--chain", chain),
-                ("--model", model),
-                ("--dataset-builder", dataset_builder),
-                ("--feature-set", feature_set),
-                ("--prediction", prediction),
-                ("--evaluation", evaluation),
-                ("--study", study),
-                ("--variant", variant),
-                ("--delay-seconds", delay_seconds),
-            ],
+            cli_options=cli_options,
         )
         return
+    local_request, _ = _build_model_workflow_request(
+        preset=preset,
+        chain=chain,
+        study=study,
+        variant=variant,
+        delay_seconds=delay_seconds,
+        storage_root=storage_root,
+    )
     _run_resolved_workflow(
         task=WorkflowTask.EVALUATE,
         runner=evaluate.run,
-        selections=WorkflowSelections(
-            preset=preset,
-            dataset=dataset,
-            problem=problem,
-            chain=chain,
-            model=model,
-            dataset_builder=dataset_builder,
-            feature_set=feature_set,
-            prediction=prediction,
-            evaluation=evaluation,
-            storage_root=storage_root,
-            variant=variant,
-            study=study,
-            delay_seconds=delay_seconds,
-        ),
+        request=local_request,
     )

@@ -4,9 +4,11 @@ import logging
 from contextlib import nullcontext
 from io import StringIO
 from types import SimpleNamespace
+from typing import cast
 
 from optuna.trial import TrialState
 
+from spice.config import TrainConfig, TuneConfig, WorkflowTask
 from spice.core.reporting import Reporter
 from spice.modeling.training import TrainingEpochProgress
 from spice.prediction import MetricSet
@@ -14,13 +16,51 @@ from spice.workflows import train as train_workflow
 from spice.workflows import tune as tune_workflow
 
 
+def _load_test_train_config(
+    load_workflow_config,
+    tmp_path,
+    *,
+    override: dict[str, object] | None = None,
+) -> TrainConfig:
+    return cast(
+        TrainConfig,
+        load_workflow_config(
+            WorkflowTask.TRAIN,
+            workspace=tmp_path,
+            preset="icdcs_2026",
+            override=override,
+        ),
+    )
+
+
+def _load_test_tune_config(
+    load_workflow_config,
+    tmp_path,
+    *,
+    override: dict[str, object] | None = None,
+) -> TuneConfig:
+    return cast(
+        TuneConfig,
+        load_workflow_config(
+            WorkflowTask.TUNE,
+            workspace=tmp_path,
+            preset="icdcs_2026",
+            override=override,
+        ),
+    )
+
+
 def test_train_workflow_emits_compact_epoch_output(
     tmp_path,
     monkeypatch,
-    load_test_train_config,
+    load_workflow_config,
     model_workflow_override,
 ) -> None:
-    config = load_test_train_config(tmp_path, override=model_workflow_override())
+    config = _load_test_train_config(
+        load_workflow_config,
+        tmp_path,
+        override=model_workflow_override(),
+    )
     output = StringIO()
     reporter = Reporter(stream=output)
 
@@ -77,7 +117,7 @@ def test_train_workflow_emits_compact_epoch_output(
 def test_tune_workflow_emits_per_trial_not_per_epoch_output(
     tmp_path,
     monkeypatch,
-    load_test_tune_config,
+    load_workflow_config,
     model_workflow_override,
     tune_override,
 ) -> None:
@@ -88,7 +128,7 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
         "sampler_seed": 2026,
         "enable_pruning": False,
     }
-    config = load_test_tune_config(tmp_path, override=override)
+    config = _load_test_tune_config(load_workflow_config, tmp_path, override=override)
     output = StringIO()
     reporter = Reporter(stream=output)
 

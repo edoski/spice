@@ -9,9 +9,10 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config import ExecutionSpec, ExecutionWorkflowSpec, WorkflowTask
+from ..config.models import WorkflowTask
 from ..config.registry import load_named_group
 from ..core.errors import SpiceOperatorError
+from .models import ExecutionSpec, ExecutionWorkflowSpec
 
 _EXECUTION_SPEC_NAME = "disi_l40"
 _SBATCH_JOB_ID_PATTERN = re.compile(r"Submitted batch job (?P<job_id>\d+)")

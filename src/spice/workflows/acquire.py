@@ -16,7 +16,7 @@ from tempfile import TemporaryDirectory
 from typing import Any, cast
 
 from ..acquisition.rpc import BlockRpcClient, RpcController, TimestampRange, evaluation_range
-from ..config import AcquireConfig
+from ..config.models import AcquireConfig
 from ..core.files import promote_paths_atomic, prune_empty_directories
 from ..core.reporting import Reporter
 from ..corpus.builders import ensure_evaluation_dataset, ensure_history_dataset

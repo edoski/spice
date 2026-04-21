@@ -10,7 +10,7 @@ from typing import Literal, SupportsInt, cast
 
 from web3 import AsyncWeb3
 
-from ...config import ChainSpec, ProviderSpec
+from ...config.models import ChainSpec, ProviderSpec
 from ...corpus.contract import CanonicalBlockRow, RpcBlock, build_canonical_block_row
 from ..provider import build_async_web3
 from .types import BlockHeader, BlockPullPlan, BlockRange, TimestampRange

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
-from ..config import ArtifactVariant, TrainConfig
+from ..config.models import ArtifactVariant, TrainConfig
 from ..core.errors import ConfigResolutionError
 from ..core.files import promote_paths_atomic, prune_empty_directories, remove_path
 from ..core.rendering import metric_string

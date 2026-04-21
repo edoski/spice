@@ -4,7 +4,9 @@ import pytest
 
 from spice.config import (
     ArtifactVariant,
+    SplitConfig,
     StudyConfig,
+    TrainingConfig,
     coerce_dataset_builder_config,
     coerce_feature_set_config,
     coerce_prediction_config,
@@ -146,6 +148,27 @@ def _model_config():
     )
 
 
+def _split_config():
+    return SplitConfig(train_fraction=0.8, validation_fraction=0.1)
+
+
+def _training_config():
+    return TrainingConfig.model_validate(
+        {
+            "learning_rate": 0.0003,
+            "weight_decay": 0.01,
+            "batch_size": 8,
+            "max_epochs": 2,
+            "early_stopping": {"patience": 1, "min_delta": 0.0},
+            "gradient_clip_norm": 1.0,
+            "seed": 2026,
+            "deterministic": True,
+            "log_every_n_steps": 1,
+            "input_normalization": {"id": "window_weighted_standard"},
+        }
+    )
+
+
 def _manifest(
     *,
     prediction_factory=_prediction_config,
@@ -176,6 +199,8 @@ def _manifest(
         study_id=None,
         feature_set=feature_set,
         model=model,
+        split=_split_config(),
+        training=_training_config(),
         scaler=ScalerStats(means=[0.0, 1.0], scales=[1.0, 1.0]),
         builder_runtime_metadata=builder_runtime_metadata(
             compiler_runtime_metadata=EstimatedBlockRuntimeMetadata(
@@ -293,6 +318,8 @@ def test_artifact_validation_catches_feature_drift() -> None:
             prediction=manifest.prediction,
             objective=manifest.objective,
             model=manifest.model,
+            split=manifest.split,
+            training=manifest.training,
         )
 
     drifted_manifest = TrainingArtifactManifest(
@@ -309,6 +336,8 @@ def test_artifact_validation_catches_feature_drift() -> None:
         study_id=manifest.study_id,
         feature_set=manifest.feature_set,
         model=manifest.model,
+        split=manifest.split,
+        training=manifest.training,
         scaler=manifest.scaler,
         builder_runtime_metadata=manifest.builder_runtime_metadata,
         semantics=ArtifactSemantics(
@@ -342,6 +371,8 @@ def test_artifact_validation_catches_feature_drift() -> None:
             prediction=manifest.prediction,
             objective=manifest.objective,
             model=manifest.model,
+            split=manifest.split,
+            training=manifest.training,
         )
 
 

@@ -6,18 +6,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, overload
 
-from ..core.errors import ConfigResolutionError
+from .identity import (
+    artifact_storage_identity_payload_from_config,
+    study_storage_identity_payload_from_config,
+)
 from .ids import artifact_storage_id, corpus_storage_id, study_storage_id
 
 if TYPE_CHECKING:
-    from ..config.models import (
-        AcquireConfig,
-        ArtifactVariant,
-        ChainSpec,
-        DatasetSpec,
-        ModelWorkflowConfig,
-        StorageSpec,
-    )
+    from ..config.models import AcquireConfig, ModelWorkflowConfig
 
 _CATALOG_DB_FILENAME = "catalog.sqlite"
 
@@ -40,97 +36,55 @@ class WorkflowPaths:
     study_state_db: Path | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class WorkflowIdentity:
+    corpus_id: str
+    study_id: str | None = None
+    artifact_id: str | None = None
+
+
 def catalog_db_path(storage_root: Path) -> Path:
     return storage_root / ".spice" / _CATALOG_DB_FILENAME
 
 
 def build_workflow_paths(
     *,
-    storage: StorageSpec,
-    chain: ChainSpec,
-    dataset: DatasetSpec,
-    dataset_builder_payload: dict[str, object] | None = None,
-    feature_set_payload: dict[str, object] | None = None,
-    model_payload: dict[str, object] | None = None,
-    problem_payload: dict[str, object] | None = None,
-    prediction_payload: dict[str, object] | None = None,
-    variant: ArtifactVariant | None = None,
-    study_name: str = "default",
-    include_artifacts: bool = False,
-    tuning_mode: bool = False,
+    output_root: Path,
+    chain_name: str,
+    identity: WorkflowIdentity,
 ) -> WorkflowPaths:
-    from ..config.models import ArtifactVariant
-
-    output_root = storage.root
     catalog_db = catalog_db_path(output_root)
-    resolved_variant = ArtifactVariant.BASELINE if variant is None else variant
-    corpus_id = corpus_storage_id(chain_name=chain.name, dataset_name=dataset.name)
-    corpus_root = output_root / "corpora" / chain.name / corpus_id
-    artifact_id: str | None = None
-    artifact_root: Path | None = None
-    checkpoint_dir: Path | None = None
-    artifact_state_db: Path | None = None
-    study_id: str | None = None
-    study_root: Path | None = None
-    study_state_db: Path | None = None
-
-    if include_artifacts:
-        if (
-            feature_set_payload is None
-            or dataset_builder_payload is None
-            or model_payload is None
-            or problem_payload is None
-            or prediction_payload is None
-        ):
-            raise ConfigResolutionError(
-                "artifact paths require dataset_builder_payload, "
-                "feature_set_payload, model_payload, "
-                "problem_payload, prediction_payload"
-            )
-        if tuning_mode or resolved_variant is ArtifactVariant.TUNED:
-            study_id = study_storage_id(
-                chain_name=chain.name,
-                corpus_id=corpus_id,
-                dataset_builder=dataset_builder_payload,
-                feature_set=feature_set_payload,
-                model=model_payload,
-                problem=problem_payload,
-                prediction=prediction_payload,
-                study_name=study_name,
-            )
-            study_root = output_root / "studies" / chain.name / study_id
-            study_state_db = study_root / ".spice" / "state.sqlite"
-        if not tuning_mode:
-            artifact_id = artifact_storage_id(
-                chain_name=chain.name,
-                corpus_id=corpus_id,
-                dataset_builder=dataset_builder_payload,
-                feature_set=feature_set_payload,
-                model=model_payload,
-                problem=problem_payload,
-                prediction=prediction_payload,
-                variant=resolved_variant.value,
-                study_id=study_id if resolved_variant is ArtifactVariant.TUNED else None,
-            )
-            artifact_root = output_root / "artifacts" / chain.name / artifact_id
-            checkpoint_dir = artifact_root / "checkpoints"
-            artifact_state_db = artifact_root / ".spice" / "state.sqlite"
+    corpus_root = output_root / "corpora" / chain_name / identity.corpus_id
+    study_root = (
+        None
+        if identity.study_id is None
+        else output_root / "studies" / chain_name / identity.study_id
+    )
+    artifact_root = (
+        None
+        if identity.artifact_id is None
+        else output_root / "artifacts" / chain_name / identity.artifact_id
+    )
 
     return WorkflowPaths(
         output_root=output_root,
         catalog_db=catalog_db,
-        corpus_id=corpus_id,
+        corpus_id=identity.corpus_id,
         corpus_root=corpus_root,
         history_dir=corpus_root / "history",
         evaluation_dir=corpus_root / "evaluation",
         corpus_state_db=corpus_root / ".spice" / "state.sqlite",
-        artifact_id=artifact_id,
+        artifact_id=identity.artifact_id,
         artifact_root=artifact_root,
-        checkpoint_dir=checkpoint_dir,
-        artifact_state_db=artifact_state_db,
-        study_id=study_id,
+        checkpoint_dir=None if artifact_root is None else artifact_root / "checkpoints",
+        artifact_state_db=(
+            None if artifact_root is None else artifact_root / ".spice" / "state.sqlite"
+        ),
+        study_id=identity.study_id,
         study_root=study_root,
-        study_state_db=study_state_db,
+        study_state_db=(
+            None if study_root is None else study_root / ".spice" / "state.sqlite"
+        ),
     )
 
 
@@ -145,28 +99,65 @@ def resolve_workflow_paths(config: ModelWorkflowConfig) -> WorkflowPaths: ...
 def resolve_workflow_paths(config: object) -> WorkflowPaths:
     from ..config.models import AcquireConfig, ModelWorkflowConfig
 
-    if isinstance(config, AcquireConfig):
+    if isinstance(config, (AcquireConfig, ModelWorkflowConfig)):
         return build_workflow_paths(
-            storage=config.storage,
-            chain=config.chain,
-            dataset=config.dataset,
-        )
-    if isinstance(config, ModelWorkflowConfig):
-        return build_workflow_paths(
-            storage=config.storage,
-            chain=config.chain,
-            dataset=config.dataset,
-            dataset_builder_payload=config.dataset_builder.model_dump(
-                mode="json",
-                exclude_none=True,
-            ),
-            feature_set_payload=config.feature_set.model_dump(mode="json", exclude_none=True),
-            model_payload=config.model.model_dump(mode="json", exclude_none=True),
-            problem_payload=config.problem.model_dump(mode="json"),
-            prediction_payload=config.prediction.model_dump(mode="json"),
-            variant=config.artifact.variant,
-            study_name=config.study.name,
-            include_artifacts=True,
-            tuning_mode=config.workflow.value == "tune",
+            output_root=config.storage.root,
+            chain_name=config.chain.name,
+            identity=resolve_workflow_identity(config),
         )
     raise TypeError(f"Unsupported workflow config for path resolution: {type(config)!r}")
+
+
+@overload
+def resolve_workflow_identity(config: AcquireConfig) -> WorkflowIdentity: ...
+
+
+@overload
+def resolve_workflow_identity(config: ModelWorkflowConfig) -> WorkflowIdentity: ...
+
+
+def resolve_workflow_identity(config: object) -> WorkflowIdentity:
+    from ..config.models import (
+        AcquireConfig,
+        EvaluateConfig,
+        ModelWorkflowConfig,
+        TrainConfig,
+        TuneConfig,
+    )
+
+    if isinstance(config, AcquireConfig):
+        return WorkflowIdentity(
+            corpus_id=corpus_storage_id(
+                chain_name=config.chain.name,
+                dataset_name=config.dataset.name,
+            )
+        )
+    if not isinstance(config, ModelWorkflowConfig):
+        raise TypeError(f"Unsupported workflow config for identity resolution: {type(config)!r}")
+
+    corpus_id = corpus_storage_id(
+        chain_name=config.chain.name,
+        dataset_name=config.dataset.name,
+    )
+    tuning_mode = isinstance(config, TuneConfig)
+    study_id = config.resolved_study_id
+    if study_id is None and (
+        tuning_mode or config.artifact.variant.value == "tuned"
+    ) and isinstance(config, (TuneConfig, TrainConfig, EvaluateConfig)):
+        study_id = study_storage_id(
+            identity=study_storage_identity_payload_from_config(config, corpus_id=corpus_id)
+        )
+    artifact_id: str | None = None
+    if isinstance(config, (TrainConfig, EvaluateConfig)):
+        artifact_id = artifact_storage_id(
+            identity=artifact_storage_identity_payload_from_config(
+                config,
+                corpus_id=corpus_id,
+                study_id=study_id,
+            )
+        )
+    return WorkflowIdentity(
+        corpus_id=corpus_id,
+        study_id=study_id,
+        artifact_id=artifact_id,
+    )

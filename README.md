@@ -29,8 +29,8 @@ Local workflow commands:
 
 ```bash
 spice acquire --preset icdcs_2026
-spice train --preset icdcs_2026 --model lstm --feature-set icdcs_2026
-spice tune --preset icdcs_2026 --model lstm --feature-set icdcs_2026 --trial-count 20
+spice train --preset icdcs_2026 --variant baseline
+spice tune --preset icdcs_2026 --trial-count 20
 spice evaluate --preset icdcs_2026 --variant baseline
 ```
 
@@ -79,26 +79,36 @@ spice refresh catalog
 
 ## Config
 
-Config loading lives in [src/spice/config](src/spice/config).
+Config ownership is split across [src/spice/config](src/spice/config):
+
+- `registry.py`: named YAML discovery, validation, and canonical load/edit helpers
+- `presets.py`: preset overlay models, single-parent `extends`, and request overlays
+- `resolution.py`: workflow request resolution into one typed workflow config
+- `models.py`: resolved runtime config models
 
 Modeling workflows (`train`, `tune`, `evaluate`) use the CUDA runtime. Submission is a workflow flag that always targets the checked-in L40 execution spec.
 
 Named specs live under [src/spice/conf](src/spice/conf):
 
-- `preset/`: workflow bundles
+- `preset/`: workflow bundles and the user-facing experiment unit
 - `dataset/`: evaluation-date selectors
 - `chain/`, `provider/`: runtime specs
 - `execution/`: internal submission target spec
 - `problem/`: delay budgets and sampling contracts
-- `model/`, `feature_set/`, `prediction/`: core modeling seams
-- `dataset_builder/`: dataset preparation seam
-- `tuning_space/`: tuning search spaces
+- internal registry-loaded seams: `model/`, `feature_set/`, `prediction/`,
+  `dataset_builder/`, `evaluation/`, `objective/`, `tuning_space/`
 
 Rules:
 
 - presets are the main workflow entrypoint
-- explicit CLI selectors override preset selections
-- the execution target is fixed at submission time and not stored in presets
+- internally, presets resolve as one overlay chain rather than one flat full spec
+- workflow CLI composition is preset-first; only `--chain` remains as a seam selector
+- run knobs stay explicit: `--dry-run`, `--trial-count`, `--delay-seconds`,
+  `--study`, and `--variant`
+- presets may use one `extends: <preset>` parent; parent presets must be runnable
+- child presets replace scalar/name fields and deep-merge only known config blocks
+- the execution target is fixed at submission time, validated through
+  `execution/models.py`, and not stored in presets
 - `problem.compiler.id` selects the temporal compiler
 - `feature_set.family.id` selects the feature family
 - `prediction.family.id` selects the prediction family
@@ -136,7 +146,13 @@ Current shipped ids:
 - model artifacts: `outputs/artifacts/<chain>/<artifact_id>/...`
 - artifact state: `outputs/artifacts/<chain>/<artifact_id>/.spice/state.sqlite`
 
+These roots are derived deterministically by `storage/identity.py` and
+`storage/layout.py`. They are outputs of workflow resolution, not workflow
+composition inputs, except for `--storage-root`.
+
 Users query by selectors such as `--dataset`, `--study`, `--model`, `--problem`, and `--variant`.
+Those selector flags are storage selectors only. They identify existing records for
+`show`, `delete`, `push`, and `pull`; they do not compose workflow configs.
 
 ## Verification
 

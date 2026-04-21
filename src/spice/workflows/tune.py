@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 import optuna
 from optuna.trial import FrozenTrial, TrialState
 
-from ..config import TuneConfig
+from ..config.models import TuneConfig
 from ..core.errors import ConfigResolutionError
 from ..core.rendering import metric_string
 from ..core.reporting import Reporter

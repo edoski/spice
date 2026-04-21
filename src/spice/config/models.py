@@ -15,6 +15,7 @@ from pydantic import (
     model_validator,
 )
 
+from ..core.closed_dispatch import validate_path_segment
 from ..core.errors import ConfigResolutionError
 from ..evaluation import EvaluatorConfig, coerce_evaluator_config
 from ..features import FeatureFamilyConfig, validate_feature_selection
@@ -46,13 +47,6 @@ class ArtifactVariant(StrEnum):
     BASELINE = "baseline"
     TUNED = "tuned"
 
-
-def _validate_path_segment(value: str, *, label: str) -> str:
-    if not value or "/" in value or "\\" in value:
-        raise ValueError(f"{label} must be a non-empty path segment")
-    return value
-
-
 def _utc_midnight_timestamp(value: date) -> int:
     return int(datetime.combine(value, time.min, tzinfo=UTC).timestamp())
 
@@ -70,7 +64,7 @@ class ChainSpec(ConfigModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str) -> str:
-        return _validate_path_segment(value, label="chain.name")
+        return validate_path_segment(value, label="chain.name")
 
 
 class DatasetSpec(ConfigModel):
@@ -80,72 +74,11 @@ class DatasetSpec(ConfigModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str) -> str:
-        return _validate_path_segment(value, label="dataset.name")
+        return validate_path_segment(value, label="dataset.name")
 
 
 class StorageSpec(ConfigModel):
     root: Path = Path("outputs")
-
-
-class ExecutionBackend(StrEnum):
-    SLURM_OVER_SSH = "slurm_over_ssh"
-
-
-class ExecutionSshSpec(ConfigModel):
-    host: str
-    user: str
-
-
-class ExecutionPathsSpec(ConfigModel):
-    repo_root: Path
-    venv_root: Path
-    storage_root: Path
-    log_root: Path
-
-    @property
-    def venv_activate_path(self) -> Path:
-        return self.venv_root / "bin" / "activate"
-
-    @property
-    def python_path(self) -> Path:
-        return self.venv_root / "bin" / "python"
-
-    @property
-    def spice_path(self) -> Path:
-        return self.venv_root / "bin" / "spice"
-
-
-class ExecutionWorkflowSpec(ConfigModel):
-    partition: str
-    gpus: int = Field(gt=0)
-    cpus_per_task: int = Field(gt=0)
-    memory_gb: int = Field(gt=0)
-    time_limit: str
-
-    @field_validator("partition")
-    @classmethod
-    def validate_partition(cls, value: str) -> str:
-        return _validate_path_segment(value, label="execution.workflows.partition")
-
-
-class ExecutionWorkflowSet(ConfigModel):
-    train: ExecutionWorkflowSpec
-    tune: ExecutionWorkflowSpec
-    evaluate: ExecutionWorkflowSpec
-
-
-class ExecutionSpec(ConfigModel):
-    id: str
-    backend: ExecutionBackend = ExecutionBackend.SLURM_OVER_SSH
-    ssh: ExecutionSshSpec
-    paths: ExecutionPathsSpec
-    workflows: ExecutionWorkflowSet
-    follow_by_default: bool = True
-
-    @field_validator("id")
-    @classmethod
-    def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="execution.id")
 
 
 class ProblemSpec(ConfigModel):
@@ -159,7 +92,7 @@ class ProblemSpec(ConfigModel):
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="problem.id")
+        return validate_path_segment(value, label="problem.id")
 
 
 def coerce_problem_spec(payload: Mapping[str, object] | ProblemSpec) -> ProblemSpec:
@@ -292,7 +225,7 @@ class FeatureSetConfig(ConfigModel):
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="feature_set.id")
+        return validate_path_segment(value, label="feature_set.id")
 
     @field_validator("outputs")
     @classmethod
@@ -329,7 +262,7 @@ class PredictionConfig(ConfigModel):
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="prediction.id")
+        return validate_path_segment(value, label="prediction.id")
 
 
 def coerce_prediction_config(payload: Mapping[str, object] | PredictionConfig) -> PredictionConfig:
@@ -353,7 +286,7 @@ class StudyConfig(ConfigModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str) -> str:
-        return _validate_path_segment(value, label="study.name")
+        return validate_path_segment(value, label="study.name")
 
 
 class ArtifactConfig(ConfigModel):
@@ -614,14 +547,14 @@ class ProviderSpec(ConfigModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str) -> str:
-        return _validate_path_segment(value, label="provider.name")
+        return validate_path_segment(value, label="provider.name")
 
     @model_validator(mode="after")
     def validate_chain_coverage(self) -> Self:
         if not self.chains:
             raise ValueError("provider.chains must not be empty")
         for name in self.chains:
-            _validate_path_segment(name, label="provider.chains key")
+            validate_path_segment(name, label="provider.chains key")
         return self
 
     def endpoint_spec_for(self, chain_name: str) -> ProviderEndpointSpec:
@@ -701,6 +634,7 @@ class ModelWorkflowConfig(WorkflowConfig):
     prediction: PredictionConfig
     study: StudyConfig = Field(default_factory=StudyConfig)
     artifact: ArtifactConfig = Field(default_factory=ArtifactConfig)
+    resolved_study_id: str | None = None
 
     @field_validator("dataset_builder", mode="before")
     @classmethod
@@ -733,6 +667,8 @@ class TrainConfig(ObjectiveModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.TRAIN
     split: SplitConfig
     training: TrainingConfig
+    tuning: TuningConfig | None = None
+    tuning_space: TuningSpaceConfig | None = None
 
 
 class TuneConfig(ObjectiveModelWorkflowConfig):
@@ -753,53 +689,15 @@ class TuneConfig(ObjectiveModelWorkflowConfig):
 
 class EvaluateConfig(ObjectiveModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.EVALUATE
+    split: SplitConfig
     training: TrainingConfig
     evaluation: EvaluationConfig
     delay_seconds: int = Field(gt=0)
+    tuning: TuningConfig | None = None
+    tuning_space: TuningSpaceConfig | None = None
 
     @model_validator(mode="after")
     def validate_required_objective_and_delay(self) -> Self:
         if self.delay_seconds > self.problem.max_delay_seconds:
             raise ConfigResolutionError("delay_seconds must be <= problem.max_delay_seconds")
         return self
-
-
-class PresetSpec(ConfigModel):
-    dataset: str | None = None
-    problem: str | None = None
-    delay_seconds: int | None = Field(default=None, gt=0)
-    chain: str | None = None
-    provider: str | None = None
-    model: str | None = None
-    dataset_builder: str | None = None
-    feature_set: str | None = None
-    prediction: str | None = None
-    objective: str | dict[str, object] | None = None
-    acquisition: AcquisitionConfig | None = None
-    training: TrainingConfig | None = None
-    split: SplitConfig | None = None
-    evaluation: str | EvaluationConfig | None = None
-    tuning: TuningConfig | None = None
-    tuning_space: str | TuningSpaceConfig | None = None
-    storage: StorageSpec | None = None
-    study: StudyConfig | None = None
-    artifact: ArtifactConfig | None = None
-
-
-class WorkflowSelections(ConfigModel):
-    preset: str | None = None
-    chain: str | None = None
-    dataset: str | None = None
-    problem: str | None = None
-    provider: str | None = None
-    model: str | None = None
-    dataset_builder: str | None = None
-    feature_set: str | None = None
-    prediction: str | None = None
-    evaluation: str | None = None
-    study: str | None = None
-    variant: str | None = None
-    delay_seconds: int | None = Field(default=None, gt=0)
-    trial_count: int | None = Field(default=None, gt=0)
-    storage_root: Path | None = None
-    dry_run: bool | None = None

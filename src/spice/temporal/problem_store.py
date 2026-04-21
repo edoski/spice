@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from ..config import SplitConfig
+    from ..config.models import SplitConfig
 
 FloatMatrix = NDArray[np.float32]
 FloatVector = NDArray[np.float32]

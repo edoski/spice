@@ -5,36 +5,18 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
-from enum import StrEnum
 from typing import Annotated
 
 import typer
 
+from ...config.registry import public_group_help
 from ...core.errors import SpiceOperatorError
 
 app = typer.Typer(
     help="Query and edit saved YAML config specs.",
     no_args_is_help=True,
 )
-_CONFIG_GROUP_HELP = (
-    "One of: chain, dataset, dataset-builder, evaluation, feature-set, model, "
-    "prediction, preset, problem, provider, tuning-space."
-)
-
-
-class PublicConfigGroup(StrEnum):
-    CHAIN = "chain"
-    DATASET = "dataset"
-    DATASET_BUILDER = "dataset-builder"
-    EVALUATION = "evaluation"
-    FEATURE_SET = "feature-set"
-    MODEL = "model"
-    OBJECTIVE = "objective"
-    PREDICTION = "prediction"
-    PRESET = "preset"
-    PROBLEM = "problem"
-    PROVIDER = "provider"
-    TUNING_SPACE = "tuning-space"
+_CONFIG_GROUP_HELP = public_group_help()
 
 
 def _print_config_names(names: list[str]) -> None:
@@ -57,13 +39,13 @@ def _resolve_editor() -> str:
 )
 def config_list_command(
     group: Annotated[
-        PublicConfigGroup,
+        str,
         typer.Argument(metavar="GROUP", help=_CONFIG_GROUP_HELP),
     ],
 ) -> None:
-    from ...config.registry import list_group_names
+    from ...config.registry import list_group_names, normalize_public_group_name
 
-    _print_config_names(list_group_names(group.value))
+    _print_config_names(list_group_names(normalize_public_group_name(group)))
 
 
 @app.command(
@@ -73,7 +55,7 @@ def config_list_command(
 )
 def config_show_command(
     group: Annotated[
-        PublicConfigGroup,
+        str,
         typer.Argument(metavar="GROUP", help=_CONFIG_GROUP_HELP),
     ],
     name: Annotated[
@@ -81,9 +63,9 @@ def config_show_command(
         typer.Argument(metavar="NAME", help="Saved spec name."),
     ],
 ) -> None:
-    from ...config.registry import show_named_group
+    from ...config.registry import normalize_public_group_name, show_named_group
 
-    typer.echo(show_named_group(group.value, name), nl=False)
+    typer.echo(show_named_group(normalize_public_group_name(group), name), nl=False)
 
 
 @app.command(
@@ -93,7 +75,7 @@ def config_show_command(
 )
 def config_edit_command(
     group: Annotated[
-        PublicConfigGroup,
+        str,
         typer.Argument(metavar="GROUP", help=_CONFIG_GROUP_HELP),
     ],
     name: Annotated[
@@ -101,10 +83,10 @@ def config_edit_command(
         typer.Argument(metavar="NAME", help="Saved spec name."),
     ],
 ) -> None:
-    from ...config.registry import ensure_named_group_file
+    from ...config.registry import ensure_named_group_file, normalize_public_group_name
 
     editor = _resolve_editor()
-    path = ensure_named_group_file(group.value, name)
+    path = ensure_named_group_file(normalize_public_group_name(group), name)
     try:
         subprocess.run([*shlex.split(editor), str(path)], check=True)
     except FileNotFoundError as exc:

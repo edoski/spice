@@ -14,7 +14,6 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from ..config import ModelConfig
 from ..core.errors import SpiceOperatorError
 from ..prediction import (
     CompiledPredictionContract,
@@ -33,6 +32,7 @@ from .batch_sources import (
     plan_batch_source,
     resolve_available_device_memory_budget,
 )
+from .families.base import ModelConfig
 from .models import ModelOutputs, TemporalModel
 from .representations import (
     CompiledRepresentationContract,

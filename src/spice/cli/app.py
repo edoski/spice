@@ -34,7 +34,7 @@ app.command(
     help="Acquire canonical history and evaluation block datasets.",
     epilog=(
         "Example:\n"
-        "  spice acquire --preset icdcs_2026 --chain avalanche --provider publicnode"
+        "  spice acquire --preset icdcs_2026 --chain avalanche"
     ),
 )(acquire_command)
 app.command(

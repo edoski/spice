@@ -17,7 +17,7 @@ from ...acquisition.rpc import (
     TimestampRange,
     pull_block_range,
 )
-from ...config import AcquireConfig
+from ...config.models import AcquireConfig
 from ...corpus.io import iter_block_files, load_block_frame, write_block_file
 from ...corpus.metadata import has_block_files
 from ...corpus.validation import (

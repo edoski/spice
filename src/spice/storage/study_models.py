@@ -9,19 +9,20 @@ from enum import StrEnum
 import optuna
 from optuna.trial import FrozenTrial, TrialState
 
-from ..config import (
-    DatasetBuilderConfig,
+from ..config.models import (
     FeatureSetConfig,
-    ModelConfig,
-    ObjectiveConfig,
     PredictionConfig,
     ProblemSpec,
     SplitConfig,
     TrainingConfig,
     TunedParameterSet,
+    TuningConfig,
     TuningSpaceConfig,
 )
+from ..modeling.dataset_builders import DatasetBuilderConfig
+from ..modeling.families.base import ModelConfig
 from ..modeling.families.registry import coerce_tuned_parameter_set
+from ..objectives import ObjectiveConfig
 from ..semantics import StudySemantics
 
 TRIAL_PARAMS_KEY = "spice_params"
@@ -50,6 +51,7 @@ class StudyManifest:
     model: ModelConfig
     split: SplitConfig
     training: TrainingConfig
+    tuning: TuningConfig
     sampler_name: str
     sampler_seed: int
     pruner_name: str

@@ -3,7 +3,8 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from spice.config import ChainRuntimeSpec, coerce_feature_set_config, coerce_problem_spec
+from spice.config import coerce_feature_set_config, coerce_problem_spec
+from spice.config.models import ChainRuntimeSpec
 from spice.features import compile_feature_contract
 from spice.temporal.contracts import compile_problem_contract
 

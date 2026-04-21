@@ -19,8 +19,7 @@ from ..realization import CompiledRealizationPolicyContract
 from .base import ProblemCompilerConfig
 
 if TYPE_CHECKING:
-    from ...config import ProblemSpec
-    from ...config.models import ChainRuntimeSpec
+    from ...config.models import ChainRuntimeSpec, ProblemSpec
 
 
 @dataclass(frozen=True, slots=True)

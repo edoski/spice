@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...acquisition.rpc import BlockPullPlan, BlockRpcClient, RpcController
-from ...config import AcquireConfig
+from ...config.models import AcquireConfig
 from .shared import (
     DatasetBuildOutcome,
     DatasetBuildResult,

@@ -4,7 +4,8 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from types import SimpleNamespace
 
-from spice.config.models import ExecutionWorkflowSpec, WorkflowTask
+from spice.config import WorkflowTask
+from spice.execution.models import ExecutionWorkflowSpec
 from spice.execution.slurm_ssh import (
     ExecutionJobSubmission,
     _render_sbatch_script,

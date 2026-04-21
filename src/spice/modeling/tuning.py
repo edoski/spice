@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import overload
 
-from ..config import (
+from ..config.models import (
     EvaluateConfig,
     TrainConfig,
     TuneConfig,
@@ -75,13 +75,14 @@ def apply_tuned_parameters(
     payload["prediction"] = coerce_prediction_config(payload["prediction"])
     resolved_model = coerce_model_config(payload["model"])
     payload["model"] = resolved_model
-    if isinstance(config, TuneConfig):
+    if payload.get("tuning_space") is not None:
         payload["tuning_space"] = coerce_tuning_space_config(
             payload["tuning_space"],
             model_config=resolved_model,
             problem_config=payload["problem"],
             prediction_config=payload["prediction"],
         )
+    if isinstance(config, TuneConfig):
         return TuneConfig.model_validate(payload)
     if isinstance(config, EvaluateConfig):
         return EvaluateConfig.model_validate(payload)
@@ -97,8 +98,9 @@ def apply_study_best_params(config: EvaluateConfig) -> EvaluateConfig: ...
 
 
 def apply_study_best_params(config: TrainConfig | EvaluateConfig) -> TrainConfig | EvaluateConfig:
-    path = resolve_workflow_paths(config).study_state_db
-    if path is None:
+    paths = resolve_workflow_paths(config)
+    path = paths.study_state_db
+    if path is None or paths.study_id is None:
         raise ConfigResolutionError("study_state_db is required for tuned artifacts")
     try:
         manifest = load_study_manifest(path)
@@ -109,4 +111,6 @@ def apply_study_best_params(config: TrainConfig | EvaluateConfig) -> TrainConfig
         ) from exc
     validate_tuned_train_request(config, manifest=manifest)
     params = load_best_params(path, study_name=config.study.name)
-    return apply_tuned_parameters(config, params)
+    tuned_config = apply_tuned_parameters(config, params)
+    tuned_config.resolved_study_id = paths.study_id
+    return tuned_config

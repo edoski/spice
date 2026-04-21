@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 
 from pydantic import field_validator
 
+from ...core.closed_dispatch import validate_path_segment
 from ...modeling.families.base import ConfigModel
 
 if TYPE_CHECKING:
@@ -16,20 +17,13 @@ if TYPE_CHECKING:
     from ..contracts import CompiledProblemContract
     from ..realization import CompiledRealizationPolicyContract
 
-
-def _validate_path_segment(value: str, *, label: str) -> str:
-    if not value or "/" in value or "\\" in value:
-        raise ValueError(f"{label} must be a non-empty path segment")
-    return value
-
-
 class ProblemCompilerConfig(ConfigModel):
     id: str
 
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="problem.compiler.id")
+        return validate_path_segment(value, label="problem.compiler.id")
 
 
 ProblemCompilerConfigT = TypeVar("ProblemCompilerConfigT", bound=ProblemCompilerConfig)

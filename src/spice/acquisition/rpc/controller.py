@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 
-from ...config import AcquisitionConfig
+from ...config.models import AcquisitionConfig
 from .types import AcquisitionRuntimeSnapshot
 
 TRANSIENT_FAILURE_WINDOW = 32

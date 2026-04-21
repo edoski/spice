@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..acquisition.rpc import BlockPullPlan
-from ..config import AcquireConfig
+from ..config.models import AcquireConfig
 from ..corpus.builders import DatasetBuildOutcome
 from ..temporal.contracts import CompiledProblemContract
 

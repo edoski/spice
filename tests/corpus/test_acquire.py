@@ -4,6 +4,7 @@ import asyncio
 import math
 from concurrent.futures.thread import _threads_queues
 from io import StringIO
+from typing import cast
 
 import aiohttp
 import pytest
@@ -16,6 +17,7 @@ from spice.acquisition.rpc import (
     BlockRange,
     TimestampRange,
 )
+from spice.config import AcquireConfig, WorkflowTask
 from spice.core.reporting import Reporter
 from spice.features import compile_feature_contract
 from spice.storage.catalog import list_dataset_records
@@ -24,6 +26,26 @@ from spice.storage.layout import resolve_workflow_paths
 from spice.temporal.contracts import compile_problem_contract
 from spice.workflows.acquire import _DaemonThreadPoolExecutor
 from spice.workflows.acquire import run as run_acquire
+from tests.dataset_helpers import make_block_rows
+
+
+def _load_test_acquire_config(
+    load_workflow_config,
+    tmp_path,
+    *,
+    override: dict[str, object] | None = None,
+    chain: str | None = None,
+) -> AcquireConfig:
+    return cast(
+        AcquireConfig,
+        load_workflow_config(
+            WorkflowTask.ACQUIRE,
+            workspace=tmp_path,
+            preset="icdcs_2026",
+            override=override,
+            chain=chain,
+        ),
+    )
 
 
 def _plan_for_window(
@@ -50,11 +72,14 @@ def _plan_for_window(
 def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     tmp_path,
     monkeypatch,
-    load_test_acquire_config,
+    load_workflow_config,
     acquire_override,
-    make_block_rows,
 ) -> None:
-    config = load_test_acquire_config(tmp_path, override=acquire_override())
+    config = _load_test_acquire_config(
+        load_workflow_config,
+        tmp_path,
+        override=acquire_override(),
+    )
     paths = resolve_workflow_paths(config)
     feature_contract = compile_feature_contract(feature_set=config.feature_set)
     contract = compile_problem_contract(
@@ -169,10 +194,14 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
 def test_acquire_cancellation_during_planning_logs_warning(
     tmp_path,
     monkeypatch,
-    load_test_acquire_config,
+    load_workflow_config,
     acquire_override,
 ) -> None:
-    config = load_test_acquire_config(tmp_path, override=acquire_override())
+    config = _load_test_acquire_config(
+        load_workflow_config,
+        tmp_path,
+        override=acquire_override(),
+    )
     paths = resolve_workflow_paths(config)
     output = StringIO()
     reporter = Reporter(stream=output)
@@ -218,10 +247,14 @@ def test_acquire_cancellation_during_planning_logs_warning(
 def test_acquire_dry_run_emits_compact_output(
     tmp_path,
     monkeypatch,
-    load_test_acquire_config,
+    load_workflow_config,
     acquire_override,
 ) -> None:
-    config = load_test_acquire_config(tmp_path, override=acquire_override())
+    config = _load_test_acquire_config(
+        load_workflow_config,
+        tmp_path,
+        override=acquire_override(),
+    )
     config.acquisition.dry_run = True
     output = StringIO()
     reporter = Reporter(stream=output)
@@ -254,9 +287,8 @@ def test_acquire_dry_run_emits_compact_output(
 def _exercise_short_history_refill(
     tmp_path,
     monkeypatch,
-    load_test_acquire_config,
+    load_workflow_config,
     acquire_override,
-    make_block_rows,
     *,
     final_sample_count: int | None = None,
     expect_error: bool = False,
@@ -271,7 +303,11 @@ def _exercise_short_history_refill(
             "concurrency_rungs": [1],
         },
     }
-    config = load_test_acquire_config(tmp_path, override=override)
+    config = _load_test_acquire_config(
+        load_workflow_config,
+        tmp_path,
+        override=override,
+    )
     evaluation_plan = _plan_for_window(
         TimestampRange(
             start=config.evaluation_window_start_timestamp,
@@ -388,17 +424,15 @@ def _exercise_short_history_refill(
 def test_acquire_workflow_refills_missing_history_prefix_once(
     tmp_path,
     monkeypatch,
-    load_test_acquire_config,
+    load_workflow_config,
     acquire_override,
-    make_block_rows,
 ) -> None:
     partial_ranges, requested_ranges, history_windows, history_plan_calls = (
         _exercise_short_history_refill(
             tmp_path,
             monkeypatch,
-            load_test_acquire_config,
+            load_workflow_config,
             acquire_override,
-            make_block_rows,
         )
     )
 
@@ -416,16 +450,14 @@ def test_acquire_workflow_refills_missing_history_prefix_once(
 def test_acquire_workflow_fails_after_one_short_refill(
     tmp_path,
     monkeypatch,
-    load_test_acquire_config,
+    load_workflow_config,
     acquire_override,
-    make_block_rows,
 ) -> None:
     _, _, _, history_plan_calls = _exercise_short_history_refill(
         tmp_path,
         monkeypatch,
-        load_test_acquire_config,
+        load_workflow_config,
         acquire_override,
-        make_block_rows,
         final_sample_count=2,
         expect_error=True,
     )

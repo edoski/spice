@@ -7,18 +7,19 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from ..config import (
+from ..config.models import (
     ArtifactVariant,
-    DatasetBuilderConfig,
     FeatureSetConfig,
-    ModelConfig,
-    ObjectiveConfig,
     PredictionConfig,
     ProblemSpec,
+    SplitConfig,
     StudyConfig,
+    TrainingConfig,
 )
 from ..evaluation import EvaluationRun, EvaluationSummary
-from ..modeling.dataset_builders import BuilderRuntimeMetadata
+from ..modeling.dataset_builders import BuilderRuntimeMetadata, DatasetBuilderConfig
+from ..modeling.families.base import ModelConfig
+from ..objectives import ObjectiveConfig
 from ..prediction import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..semantics import ArtifactSemantics
 from ..temporal.scaling import ScalerStats
@@ -42,6 +43,8 @@ class TrainingArtifactManifest:
     study_id: str | None
     feature_set: FeatureSetConfig
     model: ModelConfig[str]
+    split: SplitConfig
+    training: TrainingConfig
     scaler: ScalerStats
     builder_runtime_metadata: BuilderRuntimeMetadata
     semantics: ArtifactSemantics

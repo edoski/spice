@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
-from ..config import (
+from ..config.models import (
     ArtifactVariant,
+    SplitConfig,
     StudyConfig,
-    coerce_dataset_builder_config,
+    TrainingConfig,
     coerce_feature_set_config,
     coerce_prediction_config,
     coerce_problem_spec,
@@ -33,6 +34,7 @@ from ..semantics import (
     StudySemantics,
 )
 from ..temporal.scaling import ScalerStats
+from .dataset_builders import coerce_dataset_builder_config
 from .families.registry import coerce_model_config
 
 if TYPE_CHECKING:
@@ -157,6 +159,8 @@ class ArtifactManifestPayload(CodecPayloadModel):
     study_name: str | None
     feature_set: dict[str, object]
     model: dict[str, object]
+    split: dict[str, object]
+    training: dict[str, object]
     scaler: dict[str, object]
     builder_runtime_metadata: dict[str, object]
     semantics: dict[str, object]
@@ -177,6 +181,8 @@ class ArtifactManifestPayload(CodecPayloadModel):
             study_name=None if manifest.study is None else manifest.study.name,
             feature_set=manifest.feature_set.model_dump(mode="json", exclude_none=True),
             model=manifest.model.model_dump(mode="json", exclude_none=True),
+            split=manifest.split.model_dump(mode="json"),
+            training=manifest.training.model_dump(mode="json"),
             scaler=manifest.scaler.model_dump(mode="json", exclude_none=True),
             builder_runtime_metadata=dict(manifest.builder_runtime_metadata),
             semantics=artifact_semantics_payload(manifest.semantics),
@@ -199,6 +205,8 @@ class ArtifactManifestPayload(CodecPayloadModel):
             study_id=self.study_id,
             feature_set=coerce_feature_set_config(self.feature_set),
             model=coerce_model_config(self.model),
+            split=SplitConfig.model_validate(self.split),
+            training=TrainingConfig.model_validate(self.training),
             scaler=ScalerStats.model_validate(self.scaler),
             builder_runtime_metadata=mapping_payload(
                 self.builder_runtime_metadata,

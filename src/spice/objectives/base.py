@@ -24,7 +24,7 @@ from ..prediction import MetricSet
 from ..semantics import ObjectiveSemantics
 
 if TYPE_CHECKING:
-    from ..config import ModelConfig
+    from ..modeling.families.base import ModelConfig
     from ..modeling.models import TemporalModel
     from ..modeling.representations import CompiledRepresentationContract
     from ..prediction import CompiledPredictionContract

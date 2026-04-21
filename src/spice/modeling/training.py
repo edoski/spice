@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from ..config import ModelConfig, TrainingConfig
+from ..config.models import TrainingConfig
 from ..core.files import write_path_atomic
 from ..objectives import CompiledObjectiveContract, ObjectiveEvaluationContext
 from ..prediction import CompiledPredictionContract, MetricSet
@@ -29,6 +29,7 @@ from ._runtime import (
     set_global_seed,
 )
 from .batch_sources import BatchSource
+from .families.base import ModelConfig
 from .models import TemporalModel
 from .representations import CompiledRepresentationContract
 

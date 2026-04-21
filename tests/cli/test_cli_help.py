@@ -1,51 +1,72 @@
 from __future__ import annotations
 
+import pytest
 from typer.testing import CliRunner
 
 from spice.cli import app
 
 runner = CliRunner()
 
+_REMOVED_WORKFLOW_FLAGS = {
+    "--dataset",
+    "--problem",
+    "--provider",
+    "--model",
+    "--dataset-builder",
+    "--feature-set",
+    "--prediction",
+    "--evaluation",
+}
 
-def test_root_help_lists_commands() -> None:
+
+def test_root_help_lists_public_command_surface() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0, result.stdout
-    assert "SPICE workflow CLI." in result.stdout
-    assert "config" in result.stdout
-    assert "show" in result.stdout
-    assert "delete" in result.stdout
-    assert "acquire" in result.stdout
-    assert "train" in result.stdout
-    assert "tune" in result.stdout
-    assert "evaluate" in result.stdout
-    assert "│ remote" not in result.stdout
+    for token in ("config", "show", "delete", "acquire", "train", "tune", "evaluate"):
+        assert token in result.stdout
 
 
-def test_acquire_help_includes_panels_and_example() -> None:
-    result = runner.invoke(app, ["acquire", "--help"])
+@pytest.mark.parametrize(
+    ("command", "expected_flags"),
+    [
+        ("acquire", {"--preset", "--chain", "--storage-root", "--dry-run"}),
+        ("train", {"--preset", "--chain", "--study", "--variant", "--submit"}),
+        ("tune", {"--preset", "--chain", "--trial-count", "--submit"}),
+        (
+            "evaluate",
+            {
+                "--preset",
+                "--chain",
+                "--study",
+                "--variant",
+                "--delay-seconds",
+                "--submit",
+            },
+        ),
+    ],
+)
+def test_workflow_help_exposes_only_the_reduced_surface(
+    command: str,
+    expected_flags: set[str],
+) -> None:
+    result = runner.invoke(app, [command, "--help"])
 
     assert result.exit_code == 0, result.stdout
-    assert "Selection" in result.stdout
-    assert "Outputs" in result.stdout
-    assert "Execution" in result.stdout
-    assert "Example:" in result.stdout
-    assert "--preset" in result.stdout
-    assert "--problem" in result.stdout
-    assert "--task" not in result.stdout
-    assert "--feature-set" in result.stdout
-    assert "--provider" in result.stdout
+    for flag in expected_flags:
+        assert flag in result.stdout
+    for flag in _REMOVED_WORKFLOW_FLAGS:
+        assert flag not in result.stdout
 
 
-def test_main_workflow_help_stays_operator_focused() -> None:
-    for command in ("train", "tune", "evaluate", "show"):
-        result = runner.invoke(app, [command, "--help"])
+def test_config_list_help_shows_public_groups_only() -> None:
+    result = runner.invoke(app, ["config", "list", "--help"])
 
-        assert result.exit_code == 0, result.stdout
-        assert "Example:" in result.stdout
-        if command != "show":
-            assert "--submit" in result.stdout
-            assert "--detach" in result.stdout
+    assert result.exit_code == 0, result.stdout
+    assert "preset, dataset, chain, problem, provider" in result.stdout
+    assert "evaluation" not in result.stdout
+    assert "model" not in result.stdout
+    assert "tuning-space" not in result.stdout
 
 
 def test_train_submit_rejects_local_storage_override(tmp_path) -> None:
@@ -56,16 +77,3 @@ def test_train_submit_rejects_local_storage_override(tmp_path) -> None:
 
     assert result.exit_code != 0
     assert "--storage-root cannot be combined with --submit" in result.output
-
-
-def test_config_help_lists_core_authoring_commands() -> None:
-    result = runner.invoke(app, ["config", "--help"])
-
-    assert result.exit_code == 0, result.stdout
-    assert "list" in result.stdout
-    assert "show" in result.stdout
-    assert "edit" in result.stdout
-    assert "execution" not in result.stdout
-    assert "create" not in result.stdout
-    assert "update" not in result.stdout
-    assert "delete" not in result.stdout

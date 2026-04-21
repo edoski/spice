@@ -8,9 +8,10 @@ from spice.corpus.validation import (
     validate_contiguous_block_frame,
     validate_exact_window_frame,
 )
+from tests.dataset_helpers import make_block_rows
 
 
-def test_validate_contiguous_block_frame_reports_shape_errors(make_block_rows) -> None:
+def test_validate_contiguous_block_frame_reports_shape_errors() -> None:
     rows = make_block_rows(
         4,
         start_block=100,
@@ -33,7 +34,7 @@ def test_validate_contiguous_block_frame_reports_shape_errors(make_block_rows) -
     assert any("gap" in error for error in report.errors)
 
 
-def test_validate_exact_window_frame_reports_out_of_range_rows(make_block_rows) -> None:
+def test_validate_exact_window_frame_reports_out_of_range_rows() -> None:
     rows = make_block_rows(
         3,
         start_block=200,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..config import EvaluateConfig
+from ..config.models import EvaluateConfig
 from ..core.errors import ConfigResolutionError
 from ..core.reporting import Reporter
 from ..corpus.io import load_block_frame
@@ -64,6 +64,8 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
                 prediction=active_config.prediction,
                 objective=active_config.objective,
                 model=active_config.model,
+                split=active_config.split,
+                training=active_config.training,
             )
             feature_contract = validated.feature_contract
             history_blocks = load_block_frame(history_block_path)

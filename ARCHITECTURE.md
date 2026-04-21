@@ -18,7 +18,7 @@ SPICE keeps six strong seams:
 5. model family
 6. representation
 
-Everything else exists to load config, materialize storage, and drive workflows around those seams.
+Everything else exists to resolve config, derive storage identity and layout, and drive workflows around those seams.
 
 ## Core Model
 
@@ -38,35 +38,56 @@ This keeps corpus storage, temporal lowering, and prediction behavior independen
 
 ## Config Flow
 
-Config loading lives in [src/spice/config](src/spice/config).
+Config resolution lives in [src/spice/config](src/spice/config):
+
+- `registry.py`: named spec discovery, validation, and canonical YAML helpers
+- `presets.py`: preset overlay validation, `extends` resolution, request overlays
+- `resolution.py`: workflow request handling and payload-to-config resolution
+- `models.py`: resolved runtime config models
 
 Flow:
 
 1. load named YAML specs from [src/spice/conf](src/spice/conf)
-2. optionally apply one preset
-3. apply explicit selector and runtime overrides
+2. resolve one preset, including its single optional `extends` parent chain
+3. apply the small workflow override surface
 4. validate one typed workflow config
-5. derive deterministic storage paths through storage helpers
+5. derive deterministic storage identities and paths through storage helpers
 
-Presets stay flat and workflow-owned. Execution target selection is separate and happens at submission time.
+Presets are the workflow-owned experiment unit. Internally they are overlay configs
+resolved through one `extends` chain, which keeps user-facing YAML readable without
+making every internal seam a workflow flag.
 
-Important selectors:
+Public `spice config` groups:
 
+- `preset`
 - `dataset`
 - `chain`
 - `provider`
 - `problem`
+
+Internal registry-loaded groups:
+
+- `model`
+- `dataset_builder`
 - `feature_set`
 - `prediction`
-- `model`
-- `study`
-- `variant`
+- `evaluation`
+- `objective`
+- `tuning_space`
+- `execution`
+
+Workflow selectors:
+
+- `preset`
+- `chain`
 
 Important runtime overrides:
 
 - `delay_seconds`
 - `trial_count`
 - `dry_run`
+- `study`
+- `variant`
 
 Public temporal contract stays seconds-native:
 
@@ -180,10 +201,16 @@ State commands:
 - `refresh catalog`
 
 `show` and `delete` are selector-driven over already-materialized state. They do not use workflow config resolution.
+The same applies to `push` and `pull`: their selector flags identify existing
+storage records, not workflow composition seams.
 
 ## Storage Layout
 
-Storage code lives in [src/spice/storage](src/spice/storage).
+Storage code lives in [src/spice/storage](src/spice/storage). Identity assembly
+and path layout are split deliberately:
+
+- `identity.py` owns canonical provenance payloads for study and artifact ids
+- `layout.py` owns deterministic root formatting from those ids
 
 Roots:
 
@@ -200,6 +227,8 @@ Important invariants:
 
 - root-kind enforcement stays strict
 - dataset, study, and artifact ids are deterministic
+- study and artifact ids hash full resolved provenance, excluding pure output
+  locations such as `storage.root`
 - catalog rebuild and delete cascades are storage-owned
 - on-disk payload meanings stay explicit and typed
 
@@ -218,13 +247,13 @@ Submission lives in [src/spice/execution](src/spice/execution) and always uses t
 
 ## Package Roles
 
-- `config`: typed config models, loaders, registry-backed YAML access
+- `config`: registry-backed YAML access, preset overlays, workflow request resolution, typed runtime config models
 - `features`: explicit feature-family contracts and execution
 - `temporal`: compiler contracts and compiled problem-store lowering
 - `prediction`: family-owned prediction semantics
 - `evaluation`: evaluator contracts and execution
 - `modeling`: dataset builders, representations, models, training, artifacts, results
 - `corpus`: block IO, metadata, builders, validation
-- `execution`: workflow submission backends
-- `storage`: catalog, manifest persistence, inspection, root operations
+- `execution`: execution target models and workflow submission backends
+- `storage`: identity payloads, deterministic layout, catalog, manifest persistence, inspection, sync
 - `workflows`: acquire, tune, train, evaluate orchestration
