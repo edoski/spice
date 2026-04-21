@@ -162,9 +162,8 @@ def _acquire_run_payload(run: AcquireRunRecord) -> dict[str, object]:
             "endpoint_fingerprint": run.provider.endpoint_fingerprint,
         },
         "facts": {
-            "required_history_seconds": run.facts.required_history_seconds,
-            "acquired_history_window_seconds": run.facts.acquired_history_window_seconds,
-            "valid_anchor_samples": run.facts.valid_anchor_samples,
+            "requested_history_window_seconds": run.facts.requested_history_window_seconds,
+            "resolved_capability_samples": run.facts.resolved_capability_samples,
         },
         "settings": asdict(run.settings),
         "runtime": asdict(run.runtime),
@@ -183,9 +182,10 @@ def _acquire_run_from_payload(payload: dict[str, object]) -> AcquireRunRecord:
             endpoint_fingerprint=str(provider["endpoint_fingerprint"]),
         ),
         facts=AcquireRunFacts(
-            required_history_seconds=_int_value(facts["required_history_seconds"]),
-            acquired_history_window_seconds=_int_value(facts["acquired_history_window_seconds"]),
-            valid_anchor_samples=_int_value(facts["valid_anchor_samples"]),
+            requested_history_window_seconds=_int_value(
+                facts["requested_history_window_seconds"]
+            ),
+            resolved_capability_samples=_int_value(facts["resolved_capability_samples"]),
         ),
         settings=AcquisitionConfigSnapshot(
             chunk_size=_int_value(settings["chunk_size"]),

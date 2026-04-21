@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import signal
 import threading
 import weakref
@@ -33,6 +34,9 @@ from ..storage.layout import resolve_workflow_paths
 from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
 from ._shared import managed_workflow
 
+HISTORY_WINDOW_CUSHION_RATIO = 0.10
+HISTORY_REFILL_CUSHION_RATIO = 0.10
+
 
 def _workflow_facts(config: AcquireConfig) -> list[tuple[str, str]]:
     return [
@@ -52,6 +56,17 @@ def _count_valid_history_samples(
     blocks = load_block_frame(history_dir).sort("block_number")
     feature_table = feature_contract.build_table(blocks)
     return contract.count_valid_capability_samples(feature_table)
+
+
+def _with_cushion(value: float, ratio: float) -> int:
+    return max(1, math.ceil(value * (1.0 + ratio)))
+
+
+def _history_window(config: AcquireConfig, window_seconds: int) -> TimestampRange:
+    return TimestampRange(
+        start=max(0, config.history_window_end_timestamp - window_seconds),
+        end=config.history_window_end_timestamp,
+    )
 
 
 class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
@@ -168,18 +183,15 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 chunk_size=config.acquisition.chunk_size,
             )
             estimated_block_interval_seconds = await block_client.estimate_recent_block_interval()
-            history_window_seconds = contract.initial_history_window_seconds(
+            bootstrap_history_window_seconds = contract.initial_history_window_seconds(
                 estimated_block_interval_seconds,
             )
-            history_start_timestamp = max(
-                0,
-                config.history_window_end_timestamp - history_window_seconds,
+            requested_history_window_seconds = _with_cushion(
+                bootstrap_history_window_seconds,
+                HISTORY_WINDOW_CUSHION_RATIO,
             )
             history_plan = await block_client.plan_window(
-                TimestampRange(
-                    start=history_start_timestamp,
-                    end=config.history_window_end_timestamp,
-                ),
+                _history_window(config, requested_history_window_seconds),
                 chunk_size=config.acquisition.chunk_size,
             )
 
@@ -189,7 +201,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     acquire_dry_run_fields(
                         config,
                         contract=contract,
-                        history_window_seconds=history_window_seconds,
+                        history_window_seconds=requested_history_window_seconds,
                         history_plan=history_plan,
                         evaluation_plan=evaluation_plan,
                     ),
@@ -204,43 +216,68 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 prefix=f".{paths.corpus_id}.acquire.",
             ) as temp_root_name:
                 temp_root = Path(temp_root_name)
-                history_source_dir = history_dir
-                history_iteration = 0
-                while True:
-                    history_work_dir = temp_root / f"history-pass-{history_iteration:02d}"
-                    history_result = await ensure_history_dataset(
+
+                async def _ensure_counted_history(output_dir: Path, working_dir: Path):
+                    result = await ensure_history_dataset(
                         config=config,
                         block_client=block_client,
-                        output_dir=history_source_dir,
-                        working_dir=history_work_dir,
+                        output_dir=output_dir,
+                        working_dir=working_dir,
                         history_plan=history_plan,
                         rpc_controller=rpc_controller,
                         status=active_reporter.milestone,
                     )
-                    valid_anchor_samples = _count_valid_history_samples(
-                        history_dir=history_result.path,
+                    return result, _count_valid_history_samples(
+                        history_dir=result.path,
                         feature_contract=feature_contract,
                         contract=contract,
                     )
-                    if valid_anchor_samples >= contract.sample_count:
-                        break
-                    active_reporter.milestone(
-                        "history extending window "
-                        f"anchors={valid_anchor_samples}/{contract.sample_count}"
+
+                history_result, resolved_capability_samples = await _ensure_counted_history(
+                    history_dir,
+                    temp_root / "history-initial",
+                )
+                if resolved_capability_samples < contract.sample_count:
+                    validation = history_result.validation
+                    if (
+                        validation.first_timestamp is None
+                        or validation.last_timestamp is None
+                        or validation.row_count <= 1
+                    ):
+                        raise RuntimeError(
+                            "Cannot compute observed history cadence from validation report"
+                        )
+                    sample_shortfall = contract.sample_count - resolved_capability_samples
+                    observed_seconds_per_block = max(
+                        1.0,
+                        (validation.last_timestamp - validation.first_timestamp)
+                        / (validation.row_count - 1),
                     )
-                    history_source_dir = history_result.path
-                    history_iteration += 1
-                    history_window_seconds *= 2
-                    history_start_timestamp = max(
-                        0,
-                        config.history_window_end_timestamp - history_window_seconds,
+                    requested_history_window_seconds = max(
+                        requested_history_window_seconds,
+                        config.history_window_end_timestamp
+                        - validation.first_timestamp,
+                    ) + _with_cushion(
+                        sample_shortfall * observed_seconds_per_block,
+                        HISTORY_REFILL_CUSHION_RATIO,
                     )
                     history_plan = await block_client.plan_window(
-                        TimestampRange(
-                            start=history_start_timestamp,
-                            end=config.history_window_end_timestamp,
-                        ),
+                        _history_window(config, requested_history_window_seconds),
                         chunk_size=config.acquisition.chunk_size,
+                    )
+                    active_reporter.milestone(
+                        "history refilling "
+                        f"samples={resolved_capability_samples}/{contract.sample_count}"
+                    )
+                    history_result, resolved_capability_samples = await _ensure_counted_history(
+                        history_result.path,
+                        temp_root / "history-refill",
+                    )
+                if resolved_capability_samples < contract.sample_count:
+                    raise RuntimeError(
+                        "History sizing policy under-requested capability samples: "
+                        f"valid={resolved_capability_samples}, "
+                        f"required={contract.sample_count}"
                     )
 
                 evaluation_result = await ensure_evaluation_dataset(
@@ -266,10 +303,9 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 acquire_run = build_acquire_run_record(
                     config=config,
                     provider=current_provider,
-                    contract=contract,
                     acquisition_runtime=rpc_controller.snapshot(),
-                    acquired_history_window_seconds=history_window_seconds,
-                    valid_anchor_samples=valid_anchor_samples,
+                    requested_history_window_seconds=requested_history_window_seconds,
+                    resolved_capability_samples=resolved_capability_samples,
                 )
                 temp_state_db = temp_root / ".spice" / "state.sqlite"
                 write_dataset_state(

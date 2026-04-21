@@ -103,7 +103,6 @@ def window_string(window: DatasetWindowMetadata) -> str:
 def acquire_run_string(run: AcquireRunRecord) -> str:
     return (
         f"provider={run.provider.name} "
-        f"required={run.facts.required_history_seconds}s "
-        f"history={run.facts.acquired_history_window_seconds}s "
-        f"anchors={run.facts.valid_anchor_samples}"
+        f"requested_history={run.facts.requested_history_window_seconds}s "
+        f"samples={run.facts.resolved_capability_samples}"
     )

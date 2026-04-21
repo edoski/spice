@@ -60,6 +60,10 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     contract = compile_problem_contract(
         problem=config.problem,
         feature_contract=feature_contract,
+        chain_runtime=config.chain.runtime,
+    )
+    expected_history_window_seconds = math.ceil(
+        contract.initial_history_window_seconds(12.0) * 1.10
     )
     evaluation_plan = _plan_for_window(
         TimestampRange(
@@ -70,6 +74,7 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
         expected_rows=32,
         chunk_size=config.acquisition.chunk_size,
     )
+    history_windows: list[TimestampRange] = []
 
     class FakeAcquireClient:
         def __init__(self, provider, chain) -> None:
@@ -85,15 +90,15 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
             return 12.0
 
         async def plan_window(self, window: TimestampRange, *, chunk_size: int) -> BlockPullPlan:
-            plan = (
-                evaluation_plan
-                if window == evaluation_plan.window
-                else _plan_for_window(
+            if window == evaluation_plan.window:
+                plan = evaluation_plan
+            else:
+                history_windows.append(window)
+                plan = _plan_for_window(
                     window,
                     start_block=100,
                     chunk_size=chunk_size,
                 )
-            )
             self._planned_windows.append(plan)
             return plan
 
@@ -147,9 +152,9 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     assert summary.semantics.feature.feature_prerequisites == contract.feature_prerequisites
     assert len(runs) == 1
     assert runs[0].provider.name == "publicnode"
-    assert runs[0].facts.required_history_seconds == contract.required_history_seconds
-    assert runs[0].facts.valid_anchor_samples >= config.problem.sample_count
-    assert runs[0].facts.acquired_history_window_seconds >= contract.required_history_seconds
+    assert runs[0].facts.requested_history_window_seconds == expected_history_window_seconds
+    assert runs[0].facts.resolved_capability_samples >= config.problem.sample_count
+    assert len(history_windows) == 1
     assert paths.history_dir.is_dir()
     assert paths.evaluation_dir.is_dir()
     datasets = list_dataset_records(
@@ -246,13 +251,16 @@ def test_acquire_dry_run_emits_compact_output(
     assert "evaluation_blocks=" in rendered
 
 
-def test_acquire_workflow_reuses_temporary_history_between_expansions(
+def _exercise_short_history_refill(
     tmp_path,
     monkeypatch,
     load_test_acquire_config,
     acquire_override,
     make_block_rows,
-) -> None:
+    *,
+    final_sample_count: int | None = None,
+    expect_error: bool = False,
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]], list[TimestampRange], int]:
     override = acquire_override()
     override["acquisition"] = {
         "chunk_size": 128,
@@ -295,13 +303,16 @@ def test_acquire_workflow_reuses_temporary_history_between_expansions(
     ]
     partial_ranges: list[tuple[int, int]] = []
     requested_ranges: list[tuple[int, int]] = []
-    valid_anchor_samples = iter([1, config.problem.sample_count])
+    history_windows: list[TimestampRange] = []
+    resolved_capability_samples = iter(
+        [1, config.problem.sample_count if final_sample_count is None else final_sample_count]
+    )
+    history_plan_calls = 0
 
     class FakeAcquireClient:
         def __init__(self, provider, chain) -> None:
             del provider
             self.chain = chain
-            self._history_plan_calls = 0
 
         async def close(self) -> None:
             return None
@@ -314,9 +325,16 @@ def test_acquire_workflow_reuses_temporary_history_between_expansions(
             del chunk_size
             if window == evaluation_plan.window:
                 return evaluation_plan
-            plan = history_plans[self._history_plan_calls]
-            self._history_plan_calls += 1
-            return plan
+            nonlocal history_plan_calls
+            template = history_plans[history_plan_calls]
+            history_plan_calls += 1
+            history_windows.append(window)
+            return BlockPullPlan(
+                window=window,
+                block_range=template.block_range,
+                expected_rows=template.expected_rows,
+                expected_files=template.expected_files,
+            )
 
         def plan_block_range(
             self,
@@ -356,15 +374,63 @@ def test_acquire_workflow_reuses_temporary_history_between_expansions(
     monkeypatch.setattr("spice.workflows.acquire.BlockRpcClient", FakeAcquireClient)
     monkeypatch.setattr(
         "spice.workflows.acquire._count_valid_history_samples",
-        lambda **_: next(valid_anchor_samples),
+        lambda **_: next(resolved_capability_samples),
     )
 
-    run_acquire(config)
+    if expect_error:
+        with pytest.raises(RuntimeError, match="under-requested capability samples"):
+            run_acquire(config)
+    else:
+        run_acquire(config)
+    return partial_ranges, requested_ranges, history_windows, history_plan_calls
+
+
+def test_acquire_workflow_refills_missing_history_prefix_once(
+    tmp_path,
+    monkeypatch,
+    load_test_acquire_config,
+    acquire_override,
+    make_block_rows,
+) -> None:
+    partial_ranges, requested_ranges, history_windows, history_plan_calls = (
+        _exercise_short_history_refill(
+            tmp_path,
+            monkeypatch,
+            load_test_acquire_config,
+            acquire_override,
+            make_block_rows,
+        )
+    )
 
     assert partial_ranges == [(950, 1_000)]
     assert (1_000, 1_050) in requested_ranges
     assert (950, 1_000) in requested_ranges
     assert (950, 1_050) not in requested_ranges
+    assert history_plan_calls == 2
+    assert len(history_windows) == 2
+    assert (history_windows[0].end - history_windows[1].start) < 2 * (
+        history_windows[0].end - history_windows[0].start
+    )
+
+
+def test_acquire_workflow_fails_after_one_short_refill(
+    tmp_path,
+    monkeypatch,
+    load_test_acquire_config,
+    acquire_override,
+    make_block_rows,
+) -> None:
+    _, _, _, history_plan_calls = _exercise_short_history_refill(
+        tmp_path,
+        monkeypatch,
+        load_test_acquire_config,
+        acquire_override,
+        make_block_rows,
+        final_sample_count=2,
+        expect_error=True,
+    )
+
+    assert history_plan_calls == 2
 
 
 def test_acquire_executor_threads_skip_python_exit_registry() -> None:

@@ -103,9 +103,8 @@ class AcquisitionConfigSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class AcquireRunFacts:
-    required_history_seconds: int
-    acquired_history_window_seconds: int
-    valid_anchor_samples: int
+    requested_history_window_seconds: int
+    resolved_capability_samples: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,18 +267,16 @@ def build_acquire_run_record(
     *,
     config: AcquireConfig,
     provider: ProviderMetadata,
-    contract: CompiledProblemContract,
     acquisition_runtime: AcquisitionRuntimeSnapshot,
-    acquired_history_window_seconds: int,
-    valid_anchor_samples: int,
+    requested_history_window_seconds: int,
+    resolved_capability_samples: int,
 ) -> AcquireRunRecord:
     return AcquireRunRecord(
         provider=provider,
         settings=acquisition_settings(config),
         runtime=acquisition_runtime_metadata(acquisition_runtime),
         facts=AcquireRunFacts(
-            required_history_seconds=contract.required_history_seconds,
-            acquired_history_window_seconds=acquired_history_window_seconds,
-            valid_anchor_samples=valid_anchor_samples,
+            requested_history_window_seconds=requested_history_window_seconds,
+            resolved_capability_samples=resolved_capability_samples,
         ),
     )

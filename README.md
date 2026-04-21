@@ -103,7 +103,7 @@ Rules:
 - `feature_set.family.id` selects the feature family
 - `prediction.family.id` selects the prediction family
 - `dataset_builder.id` selects the dataset preparation path
-- `acquire` expands history until the selected problem and feature graph yield enough valid samples
+- `acquire` requests a cushioned bootstrap history window and allows one measured prefix refill
 - `train` and `evaluate` validate that the selected feature graph matches the stored artifact
 
 ## Core Seams
