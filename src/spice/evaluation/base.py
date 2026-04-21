@@ -11,8 +11,8 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ..core.validation import validate_path_segment
 from ..core.errors import SpiceOperatorError
+from ..core.validation import validate_path_segment
 from ..prediction.base import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..prediction.contracts import DecodedOffsets
 from ..temporal.problem_store import CompiledProblemStore
@@ -527,40 +527,43 @@ def _run_poisson_arrivals(
 
     if not runs:
         raise SpiceOperatorError(
-            "poisson_arrivals evaluation produced no valid arrivals; adjust the benchmark rate or window"
+            "poisson_arrivals evaluation produced no valid arrivals; "
+            "adjust the benchmark rate or window"
         )
     return summarize_runs(runs)
-
-
-def coerce_evaluator_config(
-    raw_config: dict[str, object] | EvaluatorConfig,
-) -> EvaluatorConfig:
-    if isinstance(raw_config, EvaluatorConfig):
-        return raw_config
-    return EvaluatorConfig.model_validate(raw_config)
-
-
 def compile_evaluator_contract(
     evaluator_config: EvaluatorConfig,
 ) -> CompiledEvaluatorContract:
     if evaluator_config.sampler is EvaluationSampler.FULLSET:
         run_fn = _run_fullset
     elif evaluator_config.sampler is EvaluationSampler.UNIFORM_WINDOW:
-        run_fn = lambda store, realization_policy, decoded_offsets, sample_indices: _run_uniform_window(
+        def run_fn(
             store,
             realization_policy,
             decoded_offsets,
             sample_indices,
-            config=evaluator_config,
-        )
+        ):
+            return _run_uniform_window(
+                store,
+                realization_policy,
+                decoded_offsets,
+                sample_indices,
+                config=evaluator_config,
+            )
     else:
-        run_fn = lambda store, realization_policy, decoded_offsets, sample_indices: _run_poisson_arrivals(
+        def run_fn(
             store,
             realization_policy,
             decoded_offsets,
             sample_indices,
-            config=evaluator_config,
-        )
+        ):
+            return _run_poisson_arrivals(
+                store,
+                realization_policy,
+                decoded_offsets,
+                sample_indices,
+                config=evaluator_config,
+            )
     return CompiledEvaluatorContract(
         evaluation_id=evaluator_config.id,
         metric_descriptors=EVALUATION_METRIC_DESCRIPTORS,

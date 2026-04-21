@@ -18,11 +18,11 @@ from ..core.errors import ConfigResolutionError, MissingStateError
 from ..storage.layout import resolve_workflow_paths
 from ..storage.study_manifest import load_study_manifest, validate_tuned_train_request
 from ..storage.study_optuna import load_best_params
-from .tuned_config import coerce_tuning_space_config
 from .families.registry import (
     apply_model_tuned_parameters,
     coerce_model_config,
 )
+from .tuned_config import coerce_tuning_space_config
 
 
 @dataclass(frozen=True, slots=True)

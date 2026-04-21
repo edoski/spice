@@ -29,7 +29,9 @@ def coerce_problem_compiler_config(
         from .estimated_block import EstimatedBlockCompilerConfig
 
         return EstimatedBlockCompilerConfig.model_validate(raw_payload)
-    known = ", ".join(sorted(("estimated_block", "timestamp_future_window", "timestamp_native")))
+    known = ", ".join(
+        sorted(("estimated_block", "timestamp_future_window", "timestamp_native"))
+    )
     raise ConfigResolutionError(
         f"Unknown problem.compiler.id: {compiler_id}. Known problem.compiler.id values: {known}"
     )
@@ -45,7 +47,12 @@ def compile_problem(
     if compiler_id == "timestamp_native":
         from .timestamp_native import compile_problem as compile_timestamp_native
 
-        return compile_timestamp_native(problem, feature_contract, realization_policy, chain_runtime)
+        return compile_timestamp_native(
+            problem,
+            feature_contract,
+            realization_policy,
+            chain_runtime,
+        )
     if compiler_id == "timestamp_future_window":
         from .timestamp_future_window import compile_problem as compile_timestamp_future_window
 
@@ -58,7 +65,12 @@ def compile_problem(
     if compiler_id == "estimated_block":
         from .estimated_block import compile_problem as compile_estimated_block
 
-        return compile_estimated_block(problem, feature_contract, realization_policy, chain_runtime)
+        return compile_estimated_block(
+            problem,
+            feature_contract,
+            realization_policy,
+            chain_runtime,
+        )
     raise ConfigResolutionError(f"Unsupported problem.compiler.id: {compiler_id}")
 
 

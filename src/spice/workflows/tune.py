@@ -29,6 +29,7 @@ from ..storage.study_optuna import (
 )
 from ..storage.study_render import study_result_fields
 
+
 def _workflow_facts(config: TuneConfig) -> list[tuple[str, str]]:
     return [
         ("dataset", config.dataset.name),

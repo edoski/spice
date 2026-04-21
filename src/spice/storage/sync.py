@@ -27,7 +27,6 @@ from .roots import (
     DatasetSelector,
     StudySelector,
     reindex_root,
-    resolve_artifact_record,
     resolve_dataset_record,
     resolve_study_record,
 )

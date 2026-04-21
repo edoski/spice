@@ -17,15 +17,15 @@ from pydantic import BaseModel, ValidationError
 from ..core.errors import ConfigResolutionError
 from ..evaluation import EvaluatorConfig
 from ..execution.models import ExecutionSpec
+from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.registry import coerce_model_config
 from ..objectives import coerce_objective_config
 from .models import (
     ChainSpec,
     DatasetSpec,
+    PredictionConfig,
     ProviderSpec,
-    coerce_dataset_builder_config,
     coerce_feature_set_config,
-    coerce_prediction_config,
     coerce_problem_spec,
 )
 
@@ -161,7 +161,7 @@ _GROUP_SPECS = (
         token=ConfigGroup.PREDICTION.value,
         directory="prediction",
         seed_name="candidate_offset_selection",
-        validate=coerce_prediction_config,
+        validate=PredictionConfig.model_validate,
         identity_field="id",
         seed_from_requested_name=True,
     ),

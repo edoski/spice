@@ -16,14 +16,11 @@ from pydantic import (
     model_validator,
 )
 
-from ..core.validation import validate_path_segment
 from ..core.errors import ConfigResolutionError
+from ..core.validation import validate_path_segment
 from ..evaluation import EvaluatorConfig
 from ..features import FeatureFamilyConfig, validate_feature_selection
-from ..modeling.dataset_builders import (
-    DatasetBuilderConfig,
-    coerce_dataset_builder_config,
-)
+from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import (
     ConfigModel,
     ModelConfig,
@@ -234,8 +231,6 @@ class FeatureSetConfig(ConfigModel):
     def validate_feature_selection(self) -> Self:
         validate_feature_selection(self.id, self.family.id, tuple(self.outputs))
         return self
-
-
 def coerce_feature_set_config(payload: Mapping[str, object] | FeatureSetConfig) -> FeatureSetConfig:
     from ..features import coerce_feature_family_config
 
@@ -266,14 +261,6 @@ class PredictionConfig(ConfigModel):
         return validate_prediction_family_id(
             validate_path_segment(value, label="prediction.family_id")
         )
-
-
-def coerce_prediction_config(payload: Mapping[str, object] | PredictionConfig) -> PredictionConfig:
-    if isinstance(payload, PredictionConfig):
-        return payload
-    if not isinstance(payload, Mapping):
-        raise ConfigResolutionError("prediction must be a mapping")
-    return PredictionConfig.model_validate(dict(payload))
 
 
 class StudyConfig(ConfigModel):

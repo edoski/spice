@@ -9,9 +9,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config.resolution import WorkflowRequest
 from ..config.models import WorkflowTask
 from ..config.registry import load_named_group
+from ..config.resolution import WorkflowRequest
 from ..core.errors import SpiceOperatorError
 from .models import ExecutionSpec, ExecutionWorkflowSpec
 

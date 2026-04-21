@@ -32,6 +32,7 @@ from ..storage.corpus import write_dataset_state
 from ..storage.layout import resolve_workflow_paths
 from ..storage.roots import reindex_root
 from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
+
 HISTORY_WINDOW_CUSHION_RATIO = 0.10
 HISTORY_REFILL_CUSHION_RATIO = 0.10
 

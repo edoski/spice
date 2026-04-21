@@ -11,7 +11,13 @@ from typing import Any, cast
 
 from ..core.errors import StateConflictError
 from ..core.files import promote_paths_atomic
-from .roots import ArtifactSelector, StudySelector, reindex_root, resolve_artifact_record, resolve_study_record
+from .roots import (
+    ArtifactSelector,
+    StudySelector,
+    reindex_root,
+    resolve_artifact_record,
+    resolve_study_record,
+)
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -16,10 +16,10 @@ from ..prediction import CompiledPredictionContract
 from ..prediction.contracts import ModelInputBatch, PredictionBatch, PreparedPredictionTargets
 from ..temporal.problem_store import CompiledProblemStore
 from ..temporal.realization import CompiledRealizationPolicyContract
-from .representations import RepresentationRuntimeContext
 from .representations import (
     CompiledRepresentationContract,
     PreparedRepresentation,
+    RepresentationRuntimeContext,
 )
 
 IntVector = NDArray[np.int64]

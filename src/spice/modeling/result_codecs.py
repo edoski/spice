@@ -9,11 +9,11 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from ..config.models import (
     ArtifactVariant,
+    PredictionConfig,
     SplitConfig,
     StudyConfig,
     TrainingConfig,
     coerce_feature_set_config,
-    coerce_prediction_config,
     coerce_problem_spec,
 )
 from ..evaluation import EvaluationRun
@@ -192,7 +192,7 @@ class ArtifactManifestPayload(CodecPayloadModel):
         return TrainingArtifactManifest(
             artifact_id=self.artifact_id,
             dataset_builder=coerce_dataset_builder_config(self.dataset_builder),
-            prediction=coerce_prediction_config(self.prediction),
+            prediction=PredictionConfig.model_validate(self.prediction),
             objective=coerce_objective_config(self.objective),
             chain_name=self.chain_name,
             dataset_id=self.dataset_id,

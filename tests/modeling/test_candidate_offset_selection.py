@@ -7,8 +7,12 @@ import polars as pl
 import pytest
 import torch
 
-from spice.config import coerce_feature_set_config, coerce_prediction_config, coerce_problem_spec
-from spice.evaluation import coerce_evaluator_config, compile_evaluator_contract
+from spice.config import (
+    PredictionConfig,
+    coerce_feature_set_config,
+    coerce_problem_spec,
+)
+from spice.evaluation import EvaluatorConfig, compile_evaluator_contract
 from spice.features import compile_feature_contract
 from spice.modeling.evaluation import run_prediction_evaluation
 from spice.modeling.models import ModelOutputs
@@ -68,7 +72,7 @@ def _realization_policy():
 
 
 def _prediction_contract():
-    prediction = coerce_prediction_config(
+    prediction = PredictionConfig.model_validate(
         {
             "id": "candidate_offset_selection",
             "family_id": "candidate_offset_selection",
@@ -130,7 +134,7 @@ def test_poisson_replay_summary_uses_event_weighted_totals() -> None:
     predictions = DecodedOffsets(torch.zeros(store.n_samples, dtype=torch.int64))
 
     evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
+        EvaluatorConfig.model_validate(
             {
                 "id": "paper_replay_2h",
                 "sampler": "poisson_arrivals",

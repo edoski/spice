@@ -17,7 +17,6 @@ from ..config.models import (
     TuningConfig,
     TuningSpaceConfig,
     coerce_feature_set_config,
-    coerce_prediction_config,
     coerce_problem_spec,
 )
 from ..core.errors import (
@@ -30,8 +29,8 @@ from ..modeling._training_context import compile_training_context
 from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.base import ModelConfig
 from ..modeling.families.registry import coerce_model_config
-from ..modeling.tuned_config import coerce_tuning_space_config
 from ..modeling.result_codecs import study_semantics_from_payload, study_semantics_payload
+from ..modeling.tuned_config import coerce_tuning_space_config
 from ..objectives import coerce_objective_config
 from ..semantics import StudySemantics
 from .engine import STUDY_ROOT_KIND, create_state_engine, ensure_state_db
@@ -219,7 +218,7 @@ def manifest_payload(manifest: StudyManifest) -> dict[str, object]:
 def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
     model = coerce_model_config(mapping_payload(payload["model"], label="study.model"))
     problem = coerce_problem_spec(mapping_payload(payload["problem"], label="study.problem"))
-    prediction = coerce_prediction_config(
+    prediction = PredictionConfig.model_validate(
         mapping_payload(payload["prediction"], label="study.prediction")
     )
     semantics_payload = mapping_payload(payload["semantics"], label="study.semantics")

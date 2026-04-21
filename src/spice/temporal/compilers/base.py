@@ -7,6 +7,7 @@ from pydantic import field_validator
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 
+
 class ProblemCompilerConfig(ConfigModel):
     id: str
 

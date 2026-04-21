@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -70,7 +70,13 @@ def test_push_study_to_cluster_uses_canonical_destination_root(tmp_path, monkeyp
     )
     execution_calls: list[tuple[str, list[str]]] = []
 
-    def fake_run_execution_module(_target, module: str, args: list[str], *, capture_output: bool = True):
+    def fake_run_execution_module(
+        _target,
+        module: str,
+        args: list[str],
+        *,
+        capture_output: bool = True,
+    ):
         del capture_output
         execution_calls.append((module, args))
         if args[0] == "prepare-stage":

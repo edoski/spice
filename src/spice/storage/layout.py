@@ -89,7 +89,11 @@ def build_workflow_paths(
 
 
 @overload
-def resolve_workflow_paths(config: AcquireConfig, *, study_id: str | None = None) -> WorkflowPaths: ...
+def resolve_workflow_paths(
+    config: AcquireConfig,
+    *,
+    study_id: str | None = None,
+) -> WorkflowPaths: ...
 
 
 @overload
@@ -100,7 +104,11 @@ def resolve_workflow_paths(
 ) -> WorkflowPaths: ...
 
 
-def resolve_workflow_paths(config: object, *, study_id: str | None = None) -> WorkflowPaths:
+def resolve_workflow_paths(
+    config: object,
+    *,
+    study_id: str | None = None,
+) -> WorkflowPaths:
     from ..config.models import AcquireConfig, ModelWorkflowConfig
 
     if isinstance(config, (AcquireConfig, ModelWorkflowConfig)):
@@ -153,9 +161,11 @@ def resolve_workflow_identity(config: object, *, study_id: str | None = None) ->
     )
     tuning_mode = isinstance(config, TuneConfig)
     resolved_study_id = study_id
-    if resolved_study_id is None and (tuning_mode or config.artifact.variant.value == "tuned") and isinstance(
-        config,
-        (TuneConfig, TrainConfig, EvaluateConfig),
+    needs_study_id = tuning_mode or config.artifact.variant.value == "tuned"
+    if (
+        resolved_study_id is None
+        and needs_study_id
+        and isinstance(config, (TuneConfig, TrainConfig, EvaluateConfig))
     ):
         resolved_study_id = study_storage_id(
             identity=study_storage_identity_from_config(config, corpus_id=corpus_id)

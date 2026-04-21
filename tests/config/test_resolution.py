@@ -69,7 +69,10 @@ def test_preset_frames_are_explicit_and_request_overrides_are_narrow(
         **cast(dict[str, object], payload["training"]),
         "batch_size": 64,
         "early_stopping": {
-            **cast(dict[str, object], cast(dict[str, object], payload["training"])["early_stopping"]),
+            **cast(
+                dict[str, object],
+                cast(dict[str, object], payload["training"])["early_stopping"],
+            ),
             "patience": 3,
         },
     }
@@ -214,7 +217,10 @@ def test_benchmark_objective_requires_matching_evaluation(
 
     with pytest.raises(
         ConfigResolutionError,
-        match="objective paper_profit_replay_2h requires evaluation paper_replay_2h, got paper_fullset",
+        match=(
+            "objective paper_profit_replay_2h requires evaluation "
+            "paper_replay_2h, got paper_fullset"
+        ),
     ):
         resolve_workflow_config(
             WorkflowTask.EVALUATE,

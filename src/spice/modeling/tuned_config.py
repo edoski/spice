@@ -8,8 +8,8 @@ import optuna
 
 from ..config.models import (
     ProblemSpec,
-    TunedProblemParams,
     TunedParameterSet,
+    TunedProblemParams,
     TunedTrainingParams,
     TuningProblemSearchSpace,
     TuningSpaceConfig,

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from spice.config import coerce_prediction_config
+from spice.config import PredictionConfig
 from spice.modeling.batch_sources import (
     build_prediction_batch_source,
 )
@@ -48,7 +48,7 @@ def _test_store() -> CompiledProblemStore:
 
 
 def _prediction_contract():
-    prediction = coerce_prediction_config(
+    prediction = PredictionConfig.model_validate(
         {
             "id": "candidate_offset_selection",
             "family_id": "candidate_offset_selection",

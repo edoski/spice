@@ -87,9 +87,12 @@ def coerce_input_normalization_config(
 def compile_input_normalization_contract(
     config: InputNormalizationConfig,
 ) -> CompiledInputNormalizationContract:
-    from .row_standard import RowStandardConfig, compile_input_normalization as compile_row_standard
+    from .row_standard import RowStandardConfig
+    from .row_standard import compile_input_normalization as compile_row_standard
     from .window_weighted_standard import (
         WindowWeightedStandardConfig,
+    )
+    from .window_weighted_standard import (
         compile_input_normalization as compile_window_weighted_standard,
     )
 

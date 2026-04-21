@@ -4,12 +4,12 @@ import pytest
 
 from spice.config import (
     ArtifactVariant,
+    PredictionConfig,
     SplitConfig,
     StudyConfig,
     TrainingConfig,
     coerce_dataset_builder_config,
     coerce_feature_set_config,
-    coerce_prediction_config,
     coerce_problem_spec,
 )
 from spice.core.errors import SpiceOperatorError
@@ -56,7 +56,7 @@ from spice.temporal.scaling import ScalerStats
 
 
 def _prediction_config():
-    return coerce_prediction_config(
+    return PredictionConfig.model_validate(
         {
             "id": "candidate_offset_selection",
             "family_id": "candidate_offset_selection",
@@ -65,7 +65,7 @@ def _prediction_config():
 
 
 def _paper_prediction_config():
-    return coerce_prediction_config(
+    return PredictionConfig.model_validate(
         {
             "id": "icdcs_2026",
             "family_id": "min_block_fee_multitask",

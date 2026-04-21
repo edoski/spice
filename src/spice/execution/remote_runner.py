@@ -29,7 +29,14 @@ def run_remote_workflow(task: WorkflowTask, request: WorkflowRequest) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("task", choices=[task.value for task in WorkflowTask if task is not WorkflowTask.ACQUIRE])
+    parser.add_argument(
+        "task",
+        choices=[
+            task.value
+            for task in WorkflowTask
+            if task is not WorkflowTask.ACQUIRE
+        ],
+    )
     parser.add_argument("request_json")
     args = parser.parse_args()
     run_remote_workflow(

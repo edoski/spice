@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 import polars as pl
 from pydantic import Field, field_validator, model_validator
 
-from ...core.validation import validate_path_segment
 from ...core.errors import ConfigResolutionError
+from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import DatasetBuilderSemantics
 

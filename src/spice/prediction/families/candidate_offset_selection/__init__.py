@@ -27,6 +27,8 @@ from .outputs import (
     build_output_spec,
     candidate_logits,
 )
+
+
 def _prepare_targets(
     store: CompiledProblemStore,
     sample_indices: IntVector,

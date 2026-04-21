@@ -9,6 +9,7 @@ from pydantic import Field, ValidationError
 
 from ..core.errors import ConfigResolutionError
 from ..evaluation import EvaluatorConfig
+from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.base import ConfigModel, ModelConfig
 from ..modeling.families.registry import coerce_model_config
 from ..modeling.tuned_config import coerce_tuning_space_config
@@ -34,9 +35,7 @@ from .models import (
     TuningConfig,
     TuningSpaceConfig,
     WorkflowTask,
-    coerce_dataset_builder_config,
     coerce_feature_set_config,
-    coerce_prediction_config,
     coerce_problem_spec,
 )
 from .presets import PresetFrame, apply_request_overrides, load_preset_frame
@@ -166,7 +165,7 @@ def _resolve_dataset_builder(name: str) -> DatasetBuilderConfig:
 
 
 def _resolve_prediction(name: str) -> PredictionConfig:
-    return coerce_prediction_config(load_named_group(name, "prediction"))
+    return PredictionConfig.model_validate(load_named_group(name, "prediction"))
 
 
 def _resolve_model(name: str) -> ModelConfig[str]:

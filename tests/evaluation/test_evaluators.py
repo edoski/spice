@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from spice.evaluation import coerce_evaluator_config, compile_evaluator_contract
+from spice.evaluation import EvaluatorConfig, compile_evaluator_contract
 from spice.prediction import DecodedOffsets
 from spice.temporal import (
     coerce_realization_policy_config,
@@ -41,7 +41,7 @@ def test_paper_windowed_falls_back_to_fullset_for_short_spans() -> None:
     decoded_offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     windowed = compile_evaluator_contract(
-        coerce_evaluator_config(
+        EvaluatorConfig.model_validate(
             {
                 "id": "paper_windowed_2h",
                 "sampler": "uniform_window",
@@ -52,7 +52,7 @@ def test_paper_windowed_falls_back_to_fullset_for_short_spans() -> None:
         )
     )
     fullset = compile_evaluator_contract(
-        coerce_evaluator_config({"id": "paper_fullset", "sampler": "fullset"})
+        EvaluatorConfig.model_validate({"id": "paper_fullset", "sampler": "fullset"})
     )
 
     summary = windowed.run(
@@ -80,7 +80,7 @@ def test_paper_windowed_falls_back_to_fullset_for_exact_spans() -> None:
     sample_timestamps = store.timestamps[store.anchor_rows[sample_indices]]
     exact_window_seconds = int(sample_timestamps[-1] - sample_timestamps[0])
     windowed = compile_evaluator_contract(
-        coerce_evaluator_config(
+        EvaluatorConfig.model_validate(
             {
                 "id": "paper_windowed_2h",
                 "sampler": "uniform_window",
@@ -91,7 +91,7 @@ def test_paper_windowed_falls_back_to_fullset_for_exact_spans() -> None:
         )
     )
     fullset = compile_evaluator_contract(
-        coerce_evaluator_config({"id": "paper_fullset", "sampler": "fullset"})
+        EvaluatorConfig.model_validate({"id": "paper_fullset", "sampler": "fullset"})
     )
 
     summary = windowed.run(
@@ -117,7 +117,7 @@ def test_paper_windowed_samples_requested_number_of_runs() -> None:
     decoded_offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
+        EvaluatorConfig.model_validate(
             {
                 "id": "paper_windowed_2h",
                 "sampler": "uniform_window",
@@ -145,7 +145,7 @@ def test_paper_windowed_handles_sparse_non_empty_windows_without_retry_failure()
     decoded_offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
+        EvaluatorConfig.model_validate(
             {
                 "id": "paper_windowed_2h",
                 "sampler": "uniform_window",
@@ -174,7 +174,7 @@ def test_poisson_replay_handles_non_chronological_sample_indices() -> None:
     forward_offsets = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
     reversed_offsets = DecodedOffsets(forward_offsets.flip(0))
     evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
+        EvaluatorConfig.model_validate(
             {
                 "id": "paper_replay_2h",
                 "sampler": "poisson_arrivals",
@@ -221,7 +221,7 @@ def test_fullset_uses_next_block_baseline_and_future_window_optimum() -> None:
     store = _store()
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     evaluator = compile_evaluator_contract(
-        coerce_evaluator_config({"id": "paper_fullset", "sampler": "fullset"})
+        EvaluatorConfig.model_validate({"id": "paper_fullset", "sampler": "fullset"})
     )
 
     summary = evaluator.run(

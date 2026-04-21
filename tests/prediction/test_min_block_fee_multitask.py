@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from spice.config import coerce_prediction_config
+from spice.config import PredictionConfig
 from spice.modeling.models import ModelOutputs
 from spice.prediction import ActionSpaceDecodeContext, compile_prediction_contract
 from spice.prediction.families.min_block_fee_multitask.batch import MinBlockFeeTrainingState
@@ -53,7 +53,7 @@ def _build_store() -> CompiledProblemStore:
 
 
 def _contract():
-    prediction = coerce_prediction_config(
+    prediction = PredictionConfig.model_validate(
         {
             "id": "icdcs_2026",
             "family_id": "min_block_fee_multitask",
