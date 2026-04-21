@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import nullcontext
 from io import StringIO
 from types import SimpleNamespace
@@ -152,3 +153,18 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
     assert "tune complete complete=2 pruned=0 failed=0 best_trial=2 best_value=0.3500" in rendered
     assert "fit epoch=" not in rendered
     assert "[running]" not in rendered
+
+
+def test_optuna_warnings_route_to_reporter() -> None:
+    output = StringIO()
+    reporter = Reporter(stream=output)
+    logger = logging.getLogger("optuna")
+    state = (list(logger.handlers), logger.level, logger.propagate)
+
+    with tune_workflow._optuna_warning_logging(reporter):
+        logger.warning("trial warning")
+
+    assert "warning: trial warning" in output.getvalue()
+    assert list(logger.handlers) == state[0]
+    assert logger.level == state[1]
+    assert logger.propagate == state[2]

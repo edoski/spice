@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Generic, TypeVar
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import click
 
 if TYPE_CHECKING:
     from ..storage.catalog import CatalogArtifactRecord, CatalogStudyRecord
-
-T = TypeVar("T")
 
 
 class SpiceOperatorError(click.ClickException):
@@ -32,10 +31,10 @@ class StateConflictError(SpiceOperatorError):
     """Raised when an existing state root conflicts with the requested operation."""
 
 
-class SelectorResolutionError(SpiceOperatorError, Generic[T]):
+class SelectorResolutionError(SpiceOperatorError):
     """Raised when selector-driven lookup yields zero or multiple matches."""
 
-    def __init__(self, *, kind: str, records: list[T]) -> None:
+    def __init__(self, *, kind: str, records: Sequence[object]) -> None:
         self.kind = kind
         self.records = tuple(records)
         message = f"Expected exactly one {kind} match" if records else f"No {kind} matches found"

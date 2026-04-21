@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from types import FrameType
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from ..core.reporting import Reporter
 
@@ -18,6 +18,10 @@ class _InterruptState:
 
 
 SignalHandler = Callable[[int, FrameType | None], Any] | int | None
+
+
+class _WorkflowReporter(Protocol):
+    def milestone(self, message: str, *, level: str = "info") -> None: ...
 
 
 @contextmanager
@@ -67,19 +71,18 @@ def _capture_interrupts() -> Iterator[_InterruptState]:
 
 
 def _cleanup_after_interrupt(
-    reporter: Reporter,
+    reporter: _WorkflowReporter,
     *,
     label: str,
     cleanup: Callable[[], None],
 ) -> None:
     cleanup()
-    reporter.close()
     reporter.milestone(f"{label} cancelled; partial outputs removed", level="warning")
 
 
 @contextmanager
 def abort_cleanup(
-    reporter: Reporter,
+    reporter: _WorkflowReporter,
     *,
     label: str,
     cleanup: Callable[[], None],
@@ -101,11 +104,4 @@ def managed_workflow(
     *,
     reporter: Reporter | None = None,
 ) -> Iterator[Reporter]:
-    active_reporter = reporter or Reporter()
-    owns_reporter = reporter is None
-    try:
-        with active_reporter.activate():
-            yield active_reporter
-    finally:
-        if owns_reporter:
-            active_reporter.close()
+    yield reporter or Reporter()

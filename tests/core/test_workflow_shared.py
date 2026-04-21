@@ -9,11 +9,7 @@ from spice.workflows._shared import abort_cleanup
 
 class _Recorder:
     def __init__(self) -> None:
-        self.closed = False
         self.logs: list[tuple[str, str]] = []
-
-    def close(self) -> None:
-        self.closed = True
 
     def milestone(self, message: str, *, level: str = "info") -> None:
         self.logs.append((level, message))
@@ -32,7 +28,6 @@ def test_abort_cleanup_cleans_up_when_keyboard_interrupt_bubbles() -> None:
             raise KeyboardInterrupt
 
     assert cleaned == ["done"]
-    assert reporter.closed is True
     assert reporter.logs == [("warning", "train cancelled; partial outputs removed")]
 
 
@@ -54,7 +49,6 @@ def test_abort_cleanup_cleans_up_when_interrupt_is_swallowed_inside_body() -> No
                 pass
 
     assert cleaned == ["done"]
-    assert reporter.closed is True
     assert reporter.logs == [("warning", "tune cancelled; partial outputs removed")]
 
 
@@ -78,5 +72,4 @@ def test_abort_cleanup_cleans_up_when_interrupt_turns_into_system_exit() -> None
 
     assert exc_info.value.code == 1
     assert cleaned == ["done"]
-    assert reporter.closed is True
     assert reporter.logs == [("warning", "train cancelled; partial outputs removed")]

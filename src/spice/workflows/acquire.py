@@ -302,7 +302,6 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 ),
             )
         except (KeyboardInterrupt, asyncio.CancelledError):
-            active_reporter.close()
             prune_empty_directories(
                 paths.corpus_root,
                 stop_at=paths.corpus_root.parent.parent,
@@ -313,7 +312,6 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
             )
             raise
         except Exception:
-            active_reporter.close()
             active_reporter.milestone(
                 "acquire failed; partial download removed",
                 level="warning",

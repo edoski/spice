@@ -10,11 +10,7 @@ from spice.workflows import _shared
 
 class _Reporter:
     def __init__(self) -> None:
-        self.closed = False
         self.messages: list[tuple[str, str]] = []
-
-    def close(self) -> None:
-        self.closed = True
 
     def milestone(self, message: str, *, level: str = "info") -> None:
         self.messages.append((message, level))
@@ -39,7 +35,6 @@ def test_abort_cleanup_runs_for_sigterm_like_interrupt(monkeypatch) -> None:
             pass
 
     assert cleaned == ["cleaned"]
-    assert reporter.closed is True
     assert reporter.messages == [
         ("train cancelled; partial outputs removed", "warning"),
     ]

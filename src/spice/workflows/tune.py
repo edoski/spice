@@ -51,13 +51,26 @@ def _trial_work_dir(study_root: Path, trial_number: int) -> TemporaryDirectory[s
     )
 
 
+class _ReporterWarningHandler(logging.Handler):
+    def __init__(self, reporter: Reporter) -> None:
+        super().__init__(level=logging.WARNING)
+        self._reporter = reporter
+
+    def emit(self, record: logging.LogRecord) -> None:
+        level = "error" if record.levelno >= logging.ERROR else "warning"
+        self._reporter.milestone(self.format(record), level=level)
+
+
 @contextmanager
-def _optuna_warning_logging() -> Iterator[None]:
+def _optuna_warning_logging(reporter: Reporter) -> Iterator[None]:
     logger = logging.getLogger("optuna")
     state = (list(logger.handlers), logger.level, logger.propagate)
+    handler = _ReporterWarningHandler(reporter)
     optuna.logging.disable_default_handler()
-    optuna.logging.enable_propagation()
     optuna.logging.set_verbosity(optuna.logging.WARNING)
+    logger.handlers.clear()
+    logger.addHandler(handler)
+    logger.propagate = False
     try:
         yield
     finally:
@@ -172,7 +185,7 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
             active_reporter.milestone(
                 f"study started trials={study_access.remaining_trial_count}"
             )
-            with _optuna_warning_logging():
+            with _optuna_warning_logging(active_reporter):
                 study.optimize(
                     lambda trial: _objective(
                         config,
