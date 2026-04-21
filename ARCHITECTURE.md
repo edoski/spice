@@ -50,7 +50,7 @@ Flow:
 1. load named YAML specs from [src/spice/conf](src/spice/conf)
 2. resolve one preset, including its single optional `extends` parent chain
 3. apply the small workflow override surface
-4. validate one typed workflow config
+4. validate one typed workflow config and resolve one chain-specific RPC endpoint for `acquire`
 5. derive deterministic storage identities and paths through storage helpers
 
 Presets are the workflow-owned experiment unit. Internally they are overlay configs
@@ -80,6 +80,10 @@ Workflow selectors:
 
 - `preset`
 - `chain`
+
+`provider` remains a named config seam and public config group, but it is preset-owned
+runtime configuration rather than a workflow selector. `acquire` resolves that provider
+spec into one chain-specific RPC endpoint before runtime code starts.
 
 Important runtime overrides:
 

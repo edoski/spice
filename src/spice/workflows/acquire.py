@@ -43,7 +43,7 @@ def _workflow_facts(config: AcquireConfig) -> list[tuple[str, str]]:
         ("dataset", config.dataset.name),
         ("chain", config.chain.name),
         ("problem", config.problem.id),
-        ("provider", config.provider.name),
+        ("provider", config.rpc_endpoint.provider_name),
     ]
 
 
@@ -176,7 +176,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
     with managed_workflow(reporter=reporter) as active_reporter:
         active_reporter.header("acquire", _workflow_facts(config))
 
-        block_client = BlockRpcClient(config.provider, config.chain)
+        block_client = BlockRpcClient(config.rpc_endpoint, config.chain)
         try:
             evaluation_plan = await block_client.plan_window(
                 evaluation_window,

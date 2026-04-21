@@ -27,6 +27,7 @@ from .models import (
     PredictionConfig,
     ProblemSpec,
     ProviderSpec,
+    ResolvedRpcEndpointConfig,
     SplitConfig,
     StorageSpec,
     StudyConfig,
@@ -36,7 +37,6 @@ from .models import (
     TuningConfig,
     TuningSpaceConfig,
     WorkflowTask,
-    apply_provider_acquisition_overrides,
     coerce_dataset_builder_config,
     coerce_feature_set_config,
     coerce_prediction_config,
@@ -166,6 +166,7 @@ def _validate_parent_preset(name: str, payload: dict[str, object]) -> None:
             raise ConfigResolutionError(
                 f"Parent preset {name} is not runnable for {workflow.value}: {exc}"
             ) from exc
+
 
 def _resolve_payload_for_workflow(
     workflow: WorkflowTask,
@@ -344,19 +345,30 @@ def _resolve_common(payload: dict[str, object]) -> tuple[DatasetSpec, ChainSpec,
     return dataset, chain, storage
 
 
-def _resolve_provider(payload: dict[str, object], *, chain: ChainSpec) -> ProviderSpec:
-    provider = resolve_named_or_inline(
-        _require_payload_key(payload, "provider"),
-        group="provider",
-        model_type=ProviderSpec,
-    )
-    unknown_chains = sorted(set(provider.chains) - set(list_group_names("chain")))
+def _resolve_rpc_endpoint(
+    payload: dict[str, object],
+    *,
+    chain: ChainSpec,
+) -> ResolvedRpcEndpointConfig:
+    raw_provider = _require_payload_key(payload, "provider")
+    if not isinstance(raw_provider, str):
+        raise ConfigResolutionError("provider must be provided as a named provider spec")
+
+    provider = ProviderSpec.model_validate(load_named_group(raw_provider, "provider"))
+    unknown_chains = sorted(set(provider.endpoints) - set(list_group_names("chain")))
     if unknown_chains:
         raise ConfigResolutionError(
             f"provider {provider.name} declares unknown chains: {', '.join(unknown_chains)}"
         )
-    provider.endpoint_for(chain.name)
-    return provider
+    endpoint = provider.endpoint_config_for(chain.name)
+    return ResolvedRpcEndpointConfig(
+        provider_name=provider.name,
+        url=endpoint.url,
+        reference=endpoint.reference or endpoint.url,
+        timeout_seconds=provider.transport.timeout_seconds,
+        retry_count=provider.transport.retry_count,
+        backoff_factor=provider.transport.backoff_factor,
+    )
 
 
 def _resolve_model_workflow_base(payload: dict[str, object]) -> _ResolvedModelWorkflowBase:
@@ -431,16 +443,12 @@ def _resolve_model_workflow_spine(
 def _resolve_acquire_config(payload: dict[str, object]) -> AcquireConfig:
     dataset_spec, chain_spec, storage_spec = _resolve_common(payload)
     problem_spec = resolve_problem(_require_payload_key(payload, "problem"))
-    provider_spec = _resolve_provider(payload, chain=chain_spec)
+    rpc_endpoint = _resolve_rpc_endpoint(payload, chain=chain_spec)
     feature_set_spec = resolve_feature_set(_require_payload_key(payload, "feature_set"))
     acquisition_spec = resolve_inline(
         _require_payload_key(payload, "acquisition"),
         label="acquisition",
         model_type=AcquisitionConfig,
-    )
-    acquisition_spec = apply_provider_acquisition_overrides(
-        provider=provider_spec,
-        acquisition=acquisition_spec,
     )
     return AcquireConfig(
         chain=chain_spec,
@@ -448,7 +456,7 @@ def _resolve_acquire_config(payload: dict[str, object]) -> AcquireConfig:
         storage=storage_spec,
         problem=problem_spec,
         feature_set=feature_set_spec,
-        provider=provider_spec,
+        rpc_endpoint=rpc_endpoint,
         acquisition=acquisition_spec,
     )
 

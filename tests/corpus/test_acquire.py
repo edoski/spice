@@ -11,12 +11,12 @@ import pytest
 from web3.providers.rpc.utils import ExceptionRetryConfiguration
 
 import spice.workflows.acquire as acquire_workflow
-from spice.acquisition.provider import ManagedAsyncHTTPProvider
 from spice.acquisition.rpc import (
     BlockPullPlan,
     BlockRange,
     TimestampRange,
 )
+from spice.acquisition.rpc.transport import ManagedAsyncHTTPProvider
 from spice.config import AcquireConfig, WorkflowTask
 from spice.core.reporting import Reporter
 from spice.features import compile_feature_contract
@@ -102,8 +102,8 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     history_windows: list[TimestampRange] = []
 
     class FakeAcquireClient:
-        def __init__(self, provider, chain) -> None:
-            del provider
+        def __init__(self, rpc_endpoint, chain) -> None:
+            del rpc_endpoint
             self.chain = chain
             self._planned_windows: list[BlockPullPlan] = []
 
@@ -176,7 +176,8 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     )
     assert summary.semantics.feature.feature_prerequisites == contract.feature_prerequisites
     assert len(runs) == 1
-    assert runs[0].provider.name == "publicnode"
+    assert runs[0].provider.name == config.rpc_endpoint.provider_name
+    assert runs[0].provider.reference == config.rpc_endpoint.reference
     assert runs[0].facts.requested_history_window_seconds == expected_history_window_seconds
     assert runs[0].facts.resolved_capability_samples >= config.problem.sample_count
     assert len(history_windows) == 1
@@ -207,8 +208,8 @@ def test_acquire_cancellation_during_planning_logs_warning(
     reporter = Reporter(stream=output)
 
     class FakeAcquireClient:
-        def __init__(self, provider, chain) -> None:
-            del provider, chain
+        def __init__(self, rpc_endpoint, chain) -> None:
+            del rpc_endpoint, chain
 
         async def close(self) -> None:
             return None
@@ -260,8 +261,8 @@ def test_acquire_dry_run_emits_compact_output(
     reporter = Reporter(stream=output)
 
     class FakeAcquireClient:
-        def __init__(self, provider, chain) -> None:
-            del provider, chain
+        def __init__(self, rpc_endpoint, chain) -> None:
+            del rpc_endpoint, chain
 
         async def close(self) -> None:
             return None
@@ -346,8 +347,8 @@ def _exercise_short_history_refill(
     history_plan_calls = 0
 
     class FakeAcquireClient:
-        def __init__(self, provider, chain) -> None:
-            del provider
+        def __init__(self, rpc_endpoint, chain) -> None:
+            del rpc_endpoint
             self.chain = chain
 
         async def close(self) -> None:

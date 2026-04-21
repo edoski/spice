@@ -10,20 +10,20 @@ from typing import Literal, SupportsInt, cast
 
 from web3 import AsyncWeb3
 
-from ...config.models import ChainSpec, ProviderSpec
+from ...config.models import ChainSpec, ResolvedRpcEndpointConfig
 from ...corpus.contract import CanonicalBlockRow, RpcBlock, build_canonical_block_row
-from ..provider import build_async_web3
+from .transport import build_async_web3
 from .types import BlockHeader, BlockPullPlan, BlockRange, TimestampRange
 
 
 @dataclass(slots=True)
 class BlockRpcClient:
-    provider: ProviderSpec
+    rpc_endpoint: ResolvedRpcEndpointConfig
     chain: ChainSpec
     _web3: AsyncWeb3 = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self._web3 = build_async_web3(self.provider, self.chain)
+        self._web3 = build_async_web3(self.rpc_endpoint, self.chain)
 
     async def close(self) -> None:
         disconnect = getattr(self._web3.provider, "disconnect", None)

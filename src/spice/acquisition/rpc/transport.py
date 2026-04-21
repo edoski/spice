@@ -1,4 +1,4 @@
-"""Thin async provider helpers built on top of runtime configuration."""
+"""HTTP JSON-RPC transport helpers for acquisition."""
 
 from __future__ import annotations
 
@@ -13,15 +13,14 @@ from web3.providers.rpc import AsyncHTTPProvider
 from web3.providers.rpc.utils import ExceptionRetryConfiguration, check_if_retry_on_failure
 from web3.types import RPCEndpoint, RPCResponse
 
-from ..config.models import ChainSpec, ProviderSpec
-from ..core.errors import ConfigResolutionError
+from ...config.models import ChainSpec, ResolvedRpcEndpointConfig
 
 
-def _retry_configuration(provider: ProviderSpec) -> ExceptionRetryConfiguration:
+def _retry_configuration(rpc_endpoint: ResolvedRpcEndpointConfig) -> ExceptionRetryConfiguration:
     return ExceptionRetryConfiguration(
         errors=[aiohttp.ClientError, OSError, TimeoutError],
-        retries=provider.rpc.retry_count,
-        backoff_factor=provider.rpc.backoff_factor,
+        retries=rpc_endpoint.retry_count,
+        backoff_factor=rpc_endpoint.backoff_factor,
     )
 
 
@@ -139,17 +138,12 @@ class ManagedAsyncHTTPProvider(AsyncHTTPProvider):
         await self._request_session_manager.close()
 
 
-def build_async_web3(provider: ProviderSpec, chain: ChainSpec) -> AsyncWeb3:
-    endpoint = provider.endpoint_for(chain.name)
-    if not endpoint.startswith(("http://", "https://")):
-        raise ConfigResolutionError(
-            f"Unsupported RPC endpoint format for provider {provider.name}: {endpoint}"
-        )
+def build_async_web3(rpc_endpoint: ResolvedRpcEndpointConfig, chain: ChainSpec) -> AsyncWeb3:
     web3 = AsyncWeb3(
         ManagedAsyncHTTPProvider(
-            endpoint,
-            request_kwargs={"timeout": provider.rpc.timeout_seconds},
-            exception_retry_configuration=_retry_configuration(provider),
+            rpc_endpoint.url,
+            request_kwargs={"timeout": rpc_endpoint.timeout_seconds},
+            exception_retry_configuration=_retry_configuration(rpc_endpoint),
         )
     )
     if chain.runtime.uses_poa_extra_data:

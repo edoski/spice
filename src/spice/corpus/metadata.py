@@ -138,11 +138,10 @@ def has_block_files(path: Path) -> bool:
 
 
 def provider_metadata(config: AcquireConfig) -> ProviderMetadata:
-    endpoint = config.provider.endpoint_for(config.chain.name)
     return ProviderMetadata(
-        name=config.provider.name,
-        reference=config.provider.reference_for(config.chain.name),
-        endpoint_fingerprint=sha256(endpoint.encode("utf-8")).hexdigest()[:16],
+        name=config.rpc_endpoint.provider_name,
+        reference=config.rpc_endpoint.reference,
+        endpoint_fingerprint=sha256(config.rpc_endpoint.url.encode("utf-8")).hexdigest()[:16],
     )
 
 

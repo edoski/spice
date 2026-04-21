@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Self
+from urllib.parse import urlparse
 
 from pydantic import (
     Field,
@@ -47,8 +48,16 @@ class ArtifactVariant(StrEnum):
     BASELINE = "baseline"
     TUNED = "tuned"
 
+
 def _utc_midnight_timestamp(value: date) -> int:
     return int(datetime.combine(value, time.min, tzinfo=UTC).timestamp())
+
+
+def _validate_http_endpoint_url(value: str, *, label: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"{label} must be an http:// or https:// URL")
+    return value
 
 
 class ChainRuntimeSpec(ConfigModel):
@@ -469,80 +478,45 @@ class TuningConfig(ConfigModel):
     enable_pruning: bool
 
 
-class ProviderEndpointSpec(ConfigModel):
-    url: str | None = None
+class ProviderEndpointConfig(ConfigModel):
+    url: str
     reference: str | None = None
 
-    @model_validator(mode="after")
-    def validate_source(self) -> Self:
-        if self.url is None:
-            raise ValueError("provider endpoint spec must declare url")
-        return self
-
-    def resolve(self) -> tuple[str, str]:
-        assert self.url is not None
-        return self.url, self.reference or self.url
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        return _validate_http_endpoint_url(value, label="provider.endpoints.url")
 
 
-class ProviderRpcConfig(ConfigModel):
+class ProviderTransportConfig(ConfigModel):
     timeout_seconds: float = Field(gt=0.0)
     retry_count: int = Field(ge=0)
     backoff_factor: float = Field(ge=0.0)
 
 
-class ProviderChainSpec(ConfigModel):
-    endpoint: ProviderEndpointSpec
+class ResolvedRpcEndpointConfig(ConfigModel):
+    provider_name: str
+    url: str
+    reference: str
+    timeout_seconds: float = Field(gt=0.0)
+    retry_count: int = Field(ge=0)
+    backoff_factor: float = Field(ge=0.0)
 
+    @field_validator("provider_name")
+    @classmethod
+    def validate_provider_name(cls, value: str) -> str:
+        return validate_path_segment(value, label="rpc_endpoint.provider_name")
 
-class ProviderAcquisitionRpcOverrides(ConfigModel):
-    batch_size: int | None = Field(default=None, gt=0)
-    concurrency: int | None = Field(default=None, gt=0)
-    min_batch_size: int | None = Field(default=None, gt=0)
-    concurrency_rungs: list[int] | None = None
-
-    @model_validator(mode="after")
-    def validate_runtime(self) -> Self:
-        if self.min_batch_size is not None and self.batch_size is not None:
-            if self.min_batch_size > self.batch_size:
-                raise ValueError(
-                    "provider acquisition rpc override min_batch_size must be <= batch_size"
-                )
-        if self.concurrency_rungs is not None:
-            if sorted(self.concurrency_rungs) != self.concurrency_rungs:
-                raise ValueError(
-                    "provider acquisition rpc override concurrency_rungs must be sorted ascending"
-                )
-            if len(set(self.concurrency_rungs)) != len(self.concurrency_rungs):
-                raise ValueError(
-                    "provider acquisition rpc override "
-                    "concurrency_rungs must not contain duplicates"
-                )
-            if any(value <= 0 for value in self.concurrency_rungs):
-                raise ValueError(
-                    "provider acquisition rpc override concurrency_rungs values must be positive"
-                )
-            if self.concurrency is not None and self.concurrency not in self.concurrency_rungs:
-                raise ValueError(
-                    "provider acquisition rpc override "
-                    "concurrency must be present in concurrency_rungs"
-                )
-        return self
-
-
-class ProviderAcquisitionOverrides(ConfigModel):
-    chunk_size: int | None = Field(default=None, gt=0)
-    rpc: ProviderAcquisitionRpcOverrides | None = None
-
-
-class ProviderAcquisitionConfig(ConfigModel):
-    overrides: ProviderAcquisitionOverrides
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        return _validate_http_endpoint_url(value, label="rpc_endpoint.url")
 
 
 class ProviderSpec(ConfigModel):
     name: str
-    rpc: ProviderRpcConfig
-    chains: dict[str, ProviderChainSpec]
-    acquisition: ProviderAcquisitionConfig | None = None
+    transport: ProviderTransportConfig
+    endpoints: dict[str, ProviderEndpointConfig]
 
     @field_validator("name")
     @classmethod
@@ -551,47 +525,19 @@ class ProviderSpec(ConfigModel):
 
     @model_validator(mode="after")
     def validate_chain_coverage(self) -> Self:
-        if not self.chains:
-            raise ValueError("provider.chains must not be empty")
-        for name in self.chains:
-            validate_path_segment(name, label="provider.chains key")
+        if not self.endpoints:
+            raise ValueError("provider.endpoints must not be empty")
+        for name in self.endpoints:
+            validate_path_segment(name, label="provider.endpoints key")
         return self
 
-    def endpoint_spec_for(self, chain_name: str) -> ProviderEndpointSpec:
+    def endpoint_config_for(self, chain_name: str) -> ProviderEndpointConfig:
         try:
-            return self.chains[chain_name].endpoint
+            return self.endpoints[chain_name]
         except KeyError as exc:
             raise ConfigResolutionError(
-                f"provider {self.name} does not define chain endpoint for {chain_name}"
+                f"provider {self.name} does not define endpoint for {chain_name}"
             ) from exc
-
-    def endpoint_for(self, chain_name: str) -> str:
-        endpoint, _ = self.endpoint_spec_for(chain_name).resolve()
-        return endpoint
-
-    def reference_for(self, chain_name: str) -> str:
-        _, reference = self.endpoint_spec_for(chain_name).resolve()
-        return reference
-
-
-def apply_provider_acquisition_overrides(
-    *,
-    provider: ProviderSpec,
-    acquisition: AcquisitionConfig,
-) -> AcquisitionConfig:
-    if provider.acquisition is None:
-        return acquisition
-    overrides = provider.acquisition.overrides.model_dump(mode="json", exclude_none=True)
-    if not overrides:
-        return acquisition
-    merged = acquisition.model_dump(mode="json")
-    if "rpc" in overrides and isinstance(merged.get("rpc"), dict):
-        merged["rpc"] = {
-            **merged["rpc"],
-            **overrides.pop("rpc"),
-        }
-    merged.update(overrides)
-    return AcquisitionConfig.model_validate(merged)
 
 
 class WorkflowConfig(ConfigModel):
@@ -617,13 +563,8 @@ class AcquireConfig(WorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.ACQUIRE
     problem: ProblemSpec
     feature_set: FeatureSetConfig
-    provider: ProviderSpec
+    rpc_endpoint: ResolvedRpcEndpointConfig
     acquisition: AcquisitionConfig
-
-    @model_validator(mode="after")
-    def validate_provider(self) -> Self:
-        self.provider.endpoint_for(self.chain.name)
-        return self
 
 
 class ModelWorkflowConfig(WorkflowConfig):

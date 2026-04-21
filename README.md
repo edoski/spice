@@ -92,7 +92,8 @@ Named specs live under [src/spice/conf](src/spice/conf):
 
 - `preset/`: workflow bundles and the user-facing experiment unit
 - `dataset/`: evaluation-date selectors
-- `chain/`, `provider/`: runtime specs
+- `chain/`: chain runtime specs
+- `provider/`: HTTP RPC transport and per-chain endpoint specs
 - `execution/`: internal submission target spec
 - `problem/`: delay budgets and sampling contracts
 - internal registry-loaded seams: `model/`, `feature_set/`, `prediction/`,
@@ -105,8 +106,10 @@ Rules:
 - workflow CLI composition is preset-first; only `--chain` remains as a seam selector
 - run knobs stay explicit: `--dry-run`, `--trial-count`, `--delay-seconds`,
   `--study`, and `--variant`
+- `provider` is preset-owned runtime config, not a workflow CLI selector
 - presets may use one `extends: <preset>` parent; parent presets must be runnable
 - child presets replace scalar/name fields and deep-merge only known config blocks
+- `acquire` resolves the selected provider into one chain-specific RPC endpoint before runtime
 - the execution target is fixed at submission time, validated through
   `execution/models.py`, and not stored in presets
 - `problem.compiler.id` selects the temporal compiler

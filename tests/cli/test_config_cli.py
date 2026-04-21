@@ -43,7 +43,9 @@ def test_acquire_cli_resolves_request_surface(tmp_path, monkeypatch) -> None:
     config = cast(AcquireConfig, captured["config"])
     paths = resolve_workflow_paths(config)
     assert config.chain.name == "avalanche"
-    assert config.provider.name == "publicnode"
+    assert config.rpc_endpoint.provider_name == "publicnode"
+    assert config.rpc_endpoint.url == "https://avalanche-c-chain-rpc.publicnode.com"
+    assert config.rpc_endpoint.reference == "https://avalanche-c-chain-rpc.publicnode.com"
     assert config.acquisition.dry_run is True
     assert paths.output_root == tmp_path / "outputs"
 

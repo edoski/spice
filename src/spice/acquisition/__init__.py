@@ -1,1 +1,1 @@
-"""Block acquisition, provider, metadata, and validation modules."""
+"""Block acquisition, RPC transport, metadata, and validation modules."""

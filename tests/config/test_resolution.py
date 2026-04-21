@@ -6,7 +6,13 @@ from typing import cast
 import pytest
 import yaml
 
-from spice.config import TrainConfig, WorkflowRequest, WorkflowTask, resolve_workflow_config
+from spice.config import (
+    AcquireConfig,
+    TrainConfig,
+    WorkflowRequest,
+    WorkflowTask,
+    resolve_workflow_config,
+)
 from spice.config.registry import load_named_group
 from spice.core.errors import ConfigResolutionError
 
@@ -88,6 +94,79 @@ def test_preset_extends_merges_known_blocks_and_replaces_names(
     assert config.storage.root == child_root
     assert config.study.name == "child-study"
     assert config.artifact.variant.value == "baseline"
+
+
+def test_acquire_resolution_resolves_one_chain_specific_rpc_endpoint(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    isolate_conf_root()
+
+    config = cast(
+        AcquireConfig,
+        resolve_workflow_config(
+            WorkflowTask.ACQUIRE,
+            WorkflowRequest(
+                preset="icdcs_2026",
+                chain="avalanche",
+                storage_root=tmp_path / "outputs",
+            ),
+        ),
+    )
+
+    assert config.rpc_endpoint.provider_name == "publicnode"
+    assert config.rpc_endpoint.url == "https://avalanche-c-chain-rpc.publicnode.com"
+    assert config.rpc_endpoint.reference == "https://avalanche-c-chain-rpc.publicnode.com"
+    assert config.rpc_endpoint.timeout_seconds == 30.0
+    assert config.rpc_endpoint.retry_count == 5
+    assert config.rpc_endpoint.backoff_factor == 0.125
+
+
+def test_acquire_resolution_fails_when_provider_lacks_chain_endpoint(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    conf_root = isolate_conf_root()
+    (conf_root / "provider" / "eth_only.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "eth_only",
+                "transport": {
+                    "timeout_seconds": 30.0,
+                    "retry_count": 5,
+                    "backoff_factor": 0.125,
+                },
+                "endpoints": {
+                    "ethereum": {
+                        "url": "https://ethereum-rpc.publicnode.com",
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    _write_preset(
+        conf_root,
+        "eth_only_acquire",
+        {
+            "extends": "icdcs_2026",
+            "provider": "eth_only",
+        },
+    )
+
+    with pytest.raises(
+        ConfigResolutionError,
+        match="provider eth_only does not define endpoint for avalanche",
+    ):
+        resolve_workflow_config(
+            WorkflowTask.ACQUIRE,
+            WorkflowRequest(
+                preset="eth_only_acquire",
+                chain="avalanche",
+                storage_root=tmp_path / "outputs",
+            ),
+        )
 
 
 @pytest.mark.parametrize(
