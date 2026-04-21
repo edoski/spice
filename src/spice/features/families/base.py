@@ -51,6 +51,7 @@ class FeatureDefinition:
     dependencies: tuple[str, ...]
     history_seconds: int
     warmup_rows: int
+    source_columns: tuple[str, ...]
     compute: ComputeFeatureFn
 
 

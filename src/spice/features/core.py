@@ -101,6 +101,16 @@ def build_feature_table(
         known_feature_names=tuple(family.features),
     )
     sorted_blocks = blocks.sort("block_number")
+    required_columns = {
+        column
+        for feature_name in _dependency_order(feature_names, family=family)
+        for column in family.features[feature_name].source_columns
+    }
+    missing_columns = sorted(required_columns.difference(sorted_blocks.columns))
+    if missing_columns:
+        raise ValueError(
+            "Feature set requires missing block columns: " + ", ".join(missing_columns)
+        )
     series = family.build_series(sorted_blocks)
     resolved: dict[str, FloatVector] = {}
     for feature_name in _dependency_order(feature_names, family=family):

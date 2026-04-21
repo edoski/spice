@@ -96,7 +96,13 @@ def _rolling_feature(
         (dependency_name,),
         window_seconds,
         0,
-        lambda blocks, series, resolved_dependencies, dependency_name=dependency_name, window_seconds=window_seconds, compute=compute: compute(
+        (),
+        lambda blocks,
+        series,
+        resolved_dependencies,
+        dependency_name=dependency_name,
+        window_seconds=window_seconds,
+        compute=compute: compute(
             blocks,
             series,
             resolved_dependencies,
@@ -108,23 +114,33 @@ def _rolling_feature(
 
 def _feature_definitions() -> dict[str, FeatureDefinition]:
     features: dict[str, FeatureDefinition] = {
-        "log_base_fee": FeatureDefinition((), 0, 0, helpers.log_base_fee_feature),
-        "gas_utilization": FeatureDefinition((), 0, 0, helpers.gas_utilization_feature),
+        "log_base_fee": FeatureDefinition(
+            (), 0, 0, ("base_fee_per_gas",), helpers.log_base_fee_feature
+        ),
+        "gas_utilization": FeatureDefinition(
+            (), 0, 0, ("gas_used", "gas_limit"), helpers.gas_utilization_feature
+        ),
         "seconds_since_previous_block": FeatureDefinition(
             (),
             0,
             0,
+            ("timestamp",),
             _seconds_since_previous_block,
         ),
-        "elapsed_seconds": FeatureDefinition((), 0, 0, _elapsed_seconds),
-        "hour_sin": FeatureDefinition((), 0, 0, helpers.hour_sin_feature),
-        "hour_cos": FeatureDefinition((), 0, 0, helpers.hour_cos_feature),
-        "weekday_sin": FeatureDefinition((), 0, 0, helpers.weekday_sin_feature),
-        "weekday_cos": FeatureDefinition((), 0, 0, helpers.weekday_cos_feature),
+        "elapsed_seconds": FeatureDefinition((), 0, 0, ("timestamp",), _elapsed_seconds),
+        "hour_sin": FeatureDefinition((), 0, 0, ("timestamp",), helpers.hour_sin_feature),
+        "hour_cos": FeatureDefinition((), 0, 0, ("timestamp",), helpers.hour_cos_feature),
+        "weekday_sin": FeatureDefinition(
+            (), 0, 0, ("timestamp",), helpers.weekday_sin_feature
+        ),
+        "weekday_cos": FeatureDefinition(
+            (), 0, 0, ("timestamp",), helpers.weekday_cos_feature
+        ),
         "trend_slope_600s": FeatureDefinition(
             ("log_base_fee",),
             600,
             0,
+            (),
             _trend_slope_600s,
         ),
     }

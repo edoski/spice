@@ -215,3 +215,34 @@ def test_realization_rejects_negative_decoded_offsets() -> None:
             sample_indices,
             np.array([0], dtype=np.int64),
         )
+
+
+def test_fullset_uses_next_block_baseline_and_future_window_optimum() -> None:
+    store = _store()
+    sample_indices = np.arange(store.n_samples, dtype=np.int64)
+    evaluator = compile_evaluator_contract(
+        coerce_evaluator_config({"id": "paper_fullset", "sampler": "fullset"})
+    )
+
+    summary = evaluator.run(
+        store,
+        _realization_policy(),
+        DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64)),
+        sample_indices,
+    )
+
+    baseline_total = 90.0 + 70.0 + 50.0 + 30.0
+    realized_total = 90.0 + 60.0 + 50.0 + 25.0
+    optimum_total = 80.0 + 60.0 + 40.0 + 25.0
+
+    assert summary.total_events == 4
+    assert summary.metrics.values == pytest.approx(
+        {
+            "profit_over_baseline": (baseline_total - realized_total) / baseline_total,
+            "cost_over_optimum": (realized_total - optimum_total) / optimum_total,
+            "baseline_cost_over_optimum": (baseline_total - optimum_total) / optimum_total,
+            "realized_fee_sum": realized_total,
+            "baseline_fee_sum": baseline_total,
+            "optimum_fee_sum": optimum_total,
+        }
+    )

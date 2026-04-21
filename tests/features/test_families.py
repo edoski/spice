@@ -111,7 +111,13 @@ def _assert_professor_block_native(feature_contract, feature_table) -> None:
     assert np.isnan(feature_table.feature_matrix[0, 3])
     assert feature_table.feature_matrix[1, 3] == pytest.approx(0.6)
     assert np.isnan(feature_table.feature_matrix[198, 4])
-    assert np.isfinite(feature_table.feature_matrix[199, 4])
+    assert feature_table.feature_matrix[199, 4] == pytest.approx(1.0)
+    np.testing.assert_array_equal(
+        feature_table.feature_matrix[:4, 5],
+        np.array([0.0, 12.0, 24.0, 36.0], dtype=np.float32),
+    )
+    assert np.isnan(feature_table.feature_matrix[8, 6])
+    assert feature_table.feature_matrix[9, 6] == pytest.approx(0.0)
 
 
 @pytest.mark.parametrize(
@@ -144,10 +150,12 @@ def _assert_professor_block_native(feature_contract, feature_table) -> None:
             "block_native",
             [
                 "log_base_fee_per_gas",
-                "seconds_since_previous_block",
-                "rolling_min_log_base_fee_per_gas_10",
-                "gas_utilization_lag1",
-                "trend_slope_log_base_fee_per_gas_200",
+                "dt_seconds",
+                "roll10_min_logfee",
+                "gas_ratio_lag1",
+                "base_fee_trend",
+                "time_since_start",
+                "roll10_std_gr",
             ],
             _block_frame,
             _assert_professor_block_native,
@@ -216,3 +224,15 @@ def test_feature_fingerprint_changes_when_source_bytes_change(tmp_path: Path) ->
     )
 
     assert first != second
+
+
+def test_feature_family_requires_declared_block_columns() -> None:
+    feature_contract = _build_contract(
+        "test_missing_columns",
+        "block_native",
+        ["gas_ratio", "dt_seconds"],
+    )
+    frame = _block_frame().drop("gas_limit")
+
+    with pytest.raises(ValueError, match="missing block columns: gas_limit"):
+        feature_contract.build_table(frame)
