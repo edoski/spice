@@ -216,16 +216,8 @@ class TrainingSummaryPayload(CodecPayloadModel):
     validation_samples: int
     test_samples: int
     best_epoch: int
-    resolved_device: str
-    resolved_precision: str
-    compiled: bool
-    loader_strategy_id: str
-    input_storage_mode_id: str
-    target_storage_mode_id: str
-    batch_planner_id: str
     best_objective_metric_id: str
     best_objective_value: float
-    best_objective_metrics: dict[str, float]
     best_validation_metrics: dict[str, float]
     test_metrics: dict[str, float]
 
@@ -238,16 +230,8 @@ class TrainingSummaryPayload(CodecPayloadModel):
             validation_samples=summary.split_sizes.validation_samples,
             test_samples=summary.split_sizes.test_samples,
             best_epoch=summary.best_epoch,
-            resolved_device=summary.resolved_device,
-            resolved_precision=summary.resolved_precision,
-            compiled=summary.compiled,
-            loader_strategy_id=summary.loader_strategy_id,
-            input_storage_mode_id=summary.input_storage_mode_id,
-            target_storage_mode_id=summary.target_storage_mode_id,
-            batch_planner_id=summary.batch_planner_id,
             best_objective_metric_id=summary.best_objective_metric_id,
             best_objective_value=summary.best_objective_value,
-            best_objective_metrics=_metric_values_payload(summary.best_objective_metrics),
             best_validation_metrics=_metric_values_payload(summary.best_validation_metrics),
             test_metrics=_metric_values_payload(summary.test_metrics),
         )
@@ -264,16 +248,8 @@ class TrainingSummaryPayload(CodecPayloadModel):
                 test_samples=self.test_samples,
             ),
             best_epoch=self.best_epoch,
-            resolved_device=self.resolved_device,
-            resolved_precision=self.resolved_precision,
-            compiled=self.compiled,
-            loader_strategy_id=self.loader_strategy_id,
-            input_storage_mode_id=self.input_storage_mode_id,
-            target_storage_mode_id=self.target_storage_mode_id,
-            batch_planner_id=self.batch_planner_id,
             best_objective_metric_id=self.best_objective_metric_id,
             best_objective_value=self.best_objective_value,
-            best_objective_metrics=MetricSet(values=self.best_objective_metrics),
             best_validation_metrics=MetricSet(values=self.best_validation_metrics),
             test_metrics=MetricSet(values=self.test_metrics),
         )

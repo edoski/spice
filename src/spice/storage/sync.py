@@ -1,4 +1,4 @@
-"""Remote storage transfer helpers."""
+"""Storage sync helpers."""
 
 from __future__ import annotations
 
@@ -12,8 +12,17 @@ from uuid import uuid4
 
 from ..core.errors import SpiceOperatorError, StateConflictError
 from ..core.files import promote_paths_atomic, remove_path
-from ..storage.catalog import CatalogArtifactRecord, CatalogDatasetRecord, CatalogStudyRecord
-from ..storage.roots import (
+from ..execution.slurm_ssh import (
+    ExecutionTarget,
+    ensure_execution_success,
+    load_execution_target,
+    run_execution_command,
+    run_execution_module,
+    run_rsync_from_execution_target,
+    run_rsync_to_execution_target,
+)
+from .catalog import CatalogArtifactRecord, CatalogDatasetRecord, CatalogStudyRecord
+from .roots import (
     ArtifactSelector,
     DatasetSelector,
     StudySelector,
@@ -21,68 +30,59 @@ from ..storage.roots import (
     resolve_dataset_record,
     resolve_study_record,
 )
-from .shell import (
-    RemoteExecutionTarget,
-    ensure_remote_success,
-    resolve_remote_target,
-    run_remote_command,
-    run_remote_module,
-    run_rsync_from_remote,
-    run_rsync_to_remote,
-)
 
 RecordT = TypeVar("RecordT", CatalogDatasetRecord, CatalogStudyRecord)
 RemoteRecordT = TypeVar("RemoteRecordT", CatalogStudyRecord, CatalogArtifactRecord)
 
 
-def push_dataset_to_remote(
+def push_dataset_to_cluster(
     *,
     storage_root: Path,
     selector: DatasetSelector,
     replace: bool,
 ) -> CatalogDatasetRecord:
-    return _push_record_to_remote(
+    return _push_record_to_cluster(
         storage_root=storage_root,
         selector=selector,
         resolve_record=lambda root, selected: resolve_dataset_record(
             root,
             selector=cast(DatasetSelector, selected),
         ),
-        destination_root=_remote_dataset_root,
+        destination_root=_cluster_dataset_root,
         replace=replace,
     )
 
 
-def push_study_to_remote(
+def push_study_to_cluster(
     *,
     storage_root: Path,
     selector: StudySelector,
     replace: bool,
 ) -> CatalogStudyRecord:
-    return _push_record_to_remote(
+    return _push_record_to_cluster(
         storage_root=storage_root,
         selector=selector,
         resolve_record=lambda root, selected: resolve_study_record(
             root,
             selector=cast(StudySelector, selected),
         ),
-        destination_root=_remote_study_root,
+        destination_root=_cluster_study_root,
         replace=replace,
     )
 
 
-def pull_artifact_from_remote(
+def pull_artifact_from_cluster(
     *,
     storage_root: Path,
     selector: ArtifactSelector,
     replace: bool,
 ) -> tuple[CatalogArtifactRecord, bool]:
-    target = resolve_remote_target()
-    record = _resolve_remote_artifact_record(target, selector=selector)
+    target = load_execution_target()
+    record = _resolve_cluster_artifact_record(target, selector=selector)
     destination_root = _local_artifact_root(storage_root, record)
-    _pull_root_from_remote(
+    _pull_root_from_cluster(
         target=target,
-        remote_root=record.root_path,
+        cluster_root=record.root_path,
         local_storage_root=storage_root,
         destination_root=destination_root,
         replace=replace,
@@ -91,17 +91,17 @@ def pull_artifact_from_remote(
     return record, dataset_present
 
 
-def pull_study_from_remote(
+def pull_study_from_cluster(
     *,
     storage_root: Path,
     selector: StudySelector,
     replace: bool,
 ) -> CatalogStudyRecord:
-    target = resolve_remote_target()
-    record = _resolve_remote_study_record(target, selector=selector)
-    _pull_root_from_remote(
+    target = load_execution_target()
+    record = _resolve_cluster_study_record(target, selector=selector)
+    _pull_root_from_cluster(
         target=target,
-        remote_root=record.root_path,
+        cluster_root=record.root_path,
         local_storage_root=storage_root,
         destination_root=_local_study_root(storage_root, record),
         replace=replace,
@@ -109,36 +109,40 @@ def pull_study_from_remote(
     return record
 
 
-def _push_root_to_remote(
+def _push_root_to_cluster(
     *,
     local_root: Path,
-    remote_storage_root: Path,
+    cluster_storage_root: Path,
     destination_root: Path,
     replace: bool,
-    target: RemoteExecutionTarget,
+    target: ExecutionTarget,
 ) -> None:
     staged_root = destination_root.parent / f".{destination_root.name}.incoming.{uuid4().hex}"
     try:
-        _prepare_remote_stage(
+        _prepare_cluster_stage(
             target,
             destination_root=destination_root,
             staged_root=staged_root,
             replace=replace,
         )
-        run_rsync_to_remote(target, source_root=local_root, destination_root=staged_root)
-        _finalize_remote_stage(
+        run_rsync_to_execution_target(
             target,
-            remote_storage_root=remote_storage_root,
+            source_root=local_root,
+            destination_root=staged_root,
+        )
+        _finalize_cluster_stage(
+            target,
+            cluster_storage_root=cluster_storage_root,
             destination_root=destination_root,
             staged_root=staged_root,
             replace=replace,
         )
     except Exception:
-        _cleanup_remote_path(target, staged_root)
+        _cleanup_cluster_path(target, staged_root)
         raise
 
 
-def _push_record_to_remote(
+def _push_record_to_cluster(
     *,
     storage_root: Path,
     selector: object,
@@ -146,11 +150,11 @@ def _push_record_to_remote(
     destination_root: Callable[[Path, RecordT], Path],
     replace: bool,
 ) -> RecordT:
-    target = resolve_remote_target()
+    target = load_execution_target()
     record = resolve_record(storage_root, selector)
-    _push_root_to_remote(
+    _push_root_to_cluster(
         local_root=record.root_path,
-        remote_storage_root=target.spec.paths.storage_root,
+        cluster_storage_root=target.spec.paths.storage_root,
         destination_root=destination_root(target.spec.paths.storage_root, record),
         replace=replace,
         target=target,
@@ -158,10 +162,10 @@ def _push_record_to_remote(
     return record
 
 
-def _pull_root_from_remote(
+def _pull_root_from_cluster(
     *,
-    target: RemoteExecutionTarget,
-    remote_root: Path,
+    target: ExecutionTarget,
+    cluster_root: Path,
     local_storage_root: Path,
     destination_root: Path,
     replace: bool,
@@ -173,7 +177,11 @@ def _pull_root_from_remote(
     remove_path(staged_root)
     staged_root.mkdir(parents=True, exist_ok=True)
     try:
-        run_rsync_from_remote(target, source_root=remote_root, destination_root=staged_root)
+        run_rsync_from_execution_target(
+            target,
+            source_root=cluster_root,
+            destination_root=staged_root,
+        )
         promote_paths_atomic([(destination_root, staged_root)])
         reindex_root(local_storage_root, root_path=destination_root)
     except Exception:
@@ -181,17 +189,17 @@ def _pull_root_from_remote(
         raise
 
 
-def _prepare_remote_stage(
-    target: RemoteExecutionTarget,
+def _prepare_cluster_stage(
+    target: ExecutionTarget,
     *,
     destination_root: Path,
     staged_root: Path,
     replace: bool,
 ) -> None:
-    ensure_remote_success(
-        run_remote_module(
+    ensure_execution_success(
+        run_execution_module(
             target,
-            "spice.remote.actions",
+            "spice.storage.sync_actions",
             [
                 "prepare-stage",
                 "--destination-root",
@@ -201,26 +209,26 @@ def _prepare_remote_stage(
                 *(["--replace"] if replace else []),
             ],
         ),
-        action=f"prepare remote stage {destination_root}",
+        action=f"prepare stage {destination_root}",
     )
 
 
-def _finalize_remote_stage(
-    target: RemoteExecutionTarget,
+def _finalize_cluster_stage(
+    target: ExecutionTarget,
     *,
-    remote_storage_root: Path,
+    cluster_storage_root: Path,
     destination_root: Path,
     staged_root: Path,
     replace: bool,
 ) -> None:
-    ensure_remote_success(
-        run_remote_module(
+    ensure_execution_success(
+        run_execution_module(
             target,
-            "spice.remote.actions",
+            "spice.storage.sync_actions",
             [
                 "finalize-stage",
                 "--storage-root",
-                str(remote_storage_root),
+                str(cluster_storage_root),
                 "--destination-root",
                 str(destination_root),
                 "--staged-root",
@@ -228,20 +236,20 @@ def _finalize_remote_stage(
                 *(["--replace"] if replace else []),
             ],
         ),
-        action=f"finalize remote transfer {destination_root}",
+        action=f"finalize transfer {destination_root}",
     )
 
 
-def _cleanup_remote_path(target: RemoteExecutionTarget, path: Path) -> None:
-    run_remote_command(target, f"rm -rf {shlex.quote(path.as_posix())}")
+def _cleanup_cluster_path(target: ExecutionTarget, path: Path) -> None:
+    run_execution_command(target, f"rm -rf {shlex.quote(path.as_posix())}")
 
 
-def _resolve_remote_study_record(
-    target: RemoteExecutionTarget,
+def _resolve_cluster_study_record(
+    target: ExecutionTarget,
     *,
     selector: StudySelector,
 ) -> CatalogStudyRecord:
-    return _resolve_remote_record(
+    return _resolve_cluster_record(
         target,
         command="resolve-study-record",
         action_label="StudySelector",
@@ -250,12 +258,12 @@ def _resolve_remote_study_record(
     )
 
 
-def _resolve_remote_artifact_record(
-    target: RemoteExecutionTarget,
+def _resolve_cluster_artifact_record(
+    target: ExecutionTarget,
     *,
     selector: ArtifactSelector,
 ) -> CatalogArtifactRecord:
-    return _resolve_remote_record(
+    return _resolve_cluster_record(
         target,
         command="resolve-artifact-record",
         action_label="ArtifactSelector",
@@ -265,8 +273,8 @@ def _resolve_remote_artifact_record(
     )
 
 
-def _resolve_remote_record(
-    target: RemoteExecutionTarget,
+def _resolve_cluster_record(
+    target: ExecutionTarget,
     *,
     command: str,
     action_label: str,
@@ -274,7 +282,7 @@ def _resolve_remote_record(
     record_type: type[RemoteRecordT],
     nullable_fields: frozenset[str] = frozenset(),
 ) -> RemoteRecordT:
-    payload = _resolve_remote_record_payload(
+    payload = _resolve_cluster_record_payload(
         target,
         command=command,
         action_label=action_label,
@@ -292,17 +300,17 @@ def _resolve_remote_record(
     return cast(RemoteRecordT, record_type(**cast(Any, record_payload)))
 
 
-def _resolve_remote_record_payload(
-    target: RemoteExecutionTarget,
+def _resolve_cluster_record_payload(
+    target: ExecutionTarget,
     *,
     command: str,
     action_label: str,
     selector_payload: dict[str, object | None],
 ) -> dict[str, object | None]:
-    result = ensure_remote_success(
-        run_remote_module(
+    result = ensure_execution_success(
+        run_execution_module(
             target,
-            "spice.remote.actions",
+            "spice.storage.sync_actions",
             [
                 command,
                 "--storage-root",
@@ -311,27 +319,26 @@ def _resolve_remote_record_payload(
                 json.dumps(selector_payload),
             ],
         ),
-        action=f"resolve remote {action_label}",
+        action=f"resolve {action_label}",
     )
     payload = json.loads(result.stdout)
     if not isinstance(payload, dict):
-        raise SpiceOperatorError("remote selector payload must be a mapping")
+        raise SpiceOperatorError("selector payload must be a mapping")
     return payload
 
 
 def _selector_payload(selector: StudySelector | ArtifactSelector) -> dict[str, object | None]:
     return {
-        field.name: cast(object | None, getattr(selector, field.name))
-        for field in fields(selector)
+        field.name: cast(object | None, getattr(selector, field.name)) for field in fields(selector)
     }
 
 
-def _remote_dataset_root(remote_storage_root: Path, record: CatalogDatasetRecord) -> Path:
-    return remote_storage_root / "corpora" / record.chain_name / record.dataset_id
+def _cluster_dataset_root(cluster_storage_root: Path, record: CatalogDatasetRecord) -> Path:
+    return cluster_storage_root / "corpora" / record.chain_name / record.dataset_id
 
 
-def _remote_study_root(remote_storage_root: Path, record: CatalogStudyRecord) -> Path:
-    return remote_storage_root / "studies" / record.chain_name / record.study_id
+def _cluster_study_root(cluster_storage_root: Path, record: CatalogStudyRecord) -> Path:
+    return cluster_storage_root / "studies" / record.chain_name / record.study_id
 
 
 def _local_study_root(storage_root: Path, record: CatalogStudyRecord) -> Path:

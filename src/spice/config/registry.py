@@ -115,7 +115,6 @@ _GROUP_SPECS = (
         directory="model",
         seed_name="lstm",
         validate=coerce_model_config,
-        identity_field="id",
         seed_from_requested_name=True,
     ),
     GroupSpec(
@@ -123,7 +122,6 @@ _GROUP_SPECS = (
         directory="objective",
         seed_name="validation_total_loss",
         validate=coerce_objective_config,
-        identity_field="id",
         seed_from_requested_name=False,
     ),
     GroupSpec(
@@ -212,10 +210,15 @@ def load_yaml_mapping(path: Path) -> dict[str, object]:
 
 
 def load_named_group(name: str, group: str) -> dict[str, object]:
-    path = spec_path(group, name)
+    normalized_group = normalize_group_name(group)
+    path = spec_path(normalized_group, name)
     if not path.is_file():
-        raise ConfigResolutionError(f"Unknown {normalize_group_name(group)} spec: {name}")
-    return load_yaml_mapping(path)
+        raise ConfigResolutionError(f"Unknown {normalized_group} spec: {name}")
+    payload = load_yaml_mapping(path)
+    validated = _validate_payload(normalized_group, name=name, payload=payload)
+    if isinstance(validated, BaseModel):
+        return _canonicalize_model(validated)
+    return _canonicalize_mapping(validated)
 
 
 def list_group_names(group: str) -> list[str]:
@@ -223,10 +226,7 @@ def list_group_names(group: str) -> list[str]:
 
 
 def show_named_group(group: str, name: str) -> str:
-    normalized_group = normalize_group_name(group)
-    payload = load_named_group(name, normalized_group)
-    validated = _validate_payload(normalized_group, name=name, payload=payload)
-    return dump_canonical_yaml(validated)
+    return dump_canonical_yaml(load_named_group(name, group))
 
 
 def ensure_named_group_file(group: str, name: str) -> Path:

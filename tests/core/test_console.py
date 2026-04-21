@@ -53,7 +53,7 @@ def test_workflow_runtime_renders_plain_sectioned_summary() -> None:
         runtime.log_sectioned_summary(
             "training summary",
             [
-                ("training", [("best epoch", "6"), ("device", "cuda")]),
+                ("training", [("best epoch", "6"), ("best objective", "0.0118")]),
                 ("validation", [("profit", "0.0118")]),
             ],
         )

@@ -49,10 +49,13 @@ from ..temporal.problem_store import (
 )
 from ..temporal.realization import CompiledRealizationPolicyContract
 from ..temporal.scaling import ScalerStats
-from ._runtime import CompiledRepresentationContract
-from .families.registry import build_model, resolve_model_representation_id
+from .families.registry import build_model
 from .models import TemporalModel
-from .representations import compile_representation_contract
+from .representations import (
+    SEQUENCE_INPUT_REPRESENTATION_ID,
+    CompiledRepresentationContract,
+    compile_representation_contract,
+)
 from .training import TrainingResult, train_model
 
 
@@ -107,8 +110,6 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
         prediction_id=config.prediction.id,
         family_config=config.prediction.family,
     )
-    if config.objective is None:
-        raise ValueError("objective is required for train and tune specs")
     objective_contract = compile_objective_contract(config.objective)
     dataset_builder_contract = compile_dataset_builder_contract(config.dataset_builder)
     input_normalization_contract = compile_input_normalization_contract(
@@ -139,9 +140,7 @@ def build_training_spec(config: TrainConfig | TuneConfig) -> TrainingSpec:
         prediction_contract=prediction_contract,
         objective_contract=objective_contract,
         input_normalization_contract=input_normalization_contract,
-        representation_contract=compile_representation_contract(
-            resolve_model_representation_id(config.model)
-        ),
+        representation_contract=compile_representation_contract(SEQUENCE_INPUT_REPRESENTATION_ID),
         model=config.model,
         variant=variant,
         study=config.study if variant is ArtifactVariant.TUNED else None,

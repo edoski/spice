@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 import torch
 
 from ....core.reporting import StageMetricDescriptor
@@ -10,15 +9,18 @@ from ....modeling.models import ModelOutputs
 from ....temporal.problem_store import CompiledProblemStore
 from ....temporal.realization import CompiledRealizationPolicyContract
 from ...contracts import (
+    ActionSpaceDecodeContext,
     CompiledPredictionContract,
     DecodedOffsets,
     IntVector,
     PredictionTargetBatch,
     PreparedPredictionTargets,
+    masked_offset_argmax,
 )
 from .batch import (
     MinBlockFeeTargetBatch,
     MinBlockFeeTrainingState,
+    materialize_min_block_fee_targets,
 )
 from .config import MinBlockFeeMultitaskFamilyConfig
 from .metrics import (
@@ -52,23 +54,25 @@ def _fit_training_state(
 ) -> MinBlockFeeTrainingState:
     if class_weighting != "inverse_frequency":
         raise ValueError(f"Unsupported class_weighting: {class_weighting}")
-    targets = prepare_min_block_fee_targets(
+    targets = materialize_min_block_fee_targets(
         store,
         train_sample_indices,
         realization_policy=realization_policy,
     )
-    offsets = targets.min_block_offsets.detach().cpu().numpy().astype(np.int64, copy=False)
-    state = inverse_frequency_class_weights(offsets, n_classes=store.max_candidate_slots)
-    fee_mean = 0.0
-    fee_std = 1.0
+    class_weights = inverse_frequency_class_weights(
+        targets.min_block_offsets,
+        n_classes=store.max_candidate_slots,
+    )
+    fee_mean = torch.tensor(0.0, dtype=torch.float32)
+    fee_std = torch.tensor(1.0, dtype=torch.float32)
     if fee_target_normalization == "zscore_train_split":
-        fees = targets.min_block_log_fees.detach().cpu().numpy().astype(np.float64, copy=False)
-        fee_mean = float(fees.mean())
-        fee_std = float(fees.std() + 1e-8)
+        fees = targets.min_block_log_fees.detach().to(device="cpu", dtype=torch.float32)
+        fee_mean = fees.mean()
+        fee_std = fees.std(correction=0) + 1e-8
     elif fee_target_normalization != "none":
         raise ValueError(f"Unsupported fee_target_normalization: {fee_target_normalization}")
     return MinBlockFeeTrainingState(
-        class_weights=state.class_weights,
+        class_weights=class_weights,
         fee_mean=fee_mean,
         fee_std=fee_std,
     )
@@ -116,18 +120,21 @@ def _create_epoch_accumulator(stage: str):
 
 
 def _allocate_decoded_offsets(sample_count: int) -> DecodedOffsets:
-    return [0] * sample_count
+    return DecodedOffsets.allocate(sample_count)
 
 
 def _decode_selected_offsets_into(
     predictions: DecodedOffsets,
-    sample_positions: torch.Tensor,
     outputs: ModelOutputs,
+    decode_context: ActionSpaceDecodeContext,
 ) -> None:
-    decoded = outputs.head(OFFSET_LOGITS_HEAD_ID).argmax(dim=-1).cpu().tolist()
-    positions = sample_positions.tolist()
-    for sample_position, prediction in zip(positions, decoded, strict=True):
-        predictions[int(sample_position)] = int(prediction)
+    predictions.write(
+        decode_context.sample_positions,
+        masked_offset_argmax(
+            outputs.head(OFFSET_LOGITS_HEAD_ID),
+            decode_context.action_mask,
+        ),
+    )
 
 
 def compile_prediction_family(

@@ -16,8 +16,10 @@ from spice.features import compile_feature_contract
 from spice.modeling.artifacts import validate_artifact_semantics
 from spice.modeling.dataset_builders import builder_runtime_metadata
 from spice.modeling.families.lstm import LstmModelConfig
-from spice.modeling.families.registry import resolve_model_representation_id
-from spice.modeling.representations import compile_representation_contract
+from spice.modeling.representations import (
+    SEQUENCE_INPUT_REPRESENTATION_ID,
+    compile_representation_contract,
+)
 from spice.modeling.results import (
     EvaluationRuntimeSummary,
     LoadedEvaluationSummary,
@@ -161,9 +163,7 @@ def _manifest(
         feature_contract=feature_contract,
     )
     model = _model_config()
-    representation_contract = compile_representation_contract(
-        resolve_model_representation_id(model)
-    )
+    representation_contract = compile_representation_contract(SEQUENCE_INPUT_REPRESENTATION_ID)
     return TrainingArtifactManifest(
         artifact_id="artifact-1",
         dataset_builder=_dataset_builder_config(),
@@ -220,20 +220,8 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         n_rows_used=96,
         split_sizes=SplitSizes(train_samples=16, validation_samples=4, test_samples=4),
         best_epoch=2,
-        resolved_device="cpu",
-        resolved_precision="32-true",
-        compiled=False,
-        loader_strategy_id="host_dataloader",
-        input_storage_mode_id="materialized_host",
-        target_storage_mode_id="materialized_host",
-        batch_planner_id="signature_bucketed",
         best_objective_metric_id="total_loss",
         best_objective_value=0.25,
-        best_objective_metrics=MetricSet(
-            values={
-                "total_loss": 0.25,
-            }
-        ),
         best_validation_metrics=MetricSet(
             values={
                 "total_loss": 0.25,

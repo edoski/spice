@@ -7,13 +7,16 @@ import polars as pl
 import pytest
 import torch
 
-from spice.config import coerce_feature_set_config, coerce_problem_spec
+from spice.config import coerce_feature_set_config, coerce_prediction_config, coerce_problem_spec
 from spice.core.reporting import NullReporter
 from spice.evaluation import coerce_evaluator_config, compile_evaluator_contract
 from spice.features import compile_feature_contract
 from spice.modeling.evaluation import run_prediction_evaluation
+from spice.modeling.models import ModelOutputs
+from spice.prediction import ActionSpaceDecodeContext, DecodedOffsets, compile_prediction_contract
 from spice.prediction.families.candidate_offset_selection.batch import CandidateSlateTargetBatch
 from spice.prediction.families.candidate_offset_selection.loss import compute_selection_loss
+from spice.prediction.families.candidate_offset_selection.outputs import CANDIDATE_LOGITS_HEAD_ID
 from spice.temporal import (
     coerce_realization_policy_config,
     compile_realization_policy_contract,
@@ -65,6 +68,19 @@ def _realization_policy():
     )
 
 
+def _prediction_contract():
+    prediction = coerce_prediction_config(
+        {
+            "id": "candidate_offset_selection",
+            "family": {"id": "candidate_offset_selection"},
+        }
+    )
+    return compile_prediction_contract(
+        prediction_id=prediction.id,
+        family_config=prediction.family,
+    )
+
+
 def test_selection_loss_prefers_cheaper_candidates_and_ignores_masked_slots() -> None:
     candidate_log_fees = torch.tensor(
         [[math.log(10.0), math.log(5.0), math.log(1000.0)]],
@@ -87,10 +103,32 @@ def test_selection_loss_prefers_cheaper_candidates_and_ignores_masked_slots() ->
 
     assert good_loss.item() < bad_loss.item()
 
+
+def test_candidate_offset_decode_ignores_masked_slots() -> None:
+    contract = _prediction_contract()
+    predictions = contract.allocate_decoded_offsets(1)
+    outputs = ModelOutputs(
+        heads={
+            CANDIDATE_LOGITS_HEAD_ID: torch.tensor([[4.0, -4.0, 100.0]], dtype=torch.float32)
+        }
+    )
+
+    contract.decode_selected_offsets_into(
+        predictions,
+        outputs,
+        ActionSpaceDecodeContext(
+            sample_positions=torch.tensor([0], dtype=torch.int64),
+            action_mask=torch.tensor([[True, True, False]], dtype=torch.bool),
+        ),
+    )
+
+    assert torch.equal(predictions.tensor, torch.tensor([0], dtype=torch.int64))
+
+
 def test_poisson_replay_summary_uses_event_weighted_totals() -> None:
     store = _build_test_store()
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
-    predictions = [0] * store.n_samples
+    predictions = DecodedOffsets(torch.zeros(store.n_samples, dtype=torch.int64))
 
     evaluator = compile_evaluator_contract(
         coerce_evaluator_config(

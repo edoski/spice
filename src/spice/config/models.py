@@ -42,19 +42,6 @@ class WorkflowTask(StrEnum):
     EVALUATE = "evaluate"
 
 
-class TrainingPrecision(StrEnum):
-    AUTO = "auto"
-    FP32 = "fp32"
-    FP16_MIXED = "fp16-mixed"
-    BF16_MIXED = "bf16-mixed"
-
-
-class CompileMode(StrEnum):
-    AUTO = "auto"
-    OFF = "off"
-    ON = "on"
-
-
 class ArtifactVariant(StrEnum):
     BASELINE = "baseline"
     TUNED = "tuned"
@@ -227,15 +214,12 @@ class TrainingConfig(ConfigModel):
     max_epochs: int = Field(gt=0)
     early_stopping: EarlyStoppingConfig
     gradient_clip_norm: float = Field(gt=0.0)
-    device: str
     seed: int = Field(ge=0)
     deterministic: bool
     log_every_n_steps: int = Field(gt=0)
     input_normalization: SerializeAsAny[InputNormalizationConfig] = Field(
         default_factory=lambda: _default_input_normalization_config()
     )
-    precision: TrainingPrecision
-    compile: CompileMode
 
     @field_validator("input_normalization", mode="before")
     @classmethod
@@ -708,13 +692,13 @@ class AcquireConfig(WorkflowConfig):
         self.provider.endpoint_for(self.chain.name)
         return self
 
+
 class ModelWorkflowConfig(WorkflowConfig):
     problem: ProblemSpec
     model: SerializeAsAny[ModelConfig]
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     feature_set: FeatureSetConfig
     prediction: PredictionConfig
-    objective: SerializeAsAny[ObjectiveConfig] | None = None
     study: StudyConfig = Field(default_factory=StudyConfig)
     artifact: ArtifactConfig = Field(default_factory=ArtifactConfig)
 
@@ -727,11 +711,13 @@ class ModelWorkflowConfig(WorkflowConfig):
             return coerce_dataset_builder_config(value)
         raise TypeError("dataset_builder must be a mapping or config model")
 
+
+class ObjectiveModelWorkflowConfig(ModelWorkflowConfig):
+    objective: SerializeAsAny[ObjectiveConfig]
+
     @field_validator("objective", mode="before")
     @classmethod
-    def validate_objective_field(cls, value: object) -> ObjectiveConfig | None:
-        if value is None:
-            return None
+    def validate_objective_field(cls, value: object) -> ObjectiveConfig:
         if isinstance(value, str):
             from ..config.registry import load_named_group
 
@@ -742,19 +728,14 @@ class ModelWorkflowConfig(WorkflowConfig):
             return coerce_objective_config(value)
         raise TypeError("objective must be a spec name, mapping, or config model")
 
-class TrainConfig(ModelWorkflowConfig):
+
+class TrainConfig(ObjectiveModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.TRAIN
     split: SplitConfig
     training: TrainingConfig
 
-    @model_validator(mode="after")
-    def validate_required_objective(self) -> Self:
-        if self.objective is None:
-            raise ConfigResolutionError("objective is required for train")
-        return self
 
-
-class TuneConfig(ModelWorkflowConfig):
+class TuneConfig(ObjectiveModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.TUNE
     split: SplitConfig
     training: TrainingConfig
@@ -763,8 +744,6 @@ class TuneConfig(ModelWorkflowConfig):
 
     @model_validator(mode="after")
     def validate_required_objective_and_tuning_space(self) -> Self:
-        if self.objective is None:
-            raise ConfigResolutionError("objective is required for tune")
         if self.tuning_space.model.id != self.model.id:
             raise ConfigResolutionError("tuning_space.model.id must match model.id")
         if not self.tuning_space.has_candidates():
@@ -772,7 +751,7 @@ class TuneConfig(ModelWorkflowConfig):
         return self
 
 
-class EvaluateConfig(ModelWorkflowConfig):
+class EvaluateConfig(ObjectiveModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.EVALUATE
     training: TrainingConfig
     evaluation: EvaluationConfig
@@ -780,15 +759,12 @@ class EvaluateConfig(ModelWorkflowConfig):
 
     @model_validator(mode="after")
     def validate_required_objective_and_delay(self) -> Self:
-        if self.objective is None:
-            raise ConfigResolutionError("objective is required for evaluate")
         if self.delay_seconds > self.problem.max_delay_seconds:
             raise ConfigResolutionError("delay_seconds must be <= problem.max_delay_seconds")
         return self
 
 
 class PresetSpec(ConfigModel):
-    execution: str | None = None
     dataset: str | None = None
     problem: str | None = None
     delay_seconds: int | None = Field(default=None, gt=0)

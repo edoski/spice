@@ -13,13 +13,13 @@ def test_root_help_lists_commands() -> None:
     assert result.exit_code == 0, result.stdout
     assert "SPICE workflow CLI." in result.stdout
     assert "config" in result.stdout
-    assert "remote" in result.stdout
     assert "show" in result.stdout
     assert "delete" in result.stdout
     assert "acquire" in result.stdout
     assert "train" in result.stdout
     assert "tune" in result.stdout
     assert "evaluate" in result.stdout
+    assert "│ remote" not in result.stdout
 
 
 def test_acquire_help_includes_panels_and_example() -> None:
@@ -43,6 +43,19 @@ def test_main_workflow_help_stays_operator_focused() -> None:
 
         assert result.exit_code == 0, result.stdout
         assert "Example:" in result.stdout
+        if command != "show":
+            assert "--submit" in result.stdout
+            assert "--detach" in result.stdout
+
+
+def test_train_submit_rejects_local_storage_override(tmp_path) -> None:
+    result = runner.invoke(
+        app,
+        ["train", "--submit", "--storage-root", str(tmp_path)],
+    )
+
+    assert result.exit_code != 0
+    assert "--storage-root cannot be combined with --submit" in result.output
 
 
 def test_config_help_lists_core_authoring_commands() -> None:
@@ -52,18 +65,7 @@ def test_config_help_lists_core_authoring_commands() -> None:
     assert "list" in result.stdout
     assert "show" in result.stdout
     assert "edit" in result.stdout
+    assert "execution" not in result.stdout
     assert "create" not in result.stdout
     assert "update" not in result.stdout
     assert "delete" not in result.stdout
-
-
-def test_remote_help_lists_remote_operator_commands() -> None:
-    result = runner.invoke(app, ["remote", "--help"])
-
-    assert result.exit_code == 0, result.stdout
-    assert "train" in result.stdout
-    assert "tune" in result.stdout
-    assert "evaluate" in result.stdout
-    assert "config" in result.stdout
-    assert "show" in result.stdout
-    assert "refresh" in result.stdout

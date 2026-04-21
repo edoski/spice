@@ -5,13 +5,10 @@ from __future__ import annotations
 from typing import Literal
 
 import optuna
-import torch
 from pydantic import Field, field_validator, model_validator
 
-from ...config.models import TrainingPrecision
 from ...prediction import PredictionOutputSpec
 from ..models import TemporalModel, TransformerBaseline
-from ..representations import SEQUENCE_INPUT_REPRESENTATION_ID
 from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
 from .registry import ModelSpec
 
@@ -83,23 +80,6 @@ def _build_model(
     return TransformerBaseline(n_features, output_spec, config)
 
 
-def _default_precision(device: torch.device) -> TrainingPrecision:
-    if device.type == "cpu":
-        return TrainingPrecision.FP32
-    if device.type == "mps":
-        return TrainingPrecision.BF16_MIXED
-    if device.type == "cuda" and torch.cuda.is_bf16_supported():
-        return TrainingPrecision.BF16_MIXED
-    if device.type == "cuda":
-        return TrainingPrecision.FP16_MIXED
-    return TrainingPrecision.FP32
-
-
-def _auto_compile(device: torch.device, precision: str) -> bool:
-    del precision
-    return device.type in {"cpu", "cuda"}
-
-
 def _validate_tuning_space(
     model_config: TransformerModelConfig,
     tuning_space: TransformerTuningSpaceModelConfig,
@@ -141,20 +121,11 @@ def _apply_model_params(
     return model_config.model_copy(update=updates)
 
 
-def _resolve_representation_id(config: TransformerModelConfig) -> str:
-    del config
-    return SEQUENCE_INPUT_REPRESENTATION_ID
-
-
 MODEL_SPEC = ModelSpec(
-    id="transformer",
-    resolve_representation_id=_resolve_representation_id,
     model_config_type=TransformerModelConfig,
     tuning_space_type=TransformerTuningSpaceModelConfig,
     tuned_params_type=TransformerTunedModelParams,
     build_model=_build_model,
-    default_precision=_default_precision,
-    auto_compile=_auto_compile,
     validate_tuning_space=_validate_tuning_space,
     sample_model_params=_sample_model_params,
     apply_model_params=_apply_model_params,

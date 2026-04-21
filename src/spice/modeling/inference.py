@@ -2,76 +2,75 @@
 
 from __future__ import annotations
 
-import numpy as np
-import torch
-from numpy.typing import NDArray
-
+from ..config import ModelConfig
 from ..core.reporting import NullReporter, Reporter
-from ..prediction import CompiledPredictionContract, DecodedOffsets
-from ..temporal.problem_store import CompiledProblemStore
+from ..prediction import (
+    CompiledPredictionContract,
+    DecodedOffsets,
+    decode_context_from_batch,
+)
+from ..temporal.problem_store import CompiledProblemStore, IntVector
 from ._runtime import (
-    CompiledRepresentationContract,
-    build_inference_batch_source,
-    build_representation_runtime_context,
+    build_cuda_modeling_runtime,
+    build_model_input_batch_source,
     configure_torch_backends,
-    ensure_device_runtime_ready,
-    resolve_device,
+    resolve_training_precision,
+    run_model_forward_pass,
 )
 from .models import TemporalModel
-
-IntVector = NDArray[np.int64]
+from .representations import CompiledRepresentationContract
 
 
 def predict_with_model(
     model: TemporalModel,
     *,
+    model_config: ModelConfig,
     prediction_contract: CompiledPredictionContract,
     representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
     sample_indices: IntVector,
     batch_size: int,
-    device: str,
     reporter: Reporter | None = None,
 ) -> DecodedOffsets:
     reporter = reporter or NullReporter()
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
 
-    resolved_device = resolve_device(device)
-    ensure_device_runtime_ready(
-        requested_device=device,
-        resolved_device=resolved_device,
+    runtime = build_cuda_modeling_runtime(batch_size=batch_size)
+    precision = resolve_training_precision(
+        device=runtime.resolved_device,
+        model_config=model_config,
     )
-    model.to(resolved_device)
-    model.eval()
-    runtime_context = build_representation_runtime_context(
-        device=resolved_device,
-        batch_size=batch_size,
-    )
-    batch_source_plan = build_inference_batch_source(
+    model.to(runtime.resolved_device)
+    batch_source_plan = build_model_input_batch_source(
         store,
         sample_indices,
         representation_contract=representation_contract,
-        runtime_context=runtime_context,
-        resolved_device=resolved_device,
+        runtime=runtime,
         seed=0,
     )
     loader = batch_source_plan.source
     task_id = reporter.start_task("predict", total=len(loader), unit="batches")
     predictions = prediction_contract.allocate_decoded_offsets(int(sample_indices.shape[0]))
+
+    def _decode_batch(batch, outputs) -> None:
+        prediction_contract.decode_selected_offsets_into(
+            predictions,
+            outputs,
+            decode_context_from_batch(batch),
+        )
+        reporter.update_task(task_id, advance=1)
+
     with configure_torch_backends(
-        resolved_device=resolved_device,
+        resolved_device=runtime.resolved_device,
         deterministic=None,
     ):
-        with torch.no_grad():
-            for batch in loader:
-                device_batch = batch.to_device(resolved_device)
-                outputs = model(**device_batch.model_kwargs())
-                prediction_contract.decode_selected_offsets_into(
-                    predictions,
-                    batch.sample_positions,
-                    outputs,
-                )
-                reporter.update_task(task_id, advance=1)
+        run_model_forward_pass(
+            model,
+            loader=loader,
+            resolved_device=runtime.resolved_device,
+            precision=precision,
+            on_outputs=_decode_batch,
+        )
     reporter.finish_task(task_id)
     return predictions

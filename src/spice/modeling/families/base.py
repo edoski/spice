@@ -6,18 +6,13 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from ...core.closed_dispatch import validate_path_segment
+
 ModelIdT = TypeVar("ModelIdT", bound=str)
 
 
 class ConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-
-def _validate_path_segment(value: str, *, label: str) -> str:
-    if not value or "/" in value or "\\" in value:
-        raise ValueError(f"{label} must be a non-empty path segment")
-    return value
-
 
 class ModelConfig(ConfigModel, Generic[ModelIdT]):
     id: ModelIdT
@@ -25,7 +20,7 @@ class ModelConfig(ConfigModel, Generic[ModelIdT]):
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="model.id")
+        return validate_path_segment(value, label="model.id")
 
 
 class ModelTuningSpaceConfig(ConfigModel, Generic[ModelIdT]):
@@ -34,7 +29,7 @@ class ModelTuningSpaceConfig(ConfigModel, Generic[ModelIdT]):
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="tuning_space.model.id")
+        return validate_path_segment(value, label="tuning_space.model.id")
 
 
 class TunedModelParams(ConfigModel, Generic[ModelIdT]):
@@ -43,4 +38,4 @@ class TunedModelParams(ConfigModel, Generic[ModelIdT]):
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return _validate_path_segment(value, label="tuned model params id")
+        return validate_path_segment(value, label="tuned model params id")

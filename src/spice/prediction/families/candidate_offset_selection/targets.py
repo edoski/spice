@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import numpy as np
-import torch
 from numpy.typing import NDArray
 
 from ....temporal.problem_store import CompiledProblemStore
 from ....temporal.realization import CompiledRealizationPolicyContract
-from .batch import PreparedCandidateSlateTargets
+from ...contracts import StagedPreparedTargets
+from .batch import (
+    estimate_candidate_slate_storage_bytes,
+    materialize_candidate_slate_targets,
+)
 
 IntVector = NDArray[np.int64]
 
@@ -18,15 +21,16 @@ def prepare_candidate_slate_targets(
     sample_indices: IntVector,
     *,
     realization_policy: CompiledRealizationPolicyContract,
-) -> PreparedCandidateSlateTargets:
+) -> StagedPreparedTargets:
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
-    sample_indices = sample_indices.astype(np.int64, copy=False)
-    supervised = realization_policy.prepare_supervised_targets(store, sample_indices)
-    return PreparedCandidateSlateTargets(
-        candidate_log_fees=torch.from_numpy(supervised.candidate_log_fees),
-        candidate_mask=torch.from_numpy(supervised.candidate_mask),
-        optimum_offsets=torch.from_numpy(supervised.optimum_offsets),
-        optimum_log_fees=torch.from_numpy(supervised.optimum_log_fees),
-        baseline_candidate_indices=torch.from_numpy(supervised.baseline_candidate_indices),
+    return StagedPreparedTargets(
+        store=store,
+        sample_indices=sample_indices.astype(np.int64, copy=False),
+        realization_policy=realization_policy,
+        estimated_storage_bytes=estimate_candidate_slate_storage_bytes(
+            sample_count=int(sample_indices.shape[0]),
+            max_candidate_slots=int(store.max_candidate_slots),
+        ),
+        materialize_fn=materialize_candidate_slate_targets,
     )

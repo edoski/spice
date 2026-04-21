@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import stat
+from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -15,9 +17,11 @@ from spice.config import (
     TuneConfig,
     WorkflowSelections,
     WorkflowTask,
+    load_named_group,
     resolve_workflow_config,
 )
 from spice.core.errors import ConfigResolutionError
+from spice.execution import ExecutionJobSubmission
 from spice.storage.ids import corpus_storage_id
 from spice.storage.layout import resolve_workflow_paths
 
@@ -102,6 +106,14 @@ def test_config_list_and_show_commands(isolate_conf_root) -> None:
         }
     }
 
+    prediction_show = runner.invoke(app, ["config", "show", "prediction", "icdcs_2026_tuned"])
+    assert prediction_show.exit_code == 0, prediction_show.stdout
+    assert yaml.safe_load(prediction_show.stdout)["id"] == "icdcs_2026_tuned"
+
+    model_show = runner.invoke(app, ["config", "show", "model", "lstm_icdcs_2026"])
+    assert model_show.exit_code == 0, model_show.stdout
+    assert yaml.safe_load(model_show.stdout)["id"] == "lstm"
+
 
 def test_config_edit_seeds_missing_file_and_uses_editor(
     tmp_path, isolate_conf_root, monkeypatch
@@ -138,6 +150,8 @@ def test_removed_group_is_gone_and_legacy_task_key_is_rejected(tmp_path, isolate
 
     list_result = runner.invoke(app, ["config", "list", "training"])
     assert list_result.exit_code != 0
+    execution_result = runner.invoke(app, ["config", "list", "execution"])
+    assert execution_result.exit_code != 0
 
     legacy_preset = conf_root / "preset" / "legacy.yaml"
     legacy_preset.write_text(
@@ -153,6 +167,36 @@ def test_removed_group_is_gone_and_legacy_task_key_is_rejected(tmp_path, isolate
                 storage_root=tmp_path / "outputs",
             ),
         )
+
+
+def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root) -> None:
+    conf_root = isolate_conf_root()
+    aliased_problem = conf_root / "problem" / "aliased_problem.yaml"
+    aliased_problem.write_text(
+        yaml.safe_dump(
+            {
+                "id": "different_problem",
+                "lookback_seconds": 900,
+                "sample_count": 400000,
+                "max_delay_seconds": 36,
+                "compiler": {
+                    "id": "estimated_block",
+                    "lookback_interval_source": "nominal_chain_runtime",
+                    "candidate_interval_source": "calibrated",
+                    "calibrated_interval_statistic": "mean",
+                },
+                "realization_policy": {"id": "strict_deadline_miss"},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ConfigResolutionError,
+        match="problem id must match spec name: aliased_problem",
+    ):
+        load_named_group("aliased_problem", "problem")
 
 
 def test_evaluate_loader_uses_delay_seconds_and_named_override(
@@ -209,7 +253,6 @@ def test_train_loader_resolves_production_preset(
                 "training": {
                     "learning_rate": 0.0003,
                     "weight_decay": 0.01,
-                    "device": "cpu",
                     "batch_size": 8,
                     "max_epochs": 1,
                     "gradient_clip_norm": 1.0,
@@ -217,8 +260,6 @@ def test_train_loader_resolves_production_preset(
                     "deterministic": True,
                     "log_every_n_steps": 1,
                     "input_normalization": {"id": "row_standard"},
-                    "precision": "fp32",
-                    "compile": "off",
                     "early_stopping": {"patience": 1, "min_delta": 0.0},
                 },
                 "split": {
@@ -233,7 +274,7 @@ def test_train_loader_resolves_production_preset(
     assert config.problem.compiler.id == "estimated_block"
     assert config.dataset_builder.id == "standard_temporal"
     assert config.feature_set.id == "icdcs_2026"
-    assert config.prediction.id == "icdcs_2026"
+    assert config.prediction.id == "icdcs_2026_tuned"
     assert config.model.id == "lstm"
     assert config.model.hidden_size == 128
 
@@ -279,3 +320,56 @@ def test_model_workflow_cli_accepts_dataset_builder_and_evaluation_selectors(
     assert config.dataset_builder.id == "professor_temporal"
     if isinstance(config, EvaluateConfig):
         assert config.evaluation.evaluator.id == "paper_windowed"
+
+
+def test_train_submit_cli_routes_to_execution_backend(tmp_path, monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _fail_local(_config) -> None:
+        raise AssertionError("local workflow should not run when --submit is set")
+
+    def _fake_submit(
+        task: WorkflowTask,
+        *,
+        cli_args: list[str],
+        dependency: str | None = None,
+    ) -> ExecutionJobSubmission:
+        captured["task"] = task
+        captured["cli_args"] = cli_args
+        captured["dependency"] = dependency
+        return ExecutionJobSubmission(
+            task=task,
+            target=SimpleNamespace(spec=SimpleNamespace(follow_by_default=False)),
+            job_id="12345",
+            log_path=Path("/remote/logs/spice-train-12345.out"),
+        )
+
+    monkeypatch.setattr("spice.workflows.train.run", _fail_local)
+    monkeypatch.setattr("spice.cli.commands.workflows.submit_execution_workflow", _fake_submit)
+
+    result = runner.invoke(
+        app,
+        [
+            "train",
+            "--preset",
+            "icdcs_2026",
+            "--submit",
+            "--study",
+            "default",
+            "--variant",
+            "baseline",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert captured["task"] is WorkflowTask.TRAIN
+    assert captured["dependency"] is None
+    assert captured["cli_args"] == [
+        "--preset",
+        "icdcs_2026",
+        "--study",
+        "default",
+        "--variant",
+        "baseline",
+    ]
+    assert "submitted train job_id=12345 log=/remote/logs/spice-train-12345.out" in result.stdout

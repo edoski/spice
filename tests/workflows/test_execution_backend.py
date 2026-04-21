@@ -5,12 +5,13 @@ from subprocess import CompletedProcess
 from types import SimpleNamespace
 
 from spice.config.models import ExecutionWorkflowSpec, WorkflowTask
-from spice.remote.shell import build_remote_shell_argv, run_remote_command
-from spice.remote.workflows import (
-    RemoteJobSubmission,
+from spice.execution.slurm_ssh import (
+    ExecutionJobSubmission,
     _render_sbatch_script,
-    follow_remote_job,
-    submit_remote_workflow,
+    build_execution_shell_argv,
+    follow_execution_job,
+    run_execution_command,
+    submit_execution_workflow,
 )
 
 
@@ -21,8 +22,8 @@ def _target() -> SimpleNamespace:
     )
 
 
-def test_build_remote_shell_argv_quotes_full_command() -> None:
-    argv = build_remote_shell_argv(_target(), "mkdir -p /scratch/test && cat | sbatch")
+def test_build_execution_shell_argv_quotes_full_command() -> None:
+    argv = build_execution_shell_argv(_target(), "mkdir -p /scratch/test && cat | sbatch")
 
     assert argv == [
         "ssh",
@@ -33,7 +34,7 @@ def test_build_remote_shell_argv_quotes_full_command() -> None:
     ]
 
 
-def test_run_remote_command_passes_quoted_command(monkeypatch) -> None:
+def test_run_execution_command_passes_quoted_command(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_run(*args, **kwargs):
@@ -41,9 +42,9 @@ def test_run_remote_command_passes_quoted_command(monkeypatch) -> None:
         captured["kwargs"] = kwargs
         return CompletedProcess(args=args[0], returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("spice.remote.shell.subprocess.run", fake_run)
+    monkeypatch.setattr("spice.execution.slurm_ssh.subprocess.run", fake_run)
 
-    result = run_remote_command(_target(), "mkdir -p /scratch/test && cat | sbatch")
+    result = run_execution_command(_target(), "mkdir -p /scratch/test && cat | sbatch")
 
     assert result.returncode == 0
     assert captured["args"] == [
@@ -55,7 +56,7 @@ def test_run_remote_command_passes_quoted_command(monkeypatch) -> None:
     ]
 
 
-def test_follow_remote_job_uses_quoted_tail_command(monkeypatch, tmp_path: Path) -> None:
+def test_follow_execution_job_uses_quoted_tail_command(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
     class FakePopen:
@@ -72,22 +73,24 @@ def test_follow_remote_job_uses_quoted_tail_command(monkeypatch, tmp_path: Path)
         def wait(self, timeout=None) -> int:
             return 0
 
-    monkeypatch.setattr("spice.remote.workflows.subprocess.Popen", FakePopen)
-    monkeypatch.setattr("spice.remote.workflows.read_remote_job_state", lambda _submission: None)
+    monkeypatch.setattr("spice.execution.slurm_ssh.subprocess.Popen", FakePopen)
     monkeypatch.setattr(
-        "spice.remote.workflows.read_remote_job_final_state",
+        "spice.execution.slurm_ssh.read_execution_job_state",
+        lambda _submission: None,
+    )
+    monkeypatch.setattr(
+        "spice.execution.slurm_ssh.read_execution_job_final_state",
         lambda _submission: "COMPLETED",
     )
 
-    submission = RemoteJobSubmission(
+    submission = ExecutionJobSubmission(
         task=WorkflowTask.TRAIN,
-        execution_name="disi_l40",
         target=_target(),
         job_id="12345",
         log_path=tmp_path / "spice-train-12345.out",
     )
 
-    state = follow_remote_job(submission)
+    state = follow_execution_job(submission)
 
     assert state == "COMPLETED"
     assert captured["args"] == [
@@ -135,7 +138,7 @@ def test_render_sbatch_script_execs_spice_command(tmp_path: Path) -> None:
     assert "\nexec /venv/bin/spice train --preset icdcs_2026 --storage-root /storage\n" in script
 
 
-def test_submit_remote_workflow_forwards_sbatch_dependency(monkeypatch, tmp_path: Path) -> None:
+def test_submit_execution_workflow_forwards_sbatch_dependency(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
     target = SimpleNamespace(
         name="disi_l40",
@@ -159,9 +162,9 @@ def test_submit_remote_workflow_forwards_sbatch_dependency(monkeypatch, tmp_path
         ),
     )
 
-    monkeypatch.setattr("spice.remote.workflows.resolve_remote_target", lambda _name: target)
+    monkeypatch.setattr("spice.execution.slurm_ssh.load_execution_target", lambda: target)
 
-    def fake_run_remote_command(_target, command: str, *, input_text: str | None = None):
+    def fake_run_execution_command(_target, command: str, *, input_text: str | None = None):
         captured["command"] = command
         captured["input_text"] = input_text
         return CompletedProcess(
@@ -171,18 +174,19 @@ def test_submit_remote_workflow_forwards_sbatch_dependency(monkeypatch, tmp_path
             stderr="",
         )
 
-    monkeypatch.setattr("spice.remote.workflows.run_remote_command", fake_run_remote_command)
+    monkeypatch.setattr(
+        "spice.execution.slurm_ssh.run_execution_command",
+        fake_run_execution_command,
+    )
 
-    submission = submit_remote_workflow(
+    submission = submit_execution_workflow(
         WorkflowTask.TRAIN,
         cli_args=["--preset", "icdcs_2026"],
-        execution_name="disi_l40",
         dependency="afterok:99999",
     )
 
     assert submission.job_id == "12345"
     assert captured["command"] == (
-        f"mkdir -p {tmp_path} && mkdir -p /storage && "
-        "cat | sbatch --dependency=afterok:99999"
+        f"mkdir -p {tmp_path} && mkdir -p /storage && cat | sbatch --dependency=afterok:99999"
     )
     assert isinstance(captured["input_text"], str)

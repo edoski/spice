@@ -11,18 +11,87 @@ from typing import Annotated
 import typer
 
 from ...config import WorkflowSelections, WorkflowTask, resolve_workflow_config
+from ...core.errors import SpiceOperatorError
+from ...execution import follow_execution_job, submit_execution_workflow
 
 
 def _selection_option(*param_decls: str, metavar: str, help: str) -> object:
     return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Selection")
 
 
-def _execution_option(*param_decls: str, metavar: str, help: str) -> object:
+def _workflow_option(*param_decls: str, metavar: str, help: str) -> object:
     return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Execution")
 
 
 def _output_option(*param_decls: str, metavar: str, help: str) -> object:
     return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Outputs")
+
+
+def _submission_option(*param_decls: str, metavar: str, help: str) -> object:
+    return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Execution")
+
+
+def _append_option(args: list[str], flag: str, value: str | int | Path | None) -> None:
+    if value is None:
+        return
+    args.extend([flag, str(value)])
+
+
+def _build_cli_args(*options: tuple[str, str | int | Path | None]) -> list[str]:
+    args: list[str] = []
+    for flag, value in options:
+        _append_option(args, flag, value)
+    return args
+
+
+def _submit_selected_workflow(
+    *,
+    task: WorkflowTask,
+    dependency: str | None,
+    detach: bool,
+    cli_options: list[tuple[str, str | int | Path | None]],
+) -> None:
+    submission = submit_execution_workflow(
+        task,
+        cli_args=_build_cli_args(*cli_options),
+        dependency=dependency,
+    )
+    typer.echo(
+        " ".join(
+            [
+                f"submitted {task.value}",
+                f"job_id={submission.job_id}",
+                f"log={submission.log_path}",
+            ]
+        )
+    )
+    if detach or not submission.target.spec.follow_by_default:
+        return
+    try:
+        state = follow_execution_job(submission)
+    except KeyboardInterrupt:
+        typer.echo(f"detached from job {submission.job_id}; job continues on cluster")
+        return
+    if state is None:
+        return
+    typer.echo(f"job {submission.job_id} finished: {state}")
+    if state != "COMPLETED":
+        raise SpiceOperatorError(f"Job {submission.job_id} ended with state {state}")
+
+
+def _validate_submission_flags(
+    *,
+    submit: bool,
+    dependency: str | None,
+    detach: bool,
+    storage_root: Path | None,
+) -> None:
+    if submit:
+        if storage_root is not None:
+            raise SpiceOperatorError("--storage-root cannot be combined with --submit")
+        return
+    if dependency is not None or detach:
+        raise SpiceOperatorError("--dependency and --detach require --submit")
 
 
 def _run_resolved_workflow(
@@ -176,9 +245,59 @@ def train_command(
             help="Store outputs under a non-default root.",
         ),
     ] = None,
+    submit: Annotated[
+        bool,
+        typer.Option(
+            "--submit",
+            help="Submit the workflow to the checked-in execution target.",
+            rich_help_panel="Execution",
+        ),
+    ] = False,
+    dependency: Annotated[
+        str | None,
+        _submission_option(
+            "--dependency",
+            metavar="DEPENDENCY",
+            help="Pass one Slurm dependency spec such as afterok:12345.",
+        ),
+    ] = None,
+    detach: Annotated[
+        bool,
+        typer.Option(
+            "--detach",
+            help="Submit and exit without following the job.",
+            rich_help_panel="Execution",
+        ),
+    ] = False,
 ) -> None:
     from ...workflows import train
 
+    _validate_submission_flags(
+        submit=submit,
+        dependency=dependency,
+        detach=detach,
+        storage_root=storage_root,
+    )
+    if submit:
+        _submit_selected_workflow(
+            task=WorkflowTask.TRAIN,
+            dependency=dependency,
+            detach=detach,
+            cli_options=[
+                ("--preset", preset),
+                ("--dataset", dataset),
+                ("--problem", problem),
+                ("--chain", chain),
+                ("--model", model),
+                ("--dataset-builder", dataset_builder),
+                ("--feature-set", feature_set),
+                ("--prediction", prediction),
+                ("--evaluation", evaluation),
+                ("--study", study),
+                ("--variant", variant),
+            ],
+        )
+        return
     _run_resolved_workflow(
         task=WorkflowTask.TRAIN,
         runner=train.run,
@@ -254,7 +373,7 @@ def tune_command(
     ] = None,
     trial_count: Annotated[
         int | None,
-        _execution_option(
+        _workflow_option(
             "--trial-count",
             metavar="COUNT",
             help="Override the requested trial count.",
@@ -276,9 +395,59 @@ def tune_command(
             help="Store outputs under a non-default root.",
         ),
     ] = None,
+    submit: Annotated[
+        bool,
+        typer.Option(
+            "--submit",
+            help="Submit the workflow to the checked-in execution target.",
+            rich_help_panel="Execution",
+        ),
+    ] = False,
+    dependency: Annotated[
+        str | None,
+        _submission_option(
+            "--dependency",
+            metavar="DEPENDENCY",
+            help="Pass one Slurm dependency spec such as afterok:12345.",
+        ),
+    ] = None,
+    detach: Annotated[
+        bool,
+        typer.Option(
+            "--detach",
+            help="Submit and exit without following the job.",
+            rich_help_panel="Execution",
+        ),
+    ] = False,
 ) -> None:
     from ...workflows import tune
 
+    _validate_submission_flags(
+        submit=submit,
+        dependency=dependency,
+        detach=detach,
+        storage_root=storage_root,
+    )
+    if submit:
+        _submit_selected_workflow(
+            task=WorkflowTask.TUNE,
+            dependency=dependency,
+            detach=detach,
+            cli_options=[
+                ("--preset", preset),
+                ("--dataset", dataset),
+                ("--problem", problem),
+                ("--chain", chain),
+                ("--model", model),
+                ("--dataset-builder", dataset_builder),
+                ("--feature-set", feature_set),
+                ("--prediction", prediction),
+                ("--evaluation", evaluation),
+                ("--study", study),
+                ("--trial-count", trial_count),
+            ],
+        )
+        return
     _run_resolved_workflow(
         task=WorkflowTask.TUNE,
         runner=tune.run,
@@ -366,7 +535,7 @@ def evaluate_command(
     ] = None,
     delay_seconds: Annotated[
         int | None,
-        _execution_option(
+        _workflow_option(
             "--delay-seconds",
             metavar="SECONDS",
             help="Override the evaluation delay in seconds.",
@@ -380,9 +549,60 @@ def evaluate_command(
             help="Store outputs under a non-default root.",
         ),
     ] = None,
+    submit: Annotated[
+        bool,
+        typer.Option(
+            "--submit",
+            help="Submit the workflow to the checked-in execution target.",
+            rich_help_panel="Execution",
+        ),
+    ] = False,
+    dependency: Annotated[
+        str | None,
+        _submission_option(
+            "--dependency",
+            metavar="DEPENDENCY",
+            help="Pass one Slurm dependency spec such as afterok:12345.",
+        ),
+    ] = None,
+    detach: Annotated[
+        bool,
+        typer.Option(
+            "--detach",
+            help="Submit and exit without following the job.",
+            rich_help_panel="Execution",
+        ),
+    ] = False,
 ) -> None:
     from ...workflows import evaluate
 
+    _validate_submission_flags(
+        submit=submit,
+        dependency=dependency,
+        detach=detach,
+        storage_root=storage_root,
+    )
+    if submit:
+        _submit_selected_workflow(
+            task=WorkflowTask.EVALUATE,
+            dependency=dependency,
+            detach=detach,
+            cli_options=[
+                ("--preset", preset),
+                ("--dataset", dataset),
+                ("--problem", problem),
+                ("--chain", chain),
+                ("--model", model),
+                ("--dataset-builder", dataset_builder),
+                ("--feature-set", feature_set),
+                ("--prediction", prediction),
+                ("--evaluation", evaluation),
+                ("--study", study),
+                ("--variant", variant),
+                ("--delay-seconds", delay_seconds),
+            ],
+        )
+        return
     _run_resolved_workflow(
         task=WorkflowTask.EVALUATE,
         runner=evaluate.run,

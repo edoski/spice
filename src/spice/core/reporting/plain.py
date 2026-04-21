@@ -483,7 +483,7 @@ class _BaseWorkflowReporter(NullReporter):
         raise NotImplementedError
 
 class PlainReporter(_BaseWorkflowReporter):
-    """Line-oriented reporter for local and remote workflows."""
+    """Line-oriented reporter for local and submitted workflows."""
 
     def __init__(self, *, stream: TextIOBase | None = None) -> None:
         super().__init__(stream=stream)

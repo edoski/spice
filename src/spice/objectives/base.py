@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Literal
 
-import numpy as np
-from numpy.typing import NDArray
 from pydantic import SerializeAsAny, field_validator
 
 from ..core.closed_dispatch import (
@@ -27,10 +25,11 @@ from ..prediction import MetricSet
 from ..semantics import ObjectiveSemantics
 
 if TYPE_CHECKING:
-    from ..modeling._runtime import CompiledRepresentationContract
+    from ..config import ModelConfig
     from ..modeling.models import TemporalModel
+    from ..modeling.representations import CompiledRepresentationContract
     from ..prediction import CompiledPredictionContract
-    from ..temporal.problem_store import CompiledProblemStore
+    from ..temporal.problem_store import CompiledProblemStore, IntVector
     from ..temporal.realization import CompiledRealizationPolicyContract
 
 
@@ -93,13 +92,13 @@ class ValidationEvaluatorMetricObjectiveConfig(ObjectiveConfig):
 @dataclass(frozen=True, slots=True)
 class ObjectiveEvaluationContext:
     model: TemporalModel
+    model_config: ModelConfig
     prediction_contract: CompiledPredictionContract
     representation_contract: CompiledRepresentationContract
     realization_policy: CompiledRealizationPolicyContract
     store: CompiledProblemStore
-    sample_indices: NDArray[np.int64]
+    sample_indices: IntVector
     batch_size: int
-    device: str
     reporter: Reporter | None
 
 
@@ -177,12 +176,12 @@ def _compile_validation_evaluator_metric(
 
         decoded_offsets = predict_with_model(
             context.model,
+            model_config=context.model_config,
             prediction_contract=context.prediction_contract,
             representation_contract=context.representation_contract,
             store=context.store,
             sample_indices=context.sample_indices,
             batch_size=context.batch_size,
-            device=context.device,
             reporter=context.reporter,
         )
         return evaluator_contract.run(

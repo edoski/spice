@@ -5,9 +5,8 @@ from __future__ import annotations
 import typer
 
 from .commands.config import app as config_app
-from .commands.remote import remote_app
-from .commands.storage import delete_app, show_app
-from .commands.transfer import pull_app, push_app, refresh_app
+from .commands.storage import delete_app, refresh_app, show_app
+from .commands.transfer import pull_app, push_app
 from .commands.workflows import (
     acquire_command,
     evaluate_command,
@@ -23,7 +22,6 @@ app = typer.Typer(
     add_completion=True,
 )
 app.add_typer(config_app, name="config")
-app.add_typer(remote_app, name="remote")
 app.add_typer(show_app, name="show")
 app.add_typer(delete_app, name="delete")
 app.add_typer(push_app, name="push")

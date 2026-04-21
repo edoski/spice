@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
 import torch
 
 from ...base import MetricDescriptor, MetricSet
@@ -110,19 +109,24 @@ def create_epoch_accumulator() -> MinBlockFeeEpochAccumulator:
 
 
 def inverse_frequency_class_weights(
-    offsets: np.ndarray,
+    offsets: torch.Tensor,
     *,
     n_classes: int,
-) -> MinBlockFeeTrainingState:
-    if offsets.size == 0:
+) -> torch.Tensor:
+    if offsets.ndim != 1:
+        raise ValueError("offsets must be one-dimensional")
+    if offsets.numel() == 0:
         raise ValueError("offsets must be non-empty")
-    counts = np.bincount(offsets, minlength=n_classes).astype(np.float32, copy=False)
-    weights = np.zeros(n_classes, dtype=np.float32)
+    counts = torch.bincount(
+        offsets.detach().to(device="cpu", dtype=torch.int64),
+        minlength=n_classes,
+    ).to(dtype=torch.float32)
+    weights = torch.zeros(n_classes, dtype=torch.float32)
     present = counts > 0
     weights[present] = 1.0 / counts[present]
-    if present.any():
-        weights[present] *= float(present.sum()) / float(weights[present].sum())
-    return MinBlockFeeTrainingState(class_weights=torch.from_numpy(weights))
+    if bool(present.any()):
+        weights[present] *= float(present.sum().item()) / float(weights[present].sum().item())
+    return weights
 
 
 def _metric_set_from_totals(

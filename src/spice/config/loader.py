@@ -390,7 +390,7 @@ def _resolve_model_workflow(
     DatasetBuilderConfig,
     FeatureSetConfig,
     PredictionConfig,
-    ObjectiveConfig | None,
+    ObjectiveConfig,
     StudyConfig,
     ArtifactConfig,
 ]:
@@ -400,8 +400,7 @@ def _resolve_model_workflow(
     dataset_builder = resolve_dataset_builder(_require_payload_key(payload, "dataset_builder"))
     feature_set = resolve_feature_set(payload["feature_set"])
     prediction = resolve_prediction(payload["prediction"])
-    objective_raw = payload.get("objective")
-    objective = None if objective_raw is None else resolve_objective(objective_raw)
+    objective = resolve_objective(_require_payload_key(payload, "objective"))
     study_raw = payload.get("study")
     if isinstance(study_raw, Mapping):
         study = StudyConfig.model_validate(study_raw)

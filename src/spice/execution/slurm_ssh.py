@@ -1,4 +1,4 @@
-"""Remote workflow submission and follow helpers."""
+"""SLURM-over-SSH execution backend."""
 
 from __future__ import annotations
 
@@ -9,16 +9,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config import ExecutionWorkflowSpec, WorkflowTask
+from ..config import ExecutionSpec, ExecutionWorkflowSpec, WorkflowTask
+from ..config.registry import load_named_group
 from ..core.errors import SpiceOperatorError
-from .shell import (
-    RemoteExecutionTarget,
-    build_remote_shell_argv,
-    ensure_remote_success,
-    resolve_remote_target,
-    run_remote_command,
-)
 
+_EXECUTION_SPEC_NAME = "disi_l40"
 _SBATCH_JOB_ID_PATTERN = re.compile(r"Submitted batch job (?P<job_id>\d+)")
 _FINAL_JOB_STATES = frozenset(
     {
@@ -41,22 +36,150 @@ _WORKFLOW_SPEC_ATTRS = {
 
 
 @dataclass(frozen=True, slots=True)
-class RemoteJobSubmission:
+class ExecutionTarget:
+    name: str
+    spec: ExecutionSpec
+
+    @property
+    def ssh_destination(self) -> str:
+        return f"{self.spec.ssh.user}@{self.spec.ssh.host}"
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionJobSubmission:
     task: WorkflowTask
-    execution_name: str
-    target: RemoteExecutionTarget
+    target: ExecutionTarget
     job_id: str
     log_path: Path
 
 
-def submit_remote_workflow(
+def build_execution_shell_argv(target: ExecutionTarget, command: str) -> list[str]:
+    return [
+        "ssh",
+        target.ssh_destination,
+        "bash",
+        "-lc",
+        shlex.quote(command),
+    ]
+
+
+def load_execution_target() -> ExecutionTarget:
+    payload = load_named_group(_EXECUTION_SPEC_NAME, "execution")
+    return ExecutionTarget(
+        name=_EXECUTION_SPEC_NAME,
+        spec=ExecutionSpec.model_validate(payload),
+    )
+
+
+def run_execution_cli(
+    target: ExecutionTarget,
+    args: list[str],
+    *,
+    capture_output: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    spice_path = shlex.quote(str(target.spec.paths.spice_path))
+    repo_root = shlex.quote(str(target.spec.paths.repo_root))
+    argv = shlex.join(args)
+    return run_execution_command(
+        target,
+        f"cd {repo_root} && {spice_path} {argv}",
+        capture_output=capture_output,
+    )
+
+
+def run_execution_module(
+    target: ExecutionTarget,
+    module: str,
+    args: list[str],
+    *,
+    capture_output: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    python_path = shlex.quote(str(target.spec.paths.python_path))
+    repo_root = shlex.quote(str(target.spec.paths.repo_root))
+    module_name = shlex.quote(module)
+    argv = shlex.join(args)
+    return run_execution_command(
+        target,
+        f"cd {repo_root} && {python_path} -m {module_name} {argv}",
+        capture_output=capture_output,
+    )
+
+
+def run_execution_command(
+    target: ExecutionTarget,
+    command: str,
+    *,
+    input_text: str | None = None,
+    capture_output: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        build_execution_shell_argv(target, command),
+        input=input_text,
+        text=True,
+        capture_output=capture_output,
+        check=False,
+    )
+
+
+def run_rsync_to_execution_target(
+    target: ExecutionTarget,
+    *,
+    source_root: Path,
+    destination_root: Path,
+) -> None:
+    result = subprocess.run(
+        [
+            "rsync",
+            "-a",
+            f"{source_root.as_posix()}/",
+            f"{target.ssh_destination}:{destination_root.as_posix()}/",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    ensure_execution_success(result, action=f"rsync to {destination_root}")
+
+
+def run_rsync_from_execution_target(
+    target: ExecutionTarget,
+    *,
+    source_root: Path,
+    destination_root: Path,
+) -> None:
+    result = subprocess.run(
+        [
+            "rsync",
+            "-a",
+            f"{target.ssh_destination}:{source_root.as_posix()}/",
+            f"{destination_root.as_posix()}/",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    ensure_execution_success(result, action=f"rsync from {source_root}")
+
+
+def ensure_execution_success(
+    result: subprocess.CompletedProcess[str],
+    *,
+    action: str,
+) -> subprocess.CompletedProcess[str]:
+    if result.returncode == 0:
+        return result
+    message = (result.stderr or result.stdout).strip()
+    suffix = f": {message}" if message else ""
+    raise SpiceOperatorError(f"{action} failed{suffix}")
+
+
+def submit_execution_workflow(
     task: WorkflowTask,
     *,
     cli_args: list[str],
-    execution_name: str | None = None,
     dependency: str | None = None,
-) -> RemoteJobSubmission:
-    target = resolve_remote_target(execution_name)
+) -> ExecutionJobSubmission:
+    target = load_execution_target()
     workflow_spec = _workflow_spec(target, task)
     log_path_template = target.spec.paths.log_root / f"spice-{task.value}-%j.out"
     script = _render_sbatch_script(
@@ -73,28 +196,27 @@ def submit_remote_workflow(
             _build_sbatch_submit_command(dependency=dependency),
         ]
     )
-    result = ensure_remote_success(
-        run_remote_command(target, submit_command, input_text=script),
-        action=f"submit remote {task.value}",
+    result = ensure_execution_success(
+        run_execution_command(target, submit_command, input_text=script),
+        action=f"submit {task.value}",
     )
     match = _SBATCH_JOB_ID_PATTERN.search(result.stdout)
     if match is None:
         raise SpiceOperatorError(
-            f"submit remote {task.value} failed: could not parse job id from sbatch output"
+            f"submit {task.value} failed: could not parse job id from sbatch output"
         )
     job_id = match.group("job_id")
-    return RemoteJobSubmission(
+    return ExecutionJobSubmission(
         task=task,
-        execution_name=target.name,
         target=target,
         job_id=job_id,
         log_path=Path(str(log_path_template).replace("%j", job_id)),
     )
 
 
-def follow_remote_job(submission: RemoteJobSubmission) -> str | None:
+def follow_execution_job(submission: ExecutionJobSubmission) -> str | None:
     tail_process = subprocess.Popen(
-        build_remote_shell_argv(
+        build_execution_shell_argv(
             submission.target,
             (
                 "while [ ! -f "
@@ -107,12 +229,12 @@ def follow_remote_job(submission: RemoteJobSubmission) -> str | None:
     )
     try:
         while True:
-            state = read_remote_job_state(submission)
+            state = read_execution_job_state(submission)
             if state in _FINAL_JOB_STATES:
                 time.sleep(2)
                 return state
             if state is None:
-                return read_remote_job_final_state(submission)
+                return read_execution_job_final_state(submission)
             time.sleep(5)
     finally:
         if tail_process.poll() is None:
@@ -124,22 +246,22 @@ def follow_remote_job(submission: RemoteJobSubmission) -> str | None:
                 tail_process.wait(timeout=5)
 
 
-def read_remote_job_state(submission: RemoteJobSubmission) -> str | None:
-    squeue_result = ensure_remote_success(
-        run_remote_command(
+def read_execution_job_state(submission: ExecutionJobSubmission) -> str | None:
+    squeue_result = ensure_execution_success(
+        run_execution_command(
             submission.target,
             f"squeue -h -j {shlex.quote(submission.job_id)} -o %T",
         ),
-        action=f"query remote job {submission.job_id}",
+        action=f"query job {submission.job_id}",
     )
     state = _first_output_line(squeue_result.stdout)
     if state:
         return state
-    return read_remote_job_final_state(submission)
+    return read_execution_job_final_state(submission)
 
 
-def read_remote_job_final_state(submission: RemoteJobSubmission) -> str | None:
-    result = run_remote_command(
+def read_execution_job_final_state(submission: ExecutionJobSubmission) -> str | None:
+    result = run_execution_command(
         submission.target,
         " ".join(
             [
@@ -160,18 +282,18 @@ def read_remote_job_final_state(submission: RemoteJobSubmission) -> str | None:
 
 
 def _workflow_spec(
-    target: RemoteExecutionTarget,
+    target: ExecutionTarget,
     task: WorkflowTask,
 ) -> ExecutionWorkflowSpec:
     workflow_attr = _WORKFLOW_SPEC_ATTRS.get(task)
-    if workflow_attr is not None:
-        return getattr(target.spec.workflows, workflow_attr)
-    raise SpiceOperatorError(f"Remote execution is not supported for workflow: {task.value}")
+    if workflow_attr is None:
+        raise SpiceOperatorError(f"Execution backend does not support workflow: {task.value}")
+    return getattr(target.spec.workflows, workflow_attr)
 
 
 def _render_sbatch_script(
     *,
-    target: RemoteExecutionTarget,
+    target: ExecutionTarget,
     task: WorkflowTask,
     workflow_spec: ExecutionWorkflowSpec,
     cli_args: list[str],

@@ -130,16 +130,8 @@ class TrainingRuntimeSummary:
     n_rows_used: int
     split_sizes: SplitSizes
     best_epoch: int
-    resolved_device: str
-    resolved_precision: str
-    compiled: bool
-    loader_strategy_id: str
-    input_storage_mode_id: str
-    target_storage_mode_id: str
-    batch_planner_id: str
     best_objective_metric_id: str
     best_objective_value: float
-    best_objective_metrics: MetricSet
     best_validation_metrics: MetricSet
     test_metrics: MetricSet
 
@@ -221,18 +213,8 @@ def build_training_runtime_summary(
             test_samples=int(prepared.split_indices.test.shape[0]),
         ),
         best_epoch=result.training_result.best_epoch,
-        resolved_device=result.training_result.resolved_device,
-        resolved_precision=result.training_result.resolved_precision,
-        compiled=result.training_result.compiled,
-        loader_strategy_id=result.training_result.loader_strategy_id,
-        input_storage_mode_id=result.training_result.input_storage_mode_id,
-        target_storage_mode_id=result.training_result.target_storage_mode_id,
-        batch_planner_id=result.training_result.batch_planner_id,
         best_objective_metric_id=result.training_result.objective_metric_id,
         best_objective_value=result.training_result.best_objective_value,
-        best_objective_metrics=result.training_result.objective_history[
-            result.training_result.best_epoch - 1
-        ],
         best_validation_metrics=best_validation_metrics,
         test_metrics=test_metrics,
     )

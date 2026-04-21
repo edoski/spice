@@ -23,7 +23,6 @@ from ..prediction import compile_prediction_contract
 from ..semantics import ArtifactSemantics
 from ..storage.artifact import load_artifact_manifest, write_artifact_manifest
 from ..storage.engine import RootKind
-from ._runtime import CompiledRepresentationContract
 from .dataset_builders import (
     CompiledDatasetBuilderContract,
     compile_dataset_builder_contract,
@@ -31,7 +30,7 @@ from .dataset_builders import (
 from .families.registry import build_model
 from .models import TemporalModel
 from .pipeline import PreparedTrainingDataset, TrainingSpec
-from .representations import compile_representation_contract
+from .representations import CompiledRepresentationContract, compile_representation_contract
 from .results import TrainingArtifactManifest
 
 

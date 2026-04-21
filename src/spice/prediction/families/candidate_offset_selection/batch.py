@@ -4,7 +4,39 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import torch
+
+from ....temporal.problem_store import CompiledProblemStore
+from ....temporal.realization import CompiledRealizationPolicyContract
+
+
+def estimate_candidate_slate_storage_bytes(*, sample_count: int, max_candidate_slots: int) -> int:
+    bool_size = torch.empty((), dtype=torch.bool).element_size()
+    float_size = torch.empty((), dtype=torch.float32).element_size()
+    int_size = torch.empty((), dtype=torch.int64).element_size()
+    return (
+        sample_count * max_candidate_slots * (float_size + bool_size)
+        + sample_count * (int_size + float_size + int_size)
+    )
+
+
+def materialize_candidate_slate_targets(
+    store: CompiledProblemStore,
+    sample_indices: np.ndarray,
+    realization_policy: CompiledRealizationPolicyContract,
+) -> PreparedCandidateSlateTargets:
+    supervised = realization_policy.prepare_supervised_targets(
+        store,
+        sample_indices.astype(np.int64, copy=False),
+    )
+    return PreparedCandidateSlateTargets(
+        candidate_log_fees=torch.from_numpy(supervised.candidate_log_fees),
+        candidate_mask=torch.from_numpy(supervised.candidate_mask),
+        optimum_offsets=torch.from_numpy(supervised.optimum_offsets),
+        optimum_log_fees=torch.from_numpy(supervised.optimum_log_fees),
+        baseline_candidate_indices=torch.from_numpy(supervised.baseline_candidate_indices),
+    )
 
 
 @dataclass(slots=True)
@@ -54,7 +86,6 @@ class PreparedCandidateSlateTargets:
     optimum_offsets: torch.Tensor
     optimum_log_fees: torch.Tensor
     baseline_candidate_indices: torch.Tensor
-    storage_mode_id: str = "materialized_host"
 
     @property
     def estimated_storage_bytes(self) -> int:
@@ -81,7 +112,7 @@ class PreparedCandidateSlateTargets:
     def to_device_storage(
         self,
         device: torch.device,
-    ) -> PreparedCandidateSlateTargets | None:
+    ) -> PreparedCandidateSlateTargets:
         if (
             self.candidate_log_fees.device == device
             and self.candidate_mask.device == device
@@ -99,5 +130,4 @@ class PreparedCandidateSlateTargets:
             baseline_candidate_indices=self.baseline_candidate_indices.to(
                 device, non_blocking=non_blocking
             ),
-            storage_mode_id="materialized_device",
         )

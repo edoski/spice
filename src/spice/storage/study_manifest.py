@@ -32,9 +32,11 @@ from ..modeling.dataset_builders import compile_dataset_builder_contract
 from ..modeling.families.registry import (
     coerce_model_config,
     coerce_tuning_space_config,
-    resolve_model_representation_id,
 )
-from ..modeling.representations import compile_representation_contract
+from ..modeling.representations import (
+    SEQUENCE_INPUT_REPRESENTATION_ID,
+    compile_representation_contract,
+)
 from ..modeling.result_codecs import study_semantics_from_payload, study_semantics_payload
 from ..objectives import coerce_objective_config, compile_objective_contract
 from ..prediction import compile_prediction_contract
@@ -80,7 +82,7 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
         config.training.input_normalization
     )
     representation_contract = compile_representation_contract(
-        resolve_model_representation_id(config.model)
+        SEQUENCE_INPUT_REPRESENTATION_ID
     )
     return StudyManifest(
         study_id=paths.study_id,
@@ -246,7 +248,7 @@ def _study_manifest_request_payload(manifest: StudyManifest) -> dict[str, object
 
 
 def _train_request_identity_payload(
-    config: TrainConfig,
+    config: TrainConfig | EvaluateConfig,
     *,
     study_id: str,
     dataset_id: str,

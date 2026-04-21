@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ...prediction.base import MetricDescriptor, MetricSet, WindowMetricSummary
+from ...prediction.contracts import DecodedOffsets
 from ...temporal.problem_store import CompiledProblemStore
 from ...temporal.realization import CompiledRealizationPolicyContract
 from ..base import EvaluationRun, EvaluationSummary
@@ -48,6 +49,12 @@ EVALUATION_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class ChronologicalSampleView:
+    sample_positions: IntVector
+    sample_timestamps: IntVector
+
+
 def sample_poisson_arrivals(
     rng: np.random.Generator,
     *,
@@ -66,6 +73,22 @@ def sample_poisson_arrivals(
     return np.asarray(arrivals, dtype=np.float64)
 
 
+def chronological_sample_view(
+    store: CompiledProblemStore,
+    sample_indices: IntVector,
+) -> ChronologicalSampleView:
+    resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
+    sample_timestamps = store.timestamps[store.anchor_rows[resolved_sample_indices]].astype(
+        np.int64,
+        copy=False,
+    )
+    order = np.argsort(sample_timestamps, kind="stable").astype(np.int64, copy=False)
+    return ChronologicalSampleView(
+        sample_positions=order,
+        sample_timestamps=sample_timestamps[order],
+    )
+
+
 def select_sample_positions_for_arrivals(
     sample_timestamps: NDArray[np.int64],
     arrivals: NDArray[np.float64],
@@ -79,7 +102,7 @@ def select_sample_positions_for_arrivals(
 def summarize_selected_costs(
     store: CompiledProblemStore,
     realization_policy: CompiledRealizationPolicyContract,
-    decoded_offsets: Sequence[int],
+    decoded_offsets: DecodedOffsets,
     sample_indices: IntVector,
     selected_positions: IntVector,
     *,
@@ -103,6 +126,10 @@ def summarize_selected_costs(
     )
     optimum_logs = store.log_base_fees[realized.optimum_rows].astype(np.float64, copy=False)
     optimum_total = float(np.exp(optimum_logs).sum())
+    if baseline_total <= 0.0:
+        raise ValueError("baseline fee total must be positive")
+    if optimum_total <= 0.0:
+        raise ValueError("optimum fee total must be positive")
 
     return EvaluationRun(
         n_events=int(selected_positions.shape[0]),
@@ -128,6 +155,10 @@ def summarize_runs(runs: list[EvaluationRun]) -> EvaluationSummary:
     realized_fee_sum = sum(run.metrics["realized_fee_sum"] for run in runs)
     baseline_fee_sum = sum(run.metrics["baseline_fee_sum"] for run in runs)
     optimum_fee_sum = sum(run.metrics["optimum_fee_sum"] for run in runs)
+    if baseline_fee_sum <= 0.0:
+        raise ValueError("baseline fee sum must be positive")
+    if optimum_fee_sum <= 0.0:
+        raise ValueError("optimum fee sum must be positive")
     return EvaluationSummary(
         metrics=MetricSet(
             values={

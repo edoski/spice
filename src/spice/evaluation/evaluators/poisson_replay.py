@@ -11,6 +11,7 @@ from ...temporal.problem_store import CompiledProblemStore
 from ..base import CompiledEvaluatorContract, EvaluationSummary, EvaluatorConfig
 from .shared import (
     EVALUATION_METRIC_DESCRIPTORS,
+    chronological_sample_view,
     sample_poisson_arrivals,
     select_sample_positions_for_arrivals,
     summarize_runs,
@@ -38,9 +39,9 @@ def _run(
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
 
-    sample_timestamps = store.timestamps[store.anchor_rows[sample_indices]]
-    first_timestamp = int(sample_timestamps[0])
-    last_timestamp = int(sample_timestamps[-1])
+    chronological_samples = chronological_sample_view(store, sample_indices)
+    first_timestamp = int(chronological_samples.sample_timestamps[0])
+    last_timestamp = int(chronological_samples.sample_timestamps[-1])
     latest_start = last_timestamp - window_seconds
     if latest_start < first_timestamp:
         raise ValueError("Evaluation examples do not cover the requested replay window")
@@ -61,7 +62,12 @@ def _run(
             start_timestamp=window_start,
             end_timestamp=window_end,
         )
-        selected_positions = select_sample_positions_for_arrivals(sample_timestamps, arrivals)
+        selected_positions = chronological_samples.sample_positions[
+            select_sample_positions_for_arrivals(
+                chronological_samples.sample_timestamps,
+                arrivals,
+            )
+        ].astype(np.int64, copy=False)
         if selected_positions.size == 0:
             reporter.update_task(
                 task_id,

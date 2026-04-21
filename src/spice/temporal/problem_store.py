@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 FloatMatrix = NDArray[np.float32]
 FloatVector = NDArray[np.float32]
 IntVector = NDArray[np.int64]
+BoolMatrix = NDArray[np.bool_]
 
 
 @dataclass(slots=True)
@@ -78,6 +79,20 @@ def filter_sample_indices_by_timestamp_window(
     sample_timestamps = store.timestamps[store.anchor_rows]
     mask = (sample_timestamps >= start_timestamp) & (sample_timestamps < end_timestamp)
     return np.flatnonzero(mask).astype(np.int64, copy=False)
+
+
+def build_action_mask(
+    store: CompiledProblemStore,
+    sample_indices: IntVector,
+) -> BoolMatrix:
+    resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
+    candidate_counts = store.candidate_counts[resolved_sample_indices]
+    if np.any(candidate_counts <= 0):
+        raise ValueError("action mask requires at least one future candidate per sample")
+    if np.any(candidate_counts > store.max_candidate_slots):
+        raise ValueError("candidate counts exceed store.max_candidate_slots")
+    slot_ids = np.arange(store.max_candidate_slots, dtype=np.int64)
+    return (slot_ids[None, :] < candidate_counts[:, None]).astype(np.bool_, copy=False)
 
 
 def chronological_split_indices(

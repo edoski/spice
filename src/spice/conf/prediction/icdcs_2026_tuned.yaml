@@ -1,4 +1,4 @@
-id: icdcs_2026
+id: icdcs_2026_tuned
 family:
   id: min_block_fee_multitask
   classification_loss_weight: 0.5

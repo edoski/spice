@@ -1,4 +1,4 @@
-"""Checked-in remote helper actions executed on the cluster host."""
+"""Helper actions for storage sync."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any, cast
 
 from ..core.errors import StateConflictError
 from ..core.files import promote_paths_atomic
-from ..storage.roots import (
+from .roots import (
     ArtifactSelector,
     StudySelector,
     reindex_root,
@@ -21,7 +21,7 @@ from ..storage.roots import (
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="python -m spice.remote.actions")
+    parser = argparse.ArgumentParser(prog="python -m spice.storage.sync_actions")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     prepare = subparsers.add_parser("prepare-stage")

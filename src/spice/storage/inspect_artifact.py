@@ -115,11 +115,18 @@ def artifact_sections(
                 "training",
                 [
                     ("best epoch", str(runtime.best_epoch)),
-                    ("representation", training.manifest.representation_id),
-                    ("loader", runtime.loader_strategy_id),
-                    ("input storage", runtime.input_storage_mode_id),
-                    ("target storage", runtime.target_storage_mode_id),
-                    ("batch planner", runtime.batch_planner_id),
+                    (
+                        "objective",
+                        (
+                            f"{training.manifest.semantics.objective.objective_id}:"
+                            f"{runtime.best_objective_metric_id}"
+                        ),
+                    ),
+                    ("best objective", f"{runtime.best_objective_value:.4f}"),
+                    (
+                        "rows",
+                        f"used={runtime.n_rows_used} available={runtime.n_rows_available}",
+                    ),
                     (
                         "split",
                         " ".join(

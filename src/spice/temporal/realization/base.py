@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -23,7 +24,6 @@ BoolMatrix = NDArray[np.bool_]
 BoolVector = NDArray[np.bool_]
 FloatVector = NDArray[np.float32]
 FloatMatrix = NDArray[np.float32]
-
 
 class RealizationPolicyConfig(ConfigModel):
     id: str
@@ -53,12 +53,18 @@ class RealizedSelectionBatch:
     overflow_mask: BoolVector
 
 
+class DecodedOffsetBatch(Protocol):
+    def __len__(self) -> int: ...
+
+    def select(self, sample_positions: IntVector) -> IntVector: ...
+
+
 PrepareSupervisedTargetsFn = Callable[
     [CompiledProblemStore, IntVector],
     PreparedSupervisedRealizationTargets,
 ]
 RealizeSelectionsFn = Callable[
-    [CompiledProblemStore, Sequence[int], IntVector, IntVector],
+    [CompiledProblemStore, DecodedOffsetBatch, IntVector, IntVector],
     RealizedSelectionBatch,
 ]
 
@@ -86,7 +92,7 @@ class CompiledRealizationPolicyContract:
     def realize_selections(
         self,
         store: CompiledProblemStore,
-        decoded_offsets: Sequence[int],
+        decoded_offsets: DecodedOffsetBatch,
         sample_indices: IntVector,
         selected_positions: IntVector,
     ) -> RealizedSelectionBatch:

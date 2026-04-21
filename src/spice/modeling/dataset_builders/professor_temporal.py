@@ -8,6 +8,7 @@ import numpy as np
 import polars as pl
 
 from ...core.errors import ConfigResolutionError
+from ...temporal.contracts import ProblemRuntimeMetadata
 from ...temporal.problem_store import (
     CompiledProblemStore,
     DatasetSplitIndices,
@@ -74,7 +75,7 @@ def _build_split_store(
     blocks: pl.DataFrame,
     *,
     spec: TrainingSpec,
-) -> tuple[CompiledProblemStore, object]:
+) -> tuple[CompiledProblemStore, ProblemRuntimeMetadata]:
     feature_table = spec.feature_contract.build_table(_prepare_blocks(blocks))
     if feature_table.feature_prerequisites != spec.contract.feature_prerequisites:
         raise ValueError(
@@ -284,7 +285,7 @@ def prepare_inference_dataset(
         spec.builder_runtime_metadata,
         compiler_id=spec.contract.compiler_id,
     )
-    seq_len = int(spec.builder_runtime_metadata["seq_len"])
+    seq_len = _builder_int(spec.builder_runtime_metadata, "seq_len")
     feature_table = spec.feature_contract.build_table(combined_blocks)
     store = spec.contract.build_delay_store(
         feature_table,
@@ -318,6 +319,13 @@ def prepare_inference_dataset(
         store=scaled_store,
         sample_indices=sample_indices,
     )
+
+
+def _builder_int(payload: dict[str, object], key: str) -> int:
+    value = payload.get(key)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ConfigResolutionError(f"builder runtime metadata field must be an integer: {key}")
+    return int(value)
 
 
 def compile_dataset_builder(

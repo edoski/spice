@@ -1,4 +1,4 @@
-id: icdcs_2026_paper_truth
+id: icdcs_2026_paper_truth_900
 lookback_seconds: 900
 sample_count: 400000
 max_delay_seconds: 36

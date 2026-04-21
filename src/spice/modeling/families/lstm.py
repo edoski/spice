@@ -5,13 +5,10 @@ from __future__ import annotations
 from typing import Literal
 
 import optuna
-import torch
 from pydantic import Field, field_validator, model_validator
 
-from ...config.models import TrainingPrecision
 from ...prediction import PredictionOutputSpec
 from ..models import LSTMBaseline, TemporalModel
-from ..representations import SEQUENCE_INPUT_REPRESENTATION_ID
 from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
 from .registry import ModelSpec
 
@@ -76,33 +73,6 @@ def _build_model(
     config: LstmModelConfig,
 ) -> TemporalModel:
     return LSTMBaseline(n_features, output_spec, config)
-
-
-def _default_precision(device: torch.device) -> TrainingPrecision:
-    if device.type == "cpu":
-        return TrainingPrecision.FP32
-    if device.type == "mps":
-        return TrainingPrecision.FP32
-    if device.type == "cuda":
-        return TrainingPrecision.FP32
-    return TrainingPrecision.FP32
-
-
-def _auto_compile(device: torch.device, precision: str) -> bool:
-    if device.type == "cuda":
-        return False
-    if device.type == "mps":
-        return precision == "32-true"
-    return device.type == "cpu"
-
-
-def _validate_tuning_space(
-    model_config: LstmModelConfig,
-    tuning_space: LstmTuningSpaceModelConfig,
-) -> None:
-    del model_config, tuning_space
-
-
 def _sample_model_params(
     trial: optuna.Trial,
     tuning_space: LstmTuningSpaceModelConfig,
@@ -131,21 +101,11 @@ def _apply_model_params(
     return model_config.model_copy(update=updates)
 
 
-def _resolve_representation_id(config: LstmModelConfig) -> str:
-    del config
-    return SEQUENCE_INPUT_REPRESENTATION_ID
-
-
 MODEL_SPEC = ModelSpec(
-    id="lstm",
-    resolve_representation_id=_resolve_representation_id,
     model_config_type=LstmModelConfig,
     tuning_space_type=LstmTuningSpaceModelConfig,
     tuned_params_type=LstmTunedModelParams,
     build_model=_build_model,
-    default_precision=_default_precision,
-    auto_compile=_auto_compile,
-    validate_tuning_space=_validate_tuning_space,
     sample_model_params=_sample_model_params,
     apply_model_params=_apply_model_params,
 )

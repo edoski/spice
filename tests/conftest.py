@@ -30,6 +30,17 @@ _CONF_ROOT = Path(__file__).resolve().parents[1] / "src" / "spice" / "conf"
 _SELECTION_GROUP_KEYS = frozenset(WorkflowSelections.model_fields) & frozenset(named_group_keys())
 _PRESET_FIELDS = frozenset(PresetSpec.model_fields)
 TEST_EVALUATION_DATE = date(2025, 11, 9)
+_IDENTITY_FIELDS = {
+    "chain": "name",
+    "dataset": "name",
+    "dataset_builder": "id",
+    "execution": "id",
+    "feature_set": "id",
+    "model": "id",
+    "prediction": "id",
+    "problem": "id",
+    "provider": "name",
+}
 
 
 def _write_named_spec(
@@ -39,13 +50,25 @@ def _write_named_spec(
     name: str,
     payload: dict[str, object],
 ) -> None:
-    path = conf_root / normalize_group_name(group) / f"{name}.yaml"
+    normalized_group = normalize_group_name(group)
+    identity_field = _IDENTITY_FIELDS.get(normalized_group)
+    if identity_field is not None:
+        payload = {**payload, identity_field: name}
+    path = conf_root / normalized_group / f"{name}.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dump_canonical_yaml(payload), encoding="utf-8")
 
 
 def _named_group_copy(name: str, group: str) -> dict[str, object]:
     return deepcopy(load_named_group(name, group))
+
+
+def _spec_name_for_payload(group: str, default_name: str, payload: Mapping[str, object]) -> str:
+    identity_field = _IDENTITY_FIELDS.get(normalize_group_name(group))
+    if identity_field is None:
+        return default_name
+    identity_value = payload.get(identity_field)
+    return identity_value if isinstance(identity_value, str) else default_name
 
 
 @pytest.fixture
@@ -89,13 +112,10 @@ def model_workflow_override():
                     "min_delta": 0.0,
                 },
                 "gradient_clip_norm": 1.0,
-                "device": "cpu",
                 "seed": 2026,
                 "deterministic": True,
                 "log_every_n_steps": 1,
                 "input_normalization": {"id": "row_standard"},
-                "precision": "fp32",
-                "compile": "off",
             },
             "evaluation": {
                 "evaluator": {
@@ -240,7 +260,11 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
         for key, value in override_payload.items():
             if key in _SELECTION_GROUP_KEYS:
                 if isinstance(value, Mapping):
-                    spec_name = f"test_{workflow.value}_{key}"
+                    spec_name = _spec_name_for_payload(
+                        key,
+                        f"test_{workflow.value}_{key}",
+                        value,
+                    )
                     _write_named_spec(
                         conf_root,
                         group=key,
@@ -256,7 +280,11 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
                 continue
             if key in _PRESET_FIELDS:
                 if isinstance(value, Mapping) and key in named_group_keys():
-                    spec_name = f"test_{workflow.value}_{key}"
+                    spec_name = _spec_name_for_payload(
+                        key,
+                        f"test_{workflow.value}_{key}",
+                        value,
+                    )
                     _write_named_spec(
                         conf_root,
                         group=key,

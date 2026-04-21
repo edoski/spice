@@ -15,6 +15,7 @@ from ..config import (
     coerce_problem_spec,
 )
 from ..core.errors import ConfigResolutionError, MissingStateError
+from ..prediction import apply_tuned_prediction_family_parameters
 from ..storage.layout import resolve_workflow_paths
 from ..storage.study_manifest import load_study_manifest, validate_tuned_train_request
 from ..storage.study_optuna import load_best_params
@@ -63,21 +64,10 @@ def apply_tuned_parameters(
     if params.problem is not None and params.problem.lookback_seconds is not None:
         tuned_config.problem.lookback_seconds = params.problem.lookback_seconds
     if params.prediction is not None:
-        family = tuned_config.prediction.family
-        if params.prediction.classification_loss_weight is not None:
-            if not hasattr(family, "classification_loss_weight"):
-                raise ConfigResolutionError(
-                    "classification_loss_weight tuning is unsupported for "
-                    f"prediction.family.id={family.id}"
-                )
-            family.classification_loss_weight = params.prediction.classification_loss_weight
-        if params.prediction.regression_loss_weight is not None:
-            if not hasattr(family, "regression_loss_weight"):
-                raise ConfigResolutionError(
-                    "regression_loss_weight tuning is unsupported for "
-                    f"prediction.family.id={family.id}"
-                )
-            family.regression_loss_weight = params.prediction.regression_loss_weight
+        tuned_config.prediction.family = apply_tuned_prediction_family_parameters(
+            tuned_config.prediction.family,
+            params.prediction,
+        )
     tuned_config.model = apply_model_tuned_parameters(tuned_config.model, params)
     payload = tuned_config.model_dump(mode="json")
     payload["problem"] = coerce_problem_spec(payload["problem"])
@@ -96,6 +86,14 @@ def apply_tuned_parameters(
     if isinstance(config, EvaluateConfig):
         return EvaluateConfig.model_validate(payload)
     return TrainConfig.model_validate(payload)
+
+
+@overload
+def apply_study_best_params(config: TrainConfig) -> TrainConfig: ...
+
+
+@overload
+def apply_study_best_params(config: EvaluateConfig) -> EvaluateConfig: ...
 
 
 def apply_study_best_params(config: TrainConfig | EvaluateConfig) -> TrainConfig | EvaluateConfig:

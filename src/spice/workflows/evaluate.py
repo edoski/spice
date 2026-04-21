@@ -122,12 +122,12 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
             )
             decoded_offsets = predict_with_model(
                 loaded_artifact.model,
+                model_config=loaded_artifact.manifest.model,
                 prediction_contract=prediction_contract,
                 representation_contract=loaded_artifact.representation_contract,
                 store=prepared.store,
                 sample_indices=prepared.sample_indices,
                 batch_size=active_config.training.batch_size,
-                device=active_config.training.device,
                 reporter=predict_reporter,
             )
             evaluation = run_prediction_evaluation(

@@ -3,77 +3,53 @@
 from __future__ import annotations
 
 import math
-import os
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Generic, Protocol, TypeVar, cast
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
 from torch.utils.data import DataLoader, Dataset, Sampler
 
-from ..prediction.contracts import (
-    ModelInputBatch,
-    PredictionBatch,
-    PredictionPreparedRepresentation,
-)
-from .representations import PreparedRepresentation, RepresentationRuntimeContext
+from .representations import RepresentationRuntimeContext
 
 IntVector = NDArray[np.int64]
+BatchT = TypeVar("BatchT", covariant=True)
 _CUDA_DEVICE_RESIDENT_BUDGET_FRACTION = 0.5
-_CUDA_HOST_DATALOADER_MAX_WORKERS = 4
-_CUDA_HOST_DATALOADER_PREFETCH_FACTOR = 2
 
 
-class PreparedBatchSource(Protocol):
+class BatchSource(Protocol[BatchT]):
     @property
-    def loader_strategy_id(self) -> str: ...
-
-    @property
-    def input_storage_mode_id(self) -> str: ...
-
-    @property
-    def target_storage_mode_id(self) -> str: ...
-
-    @property
-    def batch_planner_id(self) -> str: ...
+    def residency_mode(self) -> str: ...
 
     def __len__(self) -> int: ...
 
-    def __iter__(self) -> Iterator[PredictionBatch]: ...
+    def __iter__(self) -> Iterator[BatchT]: ...
 
 
-class PreparedModelInputBatchSource(Protocol):
+class PreparedBatchRepresentation(Protocol[BatchT]):
     @property
-    def loader_strategy_id(self) -> str: ...
-
-    @property
-    def input_storage_mode_id(self) -> str: ...
+    def sample_count(self) -> int: ...
 
     @property
-    def batch_planner_id(self) -> str: ...
+    def batch_signatures(self) -> IntVector: ...
 
-    def __len__(self) -> int: ...
+    @property
+    def estimated_storage_bytes(self) -> int: ...
 
-    def __iter__(self) -> Iterator[ModelInputBatch]: ...
+    def build_batch(self, sample_positions: torch.Tensor) -> BatchT: ...
+
+    def to_device_storage(
+        self,
+        device: torch.device,
+    ) -> PreparedBatchRepresentation[BatchT]: ...
 
 
 @dataclass(frozen=True, slots=True)
-class BatchSourcePlan:
-    source: PreparedBatchSource
-    loader_strategy_id: str
-    input_storage_mode_id: str
-    target_storage_mode_id: str
-    batch_planner_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class ModelInputBatchSourcePlan:
-    source: PreparedModelInputBatchSource
-    loader_strategy_id: str
-    input_storage_mode_id: str
-    batch_planner_id: str
+class BatchSourcePlan(Generic[BatchT]):
+    source: BatchSource[BatchT]
+    residency_mode: str
 
 
 class _SamplePositionDataset(Dataset[int]):
@@ -108,6 +84,7 @@ class _PositionBatchSampler(Sampler[list[int]]):
     def __iter__(self) -> Iterator[list[int]]:
         order = _ordered_sample_positions(
             self._batch_signatures,
+            batch_size=self._batch_size,
             epoch=self._epoch if self._shuffle else 0,
             seed=self._seed,
             shuffle=self._shuffle,
@@ -121,298 +98,142 @@ class _PositionBatchSampler(Sampler[list[int]]):
 def _ordered_sample_positions(
     batch_signatures: IntVector,
     *,
+    batch_size: int,
     epoch: int,
     seed: int,
     shuffle: bool,
 ) -> IntVector:
-    order = np.arange(batch_signatures.shape[0], dtype=np.int64)
-    if shuffle:
-        rng = np.random.default_rng(np.random.SeedSequence([seed, epoch]))
-        order = rng.permutation(order)
-    signatures = batch_signatures[order].astype(np.int64, copy=False)
-    return order[np.argsort(signatures, kind="stable")]
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    signatures = batch_signatures.astype(np.int64, copy=False)
+    order = np.argsort(signatures, kind="stable").astype(np.int64, copy=False)
+    if not shuffle or order.size == 0:
+        return order
+
+    rng = np.random.default_rng(np.random.SeedSequence([seed, epoch]))
+    batches = [
+        order[offset : offset + batch_size].copy()
+        for offset in range(0, int(order.shape[0]), batch_size)
+    ]
+    shuffled_batches = [rng.permutation(batches[index]) for index in rng.permutation(len(batches))]
+    return np.concatenate(shuffled_batches).astype(np.int64, copy=False)
 
 
 @dataclass(frozen=True, slots=True)
-class _HostPredictionBatchCollator:
-    prepared: PredictionPreparedRepresentation
+class _HostBatchCollator(Generic[BatchT]):
+    prepared: PreparedBatchRepresentation[BatchT]
 
-    def __call__(self, sample_positions: Sequence[int]) -> PredictionBatch:
+    def __call__(self, sample_positions: Sequence[int]) -> BatchT:
         index = torch.as_tensor(sample_positions, dtype=torch.int64)
         return self.prepared.build_batch(index)
 
 
-@dataclass(frozen=True, slots=True)
-class _HostInputBatchCollator:
-    prepared: PreparedRepresentation[ModelInputBatch]
-
-    def __call__(self, sample_positions: Sequence[int]) -> ModelInputBatch:
-        index = torch.as_tensor(sample_positions, dtype=torch.int64)
-        return self.prepared.build_batch(index)
-
-
 @dataclass(slots=True)
-class HostDataLoaderBatchSource:
-    _loader: DataLoader[PredictionBatch]
+class _HostDataLoaderBatchSource(Generic[BatchT]):
+    _loader: DataLoader[BatchT]
     _batch_sampler: _PositionBatchSampler
-    input_storage_mode_id: str
-    target_storage_mode_id: str
-    batch_planner_id: str
-    loader_strategy_id: str = "host_dataloader"
+    residency_mode: str = "staged"
 
     def __len__(self) -> int:
         return len(self._batch_sampler)
 
-    def __iter__(self) -> Iterator[PredictionBatch]:
+    def __iter__(self) -> Iterator[BatchT]:
         return iter(self._loader)
 
 
 @dataclass(slots=True)
-class HostInputDataLoaderBatchSource:
-    _loader: DataLoader[ModelInputBatch]
-    _batch_sampler: _PositionBatchSampler
-    input_storage_mode_id: str
-    batch_planner_id: str
-    loader_strategy_id: str = "host_dataloader"
-
-    def __len__(self) -> int:
-        return len(self._batch_sampler)
-
-    def __iter__(self) -> Iterator[ModelInputBatch]:
-        return iter(self._loader)
-
-
-@dataclass(slots=True)
-class DeviceResidentBatchSource:
-    prepared: PredictionPreparedRepresentation
+class _DeviceResidentBatchSource(Generic[BatchT]):
+    prepared: PreparedBatchRepresentation[BatchT]
     batch_sampler: _PositionBatchSampler
-    input_storage_mode_id: str
-    target_storage_mode_id: str
-    batch_planner_id: str
-    loader_strategy_id: str = "device_resident"
+    residency_mode: str = "resident"
 
     def __len__(self) -> int:
         return len(self.batch_sampler)
 
-    def __iter__(self) -> Iterator[PredictionBatch]:
+    def __iter__(self) -> Iterator[BatchT]:
         for sample_positions in self.batch_sampler:
-            yield self.prepared.build_batch(
-                torch.as_tensor(sample_positions, dtype=torch.int64)
-            )
-
-
-@dataclass(slots=True)
-class DeviceResidentInputBatchSource:
-    prepared: PreparedRepresentation[ModelInputBatch]
-    batch_sampler: _PositionBatchSampler
-    input_storage_mode_id: str
-    batch_planner_id: str
-    loader_strategy_id: str = "device_resident"
-
-    def __len__(self) -> int:
-        return len(self.batch_sampler)
-
-    def __iter__(self) -> Iterator[ModelInputBatch]:
-        for sample_positions in self.batch_sampler:
-            yield self.prepared.build_batch(
-                torch.as_tensor(sample_positions, dtype=torch.int64)
-            )
+            yield self.prepared.build_batch(torch.as_tensor(sample_positions, dtype=torch.int64))
 
 
 def plan_batch_source(
-    prepared: PredictionPreparedRepresentation,
+    prepared: PreparedBatchRepresentation[BatchT],
     *,
     runtime_context: RepresentationRuntimeContext,
     resolved_device: torch.device,
     seed: int,
     shuffle: bool,
-) -> BatchSourcePlan:
-    if _should_use_device_resident(
+) -> BatchSourcePlan[BatchT]:
+    source = _plan_prepared_source(
         prepared,
-        runtime_context=runtime_context,
-        resolved_device=resolved_device,
-    ):
-        device_prepared = prepared.to_device_storage(resolved_device)
-        if device_prepared is not None:
-            source: PreparedBatchSource = DeviceResidentBatchSource(
-                prepared=device_prepared,
-                batch_sampler=_PositionBatchSampler(
-                    batch_signatures=device_prepared.batch_signatures,
-                    batch_size=runtime_context.batch_size,
-                    seed=seed,
-                    shuffle=shuffle,
-                ),
-                input_storage_mode_id=device_prepared.input_storage_mode_id,
-                target_storage_mode_id=device_prepared.target_storage_mode_id,
-                batch_planner_id=device_prepared.batch_planner_id,
-            )
-            return BatchSourcePlan(
-                source=source,
-                loader_strategy_id=source.loader_strategy_id,
-                input_storage_mode_id=source.input_storage_mode_id,
-                target_storage_mode_id=source.target_storage_mode_id,
-                batch_planner_id=source.batch_planner_id,
-            )
-
-    source = _build_host_dataloader_source(
-        prepared,
+        required_bytes=prepared.estimated_storage_bytes,
         runtime_context=runtime_context,
         resolved_device=resolved_device,
         seed=seed,
         shuffle=shuffle,
     )
     return BatchSourcePlan(
-        source=source,
-        loader_strategy_id=source.loader_strategy_id,
-        input_storage_mode_id=source.input_storage_mode_id,
-        target_storage_mode_id=source.target_storage_mode_id,
-        batch_planner_id=source.batch_planner_id,
+        source=cast(BatchSource[BatchT], source),
+        residency_mode=source.residency_mode,
     )
 
 
-def plan_model_input_batch_source(
-    prepared: PreparedRepresentation[ModelInputBatch],
+def _plan_prepared_source(
+    prepared: PreparedBatchRepresentation[BatchT],
     *,
+    required_bytes: int,
     runtime_context: RepresentationRuntimeContext,
     resolved_device: torch.device,
     seed: int,
     shuffle: bool,
-) -> ModelInputBatchSourcePlan:
-    if _should_use_device_resident_inputs(
-        prepared,
-        runtime_context=runtime_context,
-        resolved_device=resolved_device,
-    ):
-        device_prepared = prepared.to_device_storage(resolved_device)
-        if device_prepared is not None:
-            source: PreparedModelInputBatchSource = DeviceResidentInputBatchSource(
-                prepared=device_prepared,
-                batch_sampler=_PositionBatchSampler(
-                    batch_signatures=device_prepared.batch_signatures,
-                    batch_size=runtime_context.batch_size,
-                    seed=seed,
-                    shuffle=shuffle,
-                ),
-                input_storage_mode_id=device_prepared.storage_mode_id,
-                batch_planner_id=device_prepared.batch_planner_id,
-            )
-            return ModelInputBatchSourcePlan(
-                source=source,
-                loader_strategy_id=source.loader_strategy_id,
-                input_storage_mode_id=source.input_storage_mode_id,
-                batch_planner_id=source.batch_planner_id,
-            )
-
-    source = _build_host_dataloader_input_source(
-        prepared,
-        runtime_context=runtime_context,
-        resolved_device=resolved_device,
+) -> _HostDataLoaderBatchSource[BatchT] | _DeviceResidentBatchSource[BatchT]:
+    batch_sampler = _PositionBatchSampler(
+        batch_signatures=prepared.batch_signatures,
+        batch_size=runtime_context.batch_size,
         seed=seed,
         shuffle=shuffle,
     )
-    return ModelInputBatchSourcePlan(
-        source=source,
-        loader_strategy_id=source.loader_strategy_id,
-        input_storage_mode_id=source.input_storage_mode_id,
-        batch_planner_id=source.batch_planner_id,
+    if _should_use_device_resident(
+        required_bytes=required_bytes,
+        runtime_context=runtime_context,
+        resolved_device=resolved_device,
+    ):
+        return _DeviceResidentBatchSource(
+            prepared=prepared.to_device_storage(resolved_device),
+            batch_sampler=batch_sampler,
+        )
+    return _build_host_dataloader_source(
+        prepared,
+        batch_sampler=batch_sampler,
+        resolved_device=resolved_device,
     )
 
 
 def _build_host_dataloader_source(
-    prepared: PredictionPreparedRepresentation,
+    prepared: PreparedBatchRepresentation[BatchT],
     *,
-    runtime_context: RepresentationRuntimeContext,
+    batch_sampler: _PositionBatchSampler,
     resolved_device: torch.device,
-    seed: int,
-    shuffle: bool,
-) -> HostDataLoaderBatchSource:
-    batch_sampler = _PositionBatchSampler(
-        batch_signatures=prepared.batch_signatures,
-        batch_size=runtime_context.batch_size,
-        seed=seed,
-        shuffle=shuffle,
+) -> _HostDataLoaderBatchSource[BatchT]:
+    loader = DataLoader(
+        _SamplePositionDataset(prepared.sample_count),
+        batch_sampler=batch_sampler,
+        collate_fn=_HostBatchCollator(prepared),
+        num_workers=0,
+        pin_memory=_should_pin_host_memory(resolved_device),
     )
-    num_workers = _resolve_host_dataloader_workers(resolved_device)
-    collate_fn = _HostPredictionBatchCollator(prepared)
-    if num_workers > 0:
-        loader = DataLoader(
-            _SamplePositionDataset(prepared.sample_count),
-            batch_sampler=batch_sampler,
-            collate_fn=collate_fn,
-            num_workers=num_workers,
-            pin_memory=resolved_device.type == "cuda",
-            persistent_workers=True,
-            prefetch_factor=_CUDA_HOST_DATALOADER_PREFETCH_FACTOR,
-        )
-    else:
-        loader = DataLoader(
-            _SamplePositionDataset(prepared.sample_count),
-            batch_sampler=batch_sampler,
-            collate_fn=collate_fn,
-            num_workers=0,
-            pin_memory=resolved_device.type == "cuda",
-        )
-    return HostDataLoaderBatchSource(
-        _loader=cast(DataLoader[PredictionBatch], loader),
+    return _HostDataLoaderBatchSource(
+        _loader=cast(DataLoader[BatchT], loader),
         _batch_sampler=batch_sampler,
-        input_storage_mode_id=prepared.input_storage_mode_id,
-        target_storage_mode_id=prepared.target_storage_mode_id,
-        batch_planner_id=prepared.batch_planner_id,
     )
 
 
-def _build_host_dataloader_input_source(
-    prepared: PreparedRepresentation[ModelInputBatch],
-    *,
-    runtime_context: RepresentationRuntimeContext,
-    resolved_device: torch.device,
-    seed: int,
-    shuffle: bool,
-) -> HostInputDataLoaderBatchSource:
-    batch_sampler = _PositionBatchSampler(
-        batch_signatures=prepared.batch_signatures,
-        batch_size=runtime_context.batch_size,
-        seed=seed,
-        shuffle=shuffle,
-    )
-    num_workers = _resolve_host_dataloader_workers(resolved_device)
-    collate_fn = _HostInputBatchCollator(prepared)
-    if num_workers > 0:
-        loader = DataLoader(
-            _SamplePositionDataset(prepared.sample_count),
-            batch_sampler=batch_sampler,
-            collate_fn=collate_fn,
-            num_workers=num_workers,
-            pin_memory=resolved_device.type == "cuda",
-            persistent_workers=True,
-            prefetch_factor=_CUDA_HOST_DATALOADER_PREFETCH_FACTOR,
-        )
-    else:
-        loader = DataLoader(
-            _SamplePositionDataset(prepared.sample_count),
-            batch_sampler=batch_sampler,
-            collate_fn=collate_fn,
-            num_workers=0,
-            pin_memory=resolved_device.type == "cuda",
-        )
-    return HostInputDataLoaderBatchSource(
-        _loader=cast(DataLoader[ModelInputBatch], loader),
-        _batch_sampler=batch_sampler,
-        input_storage_mode_id=prepared.storage_mode_id,
-        batch_planner_id=prepared.batch_planner_id,
-    )
-
-
-def _resolve_host_dataloader_workers(resolved_device: torch.device) -> int:
-    if resolved_device.type != "cuda":
-        return 0
-    cpu_count = os.cpu_count() or 1
-    return max(1, min(_CUDA_HOST_DATALOADER_MAX_WORKERS, cpu_count // 2))
+def _should_pin_host_memory(resolved_device: torch.device) -> bool:
+    return resolved_device.type == "cuda" and torch.cuda.is_available()
 
 
 def _should_use_device_resident(
-    prepared: PredictionPreparedRepresentation,
     *,
+    required_bytes: int,
     runtime_context: RepresentationRuntimeContext,
     resolved_device: torch.device,
 ) -> bool:
@@ -421,24 +242,7 @@ def _should_use_device_resident(
     available_device_memory_bytes = runtime_context.available_device_memory_bytes
     if available_device_memory_bytes is None or available_device_memory_bytes <= 0:
         return False
-    required_bytes = (
-        prepared.estimated_input_storage_bytes + prepared.estimated_target_storage_bytes
-    )
     return required_bytes <= available_device_memory_bytes
-
-
-def _should_use_device_resident_inputs(
-    prepared: PreparedRepresentation[ModelInputBatch],
-    *,
-    runtime_context: RepresentationRuntimeContext,
-    resolved_device: torch.device,
-) -> bool:
-    if resolved_device.type != "cuda":
-        return False
-    available_device_memory_bytes = runtime_context.available_device_memory_bytes
-    if available_device_memory_bytes is None or available_device_memory_bytes <= 0:
-        return False
-    return prepared.estimated_storage_bytes <= available_device_memory_bytes
 
 
 def resolve_available_device_memory_budget(resolved_device: torch.device) -> int | None:

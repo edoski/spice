@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -21,22 +20,22 @@ from ..core.reporting import (
 )
 from ..objectives import CompiledObjectiveContract, ObjectiveEvaluationContext
 from ..prediction import CompiledPredictionContract, MetricSet
+from ..prediction.contracts import PredictionBatch
 from ..temporal.problem_store import CompiledProblemStore
 from ..temporal.realization import CompiledRealizationPolicyContract
 from ._runtime import (
-    CompiledRepresentationContract,
+    autocast_context,
+    build_cuda_modeling_runtime,
     build_prediction_batch_source,
-    build_representation_runtime_context,
     configure_torch_backends,
-    ensure_device_runtime_ready,
-    prepare_supervised_prediction_representation,
     resolve_compile_enabled,
-    resolve_device,
-    resolve_trainer_precision,
+    resolve_training_precision,
+    run_model_forward_pass,
     set_global_seed,
 )
-from .batch_sources import BatchSourcePlan, PreparedBatchSource
+from .batch_sources import BatchSource
 from .models import TemporalModel
+from .representations import CompiledRepresentationContract
 
 IntVector = NDArray[np.int64]
 _EPOCH_STAGE_METRIC_ID = "epoch"
@@ -51,14 +50,6 @@ class TrainingResult:
     validation_history: list[MetricSet]
     objective_history: list[MetricSet]
     best_checkpoint_path: Path | None
-    resolved_precision: str
-    compiled: bool
-    resolved_device: str
-    representation_id: str
-    loader_strategy_id: str
-    input_storage_mode_id: str
-    target_storage_mode_id: str
-    batch_planner_id: str
     prediction_training_state: object | None
 
 
@@ -199,24 +190,6 @@ def _write_checkpoint(path: Path, state_dict: dict[str, torch.Tensor]) -> None:
     write_path_atomic(path, _write)
 
 
-def _autocast_context(
-    *,
-    resolved_device: torch.device,
-    precision: str,
-):
-    if precision == "32-true":
-        return nullcontext()
-    if precision == "16-mixed":
-        if resolved_device.type != "cuda":
-            raise ValueError("fp16 mixed precision is only supported on CUDA")
-        return torch.autocast(device_type="cuda", dtype=torch.float16)
-    if precision == "bf16-mixed":
-        if resolved_device.type not in {"cpu", "cuda"}:
-            raise ValueError("bf16 mixed precision is only supported on CPU or CUDA")
-        return torch.autocast(device_type=resolved_device.type, dtype=torch.bfloat16)
-    raise ValueError(f"Unsupported resolved precision: {precision}")
-
-
 def _build_grad_scaler(
     *,
     resolved_device: torch.device,
@@ -230,7 +203,7 @@ def _build_grad_scaler(
 def _run_epoch(
     model: TemporalModel,
     *,
-    loader: PreparedBatchSource,
+    loader: BatchSource[PredictionBatch],
     resolved_device: torch.device,
     precision: str,
     prediction_contract: CompiledPredictionContract,
@@ -255,7 +228,7 @@ def _run_epoch(
             device_batch = batch.to_device(resolved_device)
             if optimizer is not None:
                 optimizer.zero_grad(set_to_none=True)
-            with _autocast_context(resolved_device=resolved_device, precision=precision):
+            with autocast_context(resolved_device=resolved_device, precision=precision):
                 outputs = model(**device_batch.model_kwargs())
                 loss, batch_state = prediction_contract.compute_batch_loss_and_state(
                     outputs,
@@ -308,53 +281,32 @@ def train_model(
         raise ValueError("Train and validation sample selections must both be non-empty")
 
     set_global_seed(training_config.seed)
-    resolved_device = resolve_device(training_config.device)
-    ensure_device_runtime_ready(
-        requested_device=training_config.device,
-        resolved_device=resolved_device,
-    )
-    precision = resolve_trainer_precision(
-        training_config,
-        device=resolved_device,
+    runtime = build_cuda_modeling_runtime(batch_size=training_config.batch_size)
+    precision = resolve_training_precision(
+        device=runtime.resolved_device,
         model_config=model_config,
     )
     compile_enabled = resolve_compile_enabled(
-        training_config,
-        device=resolved_device,
-        precision=precision,
+        device=runtime.resolved_device,
         model_config=model_config,
     )
-    runtime_context = build_representation_runtime_context(
-        device=resolved_device,
-        batch_size=training_config.batch_size,
-    )
-    train_representation = prepare_supervised_prediction_representation(
+    train_batch_source_plan = build_prediction_batch_source(
         store,
         train_sample_indices,
         representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         realization_policy=realization_policy,
-        runtime_context=runtime_context,
+        runtime=runtime,
+        seed=training_config.seed,
+        shuffle=True,
     )
-    validation_representation = prepare_supervised_prediction_representation(
+    validation_batch_source_plan = build_prediction_batch_source(
         store,
         validation_sample_indices,
         representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         realization_policy=realization_policy,
-        runtime_context=runtime_context,
-    )
-    train_batch_source_plan = _plan_training_batch_source(
-        train_representation,
-        runtime_context=runtime_context,
-        device=resolved_device,
-        seed=training_config.seed,
-        shuffle=True,
-    )
-    validation_batch_source_plan = _plan_training_batch_source(
-        validation_representation,
-        runtime_context=runtime_context,
-        device=resolved_device,
+        runtime=runtime,
         seed=training_config.seed,
         shuffle=False,
     )
@@ -364,7 +316,7 @@ def train_model(
         train_sample_indices,
         realization_policy=realization_policy,
     )
-    model.to(resolved_device)
+    model.to(runtime.resolved_device)
     fit_model = cast(TemporalModel, torch.compile(model) if compile_enabled else model)
     optimizer = torch.optim.AdamW(
         fit_model.parameters(),
@@ -372,7 +324,7 @@ def train_model(
         weight_decay=training_config.weight_decay,
     )
     grad_scaler = _build_grad_scaler(
-        resolved_device=resolved_device,
+        resolved_device=runtime.resolved_device,
         precision=precision,
     )
     progress = _ProgressReporter(
@@ -391,14 +343,14 @@ def train_model(
     epochs_without_improvement = 0
 
     with configure_torch_backends(
-        resolved_device=resolved_device,
+        resolved_device=runtime.resolved_device,
         deterministic=training_config.deterministic,
     ):
         for epoch in range(1, training_config.max_epochs + 1):
             train_metrics = _run_epoch(
                 fit_model,
                 loader=train_batch_source_plan.source,
-                resolved_device=resolved_device,
+                resolved_device=runtime.resolved_device,
                 precision=precision,
                 prediction_contract=prediction_contract,
                 prediction_training_state=prediction_training_state,
@@ -412,7 +364,7 @@ def train_model(
             validation_metrics = _run_epoch(
                 fit_model,
                 loader=validation_batch_source_plan.source,
-                resolved_device=resolved_device,
+                resolved_device=runtime.resolved_device,
                 precision=precision,
                 prediction_contract=prediction_contract,
                 prediction_training_state=prediction_training_state,
@@ -427,13 +379,13 @@ def train_model(
                 validation_metrics,
                 context=ObjectiveEvaluationContext(
                     model=fit_model,
+                    model_config=model_config,
                     prediction_contract=prediction_contract,
                     representation_contract=representation_contract,
                     realization_policy=realization_policy,
                     store=store,
                     sample_indices=validation_sample_indices,
                     batch_size=training_config.batch_size,
-                    device=training_config.device,
                     reporter=None,
                 ),
             )
@@ -491,14 +443,6 @@ def train_model(
         validation_history=validation_history,
         objective_history=objective_history,
         best_checkpoint_path=best_checkpoint_path,
-        resolved_precision=precision,
-        compiled=compile_enabled,
-        resolved_device=resolved_device.type,
-        representation_id=train_representation.representation_id,
-        loader_strategy_id=train_batch_source_plan.loader_strategy_id,
-        input_storage_mode_id=train_batch_source_plan.input_storage_mode_id,
-        target_storage_mode_id=train_batch_source_plan.target_storage_mode_id,
-        batch_planner_id=train_batch_source_plan.batch_planner_id,
         prediction_training_state=prediction_training_state,
     )
 
@@ -539,93 +483,44 @@ def evaluate_model(
     reporter = reporter or NullReporter()
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
-    resolved_device = resolve_device(training_config.device)
-    ensure_device_runtime_ready(
-        requested_device=training_config.device,
-        resolved_device=resolved_device,
-    )
-    precision = resolve_trainer_precision(
-        training_config,
-        device=resolved_device,
+    runtime = build_cuda_modeling_runtime(batch_size=training_config.batch_size)
+    precision = resolve_training_precision(
+        device=runtime.resolved_device,
         model_config=model_config,
     )
-    model.to(resolved_device)
-    runtime_context = build_representation_runtime_context(
-        device=resolved_device,
-        batch_size=training_config.batch_size,
-    )
+    model.to(runtime.resolved_device)
     batch_source_plan = build_prediction_batch_source(
         store,
         sample_indices,
         representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         realization_policy=realization_policy,
-        runtime_context=runtime_context,
-        resolved_device=resolved_device,
+        runtime=runtime,
         seed=training_config.seed,
     )
     loader = batch_source_plan.source
     task_id = reporter.start_task("evaluate model", total=len(loader), unit="batches")
+    accumulator = prediction_contract.create_epoch_accumulator("evaluation")
+
+    def _accumulate(batch: PredictionBatch, outputs) -> None:
+        _, batch_state = prediction_contract.compute_batch_loss_and_state(
+            outputs,
+            batch.targets,
+            training_state=prediction_training_state,
+        )
+        accumulator.update(batch_state)
+        reporter.update_task(task_id, advance=1)
+
     with configure_torch_backends(
-        resolved_device=resolved_device,
+        resolved_device=runtime.resolved_device,
         deterministic=training_config.deterministic,
     ):
-        metrics = _run_evaluation_loader(
+        run_model_forward_pass(
             cast(TemporalModel, model),
             loader=loader,
-            resolved_device=resolved_device,
+            resolved_device=runtime.resolved_device,
             precision=precision,
-            prediction_contract=prediction_contract,
-            prediction_training_state=prediction_training_state,
-            reporter=reporter,
-            task_id=task_id,
+            on_outputs=_accumulate,
         )
     reporter.finish_task(task_id)
-    return metrics
-
-
-def _run_evaluation_loader(
-    model: TemporalModel,
-    *,
-    loader: PreparedBatchSource,
-    resolved_device: torch.device,
-    precision: str,
-    prediction_contract: CompiledPredictionContract,
-    prediction_training_state: object | None,
-    reporter: Reporter,
-    task_id: int,
-) -> MetricSet:
-    model.eval()
-    accumulator = prediction_contract.create_epoch_accumulator("evaluation")
-    with torch.no_grad():
-        for batch in loader:
-            device_batch = batch.to_device(resolved_device)
-            with _autocast_context(resolved_device=resolved_device, precision=precision):
-                outputs = model(**device_batch.model_kwargs())
-                _, batch_state = prediction_contract.compute_batch_loss_and_state(
-                    outputs,
-                    device_batch.targets,
-                    training_state=prediction_training_state,
-                )
-            accumulator.update(batch_state)
-            reporter.update_task(task_id, advance=1)
     return accumulator.finalize()
-
-
-def _plan_training_batch_source(
-    prepared,
-    *,
-    runtime_context,
-    device,
-    seed,
-    shuffle,
-) -> BatchSourcePlan:
-    from .batch_sources import plan_batch_source
-
-    return plan_batch_source(
-        prepared,
-        runtime_context=runtime_context,
-        resolved_device=device,
-        seed=seed,
-        shuffle=shuffle,
-    )

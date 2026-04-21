@@ -10,6 +10,7 @@ from optuna.storages import RDBStorage
 from ..config import TuneConfig, TunedParameterSet
 from ..core.errors import MissingStateError, StateConflictError, StateLayoutError
 from ..modeling.families.registry import coerce_tuned_parameter_set
+from ..objectives import compile_objective_contract
 from .engine import db_url
 from .study_manifest import (
     diff_study_manifests,
@@ -132,7 +133,7 @@ def load_or_create_materialized_study(db_path: Path, *, config: TuneConfig) -> o
         return optuna.create_study(
             study_name=config.study.name,
             storage=study_storage(db_path),
-            direction=config.objective.direction.value,
+            direction=compile_objective_contract(config.objective).direction,
             load_if_exists=False,
             sampler=optuna.samplers.TPESampler(seed=config.tuning.sampler_seed),
             pruner=(

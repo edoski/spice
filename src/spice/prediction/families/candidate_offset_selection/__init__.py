@@ -9,11 +9,13 @@ from ....modeling.models import ModelOutputs
 from ....temporal.problem_store import CompiledProblemStore
 from ....temporal.realization import CompiledRealizationPolicyContract
 from ...contracts import (
+    ActionSpaceDecodeContext,
     CompiledPredictionContract,
     DecodedOffsets,
     IntVector,
     PredictionTargetBatch,
     PreparedPredictionTargets,
+    masked_offset_argmax,
 )
 from .batch import CandidateSlateTargetBatch
 from .config import CandidateOffsetSelectionFamilyConfig
@@ -66,18 +68,18 @@ def _create_epoch_accumulator(stage: str):
 
 
 def _allocate_decoded_offsets(sample_count: int) -> DecodedOffsets:
-    return [0] * sample_count
+    return DecodedOffsets.allocate(sample_count)
 
 
 def _decode_selected_offsets_into(
     predictions: DecodedOffsets,
-    sample_positions: torch.Tensor,
     outputs: ModelOutputs,
+    decode_context: ActionSpaceDecodeContext,
 ) -> None:
-    decoded = candidate_logits(outputs).argmax(dim=-1).cpu().tolist()
-    positions = sample_positions.tolist()
-    for sample_position, prediction in zip(positions, decoded, strict=True):
-        predictions[int(sample_position)] = int(prediction)
+    predictions.write(
+        decode_context.sample_positions,
+        masked_offset_argmax(candidate_logits(outputs), decode_context.action_mask),
+    )
 
 
 def compile_prediction_family(

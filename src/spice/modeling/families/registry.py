@@ -7,12 +7,10 @@ from dataclasses import dataclass
 from typing import Any, Generic, TypeVar, cast
 
 import optuna
-import torch
 
 from ...config.models import (
     PredictionConfig,
     ProblemSpec,
-    TrainingPrecision,
     TunedParameterSet,
     TunedPredictionParams,
     TunedProblemParams,
@@ -22,6 +20,7 @@ from ...config.models import (
     TuningSpaceConfig,
     TuningTrainingSearchSpace,
 )
+from ...core.closed_dispatch import config_payload_and_id, mapping_id, unknown_id_error
 from ...core.errors import ConfigResolutionError
 from ...prediction import PredictionOutputSpec
 from ..models import TemporalModel
@@ -34,49 +33,60 @@ ModelTunedParamsT = TypeVar("ModelTunedParamsT", bound=TunedModelParams)
 
 @dataclass(frozen=True, slots=True)
 class ModelSpec(Generic[ModelConfigT, ModelTuningSpaceT, ModelTunedParamsT]):
-    id: str
-    resolve_representation_id: Callable[[ModelConfigT], str]
     model_config_type: type[ModelConfigT]
     tuning_space_type: type[ModelTuningSpaceT]
     tuned_params_type: type[ModelTunedParamsT]
     build_model: Callable[[int, PredictionOutputSpec, ModelConfigT], TemporalModel]
-    default_precision: Callable[[torch.device], TrainingPrecision]
-    auto_compile: Callable[[torch.device, str], bool]
-    validate_tuning_space: Callable[[ModelConfigT, ModelTuningSpaceT], None]
     sample_model_params: Callable[[optuna.Trial, ModelTuningSpaceT], ModelTunedParamsT | None]
     apply_model_params: Callable[[ModelConfigT, ModelTunedParamsT], ModelConfigT]
+    validate_tuning_space: Callable[[ModelConfigT, ModelTuningSpaceT], None] | None = None
 
-    def representation_id_for(self, config: ModelConfigT) -> str:
-        return self.resolve_representation_id(config)
+ModelSpecLoader = Callable[[], ModelSpec[Any, Any, Any]]
 
 
-_KNOWN_MODEL_IDS = ("lstm", "transformer", "transformer_lstm")
+def _load_lstm_spec() -> ModelSpec[Any, Any, Any]:
+    from .lstm import MODEL_SPEC
+
+    return MODEL_SPEC
+
+
+def _load_transformer_spec() -> ModelSpec[Any, Any, Any]:
+    from .transformer import MODEL_SPEC
+
+    return MODEL_SPEC
+
+
+def _load_transformer_lstm_spec() -> ModelSpec[Any, Any, Any]:
+    from .transformer_lstm import MODEL_SPEC
+
+    return MODEL_SPEC
+
+
+_MODEL_SPEC_LOADERS: dict[str, ModelSpecLoader] = {
+    "lstm": _load_lstm_spec,
+    "transformer": _load_transformer_spec,
+    "transformer_lstm": _load_transformer_lstm_spec,
+}
 
 
 def model_spec(model_id: str) -> ModelSpec[Any, Any, Any]:
-    if model_id == "lstm":
-        from .lstm import MODEL_SPEC
-
-        return MODEL_SPEC
-    if model_id == "transformer":
-        from .transformer import MODEL_SPEC
-
-        return MODEL_SPEC
-    if model_id == "transformer_lstm":
-        from .transformer_lstm import MODEL_SPEC
-
-        return MODEL_SPEC
-    known = ", ".join(_KNOWN_MODEL_IDS)
-    raise ConfigResolutionError(f"Unknown model.id: {model_id}. Known values: {known}")
+    loader = _MODEL_SPEC_LOADERS.get(model_id)
+    if loader is None:
+        raise unknown_id_error(
+            field_name="model.id",
+            component_id=model_id,
+            known_ids=_MODEL_SPEC_LOADERS,
+        )
+    return loader()
 
 
 def coerce_model_config(payload: Mapping[str, object] | ModelConfig[str]) -> ModelConfig[str]:
-    if isinstance(payload, ModelConfig):
-        raw_payload = payload.model_dump(mode="json")
-        model_id = payload.id
-    else:
-        raw_payload = dict(payload)
-        model_id = _mapping_model_id(raw_payload)
+    raw_payload, model_id = config_payload_and_id(
+        payload,
+        config_type=ModelConfig,
+        field_name="model.id",
+        mapping_label="model",
+    )
     spec = model_spec(model_id)
     return spec.model_config_type.model_validate(raw_payload)
 
@@ -98,7 +108,7 @@ def coerce_tuning_space_config(
     raw_model_payload = raw_payload["model"]
     if not isinstance(raw_model_payload, Mapping):
         raise ConfigResolutionError("tuning_space.model must be a mapping")
-    model_id = _mapping_model_id(raw_model_payload)
+    model_id = mapping_id(raw_model_payload, field_name="model.id")
     spec = model_spec(model_id)
     training_payload = raw_payload.get("training")
     training = (
@@ -122,7 +132,8 @@ def coerce_tuning_space_config(
         )
     )
     model = spec.tuning_space_type.model_validate(dict(raw_model_payload))
-    spec.validate_tuning_space(cast(Any, model_config), cast(Any, model))
+    if spec.validate_tuning_space is not None:
+        spec.validate_tuning_space(cast(Any, model_config), cast(Any, model))
     return TuningSpaceConfig(
         training=training,
         problem=problem,
@@ -158,7 +169,7 @@ def coerce_tuned_parameter_set(
     if model_payload is not None:
         if not isinstance(model_payload, Mapping):
             raise ConfigResolutionError("tuned model params must be a mapping")
-        resolved_model_id = _mapping_model_id(model_payload)
+        resolved_model_id = mapping_id(model_payload, field_name="model.id")
         spec = model_spec(resolved_model_id)
         model = spec.tuned_params_type.model_validate(dict(model_payload))
         if model_id is not None and resolved_model_id != model_id:
@@ -178,19 +189,6 @@ def build_model(
 ) -> TemporalModel:
     spec = model_spec(config.id)
     return spec.build_model(n_features, output_spec, cast(Any, config))
-
-
-def resolve_model_representation_id(model_config: ModelConfig[str]) -> str:
-    spec = model_spec(model_config.id)
-    return spec.representation_id_for(cast(Any, model_config))
-
-
-def resolve_default_precision(model_id: str, device: torch.device) -> TrainingPrecision:
-    return model_spec(model_id).default_precision(device)
-
-
-def resolve_auto_compile(model_id: str, device: torch.device, precision: str) -> bool:
-    return model_spec(model_id).auto_compile(device, precision)
 
 
 def sample_tuned_parameters(
@@ -343,10 +341,3 @@ def _coerce_prediction_tuning_space(
             f"prediction.family.id={family.id}: {joined}"
         )
     return prediction
-
-
-def _mapping_model_id(payload: Mapping[str, object]) -> str:
-    value = payload.get("id")
-    if not isinstance(value, str):
-        raise ConfigResolutionError("model.id is required")
-    return value

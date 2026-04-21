@@ -36,9 +36,21 @@ def training_summary_sections(
             ],
         ),
         (
-            "runtime",
+            "training",
             [
                 ("lookback", f"{manifest.lookback_seconds}s"),
+                (
+                    "rows",
+                    f"used={runtime.n_rows_used:,} available={runtime.n_rows_available:,}",
+                ),
+                (
+                    "split sizes",
+                    (
+                        f"train={runtime.split_sizes.train_samples:,} "
+                        f"validation={runtime.split_sizes.validation_samples:,} "
+                        f"test={runtime.split_sizes.test_samples:,}"
+                    ),
+                ),
                 ("best epoch", str(runtime.best_epoch)),
                 (
                     "objective",
@@ -49,31 +61,11 @@ def training_summary_sections(
                 ),
                 ("objective direction", manifest.semantics.objective.direction),
                 ("best objective", f"{runtime.best_objective_value:.4f}"),
-                ("device", runtime.resolved_device),
-                ("precision", runtime.resolved_precision),
-                ("compile", "on" if runtime.compiled else "off"),
-                ("representation", manifest.representation_id),
-                ("loader", runtime.loader_strategy_id),
-                ("input storage", runtime.input_storage_mode_id),
-                ("target storage", runtime.target_storage_mode_id),
-                ("batch planner", runtime.batch_planner_id),
             ],
         ),
         (
             "metrics",
             [
-                (
-                    "split sizes",
-                    (
-                        f"train={runtime.split_sizes.train_samples:,} "
-                        f"validation={runtime.split_sizes.validation_samples:,} "
-                        f"test={runtime.split_sizes.test_samples:,}"
-                    ),
-                ),
-                *[
-                    (f"objective {key}", f"{value:.4f}")
-                    for key, value in sorted(runtime.best_objective_metrics.values.items())
-                ],
                 *[
                     (f"validation {label}", value)
                     for label, value in metric_fields(

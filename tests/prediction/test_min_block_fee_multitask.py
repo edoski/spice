@@ -8,7 +8,7 @@ import torch
 
 from spice.config import coerce_prediction_config
 from spice.modeling.models import ModelOutputs
-from spice.prediction import compile_prediction_contract
+from spice.prediction import ActionSpaceDecodeContext, compile_prediction_contract
 from spice.prediction.families.min_block_fee_multitask.batch import MinBlockFeeTrainingState
 from spice.prediction.families.min_block_fee_multitask.outputs import (
     MIN_LOG_FEE_HEAD_ID,
@@ -105,7 +105,7 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     class_weights = training_state.class_weights.cpu().numpy()
     assert class_weights[0] < class_weights[1]
     assert class_weights[1] == pytest_approx(class_weights[2])
-    assert training_state.fee_std > 0.0
+    assert training_state.fee_std.item() > 0.0
 
     outputs = ModelOutputs(
         heads={
@@ -141,17 +141,23 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     predictions = contract.allocate_decoded_offsets(store.n_samples)
     contract.decode_selected_offsets_into(
         predictions,
-        torch.arange(store.n_samples, dtype=torch.int64),
         outputs,
+        ActionSpaceDecodeContext(
+            sample_positions=torch.arange(store.n_samples, dtype=torch.int64),
+            action_mask=batch.candidate_mask,
+        ),
     )
-    assert predictions == [1, 2, 2, 2]
+    assert torch.equal(
+        predictions.tensor,
+        torch.tensor([0, 1, 2, 0], dtype=torch.int64),
+    )
 
 
 def test_min_block_fee_training_state_caches_resolved_device_tensors() -> None:
     state = MinBlockFeeTrainingState(
         class_weights=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32),
-        fee_mean=1.5,
-        fee_std=0.25,
+        fee_mean=torch.tensor(1.5, dtype=torch.float32),
+        fee_std=torch.tensor(0.25, dtype=torch.float32),
     )
 
     first = state.resolve(device=torch.device("cpu"), dtype=torch.float32)

@@ -21,6 +21,7 @@ source .venv/bin/activate
 ```
 
 `uv` manages the repo-local `.venv/`. If you do not want to activate it, prefix commands with `uv run`.
+Repo helper: `spice-sync-remote <branch>` pushes the branch to both `origin` and `giano-sync`.
 
 ## CLI
 
@@ -33,18 +34,15 @@ spice tune --preset icdcs_2026 --model lstm --feature-set icdcs_2026 --trial-cou
 spice evaluate --preset icdcs_2026 --variant baseline
 ```
 
-Remote workflow and query commands:
+Submitted workflow commands:
 
 ```bash
-spice remote train --preset icdcs_2026 --execution default
-spice remote tune --preset icdcs_2026 --trial-count 20
-spice remote evaluate --preset icdcs_2026 --variant baseline
-spice remote config list provider
-spice remote show artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --variant baseline
-spice remote refresh catalog
+spice train --preset icdcs_2026 --submit
+spice tune --preset icdcs_2026 --trial-count 20 --submit
+spice evaluate --preset icdcs_2026 --variant baseline --submit
 ```
 
-Local config, inspection, transfer, and deletion commands:
+Local config and storage commands:
 
 ```bash
 spice config list provider
@@ -62,11 +60,14 @@ spice refresh catalog
 
 Config loading lives in [src/spice/config](src/spice/config).
 
+Modeling workflows (`train`, `tune`, `evaluate`) use the CUDA runtime. Submission is a workflow flag that always targets the checked-in L40 execution spec.
+
 Named specs live under [src/spice/conf](src/spice/conf):
 
 - `preset/`: workflow bundles
 - `dataset/`: evaluation-date selectors
-- `chain/`, `provider/`, `execution/`: runtime and remote execution specs
+- `chain/`, `provider/`: runtime specs
+- `execution/`: internal submission target spec
 - `problem/`: delay budgets and sampling contracts
 - `model/`, `feature_set/`, `prediction/`: core modeling seams
 - `dataset_builder/`: dataset preparation seam
@@ -76,6 +77,7 @@ Rules:
 
 - presets are the main workflow entrypoint
 - explicit CLI selectors override preset selections
+- the execution target is fixed at submission time and not stored in presets
 - `problem.compiler.id` selects the temporal compiler
 - `feature_set.family.id` selects the feature family
 - `prediction.family.id` selects the prediction family
@@ -99,7 +101,7 @@ Current shipped ids:
 - feature families: `block_native`, `time_native`
 - compilers: `timestamp_native`, `estimated_block`
 - prediction families: `candidate_offset_selection`, `min_block_fee_multitask`
-- evaluators: `poisson_replay`, `paper_fullset`
+- evaluators: `poisson_replay`, `paper_fullset`, `paper_windowed`
 - input normalization: `row_standard`, `window_weighted_standard`
 - representation: `sequence_inputs`
 

@@ -9,8 +9,6 @@ Runtime commands:
 3. `spice train`
 4. `spice evaluate`
 
-Remote workflow and query commands live under `spice remote ...`.
-
 SPICE keeps six strong seams:
 
 1. feature family
@@ -49,6 +47,8 @@ Flow:
 3. apply explicit selector and runtime overrides
 4. validate one typed workflow config
 5. derive deterministic storage paths through storage helpers
+
+Presets stay flat and workflow-owned. Execution target selection is separate and happens at submission time.
 
 Important selectors:
 
@@ -144,24 +144,17 @@ Evaluation stays separate in [src/spice/evaluation](src/spice/evaluation). Evalu
 
 Model families live in [src/spice/modeling/families](src/spice/modeling/families).
 
-Current mapping:
+The current shipped representation is `sequence_inputs`. That boundary stays real even though only one public representation id ships today, because models still consume prepared inputs through an explicit representation seam rather than family-specific input wiring.
 
-- `lstm` -> `sequence_inputs`
-- `transformer` -> `sequence_inputs`
-- `transformer_lstm` -> `sequence_inputs`
-
-The representation boundary is still real even though only one public representation id ships today, because runtime storage modes and persisted runtime metadata are representation-owned.
-
-Dataset preparation is a separate seam in [src/spice/modeling/dataset_builders](src/spice/modeling/dataset_builders). The current shipped builder is `standard_temporal`.
+Dataset preparation is a separate seam in [src/spice/modeling/dataset_builders](src/spice/modeling/dataset_builders). The current shipped builders are `standard_temporal` and `professor_temporal`.
 
 ## CLI Shape
 
-The CLI has four categories:
+The CLI has three categories:
 
 1. workflow commands
-2. remote commands
-3. config commands
-4. storage / transfer commands
+2. config commands
+3. storage / transfer commands
 
 Workflow commands:
 
@@ -169,13 +162,7 @@ Workflow commands:
 - `tune`
 - `train`
 - `evaluate`
-
-Remote commands:
-
-- `remote train|tune|evaluate`
-- `remote config list|show`
-- `remote show dataset|study|artifact`
-- `remote refresh catalog`
+- `train|tune|evaluate --submit`
 
 State commands:
 
@@ -209,18 +196,18 @@ Important invariants:
 - catalog rebuild and delete cascades are storage-owned
 - on-disk payload meanings stay explicit and typed
 
-## Remote and Acquisition
+## Execution and Acquisition
 
 Acquisition logic lives in [src/spice/acquisition](src/spice/acquisition) and [src/spice/workflows/acquire.py](src/spice/workflows/acquire.py).
 
-Current remote path is concrete:
+Execution and sync backends are concrete:
 
 - SSH
 - `rsync`
 - SLURM
-- checked-in remote helper actions in [src/spice/remote/actions.py](src/spice/remote/actions.py)
+- checked-in sync helper actions in [src/spice/storage/sync_actions.py](src/spice/storage/sync_actions.py)
 
-There is no multi-backend remote abstraction layer.
+Submission lives in [src/spice/execution](src/spice/execution) and always uses the checked-in L40 target spec. Storage sync lives in [src/spice/storage/sync.py](src/spice/storage/sync.py).
 
 ## Package Roles
 
@@ -231,6 +218,6 @@ There is no multi-backend remote abstraction layer.
 - `evaluation`: evaluator contracts and execution
 - `modeling`: dataset builders, representations, models, training, artifacts, results
 - `corpus`: block IO, metadata, builders, validation
+- `execution`: workflow submission backends
 - `storage`: catalog, manifest persistence, inspection, root operations
-- `remote`: remote submission, transfer, helper actions
 - `workflows`: acquire, tune, train, evaluate orchestration

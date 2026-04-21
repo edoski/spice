@@ -15,6 +15,7 @@ from ...storage.inspect_artifact import artifact_list_sections
 from ...storage.inspect_dataset import dataset_list_sections
 from ...storage.inspect_study import study_list_sections
 from ...storage.roots import (
+    CatalogRefreshSummary,
     DatasetSelector,
     DeleteBlockedError,
     SelectorResolutionError,
@@ -24,6 +25,7 @@ from ...storage.roots import (
     list_artifact_records,
     list_dataset_records,
     list_study_records,
+    refresh_catalog,
     resolve_artifact_record,
     resolve_dataset_record,
     resolve_study_record,
@@ -54,6 +56,10 @@ show_app = typer.Typer(
 )
 delete_app = typer.Typer(
     help="Delete stored datasets, studies, and artifacts.",
+    no_args_is_help=True,
+)
+refresh_app = typer.Typer(
+    help="Rebuild derived storage indexes.",
     no_args_is_help=True,
 )
 
@@ -190,6 +196,17 @@ def _handle_delete_blocked(error: DeleteBlockedError) -> NoReturn:
     if error.study_records:
         print_sections("study matches", study_list_sections(list(error.study_records)))
     raise SpiceOperatorError(str(error))
+
+
+def _render_catalog_refresh(summary: CatalogRefreshSummary) -> str:
+    return " ".join(
+        [
+            "catalog refreshed",
+            f"datasets={summary.dataset_roots}",
+            f"studies={summary.study_roots}",
+            f"artifacts={summary.artifact_roots}",
+        ]
+    )
 
 
 @show_app.command(
@@ -378,6 +395,14 @@ def delete_study_command(
         delete_study_record(root, record=record, cascade=cascade)
     except DeleteBlockedError as error:
         _handle_delete_blocked(error)
+
+
+@refresh_app.command("catalog", short_help="Rebuild the derived storage catalog.")
+def refresh_catalog_command(
+    storage_root: StorageRootReadOption = None,
+) -> None:
+    root = resolve_storage_root(storage_root)
+    typer.echo(_render_catalog_refresh(refresh_catalog(root)))
 
 
 @delete_app.command(

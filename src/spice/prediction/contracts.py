@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Generic, Literal, Protocol, TypeVar
 
 import numpy as np
 import torch
@@ -25,12 +25,88 @@ if TYPE_CHECKING:
     from ..modeling.representations import PreparedRepresentation
 
 IntVector = NDArray[np.int64]
-DecodedOffsets = list[int]
+BoolMatrix = NDArray[np.bool_]
+
+
+def _coerce_cpu_int64_vector(
+    values: torch.Tensor | IntVector,
+    *,
+    label: str,
+) -> torch.Tensor:
+    if isinstance(values, np.ndarray):
+        if values.ndim != 1:
+            raise ValueError(f"{label} must be one-dimensional")
+        return torch.from_numpy(values.astype(np.int64, copy=False))
+    if values.ndim != 1:
+        raise ValueError(f"{label} must be one-dimensional")
+    return values.detach().to(device="cpu", dtype=torch.int64)
+
+
+def _coerce_bool_matrix(
+    values: torch.Tensor | BoolMatrix,
+    *,
+    label: str,
+) -> torch.Tensor:
+    if isinstance(values, np.ndarray):
+        if values.ndim != 2:
+            raise ValueError(f"{label} must be two-dimensional")
+        return torch.from_numpy(values.astype(np.bool_, copy=False))
+    if values.ndim != 2:
+        raise ValueError(f"{label} must be two-dimensional")
+    return values.detach().to(dtype=torch.bool)
+
+
+class DecodedOffsets:
+    """Prediction-owned decoded offset buffer backed by a CPU int64 tensor."""
+
+    __slots__ = ("_tensor",)
+
+    def __init__(self, tensor: torch.Tensor) -> None:
+        self._tensor = _coerce_cpu_int64_vector(tensor, label="decoded_offsets")
+
+    @classmethod
+    def allocate(cls, sample_count: int) -> DecodedOffsets:
+        if sample_count < 0:
+            raise ValueError("sample_count must be non-negative")
+        return cls(torch.zeros(sample_count, dtype=torch.int64))
+
+    @property
+    def tensor(self) -> torch.Tensor:
+        return self._tensor
+
+    def __len__(self) -> int:
+        return int(self._tensor.shape[0])
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, DecodedOffsets):
+            return torch.equal(self._tensor, other._tensor)
+        if isinstance(other, torch.Tensor):
+            return torch.equal(
+                self._tensor,
+                _coerce_cpu_int64_vector(other, label="decoded_offsets"),
+            )
+        if isinstance(other, Sequence) and not isinstance(other, (str, bytes, bytearray)):
+            return self._tensor.tolist() == list(other)
+        return NotImplemented
+
+    def write(self, sample_positions: torch.Tensor, decoded: torch.Tensor) -> None:
+        positions = _coerce_cpu_int64_vector(sample_positions, label="sample_positions")
+        values = _coerce_cpu_int64_vector(decoded, label="decoded")
+        if positions.shape != values.shape:
+            raise ValueError("sample_positions and decoded must have matching shape")
+        self._tensor.index_copy_(0, positions, values)
+
+    def select(self, sample_positions: torch.Tensor | IntVector) -> IntVector:
+        positions = _coerce_cpu_int64_vector(sample_positions, label="sample_positions")
+        return self._tensor.index_select(0, positions).numpy()
 
 
 class ModelInputBatch(Protocol):
     @property
     def sample_positions(self) -> torch.Tensor: ...
+
+    @property
+    def action_mask(self) -> torch.Tensor: ...
 
     def to_device(self, device: torch.device) -> ModelInputBatch: ...
 
@@ -47,9 +123,6 @@ class PredictionTargetBatch(Protocol):
 
 class PreparedPredictionTargets(Protocol):
     @property
-    def storage_mode_id(self) -> str: ...
-
-    @property
     def estimated_storage_bytes(self) -> int: ...
 
     def build_batch(self, sample_positions: torch.Tensor) -> PredictionTargetBatch: ...
@@ -57,7 +130,7 @@ class PreparedPredictionTargets(Protocol):
     def to_device_storage(
         self,
         device: torch.device,
-    ) -> PreparedPredictionTargets | None: ...
+    ) -> PreparedPredictionTargets: ...
 
 
 class EpochMetricAccumulator(Protocol):
@@ -66,6 +139,9 @@ class EpochMetricAccumulator(Protocol):
     def snapshot(self) -> MetricSet: ...
 
     def finalize(self) -> MetricSet: ...
+
+
+PreparedTargetT = TypeVar("PreparedTargetT", bound=PreparedPredictionTargets)
 
 
 BuildOutputSpecFn = Callable[[int], PredictionOutputSpec]
@@ -83,7 +159,86 @@ ComputeBatchLossAndStateFn = Callable[
 ]
 CreateEpochAccumulatorFn = Callable[[str], EpochMetricAccumulator]
 AllocateDecodedOffsetsFn = Callable[[int], DecodedOffsets]
-DecodeSelectedOffsetsIntoFn = Callable[[DecodedOffsets, torch.Tensor, Any], None]
+DecodeSelectedOffsetsIntoFn = Callable[[DecodedOffsets, Any, "ActionSpaceDecodeContext"], None]
+
+
+def selected_sample_indices(
+    sample_indices: IntVector,
+    sample_positions: torch.Tensor,
+) -> IntVector:
+    positions = _coerce_cpu_int64_vector(sample_positions, label="sample_positions").numpy()
+    return sample_indices[positions].astype(np.int64, copy=False)
+
+
+def masked_offset_argmax(logits: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
+    if logits.ndim != 2:
+        raise ValueError("logits must be two-dimensional")
+    mask = action_mask.detach().to(device=logits.device, dtype=torch.bool)
+    if mask.shape != logits.shape:
+        raise ValueError("action_mask must match logits shape")
+    if bool(torch.any(~mask.any(dim=1))):
+        raise ValueError("action_mask must allow at least one action per sample")
+    return logits.masked_fill(~mask, float("-inf")).argmax(dim=-1)
+
+
+@dataclass(frozen=True, slots=True)
+class ActionSpaceDecodeContext:
+    sample_positions: torch.Tensor
+    action_mask: torch.Tensor
+
+    def __post_init__(self) -> None:
+        sample_positions = _coerce_cpu_int64_vector(
+            self.sample_positions,
+            label="sample_positions",
+        )
+        action_mask = _coerce_bool_matrix(
+            self.action_mask,
+            label="action_mask",
+        )
+        if sample_positions.shape[0] != action_mask.shape[0]:
+            raise ValueError("sample_positions and action_mask must have matching rows")
+        if action_mask.numel() > 0 and bool(torch.any(~action_mask.any(dim=1))):
+            raise ValueError("action_mask must allow at least one action per sample")
+        object.__setattr__(self, "sample_positions", sample_positions)
+        object.__setattr__(self, "action_mask", action_mask)
+
+
+def decode_context_from_batch(
+    batch: ModelInputBatch,
+) -> ActionSpaceDecodeContext:
+    return ActionSpaceDecodeContext(
+        sample_positions=batch.sample_positions,
+        action_mask=batch.action_mask,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class StagedPreparedTargets(Generic[PreparedTargetT]):
+    store: CompiledProblemStore
+    sample_indices: IntVector
+    realization_policy: CompiledRealizationPolicyContract
+    estimated_storage_bytes: int
+    materialize_fn: Callable[
+        [CompiledProblemStore, IntVector, CompiledRealizationPolicyContract],
+        PreparedTargetT,
+    ]
+
+    def build_batch(self, sample_positions: torch.Tensor) -> PredictionTargetBatch:
+        materialized = self.materialize_fn(
+            self.store,
+            selected_sample_indices(self.sample_indices, sample_positions),
+            self.realization_policy,
+        )
+        return materialized.build_batch(
+            torch.arange(int(sample_positions.shape[0]), dtype=torch.int64)
+        )
+
+    def to_device_storage(self, device: torch.device) -> PreparedPredictionTargets:
+        return self.materialize_fn(
+            self.store,
+            self.sample_indices,
+            self.realization_policy,
+        ).to_device_storage(device)
 
 
 @dataclass(slots=True)
@@ -122,18 +277,6 @@ class PredictionPreparedRepresentation:
         return self.prepared.representation_id
 
     @property
-    def input_storage_mode_id(self) -> str:
-        return self.prepared.storage_mode_id
-
-    @property
-    def target_storage_mode_id(self) -> str:
-        return self.targets.storage_mode_id
-
-    @property
-    def batch_planner_id(self) -> str:
-        return self.prepared.batch_planner_id
-
-    @property
     def sample_count(self) -> int:
         return self.prepared.sample_count
 
@@ -142,12 +285,8 @@ class PredictionPreparedRepresentation:
         return self.prepared.batch_signatures
 
     @property
-    def estimated_input_storage_bytes(self) -> int:
-        return self.prepared.estimated_storage_bytes
-
-    @property
-    def estimated_target_storage_bytes(self) -> int:
-        return self.targets.estimated_storage_bytes
+    def estimated_storage_bytes(self) -> int:
+        return self.prepared.estimated_storage_bytes + self.targets.estimated_storage_bytes
 
     def build_batch(self, sample_positions: torch.Tensor) -> PredictionBatch:
         input_batch = self.prepared.build_batch(sample_positions)
@@ -159,11 +298,9 @@ class PredictionPreparedRepresentation:
     def to_device_storage(
         self,
         device: torch.device,
-    ) -> PredictionPreparedRepresentation | None:
+    ) -> PredictionPreparedRepresentation:
         prepared = self.prepared.to_device_storage(device)
         targets = self.targets.to_device_storage(device)
-        if prepared is None or targets is None:
-            return None
         return PredictionPreparedRepresentation(prepared=prepared, targets=targets)
 
 
@@ -247,10 +384,14 @@ class CompiledPredictionContract:
     def decode_selected_offsets_into(
         self,
         predictions: DecodedOffsets,
-        sample_positions: torch.Tensor,
         outputs: ModelOutputs,
+        decode_context: ActionSpaceDecodeContext,
     ) -> None:
-        self.decode_selected_offsets_into_fn(predictions, sample_positions, outputs)
+        self.decode_selected_offsets_into_fn(
+            predictions,
+            outputs,
+            decode_context,
+        )
 
 
 def bind_prediction_representation(

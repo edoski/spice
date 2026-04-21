@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+from enum import StrEnum
 from typing import Annotated
 
 import typer
 
-from ...config.registry import ConfigGroup
 from ...core.errors import SpiceOperatorError
 
 app = typer.Typer(
@@ -17,9 +17,24 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 _CONFIG_GROUP_HELP = (
-    "One of: chain, dataset, dataset-builder, evaluation, execution, feature-set, model, "
+    "One of: chain, dataset, dataset-builder, evaluation, feature-set, model, "
     "prediction, preset, problem, provider, tuning-space."
 )
+
+
+class PublicConfigGroup(StrEnum):
+    CHAIN = "chain"
+    DATASET = "dataset"
+    DATASET_BUILDER = "dataset-builder"
+    EVALUATION = "evaluation"
+    FEATURE_SET = "feature-set"
+    MODEL = "model"
+    OBJECTIVE = "objective"
+    PREDICTION = "prediction"
+    PRESET = "preset"
+    PROBLEM = "problem"
+    PROVIDER = "provider"
+    TUNING_SPACE = "tuning-space"
 
 
 def _print_config_names(names: list[str]) -> None:
@@ -42,7 +57,7 @@ def _resolve_editor() -> str:
 )
 def config_list_command(
     group: Annotated[
-        ConfigGroup,
+        PublicConfigGroup,
         typer.Argument(metavar="GROUP", help=_CONFIG_GROUP_HELP),
     ],
 ) -> None:
@@ -58,7 +73,7 @@ def config_list_command(
 )
 def config_show_command(
     group: Annotated[
-        ConfigGroup,
+        PublicConfigGroup,
         typer.Argument(metavar="GROUP", help=_CONFIG_GROUP_HELP),
     ],
     name: Annotated[
@@ -78,7 +93,7 @@ def config_show_command(
 )
 def config_edit_command(
     group: Annotated[
-        ConfigGroup,
+        PublicConfigGroup,
         typer.Argument(metavar="GROUP", help=_CONFIG_GROUP_HELP),
     ],
     name: Annotated[
