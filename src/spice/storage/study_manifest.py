@@ -216,43 +216,51 @@ def manifest_payload(manifest: StudyManifest) -> dict[str, object]:
 
 
 def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
-    model = coerce_model_config(mapping_payload(payload["model"], label="study.model"))
-    problem = coerce_problem_spec(mapping_payload(payload["problem"], label="study.problem"))
+    request = mapping_payload(payload["request"], label="study.request")
+    model = coerce_model_config(mapping_payload(request["model"], label="study.request.model"))
+    problem = coerce_problem_spec(
+        mapping_payload(request["problem"], label="study.request.problem")
+    )
     prediction = PredictionConfig.model_validate(
-        mapping_payload(payload["prediction"], label="study.prediction")
+        mapping_payload(request["prediction"], label="study.request.prediction")
     )
     semantics_payload = mapping_payload(payload["semantics"], label="study.semantics")
     return StudyManifest(
-        study_id=str(payload["study_id"]),
+        study_id=str(request["study_id"]),
         dataset_builder=coerce_dataset_builder_config(
-            mapping_payload(payload["dataset_builder"], label="study.dataset_builder")
+            mapping_payload(
+                request["dataset_builder"],
+                label="study.request.dataset_builder",
+            )
         ),
         prediction=prediction,
         objective=coerce_objective_config(
-            mapping_payload(payload["objective"], label="study.objective")
+            mapping_payload(request["objective"], label="study.request.objective")
         ),
-        study_name=str(payload["study_name"]),
-        chain_name=str(payload["chain_name"]),
-        dataset_id=str(payload["dataset_id"]),
-        dataset_name=str(payload["dataset_name"]),
+        study_name=str(request["study_name"]),
+        chain_name=str(request["chain_name"]),
+        dataset_id=str(request["dataset_id"]),
+        dataset_name=str(request["dataset_name"]),
         problem=problem,
         feature_set=coerce_feature_set_config(
-            mapping_payload(payload["feature_set"], label="study.feature_set")
+            mapping_payload(request["feature_set"], label="study.request.feature_set")
         ),
         model=model,
-        split=SplitConfig.model_validate(mapping_payload(payload["split"], label="study.split")),
+        split=SplitConfig.model_validate(
+            mapping_payload(request["split"], label="study.request.split")
+        ),
         training=TrainingConfig.model_validate(
-            mapping_payload(payload["training"], label="study.training")
+            mapping_payload(request["training"], label="study.request.training")
         ),
         tuning=TuningConfig.model_validate(
-            mapping_payload(payload["tuning"], label="study.tuning")
+            mapping_payload(request["tuning"], label="study.request.tuning")
         ),
         sampler_name=str(payload["sampler_name"]),
         sampler_seed=coerce_int(payload["sampler_seed"], label="sampler_seed"),
         pruner_name=str(payload["pruner_name"]),
         enable_pruning=bool(payload["enable_pruning"]),
         tuning_space=coerce_study_tuning_space(
-            payload["tuning_space"],
+            request["tuning_space"],
             model=model,
             problem=problem,
         ),
