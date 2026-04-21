@@ -22,13 +22,11 @@ from spice.modeling.representations import (
 )
 from spice.modeling.results import (
     EvaluationRuntimeSummary,
-    LoadedEvaluationSummary,
     SplitSizes,
     TrainingArtifactManifest,
     TrainingEpochRecord,
     TrainingRuntimeSummary,
 )
-from spice.modeling.summary import evaluation_summary_sections
 from spice.objectives import coerce_objective_config
 from spice.prediction import (
     MetricDescriptor,
@@ -534,94 +532,3 @@ def test_multiple_evaluation_summaries_can_coexist_per_artifact(tmp_path) -> Non
     assert load_evaluation_summary(db_path, evaluation_id=replay_evaluation_id) is not None
     assert list_evaluation_runs(db_path, evaluation_id=paper_evaluation_id) == base_summary.runs
     assert list_evaluation_runs(db_path, evaluation_id=replay_evaluation_id) == replay_summary.runs
-
-
-@pytest.mark.parametrize(
-    ("prediction_factory", "contract_factory"),
-    [
-        (_prediction_config, _prediction_contract),
-        (_paper_prediction_config, _paper_prediction_contract),
-    ],
-)
-def test_evaluation_summary_sections_use_runtime_descriptors_and_window_metrics(
-    prediction_factory,
-    contract_factory,
-) -> None:
-    summary = LoadedEvaluationSummary(
-        evaluation_id="poisson_replay-24s-test",
-        recorded_at=1_234,
-        manifest=_manifest(
-            prediction_factory=prediction_factory,
-            prediction_contract_factory=contract_factory,
-        ),
-        runtime=EvaluationRuntimeSummary(
-            delay_seconds=24,
-            evaluator_id="poisson_replay",
-            evaluator_config={
-                "id": "poisson_replay",
-                "window_seconds": 600,
-                "arrival_rate_per_second": 0.02,
-                "repetitions": 3,
-                "seed": 2026,
-            },
-            metric_descriptors=(
-                MetricDescriptor(
-                    id="profit_over_baseline",
-                    label="profit over baseline",
-                    role="score",
-                ),
-                MetricDescriptor(
-                    id="cost_over_optimum",
-                    label="cost over optimum",
-                    role="score",
-                ),
-                MetricDescriptor(
-                    id="baseline_cost_over_optimum",
-                    label="baseline cost over optimum",
-                    role="diagnostic",
-                ),
-                MetricDescriptor(
-                    id="realized_fee_sum",
-                    label="realized fee sum",
-                    role="diagnostic",
-                ),
-                MetricDescriptor(
-                    id="baseline_fee_sum",
-                    label="baseline fee sum",
-                    role="diagnostic",
-                ),
-                MetricDescriptor(
-                    id="optimum_fee_sum",
-                    label="optimum fee sum",
-                    role="diagnostic",
-                ),
-            ),
-            n_history_rows=128,
-            n_evaluation_rows=64,
-            sample_count=24,
-            metrics=MetricSet(
-                values={
-                    "profit_over_baseline": 0.2,
-                    "cost_over_optimum": 0.15,
-                    "baseline_cost_over_optimum": 0.25,
-                    "realized_fee_sum": 9.0,
-                    "baseline_fee_sum": 10.0,
-                    "optimum_fee_sum": 8.0,
-                }
-            ),
-            window_metrics={
-                "profit_over_baseline": WindowMetricSummary(mean=0.2, std=0.01),
-                "cost_over_optimum": WindowMetricSummary(mean=0.15, std=0.02),
-            },
-            total_events=6,
-            runs=[],
-        ),
-    )
-
-    sections = dict(evaluation_summary_sections(summary))
-
-    assert "results" in sections
-    assert ("profit over baseline", "0.2000") in sections["results"]
-    assert ("cost over optimum", "0.1500") in sections["results"]
-    assert "window metrics" in sections
-    assert ("profit over baseline", "mean=0.2000 std=0.0100") in sections["window metrics"]

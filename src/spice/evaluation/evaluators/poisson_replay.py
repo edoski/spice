@@ -5,7 +5,6 @@ from numpy.typing import NDArray
 from pydantic import Field
 
 from ...core.errors import SpiceOperatorError
-from ...core.reporting import NullReporter, Reporter
 from ...prediction.contracts import DecodedOffsets
 from ...temporal.problem_store import CompiledProblemStore
 from ..base import CompiledEvaluatorContract, EvaluationSummary, EvaluatorConfig
@@ -26,14 +25,12 @@ def _run(
     realization_policy,
     decoded_offsets: DecodedOffsets,
     sample_indices: IntVector,
-    reporter: Reporter | None,
     *,
     window_seconds: int,
     arrival_rate_per_second: float,
     repetitions: int,
     seed: int,
 ) -> EvaluationSummary:
-    reporter = reporter or NullReporter()
     if len(decoded_offsets) != int(sample_indices.shape[0]):
         raise ValueError("decoded_offsets must align with sample_indices")
     if sample_indices.size == 0:
@@ -48,12 +45,7 @@ def _run(
 
     rng = np.random.default_rng(seed)
     runs = []
-    task_id = reporter.start_task(
-        "evaluate replay",
-        total=repetitions,
-        unit="repetitions",
-    )
-    for repetition in range(repetitions):
+    for _repetition in range(repetitions):
         window_start = float(rng.uniform(first_timestamp, latest_start))
         window_end = window_start + window_seconds
         arrivals = sample_poisson_arrivals(
@@ -69,11 +61,6 @@ def _run(
             )
         ].astype(np.int64, copy=False)
         if selected_positions.size == 0:
-            reporter.update_task(
-                task_id,
-                completed=repetition + 1,
-                message="no valid arrivals",
-            )
             continue
         run = summarize_selected_costs(
             store,
@@ -88,18 +75,12 @@ def _run(
             },
         )
         runs.append(run)
-        reporter.update_task(
-            task_id,
-            completed=repetition + 1,
-            message=f"events={run.n_events}",
-        )
 
     if not runs:
         raise SpiceOperatorError(
             "poisson_replay produced no valid arrivals; adjust the evaluator rate or window"
         )
     summary = summarize_runs(runs)
-    reporter.finish_task(task_id, message=f"total_events={summary.total_events}")
     return summary
 
 
@@ -118,12 +99,11 @@ def compile_evaluator(config: PoissonReplayEvaluatorConfig) -> CompiledEvaluator
         primary_metric_id="profit_over_baseline",
         direction="maximize",
         config_payload=config.model_dump(mode="json", exclude_none=True),
-        run_fn=lambda store, realization_policy, decoded_offsets, sample_indices, reporter: _run(
+        run_fn=lambda store, realization_policy, decoded_offsets, sample_indices: _run(
             store,
             realization_policy,
             decoded_offsets,
             sample_indices,
-            reporter,
             window_seconds=config.window_seconds,
             arrival_rate_per_second=config.arrival_rate_per_second,
             repetitions=config.repetitions,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -12,12 +13,6 @@ from numpy.typing import NDArray
 
 from ..config import ModelConfig, TrainingConfig
 from ..core.files import write_path_atomic
-from ..core.reporting import (
-    NullReporter,
-    Reporter,
-    StageMetricValue,
-    format_compact_count,
-)
 from ..objectives import CompiledObjectiveContract, ObjectiveEvaluationContext
 from ..prediction import CompiledPredictionContract, MetricSet
 from ..prediction.contracts import PredictionBatch
@@ -38,7 +33,6 @@ from .models import TemporalModel
 from .representations import CompiledRepresentationContract
 
 IntVector = NDArray[np.int64]
-_EPOCH_STAGE_METRIC_ID = "epoch"
 
 
 @dataclass(slots=True)
@@ -53,99 +47,25 @@ class TrainingResult:
     prediction_training_state: object | None
 
 
+@dataclass(frozen=True, slots=True)
+class TrainingEpochProgress:
+    epoch: int
+    max_epochs: int
+    train_metrics: MetricSet
+    validation_metrics: MetricSet
+    objective_metrics: MetricSet
+    objective_metric_id: str
+    direction: str
+    best_epoch: int
+    best_objective_value: float
+
+
+EpochEndCallback = Callable[[TrainingEpochProgress], None]
+EarlyStopCallback = Callable[[int, int], None]
+
+
 def _unwrap_compiled_model(model: TemporalModel) -> TemporalModel:
     return cast(TemporalModel, getattr(model, "_orig_mod", model))
-
-
-@dataclass(slots=True)
-class _ProgressReporter:
-    reporter: Reporter
-    max_epochs: int
-    log_every_n_steps: int
-    prediction_contract: CompiledPredictionContract
-    task_id: int | None = None
-    total_batches: int = 0
-    train_batches_per_epoch: int = 0
-
-    def start(self, *, train_batches_per_epoch: int) -> None:
-        if train_batches_per_epoch <= 0:
-            self.task_id = self.reporter.start_task("train epochs")
-            return
-        self.train_batches_per_epoch = train_batches_per_epoch
-        self.total_batches = train_batches_per_epoch * self.max_epochs
-        self.task_id = self.reporter.start_task(
-            "train epochs",
-            total=self.total_batches,
-            unit="batches",
-        )
-
-    def on_train_batch_end(
-        self,
-        *,
-        epoch: int,
-        batch_idx: int,
-        metrics: MetricSet,
-    ) -> None:
-        if self.task_id is None:
-            return
-        if (batch_idx + 1) % self.log_every_n_steps != 0 and batch_idx + 1 < max(
-            1,
-            self.train_batches_per_epoch,
-        ):
-            return
-        completed = None
-        if self.train_batches_per_epoch > 0:
-            completed = min(
-                self.total_batches,
-                (epoch - 1) * self.train_batches_per_epoch + batch_idx + 1,
-            )
-        self.reporter.update_task(
-            self.task_id,
-            completed=completed,
-            message=(
-                "batch "
-                f"{_format_compact_progress(batch_idx + 1, max(1, self.train_batches_per_epoch))}"
-            ),
-            metrics=(
-                StageMetricValue(
-                    id=_EPOCH_STAGE_METRIC_ID,
-                    value=f"{epoch}/{self.max_epochs}",
-                ),
-                *self.prediction_contract.format_progress_metrics(metrics),
-            ),
-        )
-
-    def on_validation_epoch_end(self, *, epoch: int, metrics: MetricSet) -> None:
-        if self.task_id is None:
-            return
-        completed = None
-        if self.train_batches_per_epoch > 0:
-            completed = min(self.total_batches, epoch * self.train_batches_per_epoch)
-        self.reporter.update_task(
-            self.task_id,
-            completed=completed,
-            message="validation",
-            metrics=(
-                StageMetricValue(
-                    id=_EPOCH_STAGE_METRIC_ID,
-                    value=f"{epoch}/{self.max_epochs}",
-                ),
-                *self.prediction_contract.format_progress_metrics(metrics),
-            ),
-        )
-
-    def finish(self, *, best_epoch: int) -> None:
-        if self.task_id is None:
-            return
-        self.reporter.finish_task(
-            self.task_id,
-            message=f"best epoch {best_epoch}",
-        )
-        self.task_id = None
-
-
-def _format_compact_progress(completed: int, total: int) -> str:
-    return f"{format_compact_count(completed)}/{format_compact_count(total)}"
 
 
 def _is_improvement(
@@ -212,8 +132,6 @@ def _run_epoch(
     grad_scaler: object | None,
     gradient_clip_norm: float | None,
     training: bool,
-    progress: _ProgressReporter | None = None,
-    epoch: int | None = None,
 ) -> MetricSet:
     accumulator = prediction_contract.create_epoch_accumulator(
         "train" if training else "validation"
@@ -224,7 +142,7 @@ def _run_epoch(
         model.eval()
     grad_enabled = training
     with torch.set_grad_enabled(grad_enabled):
-        for batch_idx, batch in enumerate(loader):
+        for _batch_idx, batch in enumerate(loader):
             device_batch = batch.to_device(resolved_device)
             if optimizer is not None:
                 optimizer.zero_grad(set_to_none=True)
@@ -252,12 +170,6 @@ def _run_epoch(
                     if gradient_clip_norm is not None:
                         torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
                     optimizer.step()
-                if progress is not None and epoch is not None:
-                    progress.on_train_batch_end(
-                        epoch=epoch,
-                        batch_idx=batch_idx,
-                        metrics=accumulator.snapshot(),
-                    )
     return accumulator.finalize()
 
 
@@ -274,9 +186,9 @@ def train_model(
     validation_sample_indices: IntVector,
     training_config: TrainingConfig,
     artifact_dir: Path,
-    reporter: Reporter | None = None,
+    on_epoch_end: EpochEndCallback | None = None,
+    on_early_stop: EarlyStopCallback | None = None,
 ) -> TrainingResult:
-    reporter = reporter or NullReporter()
     if train_sample_indices.size == 0 or validation_sample_indices.size == 0:
         raise ValueError("Train and validation sample selections must both be non-empty")
 
@@ -327,13 +239,6 @@ def train_model(
         resolved_device=runtime.resolved_device,
         precision=precision,
     )
-    progress = _ProgressReporter(
-        reporter=reporter,
-        max_epochs=training_config.max_epochs,
-        log_every_n_steps=training_config.log_every_n_steps,
-        prediction_contract=prediction_contract,
-    )
-    progress.start(train_batches_per_epoch=len(train_batch_source_plan.source))
 
     train_history: list[MetricSet] = []
     validation_history: list[MetricSet] = []
@@ -358,8 +263,6 @@ def train_model(
                 grad_scaler=grad_scaler,
                 gradient_clip_norm=training_config.gradient_clip_norm,
                 training=True,
-                progress=progress,
-                epoch=epoch,
             )
             validation_metrics = _run_epoch(
                 fit_model,
@@ -386,11 +289,9 @@ def train_model(
                     store=store,
                     sample_indices=validation_sample_indices,
                     batch_size=training_config.batch_size,
-                    reporter=None,
                 ),
             )
             objective_history.append(objective_metrics)
-            progress.on_validation_epoch_end(epoch=epoch, metrics=validation_metrics)
 
             current_best_epoch = _best_epoch_from_objective_history(
                 objective_history,
@@ -410,7 +311,25 @@ def train_model(
             else:
                 epochs_without_improvement += 1
 
+            best_value = objective_contract.value(objective_history[best_epoch - 1])
+            if on_epoch_end is not None:
+                on_epoch_end(
+                    TrainingEpochProgress(
+                        epoch=epoch,
+                        max_epochs=training_config.max_epochs,
+                        train_metrics=train_metrics,
+                        validation_metrics=validation_metrics,
+                        objective_metrics=objective_metrics,
+                        objective_metric_id=objective_contract.metric_id,
+                        direction=objective_contract.direction,
+                        best_epoch=best_epoch,
+                        best_objective_value=best_value,
+                    )
+                )
+
             if epochs_without_improvement >= training_config.early_stopping.patience:
+                if on_early_stop is not None:
+                    on_early_stop(epoch, best_epoch)
                 break
 
     if best_state is None:
@@ -433,7 +352,6 @@ def train_model(
         value=best_value,
     )
     _write_checkpoint(best_checkpoint_path, best_state)
-    progress.finish(best_epoch=best_epoch)
 
     return TrainingResult(
         best_epoch=best_epoch,
@@ -478,9 +396,7 @@ def evaluate_model(
     sample_indices: IntVector,
     prediction_training_state: object | None,
     training_config: TrainingConfig,
-    reporter: Reporter | None = None,
 ) -> MetricSet:
-    reporter = reporter or NullReporter()
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
     runtime = build_cuda_modeling_runtime(batch_size=training_config.batch_size)
@@ -499,7 +415,6 @@ def evaluate_model(
         seed=training_config.seed,
     )
     loader = batch_source_plan.source
-    task_id = reporter.start_task("evaluate model", total=len(loader), unit="batches")
     accumulator = prediction_contract.create_epoch_accumulator("evaluation")
 
     def _accumulate(batch: PredictionBatch, outputs) -> None:
@@ -509,7 +424,6 @@ def evaluate_model(
             training_state=prediction_training_state,
         )
         accumulator.update(batch_state)
-        reporter.update_task(task_id, advance=1)
 
     with configure_torch_backends(
         resolved_device=runtime.resolved_device,
@@ -522,5 +436,4 @@ def evaluate_model(
             precision=precision,
             on_outputs=_accumulate,
         )
-    reporter.finish_task(task_id)
     return accumulator.finalize()

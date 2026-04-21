@@ -12,7 +12,6 @@ import aiohttp
 import polars as pl
 from web3.exceptions import Web3RPCError
 
-from ...core.reporting import NullReporter, Reporter, StageMetricValue
 from ...corpus.contract import CanonicalBlockRow, canonicalize_block_frame
 from ...corpus.io import write_block_file
 from .client import BlockRpcClient
@@ -54,25 +53,9 @@ async def pull_block_range(
     plan: BlockPullPlan,
     chunk_size: int,
     rpc_controller: RpcController,
-    reporter: Reporter | None = None,
-    progress_total: int | None = None,
-    progress_completed: int = 0,
 ) -> BlockPullPlan:
-    reporter = reporter or NullReporter()
     if plan.expected_rows == 0:
         raise ValueError(f"No blocks found inside requested block range: {plan.block_range}")
-    if progress_completed < 0:
-        raise ValueError("progress_completed must be non-negative")
-    reported_total = plan.expected_rows if progress_total is None else progress_total
-    if reported_total < progress_completed + plan.expected_rows:
-        raise ValueError("progress_total must cover the completed offset and requested plan")
-
-    task_id = reporter.start_task(
-        f"pull {block_client.chain.name} blocks",
-        total=reported_total,
-        unit="blocks",
-        completed=progress_completed,
-    )
     pending_rows: list[CanonicalBlockRow] = []
     pending_requests: list[_BatchRequest] = []
     in_flight: dict[asyncio.Task[list[CanonicalBlockRow]], _BatchRequest] = {}
@@ -82,14 +65,6 @@ async def pull_block_range(
     next_write_start = plan.block_range.start
 
     try:
-        reporter.update_task(
-            task_id,
-            completed=progress_completed,
-            metrics=_progress_metrics(
-                batch_size=rpc_controller.current_batch_size,
-                concurrency=rpc_controller.current_concurrency,
-            ),
-        )
         while next_write_start < plan.block_range.end:
             while len(in_flight) < rpc_controller.current_concurrency:
                 request = _next_request(
@@ -127,15 +102,6 @@ async def pull_block_range(
                                 "RPC batch remained too large at the configured minimum "
                                 f"batch size ({rpc_controller.min_batch_size})"
                             ) from exc
-                        reporter.update_task(
-                            task_id,
-                            completed=progress_completed + completed,
-                            message="oversize backoff",
-                            metrics=_progress_metrics(
-                                batch_size=next_batch_size,
-                                concurrency=rpc_controller.current_concurrency,
-                            ),
-                        )
                         for retry_request in _split_request(request, batch_size=next_batch_size):
                             heappush(pending_requests, retry_request)
                         continue
@@ -147,15 +113,6 @@ async def pull_block_range(
                                 f"RPC range {request.start}..{request.end} exceeded "
                                 f"{MAX_RPC_ATTEMPTS_PER_RANGE} transient retry attempts"
                             ) from exc
-                        reporter.update_task(
-                            task_id,
-                            completed=progress_completed + completed,
-                            message="transient retry",
-                            metrics=_progress_metrics(
-                                batch_size=rpc_controller.current_batch_size,
-                                concurrency=rpc_controller.current_concurrency,
-                            ),
-                        )
                         heappush(pending_requests, request.retry())
                         continue
 
@@ -188,20 +145,9 @@ async def pull_block_range(
                             rows=pending_rows[:chunk_size],
                         )
                         pending_rows = pending_rows[chunk_size:]
-            if completed_this_tick > 0:
-                reporter.update_task(
-                    task_id,
-                    completed=progress_completed + completed,
-                    metrics=_progress_metrics(
-                        batch_size=rpc_controller.current_batch_size,
-                        concurrency=rpc_controller.current_concurrency,
-                    ),
-                )
-
         if pending_rows:
             _write_chunk(output_dir, chain_name=block_client.chain.name, rows=pending_rows)
 
-        reporter.finish_task(task_id, silent=True)
         return plan
     finally:
         for task in in_flight:
@@ -315,14 +261,3 @@ def _write_chunk(output_dir: Path, *, chain_name: str, rows: list[CanonicalBlock
     destination = output_dir / f"{chain_name}__blocks__{start_block}_to_{end_block}.parquet"
     write_block_file(destination, frame)
     return destination
-
-
-def _progress_metrics(
-    *,
-    batch_size: int,
-    concurrency: int,
-) -> tuple[StageMetricValue, ...]:
-    return (
-        StageMetricValue(id="batch", value=f"{batch_size}"),
-        StageMetricValue(id="conc", value=f"{concurrency}"),
-    )

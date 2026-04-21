@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,7 +23,6 @@ from ..config import (
     TrainingConfig,
     TuneConfig,
 )
-from ..core.reporting import NullReporter, Reporter
 from ..corpus.io import load_block_frame
 from ..features import (
     CompiledFeatureContract,
@@ -56,7 +56,12 @@ from .representations import (
     CompiledRepresentationContract,
     compile_representation_contract,
 )
-from .training import TrainingResult, train_model
+from .training import (
+    EarlyStopCallback,
+    EpochEndCallback,
+    TrainingResult,
+    train_model,
+)
 
 
 @dataclass(slots=True)
@@ -194,25 +199,6 @@ class TrainingRunResult:
     prediction_training_state: object | None
 
 
-@dataclass(slots=True)
-class TrainingStageReporters:
-    load: Reporter
-    prepare: Reporter
-    build: Reporter
-    fit: Reporter
-    evaluate: Reporter
-
-    @classmethod
-    def shared(cls, reporter: Reporter) -> TrainingStageReporters:
-        return cls(
-            load=reporter,
-            prepare=reporter,
-            build=reporter,
-            fit=reporter,
-            evaluate=reporter,
-        )
-
-
 def selected_row_span(store: CompiledProblemStore, sample_indices: IntVector) -> tuple[int, int]:
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
@@ -266,27 +252,22 @@ def run_training(
     *,
     spec: TrainingSpec,
     artifact_dir: Path,
-    stage_reporters: TrainingStageReporters | None = None,
-    reporter: Reporter | None = None,
+    on_prepare_complete: Callable[[PreparedTrainingDataset], None] | None = None,
+    on_fit_start: Callable[[], None] | None = None,
+    on_epoch_end: EpochEndCallback | None = None,
+    on_early_stop: EarlyStopCallback | None = None,
 ) -> TrainingRunResult:
-    reporter = reporter or NullReporter()
-    active_reporters = stage_reporters or TrainingStageReporters.shared(reporter)
-    load_task = active_reporters.load.start_task("load history dataset")
     blocks = load_block_frame(history_block_path)
-    active_reporters.load.finish_task(load_task, message=str(history_block_path))
-    prepare_task = active_reporters.prepare.start_task("prepare training dataset")
     prepared = prepare_training_dataset(blocks, spec=spec)
-    active_reporters.prepare.finish_task(
-        prepare_task,
-        message=f"rows={prepared.n_rows_used} samples={prepared.sample_count}",
-    )
-    build_task = active_reporters.build.start_task("build model")
+    if on_prepare_complete is not None:
+        on_prepare_complete(prepared)
     model = build_model(
         prepared.n_features,
         spec.prediction_contract.build_output_spec(prepared.max_candidate_slots),
         spec.model,
     )
-    active_reporters.build.finish_task(build_task, message=spec.model.id)
+    if on_fit_start is not None:
+        on_fit_start()
     training_result = train_model(
         model,
         model_config=spec.model,
@@ -299,7 +280,8 @@ def run_training(
         validation_sample_indices=prepared.split_indices.validation,
         training_config=spec.training,
         artifact_dir=artifact_dir,
-        reporter=active_reporters.fit,
+        on_epoch_end=on_epoch_end,
+        on_early_stop=on_early_stop,
     )
     return TrainingRunResult(
         model=model,

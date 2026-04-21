@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 from pydantic import Field
 
-from ...core.reporting import NullReporter, Reporter
 from ...prediction.contracts import DecodedOffsets
 from ...temporal.problem_store import CompiledProblemStore
 from ..base import CompiledEvaluatorContract, EvaluationSummary, EvaluatorConfig
@@ -29,18 +28,15 @@ def _run(
     realization_policy,
     decoded_offsets: DecodedOffsets,
     sample_indices: np.ndarray,
-    reporter: Reporter | None,
     *,
     config: PaperWindowedEvaluatorConfig,
 ) -> EvaluationSummary:
-    reporter = reporter or NullReporter()
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
     chronological_samples = chronological_sample_view(store, sample_indices)
     first_timestamp = int(chronological_samples.sample_timestamps[0])
     last_timestamp = int(chronological_samples.sample_timestamps[-1])
     rng = np.random.default_rng(config.seed)
-    task_id = reporter.start_task("evaluate random paper windows", total=config.repetitions)
     runs = []
     if last_timestamp - first_timestamp <= config.window_seconds:
         runs.append(
@@ -53,7 +49,6 @@ def _run(
                 metadata={"mode": "fullset_fallback"},
             )
         )
-        reporter.finish_task(task_id, message="fallback=fullset")
         return summarize_runs(runs)
     max_start = last_timestamp - config.window_seconds
     start_intervals = _non_empty_start_intervals(
@@ -99,12 +94,6 @@ def _run(
                 },
             )
         )
-        reporter.update_task(
-            task_id,
-            completed=repetition,
-            message=f"runs={repetition}",
-        )
-    reporter.finish_task(task_id, message=f"runs={len(runs)}")
     return summarize_runs(runs)
 
 
@@ -149,12 +138,11 @@ def compile_evaluator(config: PaperWindowedEvaluatorConfig) -> CompiledEvaluator
         primary_metric_id="profit_over_baseline",
         direction="maximize",
         config_payload=config.model_dump(mode="json", exclude_none=True),
-        run_fn=lambda store, realization_policy, decoded_offsets, sample_indices, reporter: _run(
+        run_fn=lambda store, realization_policy, decoded_offsets, sample_indices: _run(
             store,
             realization_policy,
             decoded_offsets,
             sample_indices,
-            reporter,
             config=config,
         ),
     )

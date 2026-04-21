@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 
-from ..core.runtime import create_workflow_runtime
+from ..core.reporting import Reporter
 
 ChainFilterOption = Annotated[
     str | None,
@@ -59,9 +59,5 @@ def print_sections(
     title: str,
     sections: list[tuple[str, list[tuple[str, str]]]],
 ) -> None:
-    runtime = create_workflow_runtime()
-    try:
-        with runtime.activate():
-            runtime.log_sectioned_summary(title, sections)
-    finally:
-        runtime.close()
+    reporter = Reporter()
+    reporter.sections(title, sections)

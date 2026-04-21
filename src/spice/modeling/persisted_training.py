@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..core.reporting import NullReporter, Reporter
 from ..prediction import MetricSet
 from ..storage.artifact import write_training_state
 from ..storage.engine import RootKind
@@ -15,13 +15,13 @@ from .artifacts import (
     load_training_artifact,
     persist_training_artifact,
 )
-from .pipeline import TrainingRunResult, TrainingSpec, TrainingStageReporters, run_training
+from .pipeline import PreparedTrainingDataset, TrainingRunResult, TrainingSpec, run_training
 from .results import (
     LoadedTrainingSummary,
     build_training_runtime_summary,
     iter_epoch_records,
 )
-from .training import evaluate_model
+from .training import EarlyStopCallback, EpochEndCallback, evaluate_model
 
 
 @dataclass(slots=True)
@@ -38,7 +38,6 @@ def _evaluate_split_metrics(
     *,
     spec: TrainingSpec,
     model,
-    reporter: Reporter,
 ) -> tuple[MetricSet, MetricSet]:
     prepared = training_run.prepared
     best_validation_metrics = evaluate_model(
@@ -51,7 +50,6 @@ def _evaluate_split_metrics(
         sample_indices=prepared.split_indices.validation,
         prediction_training_state=training_run.prediction_training_state,
         training_config=spec.training,
-        reporter=reporter,
     )
     test_metrics = evaluate_model(
         model,
@@ -63,7 +61,6 @@ def _evaluate_split_metrics(
         sample_indices=prepared.split_indices.test,
         prediction_training_state=training_run.prediction_training_state,
         training_config=spec.training,
-        reporter=reporter,
     )
     return best_validation_metrics, test_metrics
 
@@ -73,21 +70,21 @@ def run_persisted_training(
     *,
     spec: TrainingSpec,
     artifact_dir: Path,
-    stage_reporters: TrainingStageReporters | None = None,
-    write_reporter: Reporter | None = None,
-    reporter: Reporter | None = None,
     persist_artifact: bool = True,
     state_root_kind: RootKind | None = None,
+    on_prepare_complete: Callable[[PreparedTrainingDataset], None] | None = None,
+    on_fit_start: Callable[[], None] | None = None,
+    on_epoch_end: EpochEndCallback | None = None,
+    on_early_stop: EarlyStopCallback | None = None,
 ) -> PersistedTrainingRun:
-    reporter = reporter or NullReporter()
-    active_stage_reporters = stage_reporters or TrainingStageReporters.shared(reporter)
-    active_write_reporter = write_reporter or reporter
     training_run = run_training(
         history_block_path,
         spec=spec,
         artifact_dir=artifact_dir,
-        stage_reporters=active_stage_reporters,
-        reporter=reporter,
+        on_prepare_complete=on_prepare_complete,
+        on_fit_start=on_fit_start,
+        on_epoch_end=on_epoch_end,
+        on_early_stop=on_early_stop,
     )
     manifest = build_training_artifact_manifest(training_run.prepared, spec=spec)
 
@@ -95,7 +92,6 @@ def run_persisted_training(
     if persist_artifact:
         if state_root_kind is None:
             raise ValueError("state_root_kind is required when persist_artifact is true")
-        artifact_task = active_write_reporter.start_task("write training artifact")
         persist_training_artifact(
             artifact_dir,
             manifest=manifest,
@@ -107,7 +103,6 @@ def run_persisted_training(
             training_run,
             spec=spec,
             model=loaded_artifact.model,
-            reporter=active_stage_reporters.evaluate,
         )
         runtime_summary = build_training_runtime_summary(
             training_run,
@@ -121,7 +116,6 @@ def run_persisted_training(
             summary=runtime_summary,
             epoch_rows=list(iter_epoch_records(training_run)),
         )
-        active_write_reporter.finish_task(artifact_task, message=str(artifact_dir), silent=True)
         artifact_paths.extend(
             [
                 artifact_dir / ".spice" / "state.sqlite",
@@ -133,7 +127,6 @@ def run_persisted_training(
             training_run,
             spec=spec,
             model=training_run.model,
-            reporter=active_stage_reporters.evaluate,
         )
         runtime_summary = build_training_runtime_summary(
             training_run,

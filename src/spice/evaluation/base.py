@@ -11,7 +11,6 @@ from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from ..core.closed_dispatch import validate_path_segment
-from ..core.reporting import Reporter
 from ..prediction.base import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..prediction.contracts import DecodedOffsets
 from ..temporal.problem_store import CompiledProblemStore
@@ -56,7 +55,6 @@ RunEvaluatorFn = Callable[
         CompiledRealizationPolicyContract,
         DecodedOffsets,
         IntVector,
-        Reporter | None,
     ],
     EvaluationSummary,
 ]
@@ -77,12 +75,10 @@ class CompiledEvaluatorContract:
         realization_policy: CompiledRealizationPolicyContract,
         decoded_offsets: DecodedOffsets,
         sample_indices: IntVector,
-        reporter: Reporter | None,
     ) -> EvaluationSummary:
         return self.run_fn(
             store,
             realization_policy,
             decoded_offsets,
             sample_indices,
-            reporter,
         )

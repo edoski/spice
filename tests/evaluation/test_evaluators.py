@@ -57,14 +57,12 @@ def test_paper_windowed_falls_back_to_fullset_for_short_spans() -> None:
         _realization_policy(),
         decoded_offsets,
         sample_indices,
-        reporter=None,
     )
     reference = fullset.run(
         store,
         _realization_policy(),
         decoded_offsets,
         sample_indices,
-        reporter=None,
     )
 
     assert len(summary.runs) == 1
@@ -95,14 +93,12 @@ def test_paper_windowed_falls_back_to_fullset_for_exact_spans() -> None:
         _realization_policy(),
         decoded_offsets,
         sample_indices,
-        reporter=None,
     )
     reference = fullset.run(
         store,
         _realization_policy(),
         decoded_offsets,
         sample_indices,
-        reporter=None,
     )
 
     assert len(summary.runs) == 1
@@ -130,7 +126,6 @@ def test_paper_windowed_samples_requested_number_of_runs() -> None:
         _realization_policy(),
         decoded_offsets,
         sample_indices,
-        reporter=None,
     )
 
     assert len(summary.runs) == 3
@@ -158,7 +153,6 @@ def test_paper_windowed_handles_sparse_non_empty_windows_without_retry_failure()
         _realization_policy(),
         decoded_offsets,
         sample_indices,
-        reporter=None,
     )
 
     assert len(summary.runs) == 8
@@ -188,14 +182,12 @@ def test_poisson_replay_handles_non_chronological_sample_indices() -> None:
         _realization_policy(),
         DecodedOffsets(forward_offsets),
         forward_indices,
-        reporter=None,
     )
     reversed_summary = evaluator.run(
         store,
         _realization_policy(),
         reversed_offsets,
         reversed_indices,
-        reporter=None,
     )
 
     assert reversed_summary.metrics.values == pytest.approx(summary.metrics.values)

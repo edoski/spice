@@ -8,7 +8,6 @@ import pytest
 import torch
 
 from spice.config import coerce_feature_set_config, coerce_prediction_config, coerce_problem_spec
-from spice.core.reporting import NullReporter
 from spice.evaluation import coerce_evaluator_config, compile_evaluator_contract
 from spice.features import compile_feature_contract
 from spice.modeling.evaluation import run_prediction_evaluation
@@ -147,7 +146,6 @@ def test_poisson_replay_summary_uses_event_weighted_totals() -> None:
         _realization_policy(),
         predictions,
         sample_indices=sample_indices,
-        reporter=NullReporter(),
     )
 
     realized_fee_sum = sum(run.metrics["realized_fee_sum"] for run in summary.runs)

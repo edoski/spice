@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import torch
 
-from ....core.reporting import StageMetricDescriptor
 from ....modeling.models import ModelOutputs
 from ....temporal.problem_store import CompiledProblemStore
 from ....temporal.realization import CompiledRealizationPolicyContract
@@ -35,13 +34,6 @@ from .outputs import (
     build_output_spec,
 )
 from .targets import prepare_min_block_fee_targets
-
-PROGRESS_METRIC_DESCRIPTORS: tuple[StageMetricDescriptor, ...] = (
-    StageMetricDescriptor(id="total_loss", label="loss"),
-    StageMetricDescriptor(id="offset_accuracy", label="hit"),
-    StageMetricDescriptor(id="classification_loss", label="cls"),
-    StageMetricDescriptor(id="regression_loss", label="reg"),
-)
 
 
 def _fit_training_state(
@@ -145,7 +137,6 @@ def compile_prediction_family(
         prediction_id=prediction_id,
         prediction_family_id="min_block_fee_multitask",
         training_metric_descriptors=TRAINING_METRIC_DESCRIPTORS,
-        progress_metric_descriptors=PROGRESS_METRIC_DESCRIPTORS,
         primary_metric_id="total_loss",
         direction="minimize",
         supported_workflows=frozenset({"train", "tune", "evaluate"}),

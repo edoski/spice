@@ -42,6 +42,27 @@ spice tune --preset icdcs_2026 --trial-count 20 --submit
 spice evaluate --preset icdcs_2026 --variant baseline --submit
 ```
 
+Workflow stdout is intentionally compact:
+
+- one header line with the selected facts
+- a few milestone lines for real state changes
+- one final result line
+
+Examples:
+
+```text
+acquire dataset=icdcs_2026 chain=ethereum problem=icdcs_2026 provider=publicnode
+acquire complete history=reused history_blocks=4096 evaluation=created evaluation_blocks=512
+
+train dataset=icdcs_2026 chain=ethereum problem=icdcs_2026 prediction=candidate_offset_selection model=lstm variant=baseline
+fit epoch=3/12 objective.profit_over_baseline=0.0184 validation.profit_over_baseline=0.0184 best_epoch=3 best.profit_over_baseline=0.0184
+train complete artifact=outputs/artifacts/ethereum/... best_epoch=9 validation.profit_over_baseline=0.0211 test.profit_over_baseline=0.0179
+
+tune dataset=icdcs_2026 chain=ethereum problem=icdcs_2026 feature_set=icdcs_2026 prediction=candidate_offset_selection model=lstm study=default trials=20
+trial 4/20 complete value=0.0211 best_epoch=7
+best improved trial=4 value=0.0211
+```
+
 Local config and storage commands:
 
 ```bash

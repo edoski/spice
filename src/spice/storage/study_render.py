@@ -1,58 +1,39 @@
-"""Study summary rendering helpers."""
+"""Compact study result rendering helpers."""
 
 from __future__ import annotations
 
 from ..config import TunedParameterSet
+from ..core.rendering import metric_string
 from .study_models import StudySummary
 
 
-def study_summary_sections(
-    summary: StudySummary,
-) -> list[tuple[str, list[tuple[str, str]]]]:
+def study_result_fields(summary: StudySummary) -> list[tuple[str, str]]:
     best_trial = summary.best_trial
-    return [
-        (
-            "study",
-            [
-                ("name", summary.manifest.study_name),
-                ("storage id", summary.manifest.study_id),
-                ("chain", summary.manifest.chain_name),
-                ("dataset", summary.manifest.dataset_name),
-                ("problem", summary.manifest.problem_id),
-                ("prediction", summary.manifest.prediction_id),
-                ("model", summary.manifest.model_id),
-                ("trials", str(summary.trial_counts.total)),
-            ],
-        ),
-        (
-            "best trial",
-            [
-                (
-                    "objective",
-                    (
-                        f"{summary.manifest.semantics.objective.objective_id}:"
-                        f"{summary.manifest.semantics.objective.metric_id}"
-                    ),
-                ),
-                ("direction", summary.manifest.semantics.objective.direction),
-                (
-                    "value",
-                    "n/a"
-                    if best_trial is None or best_trial.value is None
-                    else f"{best_trial.value:.4f}",
-                ),
-                ("trial", "n/a" if best_trial is None else str(best_trial.number + 1)),
-                ("params", "n/a" if best_trial is None else format_best_params(best_trial.params)),
-            ],
-        ),
+    fields = [
+        ("complete", str(summary.trial_counts.complete)),
+        ("pruned", str(summary.trial_counts.pruned)),
+        ("failed", str(summary.trial_counts.failed)),
     ]
+    if best_trial is None or best_trial.value is None:
+        fields.extend([("best_trial", "none"), ("best_value", "none")])
+        return fields
+    fields.extend(
+        [
+            ("best_trial", str(best_trial.number + 1)),
+            ("best_value", metric_string(best_trial.value)),
+        ]
+    )
+    params = format_best_params(best_trial.params)
+    if params != "none":
+        fields.append(("best_params", params))
+    return fields
 
 
 def format_best_params(params: TunedParameterSet) -> str:
     flattened = flatten_mapping(params.model_dump(mode="json", exclude_none=True))
     if not flattened:
         return "none"
-    return ", ".join(f"{key}={value}" for key, value in flattened.items())
+    return ",".join(f"{key}={value}" for key, value in flattened.items())
 
 
 def flatten_mapping(

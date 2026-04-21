@@ -14,12 +14,9 @@ from spice.acquisition.provider import ManagedAsyncHTTPProvider
 from spice.acquisition.rpc import (
     BlockPullPlan,
     BlockRange,
-    BlockRpcClient,
-    RpcController,
     TimestampRange,
-    pull_block_range,
 )
-from spice.core.reporting import NullReporter, PlainReporter, StageMetricValue
+from spice.core.reporting import Reporter
 from spice.features import compile_feature_contract
 from spice.storage.catalog import list_dataset_records
 from spice.storage.corpus import list_acquire_runs, load_dataset_manifest
@@ -27,38 +24,6 @@ from spice.storage.layout import resolve_workflow_paths
 from spice.temporal.contracts import compile_problem_contract
 from spice.workflows.acquire import _DaemonThreadPoolExecutor
 from spice.workflows.acquire import run as run_acquire
-
-
-class CaptureReporter(NullReporter):
-    def __init__(self) -> None:
-        self.messages: list[str | None] = []
-        self.metrics: list[dict[str, str]] = []
-        self.completions: list[int | None] = []
-
-    def start_task(
-        self,
-        name: str,
-        *,
-        total: int | None = None,
-        unit: str | None = None,
-        completed: int | None = None,
-    ) -> int:
-        del name, total, unit, completed
-        return 1
-
-    def update_task(
-        self,
-        problem_id: int,
-        *,
-        completed: int | None = None,
-        advance: int | None = None,
-        message: str | None = None,
-        metrics: tuple[StageMetricValue, ...] = (),
-    ) -> None:
-        del problem_id, advance
-        self.messages.append(message)
-        self.metrics.append({metric.id: metric.value for metric in metrics})
-        self.completions.append(completed)
 
 
 def _plan_for_window(
@@ -165,7 +130,7 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
 
     monkeypatch.setattr("spice.workflows.acquire.BlockRpcClient", FakeAcquireClient)
 
-    run_acquire(config, reporter=NullReporter())
+    run_acquire(config)
 
     summary = load_dataset_manifest(paths.corpus_state_db)
     runs = list_acquire_runs(paths.corpus_state_db)
@@ -205,7 +170,7 @@ def test_acquire_cancellation_during_planning_logs_warning(
     config = load_test_acquire_config(tmp_path, override=acquire_override())
     paths = resolve_workflow_paths(config)
     output = StringIO()
-    reporter = PlainReporter(stream=output)
+    reporter = Reporter(stream=output)
 
     class FakeAcquireClient:
         def __init__(self, provider, chain) -> None:
@@ -240,131 +205,45 @@ def test_acquire_cancellation_during_planning_logs_warning(
     asyncio.run(_exercise())
 
     rendered = output.getvalue()
-    assert "history [planning] - resolving window" in rendered
-    assert "evaluation [planning] - resolving window" in rendered
+    assert "acquire dataset=" in rendered
     assert "warning: acquire cancelled; partial download removed" in rendered
     assert paths.corpus_state_db.exists() is False
 
 
-def test_pull_block_range_emits_structured_progress_messages(
+def test_acquire_dry_run_emits_compact_output(
     tmp_path,
+    monkeypatch,
     load_test_acquire_config,
     acquire_override,
-    make_block_rows,
 ) -> None:
     config = load_test_acquire_config(tmp_path, override=acquire_override())
-    reporter = CaptureReporter()
-    controller = RpcController(
-        configured_batch_size=16,
-        min_batch_size=8,
-        concurrency_rungs=(8,),
-        configured_concurrency=8,
-    )
-    plan = BlockPullPlan(
-        window=TimestampRange(
-            start=config.evaluation_window_start_timestamp,
-            end=config.evaluation_window_start_timestamp + 16 * 12,
-        ),
-        block_range=BlockRange(start=100, end=116),
-        expected_rows=16,
-        expected_files=1,
-    )
+    config.acquisition.dry_run = True
+    output = StringIO()
+    reporter = Reporter(stream=output)
 
-    class FakeClient(BlockRpcClient):
-        def __post_init__(self) -> None:
-            self._calls = 0
+    class FakeAcquireClient:
+        def __init__(self, provider, chain) -> None:
+            del provider, chain
 
         async def close(self) -> None:
             return None
 
-        async def get_block_rows(self, block_numbers: list[int]):
-            self._calls += 1
-            if self._calls == 1:
-                raise RuntimeError("response too large")
-            return make_block_rows(
-                len(block_numbers),
-                start_block=block_numbers[0],
-                start_timestamp=(
-                    plan.window.start + (block_numbers[0] - plan.block_range.start) * 12
-                ),
-                chain_id=config.chain.runtime.chain_id,
-                block_interval_seconds=12,
-            )
+        async def estimate_recent_block_interval(self, sample_size: int = 128) -> float:
+            del sample_size
+            return 12.0
 
-    client = FakeClient(config.provider, config.chain)
+        async def plan_window(self, window: TimestampRange, *, chunk_size: int) -> BlockPullPlan:
+            return _plan_for_window(window, start_block=100, chunk_size=chunk_size)
 
-    asyncio.run(
-        pull_block_range(
-            client,
-            tmp_path / "history",
-            plan=plan,
-            chunk_size=64,
-            rpc_controller=controller,
-            reporter=reporter,
-        )
-    )
+    monkeypatch.setattr("spice.workflows.acquire.BlockRpcClient", FakeAcquireClient)
 
-    assert reporter.messages[0] is None
-    assert reporter.metrics[0] == {"batch": "16", "conc": "8"}
-    assert ("oversize backoff", {"batch": "8", "conc": "8"}) in list(
-        zip(reporter.messages, reporter.metrics, strict=True)
-    )
-    assert reporter.metrics.count({"batch": "8", "conc": "8"}) == 2
+    run_acquire(config, reporter=reporter)
 
-
-def test_pull_block_range_coalesces_simultaneous_success_updates(
-    tmp_path,
-    load_test_acquire_config,
-    acquire_override,
-    make_block_rows,
-) -> None:
-    config = load_test_acquire_config(tmp_path, override=acquire_override())
-    reporter = CaptureReporter()
-    controller = RpcController(
-        configured_batch_size=8,
-        min_batch_size=8,
-        concurrency_rungs=(2,),
-        configured_concurrency=2,
-    )
-    plan = BlockPullPlan(
-        window=TimestampRange(
-            start=config.evaluation_window_start_timestamp,
-            end=config.evaluation_window_start_timestamp + 16 * 12,
-        ),
-        block_range=BlockRange(start=100, end=116),
-        expected_rows=16,
-        expected_files=1,
-    )
-
-    class FakeClient(BlockRpcClient):
-        async def close(self) -> None:
-            return None
-
-        async def get_block_rows(self, block_numbers: list[int]):
-            return make_block_rows(
-                len(block_numbers),
-                start_block=block_numbers[0],
-                start_timestamp=(
-                    plan.window.start + (block_numbers[0] - plan.block_range.start) * 12
-                ),
-                chain_id=config.chain.runtime.chain_id,
-                block_interval_seconds=12,
-            )
-
-    client = FakeClient(config.provider, config.chain)
-
-    asyncio.run(
-        pull_block_range(
-            client,
-            tmp_path / "history",
-            plan=plan,
-            chunk_size=64,
-            rpc_controller=controller,
-            reporter=reporter,
-        )
-    )
-
-    assert reporter.completions == [0, 16]
+    rendered = output.getvalue()
+    assert "acquire dataset=" in rendered
+    assert "acquire dry_run history_window=" in rendered
+    assert "history_blocks=" in rendered
+    assert "evaluation_blocks=" in rendered
 
 
 def test_acquire_workflow_reuses_temporary_history_between_expansions(
@@ -480,7 +359,7 @@ def test_acquire_workflow_reuses_temporary_history_between_expansions(
         lambda **_: next(valid_anchor_samples),
     )
 
-    run_acquire(config, reporter=NullReporter())
+    run_acquire(config)
 
     assert partial_ranges == [(950, 1_000)]
     assert (1_000, 1_050) in requested_ranges

@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from .core.reporting import StageMetricDescriptor
     from .features.families.base import FeaturePrerequisites
     from .prediction.base import MetricDescriptor
 
@@ -59,7 +58,6 @@ class PredictionSemantics:
     prediction_id: str
     prediction_family_id: str
     training_metric_descriptors: tuple[MetricDescriptor, ...]
-    progress_metric_descriptors: tuple[StageMetricDescriptor, ...]
     primary_metric_id: str
     direction: Literal["maximize", "minimize"]
     supported_workflows: frozenset[str]

@@ -10,7 +10,6 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from ..core.reporting import StageMetricDescriptor, StageMetricValue, format_compact_number
 from ..semantics import PredictionSemantics
 from ..temporal.problem_store import CompiledProblemStore
 from ..temporal.realization import CompiledRealizationPolicyContract
@@ -309,7 +308,6 @@ class CompiledPredictionContract:
     prediction_id: str
     prediction_family_id: str
     training_metric_descriptors: tuple[MetricDescriptor, ...]
-    progress_metric_descriptors: tuple[StageMetricDescriptor, ...]
     primary_metric_id: str
     direction: Literal["maximize", "minimize"]
     supported_workflows: frozenset[str]
@@ -327,7 +325,6 @@ class CompiledPredictionContract:
             prediction_id=self.prediction_id,
             prediction_family_id=self.prediction_family_id,
             training_metric_descriptors=self.training_metric_descriptors,
-            progress_metric_descriptors=self.progress_metric_descriptors,
             primary_metric_id=self.primary_metric_id,
             direction=self.direction,
             supported_workflows=self.supported_workflows,
@@ -367,16 +364,6 @@ class CompiledPredictionContract:
 
     def create_epoch_accumulator(self, stage: str) -> EpochMetricAccumulator:
         return self.create_epoch_accumulator_fn(stage)
-
-    def format_progress_metrics(self, metrics: MetricSet) -> tuple[StageMetricValue, ...]:
-        return tuple(
-            StageMetricValue(
-                id=descriptor.id,
-                value=format_compact_number(metrics.values[descriptor.id]),
-            )
-            for descriptor in self.progress_metric_descriptors
-            if descriptor.id in metrics.values
-        )
 
     def allocate_decoded_offsets(self, sample_count: int) -> DecodedOffsets:
         return self.allocate_decoded_offsets_fn(sample_count)

@@ -6,17 +6,16 @@ from pathlib import Path
 
 from ...acquisition.rpc import BlockPullPlan, BlockRange, BlockRpcClient, RpcController
 from ...config import AcquireConfig
-from ...core.reporting import Reporter
 from .shared import (
     DatasetBuildOutcome,
     DatasetBuildResult,
-    StageUpdateCallback,
+    StatusCallback,
     block_range_end,
     block_range_start,
     filter_block_range,
     load_existing_dataset,
     materialize_dataset,
-    noop_stage_update,
+    noop_status,
     partial_plan,
     pull_plan_to_frame,
     reused_result,
@@ -32,10 +31,9 @@ async def ensure_evaluation_dataset(
     working_dir: Path,
     evaluation_plan: BlockPullPlan,
     rpc_controller: RpcController,
-    reporter: Reporter,
-    stage_update: StageUpdateCallback | None = None,
+    status: StatusCallback | None = None,
 ) -> DatasetBuildResult:
-    update_stage = stage_update or noop_stage_update
+    emit = status or noop_status
     expected_chain_id = config.chain.runtime.chain_id
     existing = load_existing_dataset(output_dir, expected_chain_id=expected_chain_id)
 
@@ -47,7 +45,6 @@ async def ensure_evaluation_dataset(
             expected_chain_id=expected_chain_id,
         )
 
-    update_stage("planning", "checking existing dataset")
     if existing is not None and existing.validation.status == "clean":
         if existing.frame is None:
             raise RuntimeError("clean evaluation validation requires an in-memory frame")
@@ -58,7 +55,7 @@ async def ensure_evaluation_dataset(
 
         if existing_start == target_start and existing_end == target_end:
             validation = existing.validation.model_copy(deep=True)
-            update_stage("planning", "validating cached dataset")
+            emit("evaluation reused cached dataset")
             validate_result(validation, existing.path)
             return reused_result(existing, validation=validation)
 
@@ -85,7 +82,6 @@ async def ensure_evaluation_dataset(
                         output_dir=working_dir / "evaluation-prefix",
                         chunk_size=config.acquisition.chunk_size,
                         rpc_controller=rpc_controller,
-                        reporter=reporter,
                     ),
                 )
 
@@ -104,37 +100,33 @@ async def ensure_evaluation_dataset(
                         output_dir=working_dir / "evaluation-suffix",
                         chunk_size=config.acquisition.chunk_size,
                         rpc_controller=rpc_controller,
-                        reporter=reporter,
                     )
                 )
 
-            update_stage("planning", "extending cached dataset")
+            emit("evaluation extending cached dataset")
             return materialize_dataset(
                 mode="evaluation",
                 config=config,
                 working_dir=working_dir,
                 expected_chain_id=expected_chain_id,
-                stage_update=update_stage,
                 validate_result=validate_result,
                 frames=frames,
                 outcome=DatasetBuildOutcome.EXTENDED,
             )
 
-    update_stage("planning", "preparing download")
+    emit("evaluation downloading")
     await pull_plan_to_frame(
         block_client=block_client,
         plan=evaluation_plan,
         output_dir=working_dir / "evaluation",
         chunk_size=config.acquisition.chunk_size,
         rpc_controller=rpc_controller,
-        reporter=reporter,
     )
     return materialize_dataset(
         mode="evaluation",
         config=config,
         working_dir=working_dir,
         expected_chain_id=expected_chain_id,
-        stage_update=update_stage,
         validate_result=validate_result,
         outcome=(
             DatasetBuildOutcome.REBUILT

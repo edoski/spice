@@ -12,7 +12,7 @@ from ..modeling.evaluation import run_prediction_evaluation
 from ..modeling.inference import predict_with_model
 from ..modeling.pipeline import prepare_inference_dataset
 from ..modeling.results import LoadedEvaluationSummary, build_evaluation_runtime_summary
-from ..modeling.summary import evaluation_summary_sections
+from ..modeling.summary import evaluation_result_fields
 from ..modeling.tuning import apply_study_best_params
 from ..prediction import compile_prediction_contract
 from ..storage.artifact import write_evaluation_state
@@ -48,23 +48,13 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
     evaluation_block_path = paths.evaluation_dir
     if artifact_dir is None:
         raise ConfigResolutionError("evaluation workflow requires artifact output paths")
-    with managed_workflow(reporter=reporter) as session:
-        session.runtime.configure_workflow("evaluate", _workflow_facts(active_config))
-        load_reporter = session.runtime.stage_reporter("load", label="load")
-        prepare_reporter = session.runtime.stage_reporter("prepare", label="prepare")
-        predict_reporter = session.runtime.stage_reporter("predict", label="predict")
-        evaluation_reporter = session.runtime.stage_reporter("evaluate", label="evaluate")
-        write_reporter = session.runtime.stage_reporter(
-            "write",
-            label="write",
-            running_status="writing",
-        )
+    with managed_workflow(reporter=reporter) as active_reporter:
+        active_reporter.header("evaluate", _workflow_facts(active_config))
         with abort_cleanup(
-            session.reporter,
+            active_reporter,
             label="evaluate",
             cleanup=lambda: None,
         ):
-            load_task = load_reporter.start_task("load evaluation inputs")
             loaded_artifact = load_training_artifact(artifact_dir)
             validated = validate_artifact_semantics(
                 loaded_artifact.manifest,
@@ -78,11 +68,6 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
             feature_contract = validated.feature_contract
             history_blocks = load_block_frame(history_block_path)
             evaluation_blocks = load_block_frame(evaluation_block_path)
-            load_reporter.finish_task(
-                load_task,
-                message=f"artifact={artifact_dir} evaluation={evaluation_block_path}",
-            )
-            prepare_task = prepare_reporter.start_task("prepare inference dataset")
             contract = compile_problem_contract(
                 problem=active_config.problem,
                 feature_contract=feature_contract,
@@ -116,9 +101,11 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
                 window_start_timestamp=active_config.evaluation_window_start_timestamp,
                 window_end_timestamp=active_config.evaluation_window_end_timestamp,
             )
-            prepare_reporter.finish_task(
-                prepare_task,
-                message=f"samples={prepared.sample_count}",
+            active_reporter.milestone(
+                "prepare "
+                f"history_rows={prepared.n_history_rows} "
+                f"evaluation_rows={prepared.n_evaluation_rows} "
+                f"samples={prepared.sample_count}"
             )
             decoded_offsets = predict_with_model(
                 loaded_artifact.model,
@@ -128,7 +115,6 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
                 store=prepared.store,
                 sample_indices=prepared.sample_indices,
                 batch_size=active_config.training.batch_size,
-                reporter=predict_reporter,
             )
             evaluation = run_prediction_evaluation(
                 evaluator_contract,
@@ -136,7 +122,6 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
                 prepared.realization_policy,
                 decoded_offsets,
                 sample_indices=prepared.sample_indices,
-                reporter=evaluation_reporter,
             )
             runtime_summary = build_evaluation_runtime_summary(
                 prepared=prepared,
@@ -146,20 +131,15 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
                 evaluator_config=evaluator_contract.config_payload,
                 metric_descriptors=evaluator_contract.metric_descriptors,
             )
-            report_task = write_reporter.start_task("write evaluation state")
             evaluation_id, recorded_at = write_evaluation_state(
                 artifact_dir / ".spice" / "state.sqlite",
                 root_kind=ARTIFACT_ROOT_KIND,
                 summary=runtime_summary,
             )
-            write_reporter.finish_task(report_task, message=str(artifact_dir), silent=True)
             summary = LoadedEvaluationSummary(
                 evaluation_id=evaluation_id,
                 recorded_at=recorded_at,
                 manifest=loaded_artifact.manifest,
                 runtime=runtime_summary,
             )
-        session.runtime.log_sectioned_summary(
-            "evaluation summary",
-            evaluation_summary_sections(summary),
-        )
+        active_reporter.result("evaluate", evaluation_result_fields(summary))

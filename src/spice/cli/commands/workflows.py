@@ -59,7 +59,8 @@ def _submit_selected_workflow(
     typer.echo(
         " ".join(
             [
-                f"submitted {task.value}",
+                "submit",
+                f"workflow={task.value}",
                 f"job_id={submission.job_id}",
                 f"log={submission.log_path}",
             ]
@@ -70,11 +71,11 @@ def _submit_selected_workflow(
     try:
         state = follow_execution_job(submission)
     except KeyboardInterrupt:
-        typer.echo(f"detached from job {submission.job_id}; job continues on cluster")
+        typer.echo(f"submit detached job_id={submission.job_id} state=running")
         return
     if state is None:
         return
-    typer.echo(f"job {submission.job_id} finished: {state}")
+    typer.echo(f"submit finished job_id={submission.job_id} state={state}")
     if state != "COMPLETED":
         raise SpiceOperatorError(f"Job {submission.job_id} ended with state {state}")
 

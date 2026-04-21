@@ -15,10 +15,8 @@ from spice.config import (
     EvaluateConfig,
     TrainConfig,
     TuneConfig,
-    WorkflowSelections,
     WorkflowTask,
     load_named_group,
-    resolve_workflow_config,
 )
 from spice.core.errors import ConfigResolutionError
 from spice.execution import ExecutionJobSubmission
@@ -143,31 +141,6 @@ def test_config_edit_seeds_missing_file_and_uses_editor(
     assert created_path.exists()
     assert log_path.read_text(encoding="utf-8").strip() == str(created_path)
     assert yaml.safe_load(created_path.read_text(encoding="utf-8"))["id"] == "phase2_problem"
-
-
-def test_removed_group_is_gone_and_legacy_task_key_is_rejected(tmp_path, isolate_conf_root) -> None:
-    conf_root = isolate_conf_root()
-
-    list_result = runner.invoke(app, ["config", "list", "training"])
-    assert list_result.exit_code != 0
-    execution_result = runner.invoke(app, ["config", "list", "execution"])
-    assert execution_result.exit_code != 0
-
-    legacy_preset = conf_root / "preset" / "legacy.yaml"
-    legacy_preset.write_text(
-        yaml.safe_dump({"task": {"id": "legacy_problem"}}, sort_keys=False),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ConfigResolutionError, match="Extra inputs are not permitted"):
-        resolve_workflow_config(
-            WorkflowTask.TRAIN,
-            WorkflowSelections(
-                preset="legacy",
-                storage_root=tmp_path / "outputs",
-            ),
-        )
-
 
 def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root) -> None:
     conf_root = isolate_conf_root()
@@ -372,4 +345,7 @@ def test_train_submit_cli_routes_to_execution_backend(tmp_path, monkeypatch) -> 
         "--variant",
         "baseline",
     ]
-    assert "submitted train job_id=12345 log=/remote/logs/spice-train-12345.out" in result.stdout
+    assert (
+        "submit workflow=train job_id=12345 log=/remote/logs/spice-train-12345.out"
+        in result.stdout
+    )

@@ -18,7 +18,6 @@ from ...acquisition.rpc import (
     pull_block_range,
 )
 from ...config import AcquireConfig
-from ...core.reporting import Reporter
 from ...corpus.io import iter_block_files, load_block_frame, write_block_file
 from ...corpus.metadata import has_block_files
 from ...corpus.validation import (
@@ -52,12 +51,12 @@ class DatasetBuildResult:
     outcome: DatasetBuildOutcome
 
 
-StageUpdateCallback = Callable[[str, str | None], None]
+StatusCallback = Callable[[str], None]
 ValidationCallback = Callable[[BlockDatasetValidationReport, Path], None]
 
 
-def noop_stage_update(status: str, message: str | None = None) -> None:
-    del status, message
+def noop_status(message: str) -> None:
+    del message
 
 
 def validate_block_dataset(
@@ -140,14 +139,12 @@ def materialize_dataset(
     config: AcquireConfig,
     working_dir: Path,
     expected_chain_id: int,
-    stage_update: StageUpdateCallback,
     validate_result: ValidationCallback,
     frames: Sequence[pl.DataFrame] | None = None,
     outcome: DatasetBuildOutcome,
 ) -> DatasetBuildResult:
     dataset_dir = working_dir / mode
     if frames is not None:
-        stage_update("planning", "writing merged dataset")
         file_count = write_block_dataset_dir(
             dataset_dir,
             frame=combined_frame(*frames),
@@ -156,7 +153,6 @@ def materialize_dataset(
         )
     else:
         file_count = len(iter_block_files(dataset_dir))
-    stage_update("planning", "validating dataset")
     validation = validate_block_dataset(dataset_dir, expected_chain_id=expected_chain_id)
     validate_result(validation, dataset_dir)
     return DatasetBuildResult(
@@ -175,9 +171,6 @@ async def pull_plan_to_frame(
     output_dir: Path,
     chunk_size: int,
     rpc_controller: RpcController,
-    reporter: Reporter,
-    progress_total: int | None = None,
-    progress_completed: int = 0,
 ) -> pl.DataFrame:
     await pull_block_range(
         block_client,
@@ -185,9 +178,6 @@ async def pull_plan_to_frame(
         plan=plan,
         chunk_size=chunk_size,
         rpc_controller=rpc_controller,
-        reporter=reporter,
-        progress_total=progress_total,
-        progress_completed=progress_completed,
     )
     return load_block_frame(output_dir)
 

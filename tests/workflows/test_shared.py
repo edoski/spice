@@ -16,7 +16,7 @@ class _Reporter:
     def close(self) -> None:
         self.closed = True
 
-    def log(self, message: str, *, level: str = "info") -> None:
+    def milestone(self, message: str, *, level: str = "info") -> None:
         self.messages.append((message, level))
 
 

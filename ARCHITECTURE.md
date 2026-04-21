@@ -136,7 +136,6 @@ Family-owned responsibilities:
 - epoch metrics
 - best-epoch selection
 - decode
-- progress metrics
 
 Evaluation stays separate in [src/spice/evaluation](src/spice/evaluation). Evaluators consume decoded offsets plus a compiled problem store.
 
@@ -163,6 +162,14 @@ Workflow commands:
 - `train`
 - `evaluate`
 - `train|tune|evaluate --submit`
+
+Human workflow output goes through one concrete reporter in [src/spice/core/reporting.py](src/spice/core/reporting.py). The contract is intentionally small:
+
+- one header line
+- milestone lines for meaningful state changes
+- one compact result line
+
+`train` keeps one epoch-end line per completed epoch. `tune` keeps one completed-trial line per trial and does not print per-epoch trial output.
 
 State commands:
 

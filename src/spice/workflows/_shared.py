@@ -10,13 +10,6 @@ from types import FrameType
 from typing import Any, cast
 
 from ..core.reporting import Reporter
-from ..core.runtime import WorkflowRuntime, create_workflow_runtime
-
-
-@dataclass(slots=True)
-class WorkflowSession:
-    runtime: WorkflowRuntime
-    reporter: Reporter
 
 
 @dataclass(slots=True)
@@ -81,7 +74,7 @@ def _cleanup_after_interrupt(
 ) -> None:
     cleanup()
     reporter.close()
-    reporter.log(f"{label} cancelled; partial outputs removed", level="warning")
+    reporter.milestone(f"{label} cancelled; partial outputs removed", level="warning")
 
 
 @contextmanager
@@ -106,18 +99,13 @@ def abort_cleanup(
 @contextmanager
 def managed_workflow(
     *,
-    runtime: WorkflowRuntime | None = None,
     reporter: Reporter | None = None,
-    default_runtime_factory: Callable[..., WorkflowRuntime] = create_workflow_runtime,
-) -> Iterator[WorkflowSession]:
-    active_runtime = runtime or default_runtime_factory(reporter=reporter)
-    owns_runtime = runtime is None
+) -> Iterator[Reporter]:
+    active_reporter = reporter or Reporter()
+    owns_reporter = reporter is None
     try:
-        with active_runtime.activate():
-            yield WorkflowSession(
-                runtime=active_runtime,
-                reporter=active_runtime.reporter,
-            )
+        with active_reporter.activate():
+            yield active_reporter
     finally:
-        if owns_runtime:
-            active_runtime.close()
+        if owns_reporter:
+            active_reporter.close()

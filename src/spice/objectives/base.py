@@ -14,7 +14,6 @@ from ..core.closed_dispatch import (
     unknown_id_error,
     validate_path_segment,
 )
-from ..core.reporting import Reporter
 from ..evaluation import (
     EvaluatorConfig,
     coerce_evaluator_config,
@@ -99,7 +98,6 @@ class ObjectiveEvaluationContext:
     store: CompiledProblemStore
     sample_indices: IntVector
     batch_size: int
-    reporter: Reporter | None
 
 
 EvaluateObjectiveMetricsFn = Callable[[MetricSet, ObjectiveEvaluationContext], MetricSet]
@@ -182,14 +180,12 @@ def _compile_validation_evaluator_metric(
             store=context.store,
             sample_indices=context.sample_indices,
             batch_size=context.batch_size,
-            reporter=context.reporter,
         )
         return evaluator_contract.run(
             context.store,
             context.realization_policy,
             decoded_offsets,
             context.sample_indices,
-            context.reporter,
         ).metrics
 
     return CompiledObjectiveContract(

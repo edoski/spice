@@ -1,4 +1,4 @@
-"""Window-weighted standardization matching the legacy pipeline."""
+"""Window-weighted standardization."""
 
 from ..scaling import fit_window_weighted_standard_scaler
 from .base import CompiledInputNormalizationContract, InputNormalizationConfig

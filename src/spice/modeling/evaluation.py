@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core.reporting import Reporter
 from ..evaluation import CompiledEvaluatorContract, EvaluationSummary
 from ..prediction import DecodedOffsets
 from ..temporal.problem_store import CompiledProblemStore
@@ -21,12 +20,10 @@ def run_prediction_evaluation(
     decoded_offsets: DecodedOffsets,
     *,
     sample_indices: IntVector,
-    reporter: Reporter | None = None,
 ) -> EvaluationSummary:
     return evaluator_contract.run(
         store,
         realization_policy,
         decoded_offsets,
         sample_indices,
-        reporter,
     )

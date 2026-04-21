@@ -17,18 +17,15 @@ from typing import Any, cast
 from ..acquisition.rpc import BlockRpcClient, RpcController, TimestampRange, evaluation_range
 from ..config import AcquireConfig
 from ..core.files import promote_paths_atomic, prune_empty_directories
-from ..core.reporting import Reporter, StageMetricDescriptor
-from ..corpus.builders import (
-    ensure_evaluation_dataset,
-    ensure_history_dataset,
-)
+from ..core.reporting import Reporter
+from ..corpus.builders import ensure_evaluation_dataset, ensure_history_dataset
 from ..corpus.io import load_block_frame
 from ..corpus.metadata import (
     build_acquire_run_record,
     build_dataset_manifest,
     provider_metadata,
 )
-from ..corpus.summary import acquire_dry_run_sections, acquisition_summary_sections
+from ..corpus.summary import acquire_dry_run_fields, acquisition_result_fields
 from ..features import CompiledFeatureContract, compile_feature_contract
 from ..storage.catalog import upsert_dataset_record
 from ..storage.corpus import write_dataset_state
@@ -36,18 +33,12 @@ from ..storage.layout import resolve_workflow_paths
 from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
 from ._shared import managed_workflow
 
-_RPC_STAGE_METRICS: tuple[StageMetricDescriptor, ...] = (
-    StageMetricDescriptor(id="batch", label="batch"),
-    StageMetricDescriptor(id="conc", label="conc"),
-)
-
 
 def _workflow_facts(config: AcquireConfig) -> list[tuple[str, str]]:
     return [
         ("dataset", config.dataset.name),
         ("chain", config.chain.name),
         ("problem", config.problem.id),
-        ("feature set", config.feature_set.id),
         ("provider", config.provider.name),
     ]
 
@@ -83,8 +74,8 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
             args=(
                 weakref.ref(self, weakref_cb),
                 self._work_queue,
-                self._initializer,
-                self._initargs,
+                cast(Any, self)._initializer,
+                cast(Any, self)._initargs,
             ),
         )
         thread.daemon = True
@@ -167,38 +158,11 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
         config.evaluation_window_end_timestamp,
     )
 
-    with managed_workflow(reporter=reporter) as session:
-        session.runtime.configure_workflow("acquire", _workflow_facts(config))
-        history_reporter = session.runtime.stage_reporter(
-            "history",
-            label="history",
-            status="pending",
-            running_status="pulling",
-            done_status="planning",
-            metric_descriptors=_RPC_STAGE_METRICS,
-        )
-        evaluation_reporter = session.runtime.stage_reporter(
-            "evaluation",
-            label="evaluation",
-            status="pending",
-            running_status="pulling",
-            done_status="planning",
-            metric_descriptors=_RPC_STAGE_METRICS,
-        )
-
-        def _update_stage(key: str, status: str, message: str | None = None) -> None:
-            session.runtime.set_stage_state(key, status=status, message=message)
-
-        def _update_history_stage(status: str, message: str | None = None) -> None:
-            _update_stage("history", status, message)
-
-        def _update_evaluation_stage(status: str, message: str | None = None) -> None:
-            _update_stage("evaluation", status, message)
+    with managed_workflow(reporter=reporter) as active_reporter:
+        active_reporter.header("acquire", _workflow_facts(config))
 
         block_client = BlockRpcClient(config.provider, config.chain)
         try:
-            _update_history_stage("planning", "resolving window")
-            _update_evaluation_stage("planning", "resolving window")
             evaluation_plan = await block_client.plan_window(
                 evaluation_window,
                 chunk_size=config.acquisition.chunk_size,
@@ -218,33 +182,18 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 ),
                 chunk_size=config.acquisition.chunk_size,
             )
-            session.runtime.set_stage_state(
-                "history",
-                status="planning",
-                total=history_plan.expected_rows,
-                completed=0,
-                unit="blocks",
-                message="checking existing dataset",
-            )
-            session.runtime.set_stage_state(
-                "evaluation",
-                status="pending",
-                total=evaluation_plan.expected_rows,
-                completed=0,
-                unit="blocks",
-                message="waiting for history",
-            )
 
             if config.acquisition.dry_run:
-                session.runtime.log_sectioned_summary(
-                    "acquire dry run",
-                    acquire_dry_run_sections(
+                active_reporter.result(
+                    "acquire",
+                    acquire_dry_run_fields(
                         config,
                         contract=contract,
                         history_window_seconds=history_window_seconds,
                         history_plan=history_plan,
                         evaluation_plan=evaluation_plan,
                     ),
+                    status="dry_run",
                 )
                 return
 
@@ -266,8 +215,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                         working_dir=history_work_dir,
                         history_plan=history_plan,
                         rpc_controller=rpc_controller,
-                        reporter=history_reporter,
-                        stage_update=_update_history_stage,
+                        status=active_reporter.milestone,
                     )
                     valid_anchor_samples = _count_valid_history_samples(
                         history_dir=history_result.path,
@@ -276,6 +224,10 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     )
                     if valid_anchor_samples >= contract.sample_count:
                         break
+                    active_reporter.milestone(
+                        "history extending window "
+                        f"anchors={valid_anchor_samples}/{contract.sample_count}"
+                    )
                     history_source_dir = history_result.path
                     history_iteration += 1
                     history_window_seconds *= 2
@@ -290,27 +242,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                         ),
                         chunk_size=config.acquisition.chunk_size,
                     )
-                    session.runtime.set_stage_state(
-                        "history",
-                        status="planning",
-                        total=history_plan.expected_rows,
-                        completed=history_result.validation.row_count,
-                        unit="blocks",
-                        message=(
-                            f"anchors={valid_anchor_samples:,}/{contract.sample_count:,}; "
-                            "extending history window"
-                        ),
-                    )
-                session.runtime.set_stage_state(
-                    "history",
-                    status=history_result.outcome.value,
-                    total=history_result.validation.row_count,
-                    completed=history_result.validation.row_count,
-                    unit="blocks",
-                    message=(
-                        f"{history_result.file_count:,} files, anchors={valid_anchor_samples:,}"
-                    ),
-                )
+
                 evaluation_result = await ensure_evaluation_dataset(
                     config=config,
                     block_client=block_client,
@@ -318,16 +250,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     working_dir=temp_root,
                     evaluation_plan=evaluation_plan,
                     rpc_controller=rpc_controller,
-                    reporter=evaluation_reporter,
-                    stage_update=_update_evaluation_stage,
-                )
-                session.runtime.set_stage_state(
-                    "evaluation",
-                    status=evaluation_result.outcome.value,
-                    total=evaluation_result.validation.row_count,
-                    completed=evaluation_result.validation.row_count,
-                    unit="blocks",
-                    message=f"{evaluation_result.file_count:,} files",
+                    status=active_reporter.milestone,
                 )
                 manifest = build_dataset_manifest(
                     config=config,
@@ -369,33 +292,29 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                     root_path=paths.corpus_root,
                     state_db_path=state_db_path,
                 )
-            session.runtime.log_sectioned_summary(
-                "acquisition summary",
-                acquisition_summary_sections(
-                    config,
-                    provider_name=current_provider.name,
+            active_reporter.result(
+                "acquire",
+                acquisition_result_fields(
                     history_outcome=history_result.outcome,
                     history_row_count=history_result.validation.row_count,
-                    history_file_count=history_result.file_count,
                     evaluation_outcome=evaluation_result.outcome,
                     evaluation_row_count=evaluation_result.validation.row_count,
-                    evaluation_file_count=evaluation_result.file_count,
                 ),
             )
         except (KeyboardInterrupt, asyncio.CancelledError):
-            session.reporter.close()
+            active_reporter.close()
             prune_empty_directories(
                 paths.corpus_root,
                 stop_at=paths.corpus_root.parent.parent,
             )
-            session.reporter.log(
+            active_reporter.milestone(
                 "acquire cancelled; partial download removed",
                 level="warning",
             )
             raise
         except Exception:
-            session.reporter.close()
-            session.reporter.log(
+            active_reporter.close()
+            active_reporter.milestone(
                 "acquire failed; partial download removed",
                 level="warning",
             )

@@ -1,6 +1,6 @@
 # pyright: strict
 
-"""Typed acquisition summary builders."""
+"""Typed acquisition metadata builders."""
 
 from __future__ import annotations
 

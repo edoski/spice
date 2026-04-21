@@ -54,9 +54,7 @@ def push_dataset_command(
         selector=DatasetSelector(chain_name=chain, dataset_name=dataset),
         replace=replace,
     )
-    typer.echo(
-        f"pushed dataset {record.dataset_name} to cluster root {record.dataset_id}"
-    )
+    typer.echo(f"push dataset={record.dataset_name} dataset_id={record.dataset_id}")
 
 
 @push_app.command("study", short_help="Push one study root to cluster storage.")
@@ -85,7 +83,7 @@ def push_study_command(
         ),
         replace=replace,
     )
-    typer.echo(f"pushed study {record.study_name} to cluster root {record.study_id}")
+    typer.echo(f"push study={record.study_name} study_id={record.study_id}")
 
 
 @pull_app.command("artifact", short_help="Pull one artifact root from cluster storage.")
@@ -116,7 +114,7 @@ def pull_artifact_command(
         ),
         replace=replace,
     )
-    typer.echo(f"pulled artifact {record.artifact_id} into local storage")
+    typer.echo(f"pull artifact={record.artifact_id}")
     if not dataset_present:
         typer.echo(
             (
@@ -153,4 +151,4 @@ def pull_study_command(
         ),
         replace=replace,
     )
-    typer.echo(f"pulled study {record.study_id} into local storage")
+    typer.echo(f"pull study_id={record.study_id}")

@@ -1,141 +1,72 @@
 # pyright: strict
 
-"""Modeling-owned workflow summary builders."""
+"""Compact workflow result field builders."""
 
 from __future__ import annotations
 
-from ..core.rendering import metric_fields, window_metric_fields
+from pathlib import Path
+
+from ..core.rendering import metric_string
 from .results import LoadedEvaluationSummary, LoadedTrainingSummary
 
 
-def training_summary_sections(
+def training_result_fields(
     summary: LoadedTrainingSummary,
-) -> list[tuple[str, list[tuple[str, str]]]]:
+    *,
+    artifact_dir: Path,
+) -> list[tuple[str, str]]:
     manifest = summary.manifest
     runtime = summary.runtime
-    return [
+    primary_metric_id = manifest.prediction_id
+    if manifest.training_metric_descriptors:
+        primary_metric_id = next(
+            (
+                descriptor.id
+                for descriptor in manifest.training_metric_descriptors
+                if descriptor.role == "primary"
+            ),
+            manifest.training_metric_descriptors[0].id,
+        )
+    fields = [
+        ("artifact", str(artifact_dir)),
+        ("best_epoch", str(runtime.best_epoch)),
         (
-            "dataset",
-            [
-                ("name", manifest.dataset_name),
-                ("storage id", manifest.dataset_id),
-                ("chain", manifest.chain_name),
-                ("model", manifest.model.id),
-                ("problem", manifest.problem_id),
-                ("prediction", manifest.prediction_id),
-            ],
-        ),
-        (
-            "provenance",
-            [
-                ("artifact id", manifest.artifact_id),
-                ("variant", manifest.variant.value),
-                *([] if manifest.study is None else [("study", manifest.study.name)]),
-                ("capability", f"{manifest.max_delay_seconds}s"),
-                ("realization", manifest.semantics.realization_policy.realization_policy_id),
-            ],
-        ),
-        (
-            "training",
-            [
-                ("lookback", f"{manifest.lookback_seconds}s"),
-                (
-                    "rows",
-                    f"used={runtime.n_rows_used:,} available={runtime.n_rows_available:,}",
-                ),
-                (
-                    "split sizes",
-                    (
-                        f"train={runtime.split_sizes.train_samples:,} "
-                        f"validation={runtime.split_sizes.validation_samples:,} "
-                        f"test={runtime.split_sizes.test_samples:,}"
-                    ),
-                ),
-                ("best epoch", str(runtime.best_epoch)),
-                (
-                    "objective",
-                    (
-                        f"{manifest.semantics.objective.objective_id}:"
-                        f"{runtime.best_objective_metric_id}"
-                    ),
-                ),
-                ("objective direction", manifest.semantics.objective.direction),
-                ("best objective", f"{runtime.best_objective_value:.4f}"),
-            ],
-        ),
-        (
-            "metrics",
-            [
-                *[
-                    (f"validation {label}", value)
-                    for label, value in metric_fields(
-                        manifest.training_metric_descriptors,
-                        runtime.best_validation_metrics.values,
-                    )
-                ],
-                *[
-                    (f"test {label}", value)
-                    for label, value in metric_fields(
-                        manifest.training_metric_descriptors,
-                        runtime.test_metrics.values,
-                    )
-                ],
-            ],
+            f"objective.{runtime.best_objective_metric_id}",
+            metric_string(runtime.best_objective_value),
         ),
     ]
+    if primary_metric_id in runtime.best_validation_metrics.values:
+        fields.append(
+            (
+                f"validation.{primary_metric_id}",
+                metric_string(runtime.best_validation_metrics.values[primary_metric_id]),
+            )
+        )
+    if primary_metric_id in runtime.test_metrics.values:
+        fields.append(
+            (
+                f"test.{primary_metric_id}",
+                metric_string(runtime.test_metrics.values[primary_metric_id]),
+            )
+        )
+    return fields
 
 
-def evaluation_summary_sections(
-    summary: LoadedEvaluationSummary,
-) -> list[tuple[str, list[tuple[str, str]]]]:
-    manifest = summary.manifest
+def evaluation_result_fields(summary: LoadedEvaluationSummary) -> list[tuple[str, str]]:
     runtime = summary.runtime
-    return [
-        (
-            "dataset",
-            [
-                ("name", manifest.dataset_name),
-                ("storage id", manifest.dataset_id),
-                ("chain", manifest.chain_name),
-                ("model", manifest.model.id),
-                ("problem", manifest.problem_id),
-                ("prediction", manifest.prediction_id),
-            ],
-        ),
-        (
-            "provenance",
-            [
-                ("artifact id", manifest.artifact_id),
-                ("evaluation id", summary.evaluation_id),
-                ("variant", manifest.variant.value),
-                *([] if manifest.study is None else [("study", manifest.study.name)]),
-                ("capability", f"{manifest.max_delay_seconds}s"),
-                ("requested", f"{runtime.delay_seconds}s"),
-                ("realization", manifest.semantics.realization_policy.realization_policy_id),
-            ],
-        ),
-        (
-            "evaluation",
-            [
-                ("evaluator", runtime.evaluator_id),
-                ("events", f"{runtime.total_events:,}"),
-            ],
-        ),
-        (
-            "results",
-            metric_fields(runtime.metric_descriptors, runtime.metrics.values),
-        ),
-        *(
-            []
-            if not runtime.window_metrics
-            else [
-                (
-                    "window metrics",
-                    window_metric_fields(
-                        runtime.metric_descriptors,
-                        runtime.window_metrics,
-                    ),
-                )
-            ]
-        ),
+    fields = [
+        ("evaluation_id", summary.evaluation_id),
+        ("events", str(runtime.total_events)),
     ]
+    primary_descriptor = next(
+        (descriptor for descriptor in runtime.metric_descriptors if descriptor.role == "primary"),
+        None,
+    )
+    if primary_descriptor is not None and primary_descriptor.id in runtime.metrics.values:
+        fields.append(
+            (
+                primary_descriptor.id,
+                metric_string(runtime.metrics.values[primary_descriptor.id]),
+            )
+        )
+    return fields

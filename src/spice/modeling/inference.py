@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ..config import ModelConfig
-from ..core.reporting import NullReporter, Reporter
 from ..prediction import (
     CompiledPredictionContract,
     DecodedOffsets,
@@ -30,9 +29,7 @@ def predict_with_model(
     store: CompiledProblemStore,
     sample_indices: IntVector,
     batch_size: int,
-    reporter: Reporter | None = None,
 ) -> DecodedOffsets:
-    reporter = reporter or NullReporter()
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
 
@@ -50,7 +47,6 @@ def predict_with_model(
         seed=0,
     )
     loader = batch_source_plan.source
-    task_id = reporter.start_task("predict", total=len(loader), unit="batches")
     predictions = prediction_contract.allocate_decoded_offsets(int(sample_indices.shape[0]))
 
     def _decode_batch(batch, outputs) -> None:
@@ -59,7 +55,6 @@ def predict_with_model(
             outputs,
             decode_context_from_batch(batch),
         )
-        reporter.update_task(task_id, advance=1)
 
     with configure_torch_backends(
         resolved_device=runtime.resolved_device,
@@ -72,5 +67,4 @@ def predict_with_model(
             precision=precision,
             on_outputs=_decode_batch,
         )
-    reporter.finish_task(task_id)
     return predictions

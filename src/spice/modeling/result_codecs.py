@@ -15,7 +15,6 @@ from ..config import (
     coerce_prediction_config,
     coerce_problem_spec,
 )
-from ..core.reporting import StageMetricDescriptor
 from ..evaluation import EvaluationRun
 from ..features import FeaturePrerequisites
 from ..objectives import coerce_objective_config
@@ -68,7 +67,6 @@ _ARTIFACT_SEMANTICS_ADAPTER = TypeAdapter(ArtifactSemantics)
 _ADAPTER_NAMESPACE = {
     "FeaturePrerequisites": FeaturePrerequisites,
     "MetricDescriptor": MetricDescriptor,
-    "StageMetricDescriptor": StageMetricDescriptor,
 }
 for _adapter in (
     _FEATURE_PREREQUISITES_ADAPTER,

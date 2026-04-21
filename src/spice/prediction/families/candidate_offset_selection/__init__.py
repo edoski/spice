@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import torch
 
-from ....core.reporting import StageMetricDescriptor
 from ....modeling.models import ModelOutputs
 from ....temporal.problem_store import CompiledProblemStore
 from ....temporal.realization import CompiledRealizationPolicyContract
@@ -30,13 +29,6 @@ from .outputs import (
     candidate_logits,
 )
 from .targets import prepare_candidate_slate_targets
-
-PROGRESS_METRIC_DESCRIPTORS: tuple[StageMetricDescriptor, ...] = (
-    StageMetricDescriptor(id="profit_over_baseline", label="profit"),
-    StageMetricDescriptor(id="cost_over_optimum", label="cost"),
-    StageMetricDescriptor(id="total_loss", label="loss"),
-    StageMetricDescriptor(id="exact_optimum_hit_rate", label="hit"),
-)
 
 
 def _prepare_targets(
@@ -91,7 +83,6 @@ def compile_prediction_family(
         prediction_id=prediction_id,
         prediction_family_id="candidate_offset_selection",
         training_metric_descriptors=TRAINING_METRIC_DESCRIPTORS,
-        progress_metric_descriptors=PROGRESS_METRIC_DESCRIPTORS,
         primary_metric_id="profit_over_baseline",
         direction="maximize",
         supported_workflows=frozenset({"train", "tune", "evaluate"}),
