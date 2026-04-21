@@ -18,6 +18,7 @@ from ..core.errors import ConfigResolutionError, MissingStateError
 from ..storage.layout import resolve_workflow_paths
 from ..storage.study_manifest import load_study_manifest, validate_tuned_train_request
 from ..storage.study_optuna import load_best_params
+from .dataset_builders import coerce_dataset_builder_config
 from .families.registry import (
     apply_model_tuned_parameters,
     coerce_model_config,
@@ -70,6 +71,7 @@ def apply_tuned_parameters(
         tuned_config.model = apply_model_tuned_parameters(tuned_config.model, params.model)
     payload = tuned_config.model_dump(mode="json")
     payload["problem"] = coerce_problem_spec(payload["problem"])
+    payload["dataset_builder"] = coerce_dataset_builder_config(payload["dataset_builder"])
     payload["feature_set"] = coerce_feature_set_config(payload["feature_set"])
     resolved_model = coerce_model_config(payload["model"])
     payload["model"] = resolved_model
