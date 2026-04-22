@@ -12,6 +12,10 @@ from .families.block_native import (
     BLOCK_NATIVE_FAMILY,
     BlockNativeFeatureFamilyConfig,
 )
+from .families.block_open_native import (
+    BLOCK_OPEN_NATIVE_FAMILY,
+    BlockOpenNativeFeatureFamilyConfig,
+)
 from .families.time_native import TIME_NATIVE_FAMILY, TimeNativeFeatureFamilyConfig
 
 
@@ -25,6 +29,10 @@ _FEATURE_FAMILIES: dict[str, _FeatureFamilyEntry] = {
     "block_native": _FeatureFamilyEntry(
         config_type=BlockNativeFeatureFamilyConfig,
         family=BLOCK_NATIVE_FAMILY,
+    ),
+    "block_open_native": _FeatureFamilyEntry(
+        config_type=BlockOpenNativeFeatureFamilyConfig,
+        family=BLOCK_OPEN_NATIVE_FAMILY,
     ),
     "time_native": _FeatureFamilyEntry(
         config_type=TimeNativeFeatureFamilyConfig,

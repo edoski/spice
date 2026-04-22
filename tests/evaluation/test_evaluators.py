@@ -39,6 +39,22 @@ def _realization_policy():
     )
 
 
+def _current_row_store() -> CompiledProblemStore:
+    return CompiledProblemStore(
+        feature_matrix=np.zeros((9, 1), dtype=np.float32),
+        log_base_fees=np.log(
+            np.array([110, 95, 90, 80, 70, 60, 50, 40, 30], dtype=np.float32)
+        ).astype(np.float32, copy=False),
+        timestamps=(np.arange(9, dtype=np.int64) * 1800).astype(np.int64, copy=False),
+        anchor_rows=np.array([1, 2, 3, 4], dtype=np.int64),
+        context_start_rows=np.array([0, 1, 2, 3], dtype=np.int64),
+        candidate_start_rows=np.array([1, 2, 3, 4], dtype=np.int64),
+        candidate_end_rows=np.array([3, 4, 5, 6], dtype=np.int64),
+        action_space_mode=ActionSpaceMode.FIXED_EX_ANTE,
+        max_candidate_slots=2,
+    )
+
+
 def test_paper_windowed_falls_back_to_fullset_for_short_spans() -> None:
     store = _store()
     decoded_offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
@@ -249,6 +265,96 @@ def test_fullset_uses_next_block_baseline_and_future_window_optimum() -> None:
             "optimum_fee_sum": optimum_total,
         }
     )
+
+
+def test_notebook_rollout_stops_on_zero_and_truncates_tail_windows() -> None:
+    store = _current_row_store()
+    evaluator = compile_evaluator_contract(
+        EvaluatorConfig.model_validate(
+            {
+                "id": "notebook_rollout_fullset",
+                "engine": "notebook_rollout",
+            }
+        )
+    )
+    summary = evaluator.run(
+        store,
+        _realization_policy(),
+        DecodedOffsets(torch.tensor([1, 0, 1, 1], dtype=torch.int64)),
+        np.arange(store.n_samples, dtype=np.int64),
+    )
+
+    baseline_total = 95.0 + 90.0 + 80.0 + 70.0
+    realized_total = 90.0 + 90.0 + 70.0 + 70.0
+    optimum_total = 90.0 + 80.0 + 70.0 + 60.0
+
+    assert summary.total_events == 4
+    assert summary.runs[0].metadata == {
+        "mode": "notebook_rollout_fullset",
+        "zero_stop_count": 2,
+        "terminal_without_zero_count": 2,
+        "truncated_window_count": 1,
+    }
+    assert summary.metrics.values == pytest.approx(
+        {
+            "profit_over_baseline": (baseline_total - realized_total) / baseline_total,
+            "cost_over_optimum": (realized_total - optimum_total) / optimum_total,
+            "baseline_cost_over_optimum": (baseline_total - optimum_total) / optimum_total,
+            "realized_fee_sum": realized_total,
+            "baseline_fee_sum": baseline_total,
+            "optimum_fee_sum": optimum_total,
+            "mean_steps_to_stop": 0.5,
+            "zero_stop_rate": 0.5,
+            "terminal_without_zero_count": 2.0,
+        }
+    )
+
+
+def test_notebook_basefee_compares_anchor_and_realized_fees() -> None:
+    store = _current_row_store()
+    evaluator = compile_evaluator_contract(
+        EvaluatorConfig.model_validate(
+            {
+                "id": "notebook_basefee_fullset",
+                "engine": "notebook_basefee",
+            }
+        )
+    )
+    summary = evaluator.run(
+        store,
+        _realization_policy(),
+        DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64)),
+        np.arange(store.n_samples, dtype=np.int64),
+    )
+
+    anchor_total = 95.0 + 90.0 + 80.0 + 70.0
+    realized_total = 95.0 + 80.0 + 80.0 + 60.0
+
+    assert summary.runs[0].metadata == {
+        "mode": "notebook_basefee_fullset",
+        "overflow_count": 0,
+        "zero_action_count": 2,
+    }
+    assert summary.metrics.values == pytest.approx(
+        {
+            "fee_delta_over_anchor": (anchor_total - realized_total) / anchor_total,
+            "realized_fee_sum": realized_total,
+            "anchor_fee_sum": anchor_total,
+            "overflow_count": 0.0,
+            "zero_action_rate": 0.5,
+        }
+    )
+
+
+def test_notebook_evaluators_reject_replay_sampler_fields() -> None:
+    with pytest.raises(ValueError, match="evaluation.sampler"):
+        EvaluatorConfig.model_validate(
+            {
+                "id": "notebook_rollout_fullset",
+                "engine": "notebook_rollout",
+                "sampler": "fullset",
+            }
+        )
 
 
 def test_fixed_ex_ante_overflow_realizes_first_post_window_row() -> None:

@@ -43,6 +43,20 @@ def _time_frame() -> pl.DataFrame:
     ).sample(fraction=1.0, shuffle=True, seed=11)
 
 
+def _block_open_frame() -> pl.DataFrame:
+    row_count = 210
+    return pl.DataFrame(
+        {
+            "block_number": np.arange(30_000, 30_000 + row_count, dtype=np.int64),
+            "timestamp": np.arange(row_count, dtype=np.int64) * 3600,
+            "base_fee_per_gas": np.arange(3_000, 3_000 + row_count, dtype=np.int64),
+            "gas_used": np.arange(10_000_000, 10_000_000 + row_count, dtype=np.int64),
+            "gas_limit": np.full(row_count, 30_000_000, dtype=np.int64),
+            "chain_id": np.ones(row_count, dtype=np.int64),
+        }
+    ).sample(fraction=1.0, shuffle=True, seed=19)
+
+
 def _build_contract(feature_set_id: str, family_id: str, outputs: list[str]):
     return compile_feature_contract(
         feature_set=coerce_feature_set_config(
@@ -120,6 +134,37 @@ def _assert_professor_block_native(feature_contract, feature_table) -> None:
     assert feature_table.feature_matrix[9, 6] == pytest.approx(0.0)
 
 
+def _assert_professor_block_open(feature_contract, feature_table) -> None:
+    assert feature_contract.feature_prerequisites == FeaturePrerequisites(
+        history_seconds=0,
+        warmup_rows=2,
+    )
+    np.testing.assert_allclose(
+        feature_table.feature_matrix[:3, 0],
+        np.log1p(np.arange(3_000, 3_003, dtype=np.float64)),
+    )
+    assert np.isnan(feature_table.feature_matrix[0, 1])
+    expected_ratio0 = (10_000_000 / 30_000_000) * 100.0
+    expected_ratio1 = (10_000_001 / 30_000_000) * 100.0
+    assert feature_table.feature_matrix[1, 1] == pytest.approx(expected_ratio0)
+    assert feature_table.feature_matrix[2, 1] == pytest.approx(expected_ratio1)
+    assert np.isnan(feature_table.feature_matrix[0, 2])
+    assert feature_table.feature_matrix[1, 2] == pytest.approx(3600.0)
+    assert feature_table.feature_matrix[2, 2] == pytest.approx(3600.0)
+    np.testing.assert_allclose(
+        feature_table.feature_matrix[1:3, 3],
+        np.array([0.0, np.sin(2.0 * np.pi / 24.0)], dtype=np.float32),
+    )
+    np.testing.assert_allclose(
+        feature_table.feature_matrix[1:3, 4],
+        np.array([0.0, 3600.0], dtype=np.float32),
+    )
+    current_dlog = np.log1p(3_002.0) - np.log1p(3_001.0)
+    assert feature_table.feature_matrix[2, 5] == pytest.approx(current_dlog)
+    previous_dlog = np.log1p(3_001.0) - np.log1p(3_000.0)
+    assert feature_table.feature_matrix[2, 6] == pytest.approx(previous_dlog)
+
+
 @pytest.mark.parametrize(
     ("feature_set_id", "family_id", "outputs", "frame_factory", "assertions"),
     [
@@ -159,6 +204,21 @@ def _assert_professor_block_native(feature_contract, feature_table) -> None:
             ],
             _block_frame,
             _assert_professor_block_native,
+        ),
+        (
+            "test_professor_block_open",
+            "block_open_native",
+            [
+                "log_base_fee_per_gas",
+                "gas_ratio",
+                "dt_seconds",
+                "hour_sin",
+                "time_since_start",
+                "dlog_base_fee",
+                "dlogfee_lag1",
+            ],
+            _block_open_frame,
+            _assert_professor_block_open,
         ),
     ],
 )

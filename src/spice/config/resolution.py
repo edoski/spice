@@ -181,7 +181,11 @@ def _resolve_evaluation(name: str | None) -> EvaluatorConfig | None:
 def _resolve_objective(name: str, *, evaluation_name: str | None) -> ObjectiveConfig:
     raw_objective = load_named_group(name, "objective")
     expected_evaluation = _benchmark_evaluation_name(raw_objective)
-    if expected_evaluation is not None and expected_evaluation != evaluation_name:
+    if (
+        evaluation_name is not None
+        and expected_evaluation is not None
+        and expected_evaluation != evaluation_name
+    ):
         raise ConfigResolutionError(
             f"objective {name} requires evaluation {expected_evaluation}, "
             f"got {evaluation_name}"
@@ -229,6 +233,8 @@ def _resolve_rpc_endpoint(
 
 def _resolve_model_workflow_base(
     frame: PresetFrame,
+    *,
+    validate_objective_benchmark: bool,
 ) -> tuple[
     DatasetSpec,
     ChainSpec,
@@ -251,7 +257,10 @@ def _resolve_model_workflow_base(
     dataset_builder = _resolve_dataset_builder(frame.dataset_builder)
     feature_set = _resolve_feature_set(frame.feature_set)
     prediction = _resolve_prediction(frame.prediction)
-    objective = _resolve_objective(frame.objective, evaluation_name=frame.evaluation)
+    objective = _resolve_objective(
+        frame.objective,
+        evaluation_name=frame.evaluation if validate_objective_benchmark else None,
+    )
     evaluation = _resolve_evaluation(frame.evaluation)
     study = _resolve_study(frame.study)
     artifact = _resolve_artifact(frame.artifact)
@@ -326,7 +335,7 @@ def _resolve_train_config(frame: PresetFrame) -> TrainConfig:
         evaluation,
         study,
         artifact,
-    ) = _resolve_model_workflow_base(frame)
+    ) = _resolve_model_workflow_base(frame, validate_objective_benchmark=True)
     training, split, tuning, tuning_space = _resolve_model_workflow_spine(
         frame,
         model=model,
@@ -369,7 +378,7 @@ def _resolve_tune_config(frame: PresetFrame) -> TuneConfig:
         evaluation,
         study,
         artifact,
-    ) = _resolve_model_workflow_base(frame)
+    ) = _resolve_model_workflow_base(frame, validate_objective_benchmark=True)
     training, split, tuning, tuning_space = _resolve_model_workflow_spine(
         frame,
         model=model,
@@ -414,7 +423,7 @@ def _resolve_evaluate_config(frame: PresetFrame) -> EvaluateConfig:
         evaluation,
         study,
         artifact,
-    ) = _resolve_model_workflow_base(frame)
+    ) = _resolve_model_workflow_base(frame, validate_objective_benchmark=False)
     training, split, tuning, tuning_space = _resolve_model_workflow_spine(
         frame,
         model=model,

@@ -223,6 +223,26 @@ def test_benchmark_objective_requires_matching_evaluation(
         ),
     ):
         resolve_workflow_config(
-            WorkflowTask.EVALUATE,
+            WorkflowTask.TRAIN,
             WorkflowRequest(preset="mismatch", storage_root=tmp_path / "outputs"),
         )
+
+
+def test_evaluate_allows_diagnostic_evaluation_to_differ_from_objective_benchmark(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    conf_root = isolate_conf_root()
+    payload = _base_preset(conf_root)
+    payload["objective"] = "paper_profit_replay_2h"
+    payload["evaluation"] = "paper_fullset"
+    _write_preset(conf_root, "diagnostic", payload)
+
+    config = resolve_workflow_config(
+        WorkflowTask.EVALUATE,
+        WorkflowRequest(preset="diagnostic", storage_root=tmp_path / "outputs"),
+    )
+
+    assert config.objective.id == "evaluation"
+    assert config.objective.benchmark_id == "paper_replay_2h"
+    assert config.evaluation.id == "paper_fullset"
