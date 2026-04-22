@@ -11,6 +11,7 @@ from spice.temporal import (
     compile_realization_policy_contract,
 )
 from spice.temporal.problem_store import CompiledProblemStore
+from spice.temporal.semantics import ActionSpaceMode
 
 
 def _store() -> CompiledProblemStore:
@@ -25,7 +26,9 @@ def _store() -> CompiledProblemStore:
         timestamps=(np.arange(16, dtype=np.int64) * 1800).astype(np.int64, copy=False),
         anchor_rows=np.array([1, 4, 7, 10], dtype=np.int64),
         context_start_rows=np.array([0, 3, 6, 9], dtype=np.int64),
+        candidate_start_rows=np.array([2, 5, 8, 11], dtype=np.int64),
         candidate_end_rows=np.array([4, 7, 10, 13], dtype=np.int64),
+        action_space_mode=ActionSpaceMode.REALIZED_PER_SAMPLE,
         max_candidate_slots=2,
     )
 

@@ -19,6 +19,7 @@ from spice.temporal import (
     compile_realization_policy_contract,
 )
 from spice.temporal.problem_store import CompiledProblemStore
+from spice.temporal.semantics import ActionSpaceMode
 
 
 def _build_store() -> CompiledProblemStore:
@@ -47,7 +48,9 @@ def _build_store() -> CompiledProblemStore:
         timestamps=np.arange(12, dtype=np.int64),
         anchor_rows=np.array([0, 2, 5, 9], dtype=np.int64),
         context_start_rows=np.zeros(4, dtype=np.int64),
+        candidate_start_rows=np.array([1, 3, 6, 10], dtype=np.int64),
         candidate_end_rows=np.array([2, 5, 9, 12], dtype=np.int64),
+        action_space_mode=ActionSpaceMode.REALIZED_PER_SAMPLE,
         max_candidate_slots=3,
     )
 
@@ -156,7 +159,9 @@ def test_min_block_fee_multitask_uses_realization_policy_targets() -> None:
         timestamps=np.arange(8, dtype=np.int64),
         anchor_rows=np.array([0, 1, 2], dtype=np.int64),
         context_start_rows=np.zeros(3, dtype=np.int64),
+        candidate_start_rows=np.array([1, 2, 3], dtype=np.int64),
         candidate_end_rows=np.array([2, 5, 6], dtype=np.int64),
+        action_space_mode=ActionSpaceMode.REALIZED_PER_SAMPLE,
         max_candidate_slots=4,
     )
     contract = _contract()
@@ -196,7 +201,9 @@ def test_min_block_fee_multitask_masks_short_realized_candidate_windows() -> Non
         timestamps=np.arange(8, dtype=np.int64),
         anchor_rows=np.array([0, 2, 4], dtype=np.int64),
         context_start_rows=np.zeros(3, dtype=np.int64),
+        candidate_start_rows=np.array([1, 3, 5], dtype=np.int64),
         candidate_end_rows=np.array([3, 5, 6], dtype=np.int64),
+        action_space_mode=ActionSpaceMode.REALIZED_PER_SAMPLE,
         max_candidate_slots=3,
     )
     contract = _contract()

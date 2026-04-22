@@ -20,6 +20,7 @@ from spice.prediction.families.candidate_offset_selection.outputs import (
     build_output_spec,
 )
 from spice.temporal.problem_store import CompiledProblemStore
+from spice.temporal.semantics import ActionSpaceMode
 
 
 def _test_store() -> CompiledProblemStore:
@@ -46,7 +47,9 @@ def _test_store() -> CompiledProblemStore:
         timestamps=np.array([0, 5, 11, 19, 28, 40, 55, 71, 88, 106], dtype=np.int64),
         anchor_rows=np.array([2, 4, 5, 7], dtype=np.int64),
         context_start_rows=np.array([0, 1, 0, 4], dtype=np.int64),
+        candidate_start_rows=np.array([3, 5, 6, 8], dtype=np.int64),
         candidate_end_rows=np.array([5, 8, 7, 10], dtype=np.int64),
+        action_space_mode=ActionSpaceMode.REALIZED_PER_SAMPLE,
         max_candidate_slots=3,
     )
 

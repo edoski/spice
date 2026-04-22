@@ -13,6 +13,7 @@ from ...features import (
 from ..contracts import CompiledProblemContract, ProblemRuntimeMetadata, TimestampRuntimeMetadata
 from ..problem_store import CompiledProblemStore
 from ..realization import CompiledRealizationPolicyContract
+from ..semantics import ActionSpaceMode, CandidateStartMode
 from ._shared import build_timestamp_window_store
 from .base import ProblemCompilerConfig
 
@@ -53,6 +54,8 @@ class TimestampNativeCompiledProblemContract(CompiledProblemContract):
                 feature_prerequisites=self.feature_prerequisites,
                 lookback_seconds=self.lookback_seconds,
                 delay_seconds=self.max_delay_seconds,
+                candidate_start_mode=self.candidate_start_mode,
+                action_space_mode=self.action_space_mode,
                 requires_post_window_row=self.realization_policy.requires_post_window_row,
             ),
             TimestampRuntimeMetadata(),
@@ -80,6 +83,8 @@ class TimestampNativeCompiledProblemContract(CompiledProblemContract):
             feature_prerequisites=self.feature_prerequisites,
             lookback_seconds=self.lookback_seconds,
             delay_seconds=delay_seconds,
+            candidate_start_mode=self.candidate_start_mode,
+            action_space_mode=self.action_space_mode,
             max_candidate_slots=max_candidate_slots,
             requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
@@ -102,4 +107,6 @@ def compile_problem(
         max_delay_seconds=problem.max_delay_seconds,
         feature_prerequisites=feature_contract.feature_prerequisites,
         realization_policy=realization_policy,
+        candidate_start_mode=CandidateStartMode.CURRENT_ROW,
+        action_space_mode=ActionSpaceMode.REALIZED_PER_SAMPLE,
     )

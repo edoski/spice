@@ -22,6 +22,7 @@ from ..contracts import (
 )
 from ..problem_store import CompiledProblemStore
 from ..realization import CompiledRealizationPolicyContract
+from ..semantics import ActionSpaceMode, CandidateStartMode
 from ._shared import (
     calibrate_positive_timestamp_delta_seconds,
     resolve_bootstrap_interval_seconds,
@@ -213,6 +214,8 @@ def compile_problem(
         max_delay_seconds=problem.max_delay_seconds,
         feature_prerequisites=feature_contract.feature_prerequisites,
         realization_policy=realization_policy,
+        candidate_start_mode=CandidateStartMode.NEXT_BLOCK,
+        action_space_mode=ActionSpaceMode.FIXED_EX_ANTE,
         lookback_interval_source=compiler_config.lookback_interval_source,
         candidate_interval_source=compiler_config.candidate_interval_source,
         calibrated_interval_statistic=compiler_config.calibrated_interval_statistic,
@@ -240,13 +243,14 @@ def _build_estimated_block_problem_store(
 
     anchor_candidates = np.arange(timestamps.shape[0], dtype=np.int64)
     context_start_rows = anchor_candidates - lookback_steps + 1
+    candidate_start_rows = anchor_candidates + 1
     required_prior_rows = context_start_rows >= 0
     history_ready = required_prior_rows & (
         (timestamps[np.maximum(context_start_rows, 0)] - timestamps[0])
         >= feature_prerequisites.history_seconds
     )
     warmup_ready = required_prior_rows & (context_start_rows >= feature_prerequisites.warmup_rows)
-    candidate_end_rows = anchor_candidates + 1 + candidate_count
+    candidate_end_rows = candidate_start_rows + candidate_count
     future_ready = candidate_end_rows <= timestamps.shape[0]
     post_window_ready = (
         candidate_end_rows < timestamps.shape[0]
@@ -261,6 +265,7 @@ def _build_estimated_block_problem_store(
         raise ValueError("Feature table is too short to produce any supervised samples")
 
     selected_context_starts = context_start_rows[anchor_rows].astype(np.int64, copy=False)
+    selected_candidate_starts = candidate_start_rows[anchor_rows].astype(np.int64, copy=False)
     selected_candidate_ends = candidate_end_rows[anchor_rows].astype(np.int64, copy=False)
     resolved_max_candidate_slots = (
         candidate_count if max_candidate_slots is None else int(max_candidate_slots)
@@ -276,7 +281,9 @@ def _build_estimated_block_problem_store(
         timestamps=timestamps,
         anchor_rows=anchor_rows,
         context_start_rows=selected_context_starts,
+        candidate_start_rows=selected_candidate_starts,
         candidate_end_rows=selected_candidate_ends,
+        action_space_mode=ActionSpaceMode.FIXED_EX_ANTE,
         max_candidate_slots=resolved_max_candidate_slots,
     )
 
@@ -295,4 +302,4 @@ def _candidate_count_for_delay(
 ) -> int:
     if effective_block_interval_seconds <= 0:
         raise ValueError("effective_block_interval_seconds must be positive")
-    return max(1, math.floor(max_delay_seconds / effective_block_interval_seconds)) + 1
+    return max(1, math.floor(max_delay_seconds / effective_block_interval_seconds))

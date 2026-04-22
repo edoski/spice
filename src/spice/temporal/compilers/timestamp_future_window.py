@@ -20,6 +20,7 @@ from ..contracts import (
 )
 from ..problem_store import CompiledProblemStore
 from ..realization import CompiledRealizationPolicyContract
+from ..semantics import ActionSpaceMode, CandidateStartMode
 from ._shared import (
     build_timestamp_window_store,
     calibrate_positive_timestamp_delta_seconds,
@@ -103,6 +104,8 @@ class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
             feature_prerequisites=self.feature_prerequisites,
             lookback_seconds=self.lookback_seconds,
             delay_seconds=self.max_delay_seconds,
+            candidate_start_mode=self.candidate_start_mode,
+            action_space_mode=self.action_space_mode,
             fixed_candidate_count=capability_action_count,
             fixed_candidate_count_error=(
                 "timestamp_future_window requires fixed action space to upper-bound realized "
@@ -141,6 +144,8 @@ class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
             feature_prerequisites=self.feature_prerequisites,
             lookback_seconds=self.lookback_seconds,
             delay_seconds=delay_seconds,
+            candidate_start_mode=self.candidate_start_mode,
+            action_space_mode=self.action_space_mode,
             fixed_candidate_count=max_candidate_slots,
             fixed_candidate_count_error=(
                 "timestamp_future_window requires fixed action space to upper-bound realized "
@@ -179,6 +184,8 @@ def compile_problem(
         max_delay_seconds=problem.max_delay_seconds,
         feature_prerequisites=feature_contract.feature_prerequisites,
         realization_policy=realization_policy,
+        candidate_start_mode=CandidateStartMode.NEXT_BLOCK,
+        action_space_mode=ActionSpaceMode.REALIZED_PER_SAMPLE,
         action_interval_source=compiler_config.action_interval_source,
         calibrated_interval_statistic=compiler_config.calibrated_interval_statistic,
         nominal_block_time_seconds=nominal_block_time_seconds,

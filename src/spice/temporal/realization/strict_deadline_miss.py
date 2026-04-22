@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..problem_store import CompiledProblemStore
+from ..semantics import BaselineRowMode
 from .base import (
     CompiledRealizationPolicyContract,
     DecodedOffsetBatch,
@@ -36,7 +37,7 @@ def _candidate_window_summary(
     sample_indices: IntVector,
 ) -> _CandidateWindowSummary:
     resolved_indices = sample_indices.astype(np.int64, copy=False)
-    baseline_rows = (store.anchor_rows[resolved_indices] + 1).astype(np.int64, copy=False)
+    baseline_rows = store.candidate_start_rows[resolved_indices].astype(np.int64, copy=False)
     candidate_end_rows = store.candidate_end_rows[resolved_indices].astype(np.int64, copy=False)
     candidate_counts = (candidate_end_rows - baseline_rows).astype(np.int64, copy=False)
     if np.any(candidate_counts <= 0):
@@ -137,6 +138,7 @@ def compile_realization_policy(
         raise ValueError("realization_policy.id must be strict_deadline_miss")
     return CompiledRealizationPolicyContract(
         realization_policy_id="strict_deadline_miss",
+        baseline_row_mode=BaselineRowMode.FIRST_CANDIDATE,
         requires_post_window_row=False,
         prepare_supervised_targets_fn=_prepare_supervised_targets,
         realize_selections_fn=_realize_selections,

@@ -32,6 +32,8 @@ class ProblemSemantics:
     lookback_seconds: int
     sample_count: int
     max_delay_seconds: int
+    candidate_start_mode: Literal["next_block", "current_row"]
+    action_space_mode: Literal["fixed_ex_ante", "realized_per_sample"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +41,7 @@ class RealizationPolicySemantics:
     """Resolved realization-policy identity for persisted provenance."""
 
     realization_policy_id: str
+    baseline_row_mode: Literal["first_candidate"]
 
 
 @dataclass(frozen=True, slots=True)

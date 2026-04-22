@@ -6,6 +6,7 @@ import numpy as np
 
 from ...features import FeaturePrerequisites, ResolvedFeatureTable
 from ..problem_store import CompiledProblemStore
+from ..semantics import ActionSpaceMode, CandidateStartMode
 
 
 def calibrate_positive_timestamp_delta_seconds(
@@ -59,6 +60,8 @@ def build_timestamp_window_store(
     feature_prerequisites: FeaturePrerequisites,
     lookback_seconds: int,
     delay_seconds: int,
+    candidate_start_mode: CandidateStartMode,
+    action_space_mode: ActionSpaceMode,
     max_candidate_slots: int | None = None,
     fixed_candidate_count: int | None = None,
     fixed_candidate_count_error: str | None = None,
@@ -76,17 +79,22 @@ def build_timestamp_window_store(
         raise ValueError("Feature table is too short to produce any supervised samples")
 
     anchor_candidates = np.arange(timestamps.shape[0], dtype=np.int64)
+    candidate_start_offset = 0 if candidate_start_mode is CandidateStartMode.CURRENT_ROW else 1
     context_start_rows = np.searchsorted(
         timestamps,
         timestamps - lookback_seconds,
         side="left",
     ).astype(np.int64, copy=False)
+    candidate_start_rows = (anchor_candidates + candidate_start_offset).astype(
+        np.int64,
+        copy=False,
+    )
     candidate_end_rows = np.searchsorted(
         timestamps,
         timestamps + delay_seconds,
         side="right",
     ).astype(np.int64, copy=False)
-    candidate_counts = candidate_end_rows - (anchor_candidates + 1)
+    candidate_counts = candidate_end_rows - candidate_start_rows
     context_history_ready = (
         timestamps[context_start_rows] - timestamps[0]
     ) >= feature_prerequisites.history_seconds
@@ -103,8 +111,9 @@ def build_timestamp_window_store(
         raise ValueError("Feature table is too short to produce any supervised samples")
 
     selected_context_starts = context_start_rows[anchor_rows].astype(np.int64, copy=False)
+    selected_candidate_starts = candidate_start_rows[anchor_rows].astype(np.int64, copy=False)
     selected_candidate_ends = candidate_end_rows[anchor_rows].astype(np.int64, copy=False)
-    selected_candidate_counts = selected_candidate_ends - (anchor_rows + 1)
+    selected_candidate_counts = selected_candidate_ends - selected_candidate_starts
     if fixed_candidate_count is not None:
         if np.any(selected_candidate_counts > fixed_candidate_count):
             raise ValueError(
@@ -131,7 +140,9 @@ def build_timestamp_window_store(
         timestamps=timestamps,
         anchor_rows=anchor_rows,
         context_start_rows=selected_context_starts,
+        candidate_start_rows=selected_candidate_starts,
         candidate_end_rows=selected_candidate_ends,
+        action_space_mode=action_space_mode,
         max_candidate_slots=resolved_max_candidate_slots,
     )
 

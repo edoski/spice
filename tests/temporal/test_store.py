@@ -54,16 +54,19 @@ def test_temporal_store_uses_real_timestamps_for_context_and_candidates() -> Non
     )
     store, _ = contract.build_capability_store(feature_table)
 
-    np.testing.assert_array_equal(store.anchor_rows, np.array([0, 1, 2, 3, 4, 5], dtype=np.int64))
+    np.testing.assert_array_equal(
+        store.anchor_rows,
+        np.array([0, 1, 2, 3, 4, 5, 6], dtype=np.int64),
+    )
     np.testing.assert_array_equal(
         store.context_start_rows,
-        np.array([0, 0, 1, 2, 3, 4], dtype=np.int64),
+        np.array([0, 0, 1, 2, 3, 4, 6], dtype=np.int64),
     )
     np.testing.assert_array_equal(
         store.candidate_end_rows - store.candidate_start_rows,
-        np.array([2, 1, 1, 2, 1, 1], dtype=np.int64),
+        np.array([3, 2, 2, 3, 2, 2, 1], dtype=np.int64),
     )
-    assert store.max_candidate_slots == 2
+    assert store.max_candidate_slots == 3
 
 
 def test_estimated_block_store_uses_corpus_calibration_for_row_geometry() -> None:
@@ -111,11 +114,20 @@ def test_estimated_block_store_uses_corpus_calibration_for_row_geometry() -> Non
     assert runtime_metadata.calibrated_interval_seconds == 8.0
     assert runtime_metadata.lookback_interval_seconds == 8.0
     assert runtime_metadata.candidate_interval_seconds == 8.0
-    np.testing.assert_array_equal(store.anchor_rows, np.array([1, 2, 3, 4], dtype=np.int64))
-    np.testing.assert_array_equal(store.context_start_rows, np.array([0, 1, 2, 3], dtype=np.int64))
-    np.testing.assert_array_equal(store.candidate_end_rows, np.array([5, 6, 7, 8], dtype=np.int64))
-    np.testing.assert_array_equal(store.candidate_counts, np.array([3, 3, 3, 3], dtype=np.int64))
-    assert store.max_candidate_slots == 3
+    np.testing.assert_array_equal(store.anchor_rows, np.array([1, 2, 3, 4, 5], dtype=np.int64))
+    np.testing.assert_array_equal(
+        store.context_start_rows,
+        np.array([0, 1, 2, 3, 4], dtype=np.int64),
+    )
+    np.testing.assert_array_equal(
+        store.candidate_end_rows,
+        np.array([4, 5, 6, 7, 8], dtype=np.int64),
+    )
+    np.testing.assert_array_equal(
+        store.candidate_counts,
+        np.array([2, 2, 2, 2, 2], dtype=np.int64),
+    )
+    assert store.max_candidate_slots == 2
 
 
 def test_estimated_block_supports_nominal_lookback_and_mean_calibrated_candidates() -> None:
@@ -171,7 +183,7 @@ def test_estimated_block_supports_nominal_lookback_and_mean_calibrated_candidate
         np.array([7, 8, 11, 8, 11, 8, 12, 9], dtype=np.float64)
     )
     np.testing.assert_array_equal(store.context_start_rows, store.anchor_rows - 1)
-    assert store.max_candidate_slots == 4
+    assert store.max_candidate_slots == 3
 
 
 def test_timestamp_future_window_uses_future_only_realized_windows() -> None:

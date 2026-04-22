@@ -14,6 +14,7 @@ from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import RealizationPolicySemantics
 from ..problem_store import CompiledProblemStore
+from ..semantics import BaselineRowMode
 
 IntVector = NDArray[np.int64]
 BoolMatrix = NDArray[np.bool_]
@@ -68,6 +69,7 @@ RealizeSelectionsFn = Callable[
 @dataclass(frozen=True, slots=True)
 class CompiledRealizationPolicyContract:
     realization_policy_id: str
+    baseline_row_mode: BaselineRowMode
     requires_post_window_row: bool
     prepare_supervised_targets_fn: PrepareSupervisedTargetsFn
     realize_selections_fn: RealizeSelectionsFn
@@ -76,6 +78,7 @@ class CompiledRealizationPolicyContract:
     def semantics(self) -> RealizationPolicySemantics:
         return RealizationPolicySemantics(
             realization_policy_id=self.realization_policy_id,
+            baseline_row_mode=self.baseline_row_mode.value,
         )
 
     def prepare_supervised_targets(
