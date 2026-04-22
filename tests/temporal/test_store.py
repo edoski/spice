@@ -247,3 +247,66 @@ def test_timestamp_future_window_uses_future_only_fixed_action_windows() -> None
     assert runtime_metadata.capability_action_count == 3
     assert store.max_candidate_slots == 3
     assert store.action_space_mode.value == "fixed_ex_ante"
+
+
+def test_timestamp_future_window_supports_current_row_fixed_action_windows() -> None:
+    feature_contract = compile_feature_contract(
+        feature_set=coerce_feature_set_config(
+            {
+                "id": "test_timestamp_future_window_current",
+                "family": {"id": "time_native"},
+                "outputs": ["seconds_since_previous_block", "elapsed_seconds"],
+            }
+        )
+    )
+    blocks = pl.DataFrame(
+        {
+            "block_number": np.arange(500, 508, dtype=np.int64),
+            "timestamp": np.array([0, 11, 23, 35, 46, 58, 71, 84], dtype=np.int64),
+            "base_fee_per_gas": np.full(8, 1_000_000_000, dtype=np.int64),
+            "gas_used": np.full(8, 18_000_000, dtype=np.int64),
+            "gas_limit": np.full(8, 30_000_000, dtype=np.int64),
+            "chain_id": np.ones(8, dtype=np.int64),
+        }
+    )
+    feature_table = feature_contract.build_table(blocks)
+    contract = compile_problem_contract(
+        problem=coerce_problem_spec(
+            {
+                "id": "test_timestamp_future_window_current",
+                "lookback_seconds": 24,
+                "sample_count": 4,
+                "max_delay_seconds": 36,
+                "compiler": {
+                    "id": "timestamp_future_window",
+                    "action_interval_source": "nominal_chain_runtime",
+                    "candidate_start_mode": "current_row",
+                },
+                "realization_policy": _realization_policy_config(),
+            }
+        ),
+        feature_contract=feature_contract,
+        chain_runtime=ChainRuntimeSpec(
+            chain_id=1,
+            uses_poa_extra_data=False,
+            nominal_block_time_seconds=12.0,
+        ),
+    )
+
+    store, runtime_metadata = contract.build_capability_store(feature_table)
+
+    np.testing.assert_array_equal(
+        store.anchor_rows,
+        np.array([0, 1, 2, 3, 4], dtype=np.int64),
+    )
+    np.testing.assert_array_equal(
+        store.candidate_start_rows,
+        np.array([0, 1, 2, 3, 4], dtype=np.int64),
+    )
+    np.testing.assert_array_equal(
+        store.candidate_counts,
+        np.array([4, 4, 4, 4, 3], dtype=np.int64),
+    )
+    assert runtime_metadata.capability_action_count == 4
+    assert store.max_candidate_slots == 4
+    assert store.action_space_mode.value == "fixed_ex_ante"

@@ -1,4 +1,4 @@
-"""Future-only timestamp-bounded problem compiler."""
+"""Timestamp-bounded problem compiler with explicit candidate-start semantics."""
 
 from __future__ import annotations
 
@@ -48,6 +48,7 @@ class TimestampFutureWindowCompilerConfig(ProblemCompilerConfig):
     action_interval_source: TimestampFutureWindowIntervalSource = (
         TimestampFutureWindowIntervalSource.NOMINAL_CHAIN_RUNTIME
     )
+    candidate_start_mode: CandidateStartMode = CandidateStartMode.NEXT_BLOCK
     calibrated_interval_statistic: TimestampFutureWindowCalibratedStatistic = Field(
         default=TimestampFutureWindowCalibratedStatistic.MEDIAN
     )
@@ -98,6 +99,7 @@ class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
         capability_action_count = _action_count_for_delay(
             self.max_delay_seconds,
             action_interval_seconds,
+            candidate_start_mode=self.candidate_start_mode,
         )
         store = build_timestamp_window_store(
             feature_table,
@@ -184,7 +186,7 @@ def compile_problem(
         max_delay_seconds=problem.max_delay_seconds,
         feature_prerequisites=feature_contract.feature_prerequisites,
         realization_policy=replace(realization_policy, requires_post_window_row=True),
-        candidate_start_mode=CandidateStartMode.NEXT_BLOCK,
+        candidate_start_mode=compiler_config.candidate_start_mode,
         action_space_mode=ActionSpaceMode.FIXED_EX_ANTE,
         action_interval_source=compiler_config.action_interval_source,
         calibrated_interval_statistic=compiler_config.calibrated_interval_statistic,
@@ -195,7 +197,12 @@ def compile_problem(
 def _action_count_for_delay(
     max_delay_seconds: int,
     interval_seconds: float,
+    *,
+    candidate_start_mode: CandidateStartMode,
 ) -> int:
     if interval_seconds <= 0:
         raise ValueError("interval_seconds must be positive")
-    return max(1, math.floor(max_delay_seconds / interval_seconds))
+    future_count = max(1, math.floor(max_delay_seconds / interval_seconds))
+    if candidate_start_mode is CandidateStartMode.CURRENT_ROW:
+        return future_count + 1
+    return future_count
