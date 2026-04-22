@@ -37,5 +37,5 @@ def compute_multitask_loss(
         fee_predictions,
         regression_targets,
     )
-    total_loss = 0.5 * classification_loss + 0.5 * regression_loss
+    total_loss = classification_loss + 0.5 * regression_loss
     return total_loss, classification_loss, regression_loss

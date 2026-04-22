@@ -48,6 +48,15 @@ def _log1p_column(
     return np.log1p(blocks[column].cast(pl.Float64).to_numpy().astype(np.float64, copy=False))
 
 
+def _gas_ratio_percent(
+    blocks: pl.DataFrame,
+    series: CanonicalBlockSeries,
+    resolved_dependencies: Mapping[str, FloatVector],
+) -> FloatVector:
+    del series, resolved_dependencies
+    return helpers.gas_utilization(blocks) * 100.0
+
+
 def _dt_seconds(
     blocks: pl.DataFrame,
     series: CanonicalBlockSeries,
@@ -168,7 +177,7 @@ def _feature_definitions() -> dict[str, FeatureDefinition]:
             0,
             0,
             ("gas_used", "gas_limit"),
-            helpers.gas_utilization_feature,
+            _gas_ratio_percent,
         ),
         "hour_sin": FeatureDefinition((), 0, 0, ("timestamp",), helpers.hour_sin_feature),
         "hour_cos": FeatureDefinition((), 0, 0, ("timestamp",), helpers.hour_cos_feature),
@@ -237,12 +246,12 @@ def _feature_definitions() -> dict[str, FeatureDefinition]:
             ),
         ),
         "base_fee_trend": FeatureDefinition(
-            ("trend_slope_log_base_fee_per_gas_200",),
+            ("dlog_base_fee",),
             0,
-            199,
+            1,
             (),
             lambda blocks, series, resolved_dependencies: _binary_trend(
-                resolved_dependencies["trend_slope_log_base_fee_per_gas_200"]
+                resolved_dependencies["dlog_base_fee"]
             ),
         ),
     }

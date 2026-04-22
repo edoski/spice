@@ -94,7 +94,7 @@ def _assert_time_native(feature_contract, feature_table) -> None:
 def _assert_professor_block_native(feature_contract, feature_table) -> None:
     assert feature_contract.feature_prerequisites == FeaturePrerequisites(
         history_seconds=0,
-        warmup_rows=199,
+        warmup_rows=9,
     )
     np.testing.assert_allclose(
         feature_table.feature_matrix[:3, 0],
@@ -109,8 +109,8 @@ def _assert_professor_block_native(feature_contract, feature_table) -> None:
         np.log1p(np.arange(1_000, 1_010, dtype=np.float64)).min(),
     )
     assert np.isnan(feature_table.feature_matrix[0, 3])
-    assert feature_table.feature_matrix[1, 3] == pytest.approx(0.6)
-    assert np.isnan(feature_table.feature_matrix[198, 4])
+    assert feature_table.feature_matrix[1, 3] == pytest.approx(60.0)
+    assert feature_table.feature_matrix[1, 4] == pytest.approx(1.0)
     assert feature_table.feature_matrix[199, 4] == pytest.approx(1.0)
     np.testing.assert_array_equal(
         feature_table.feature_matrix[:4, 5],

@@ -71,7 +71,7 @@ def _compute_seq_len(
     return seq_len, median_dt
 
 
-def _build_split_store(
+def _build_selected_store(
     blocks: pl.DataFrame,
     *,
     spec: TrainingSpec,
@@ -120,90 +120,41 @@ def _train_scaler(
     store: CompiledProblemStore,
     *,
     spec: TrainingSpec,
+    train_sample_indices: np.ndarray,
 ):
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
     return spec.input_normalization_contract.fit_scaler(
         store.feature_matrix,
         context_start_rows=store.context_start_rows,
         anchor_rows=store.anchor_rows,
-        sample_indices=sample_indices,
+        sample_indices=train_sample_indices.astype(np.int64, copy=False),
     )
 
 
-def _concatenate_split_stores(
-    train_store: CompiledProblemStore,
-    validation_store: CompiledProblemStore,
-    test_store: CompiledProblemStore,
+def _split_store_indices(
+    store: CompiledProblemStore,
     *,
-    spec: TrainingSpec,
+    train_end_row: int,
+    validation_end_row: int,
+) -> DatasetSplitIndices:
+    anchor_rows = store.anchor_rows.astype(np.int64, copy=False)
+    train = np.flatnonzero(anchor_rows < train_end_row).astype(np.int64, copy=False)
+    validation = np.flatnonzero(
+        (anchor_rows >= train_end_row) & (anchor_rows < validation_end_row)
+    ).astype(np.int64, copy=False)
+    test = np.flatnonzero(anchor_rows >= validation_end_row).astype(np.int64, copy=False)
+    if train.size == 0 or validation.size == 0 or test.size == 0:
+        raise ValueError("professor builder produced an empty train/validation/test split")
+    return DatasetSplitIndices(train=train, validation=validation, test=test)
+
+
+def _scale_store(
+    store: CompiledProblemStore,
+    *,
     scaler,
-    feature_semantics,
-    builder_metadata,
-    n_rows_available: int,
-) -> PreparedTrainingDataset:
-    split_stores = (train_store, validation_store, test_store)
-    max_candidate_slots = int(train_store.max_candidate_slots)
-    if any(store.max_candidate_slots != max_candidate_slots for store in split_stores):
-        raise ValueError("professor builder requires split stores to share one action-space width")
-    row_offsets: list[int] = []
-    cursor = 0
-    for store in split_stores:
-        row_offsets.append(cursor)
-        cursor += store.n_rows
-    feature_matrix = np.concatenate([store.feature_matrix for store in split_stores], axis=0)
-    log_base_fees = np.concatenate([store.log_base_fees for store in split_stores], axis=0)
-    timestamps = np.concatenate([store.timestamps for store in split_stores], axis=0)
-    anchor_rows = np.concatenate(
-        [
-            (store.anchor_rows + row_offset).astype(np.int64, copy=False)
-            for store, row_offset in zip(split_stores, row_offsets, strict=True)
-        ],
-        axis=0,
-    )
-    context_start_rows = np.concatenate(
-        [
-            (store.context_start_rows + row_offset).astype(np.int64, copy=False)
-            for store, row_offset in zip(split_stores, row_offsets, strict=True)
-        ],
-        axis=0,
-    )
-    candidate_end_rows = np.concatenate(
-        [
-            (store.candidate_end_rows + row_offset).astype(np.int64, copy=False)
-            for store, row_offset in zip(split_stores, row_offsets, strict=True)
-        ],
-        axis=0,
-    )
-    train_count = train_store.n_samples
-    validation_count = validation_store.n_samples
-    test_count = test_store.n_samples
-    scaled_store = CompiledProblemStore(
-        feature_matrix=transform_feature_matrix(feature_matrix, scaler),
-        log_base_fees=log_base_fees.astype(np.float32, copy=False),
-        timestamps=timestamps.astype(np.int64, copy=False),
-        anchor_rows=anchor_rows.astype(np.int64, copy=False),
-        context_start_rows=context_start_rows.astype(np.int64, copy=False),
-        candidate_end_rows=candidate_end_rows.astype(np.int64, copy=False),
-        max_candidate_slots=max_candidate_slots,
-    )
-    return PreparedTrainingDataset(
-        n_rows_available=n_rows_available,
-        n_rows_used=int(feature_matrix.shape[0]),
-        sample_count=train_count + validation_count + test_count,
-        feature=feature_semantics,
-        realization_policy=spec.contract.realization_policy,
-        store=scaled_store,
-        split_indices=DatasetSplitIndices(
-            train=np.arange(train_count, dtype=np.int64),
-            validation=np.arange(train_count, train_count + validation_count, dtype=np.int64),
-            test=np.arange(
-                train_count + validation_count,
-                train_count + validation_count + test_count,
-                dtype=np.int64,
-            ),
-        ),
-        scaler=scaler,
-        builder_runtime_metadata=builder_metadata,
+) -> CompiledProblemStore:
+    return replace(
+        store,
+        feature_matrix=transform_feature_matrix(store.feature_matrix, scaler),
     )
 
 
@@ -222,56 +173,54 @@ def prepare_training_dataset(blocks: pl.DataFrame, spec: TrainingSpec) -> Prepar
         train_fraction=spec.split.train_fraction,
         validation_fraction=spec.split.validation_fraction,
     )
-    train_blocks = selected_blocks.slice(0, train_end)
-    validation_blocks = selected_blocks.slice(train_end, validation_end - train_end)
-    test_blocks = selected_blocks.slice(validation_end)
     seq_len, median_dt_seconds = _compute_seq_len(
-        train_blocks["timestamp"].cast(pl.Int64).to_numpy().astype(np.int64, copy=False),
+        selected_blocks.slice(0, train_end)["timestamp"]
+        .cast(pl.Int64)
+        .to_numpy()
+        .astype(np.int64, copy=False),
         lookback_seconds=spec.problem.lookback_seconds,
         min_sequence_length=spec.dataset_builder.min_sequence_length,
         max_sequence_length=spec.dataset_builder.max_sequence_length,
     )
     history_seconds = spec.contract.feature_prerequisites.history_seconds
     warmup_rows = spec.contract.feature_prerequisites.warmup_rows
-    train_store_raw, train_compiler_runtime_metadata = _build_split_store(train_blocks, spec=spec)
-    validation_store_raw, _ = _build_split_store(validation_blocks, spec=spec)
-    test_store_raw, _ = _build_split_store(test_blocks, spec=spec)
-    train_store = _apply_sequence_length(
-        train_store_raw,
+    store_raw, compiler_runtime_metadata = _build_selected_store(selected_blocks, spec=spec)
+    store = _apply_sequence_length(
+        store_raw,
         seq_len=seq_len,
         history_seconds=history_seconds,
         warmup_rows=warmup_rows,
     )
-    validation_store = _apply_sequence_length(
-        validation_store_raw,
-        seq_len=seq_len,
-        history_seconds=history_seconds,
-        warmup_rows=warmup_rows,
+    split_indices = _split_store_indices(
+        store,
+        train_end_row=train_end,
+        validation_end_row=validation_end,
     )
-    test_store = _apply_sequence_length(
-        test_store_raw,
-        seq_len=seq_len,
-        history_seconds=history_seconds,
-        warmup_rows=warmup_rows,
-    )
-    scaler = _train_scaler(train_store, spec=spec)
-    return _concatenate_split_stores(
-        train_store,
-        validation_store,
-        test_store,
-        scaler=scaler,
-        feature_semantics=spec.feature_contract.semantics,
+    scaler = _train_scaler(
+        store,
         spec=spec,
-        builder_metadata=builder_runtime_metadata(
-            compiler_runtime_metadata=train_compiler_runtime_metadata,
+        train_sample_indices=split_indices.train,
+    )
+    scaled_store = _scale_store(store, scaler=scaler)
+    return PreparedTrainingDataset(
+        n_rows_available=sorted_blocks.height,
+        n_rows_used=scaled_store.n_rows,
+        sample_count=scaled_store.n_samples,
+        feature=spec.feature_contract.semantics,
+        realization_policy=spec.contract.realization_policy,
+        store=scaled_store,
+        split_indices=split_indices,
+        scaler=scaler,
+        builder_runtime_metadata=builder_runtime_metadata(
+            compiler_runtime_metadata=compiler_runtime_metadata,
             extra={
                 "seq_len": int(seq_len),
                 "median_dt_seconds": float(median_dt_seconds),
                 "min_sequence_length": spec.dataset_builder.min_sequence_length,
                 "max_sequence_length": spec.dataset_builder.max_sequence_length,
+                "split_strategy": "global_feature_table",
             },
         ),
-        n_rows_available=sorted_blocks.height,
     )
 
 
