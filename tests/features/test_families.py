@@ -296,3 +296,19 @@ def test_feature_family_requires_declared_block_columns() -> None:
 
     with pytest.raises(ValueError, match="missing block columns: gas_limit"):
         feature_contract.build_table(frame)
+
+
+def test_block_open_gas_ratio_rolls_account_for_lagged_warmup() -> None:
+    feature_contract = _build_contract(
+        "test_block_open_rolls",
+        "block_open_native",
+        ["gas_ratio", "roll10_std_gr"],
+    )
+    feature_table = feature_contract.build_table(_block_open_frame())
+
+    assert feature_contract.feature_prerequisites == FeaturePrerequisites(
+        history_seconds=0,
+        warmup_rows=10,
+    )
+    assert np.isnan(feature_table.feature_matrix[9, 1])
+    assert np.isfinite(feature_table.feature_matrix[10, 1])

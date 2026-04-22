@@ -256,18 +256,18 @@ def _feature_definitions() -> dict[str, FeatureDefinition]:
         ),
     }
     rolling_specs = (
-        ("roll{}_mean_logfee", "log_base_fee_per_gas", "mean", 0),
-        ("roll{}_std_logfee", "log_base_fee_per_gas", "std", 1),
-        ("roll{}_min_logfee", "log_base_fee_per_gas", "min", 0),
-        ("roll{}_mean_gr", "gas_ratio", "mean", 0),
-        ("roll{}_std_gr", "gas_ratio", "std", 1),
+        ("roll{}_mean_logfee", "log_base_fee_per_gas", "mean", 0, 0),
+        ("roll{}_std_logfee", "log_base_fee_per_gas", "std", 1, 0),
+        ("roll{}_min_logfee", "log_base_fee_per_gas", "min", 0, 0),
+        ("roll{}_mean_gr", "gas_ratio", "mean", 0, 1),
+        ("roll{}_std_gr", "gas_ratio", "std", 1, 1),
     )
     for window in (10, 50, 200):
-        for prefix, dependency_name, stat, ddof in rolling_specs:
+        for prefix, dependency_name, stat, ddof, extra_warmup in rolling_specs:
             features[prefix.format(window)] = FeatureDefinition(
                 (dependency_name,),
                 0,
-                window - 1,
+                window - 1 + extra_warmup,
                 (),
                 lambda blocks,
                 series,
