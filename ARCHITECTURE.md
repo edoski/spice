@@ -266,10 +266,6 @@ selects a named execution spec, and submission sends a resolved config snapshot
 instead of re-resolving request JSON remotely. Storage sync lives in
 [src/spice/storage/sync.py](src/spice/storage/sync.py).
 
-Reference reconstruction lives under [src/spice/reconstruction](src/spice/reconstruction)
-and is quarantined as explicit analysis tooling. It requires a user-provided
-reference root and is not on the acquire/train/evaluate/tune runtime path.
-
 ## Package Roles
 
 - `config`: registry-backed YAML access, preset overlays, workflow request resolution, typed runtime config models

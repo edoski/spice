@@ -22,7 +22,6 @@ def test_root_help_lists_public_command_surface() -> None:
     assert result.exit_code == 0, result.stdout
     for token in (
         "config",
-        "reconstruct",
         "show",
         "delete",
         "acquire",

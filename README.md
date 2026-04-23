@@ -175,9 +175,6 @@ spice evaluate --preset icdcs_2026 --chain ethereum --variant baseline
 
 Repeat the same preset family for `polygon` and `avalanche`, and use the LSTM,
 Transformer, and Transformer-LSTM presets needed for the baseline matrix.
-Reference reconstruction tools remain quarantined under `spice reconstruct` and
-require an explicit `--reference-root`; they are analysis tools, not runtime
-workflow dependencies.
 
 ## Verification
 
