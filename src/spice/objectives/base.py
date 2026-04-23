@@ -156,6 +156,7 @@ def compile_objective_contract(
         del validation_metrics
         from ..modeling.inference import predict_with_model
 
+        evaluator_contract.validate_prediction_contract(context.prediction_contract)
         decoded_offsets = predict_with_model(
             context.model,
             model_config=context.model_config,

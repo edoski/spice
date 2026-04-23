@@ -9,9 +9,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config.models import WorkflowTask
+from ..config.models import StorageSpec, WorkflowTask
 from ..config.registry import load_named_group
-from ..config.resolution import WorkflowRequest
+from ..config.resolution import WorkflowConfig
 from ..core.errors import SpiceOperatorError
 from .models import ExecutionSpec, ExecutionWorkflowSpec
 
@@ -65,10 +65,10 @@ def build_execution_shell_argv(target: ExecutionTarget, command: str) -> list[st
     ]
 
 
-def load_execution_target() -> ExecutionTarget:
-    payload = load_named_group(_EXECUTION_SPEC_NAME, "execution")
+def load_execution_target(name: str = _EXECUTION_SPEC_NAME) -> ExecutionTarget:
+    payload = load_named_group(name, "execution")
     return ExecutionTarget(
-        name=_EXECUTION_SPEC_NAME,
+        name=name,
         spec=ExecutionSpec.model_validate(payload),
     )
 
@@ -162,17 +162,18 @@ def ensure_execution_success(
 def submit_execution_workflow(
     task: WorkflowTask,
     *,
-    request: WorkflowRequest,
+    config: WorkflowConfig,
+    target_name: str = _EXECUTION_SPEC_NAME,
     dependency: str | None = None,
 ) -> ExecutionJobSubmission:
-    target = load_execution_target()
+    target = load_execution_target(target_name)
     workflow_spec = _workflow_spec(target, task)
     log_path_template = target.spec.paths.log_root / f"spice-{task.value}-%j.out"
     script = _render_sbatch_script(
         target=target,
         task=task,
         workflow_spec=workflow_spec,
-        request=request,
+        config=config,
         log_path_template=log_path_template,
     )
     submit_command = " && ".join(
@@ -282,22 +283,24 @@ def _render_sbatch_script(
     target: ExecutionTarget,
     task: WorkflowTask,
     workflow_spec: ExecutionWorkflowSpec,
-    request: WorkflowRequest,
+    config: WorkflowConfig,
     log_path_template: Path,
 ) -> str:
     repo_root = shlex.quote(str(target.spec.paths.repo_root))
     venv_activate_path = shlex.quote(str(target.spec.paths.venv_activate_path))
     storage_root = str(target.spec.paths.storage_root)
     python_path = str(target.spec.paths.python_path)
-    remote_request = request.model_copy(update={"storage_root": target.spec.paths.storage_root})
-    request_json = remote_request.model_dump_json(exclude_none=True)
+    remote_config = config.model_copy(
+        update={"storage": StorageSpec(root=target.spec.paths.storage_root)}
+    )
+    config_json = remote_config.model_dump_json(exclude_none=True)
     remote_command = shlex.join(
         [
             python_path,
             "-m",
             "spice.execution.remote_runner",
             task.value,
-            request_json,
+            config_json,
         ]
     )
     lines = [

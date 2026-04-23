@@ -395,6 +395,18 @@ class TuningConfig(ConfigModel):
     sampler_seed: int = Field(ge=0)
     enable_pruning: bool
 
+    @property
+    def search(self) -> TuningSearchConfig:
+        return TuningSearchConfig(
+            sampler_seed=self.sampler_seed,
+            enable_pruning=self.enable_pruning,
+        )
+
+
+class TuningSearchConfig(ConfigModel):
+    sampler_seed: int = Field(ge=0)
+    enable_pruning: bool
+
 
 class ProviderEndpointConfig(ConfigModel):
     url: str

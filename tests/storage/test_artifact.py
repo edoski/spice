@@ -16,7 +16,7 @@ from spice.core.errors import SpiceOperatorError
 from spice.evaluation import EvaluationRun
 from spice.features import compile_feature_contract
 from spice.modeling.artifacts import validate_artifact_semantics
-from spice.modeling.dataset_builders import builder_runtime_metadata
+from spice.modeling.dataset_builders import standard_temporal_runtime_metadata
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.representations import sequence_input_contract
 from spice.modeling.results import (
@@ -51,7 +51,8 @@ from spice.storage.artifact import (
     write_training_state,
 )
 from spice.storage.engine import RootKind
-from spice.temporal.contracts import EstimatedBlockRuntimeMetadata, compile_problem_contract
+from spice.temporal.compilers.estimated_block import EstimatedBlockRuntimeMetadata
+from spice.temporal.contracts import compile_problem_contract
 from spice.temporal.scaling import ScalerStats
 
 
@@ -193,7 +194,7 @@ def _manifest(
         split=_split_config(),
         training=_training_config(),
         scaler=ScalerStats(means=[0.0, 1.0], scales=[1.0, 1.0]),
-        builder_runtime_metadata=builder_runtime_metadata(
+        builder_runtime_metadata=standard_temporal_runtime_metadata(
             compiler_runtime_metadata=EstimatedBlockRuntimeMetadata(
                 calibrated_interval_seconds=12.0,
                 lookback_interval_seconds=12.0,
@@ -201,9 +202,6 @@ def _manifest(
                 lookback_steps=10,
                 capability_candidate_count=4,
             ),
-            extra={
-                "seq_len": 64,
-            },
         ),
         semantics=ArtifactSemantics(
             problem=problem_contract.semantics,

@@ -11,14 +11,16 @@ from tempfile import TemporaryDirectory
 import optuna
 from optuna.trial import FrozenTrial, TrialState
 
-from ..config.models import TuneConfig
+from ..config.models import TuneConfig, TunedParameterSet, TunedProblemParams
 from ..core.errors import ConfigResolutionError
 from ..core.rendering import metric_string
 from ..core.reporting import Reporter
+from ..corpus.coverage import training_coverage_requirement, validate_corpus_coverage
 from ..modeling.persisted_training import run_persisted_training
 from ..modeling.pipeline import build_training_spec
 from ..modeling.tuned_config import sample_tuned_parameters
 from ..modeling.tuning import apply_tuned_parameters
+from ..storage.corpus import load_dataset_manifest
 from ..storage.layout import resolve_workflow_paths
 from ..storage.roots import reindex_root
 from ..storage.study_models import best_epoch_from_trial, build_study_summary
@@ -131,6 +133,24 @@ def _objective(
     return metric_value
 
 
+def _coverage_spec(config: TuneConfig):
+    if (
+        config.tuning_space.problem is None
+        or config.tuning_space.problem.lookback_seconds is None
+    ):
+        return build_training_spec(config)
+    return build_training_spec(
+        apply_tuned_parameters(
+            config,
+            TunedParameterSet(
+                problem=TunedProblemParams(
+                    lookback_seconds=max(config.tuning_space.problem.lookback_seconds)
+                )
+            ),
+        )
+    )
+
+
 def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
     active_reporter = reporter or Reporter()
     active_reporter.header("tune", _workflow_facts(config))
@@ -140,6 +160,13 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
     study_id = paths.study_id
     if study_root is None or study_state_db is None or study_id is None:
         raise ConfigResolutionError("tuning workflow requires study output paths")
+    spec = _coverage_spec(config)
+    validate_corpus_coverage(
+        load_dataset_manifest(paths.corpus_state_db),
+        contract=spec.contract,
+        feature_contract=spec.feature_contract,
+        requirement=training_coverage_requirement(spec.contract),
+    )
 
     study_access = open_tuning_study(study_state_db, config=config)
     study = study_access.study

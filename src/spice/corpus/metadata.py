@@ -13,7 +13,6 @@ from ..config.models import AcquireConfig
 from ..corpus.io import iter_block_files
 from ..corpus.validation import BlockDatasetValidationReport
 from ..features import CompiledFeatureContract
-from ..semantics import CorpusSemantics
 from ..storage.layout import resolve_workflow_paths
 from ..temporal.contracts import CompiledProblemContract
 
@@ -89,7 +88,6 @@ class DatasetManifest:
     request: DatasetRequestMetadata
     coverage: DatasetCoverageMetadata
     validation: DatasetValidationMetadata
-    semantics: CorpusSemantics
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,6 +225,7 @@ def build_dataset_manifest(
     history_validation: BlockDatasetValidationReport,
     evaluation_validation: BlockDatasetValidationReport,
 ) -> DatasetManifest:
+    del contract, feature_contract
     paths = resolve_workflow_paths(config)
     return DatasetManifest(
         dataset=DatasetIdentity(
@@ -254,10 +253,6 @@ def build_dataset_manifest(
         validation=DatasetValidationMetadata(
             history=compact_validation_report(history_validation),
             evaluation=compact_validation_report(evaluation_validation),
-        ),
-        semantics=CorpusSemantics(
-            problem=contract.semantics,
-            feature=feature_contract.semantics,
         ),
     )
 

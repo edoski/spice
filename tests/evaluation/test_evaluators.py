@@ -14,6 +14,13 @@ from spice.temporal.problem_store import CompiledProblemStore
 from spice.temporal.semantics import ActionSpaceMode
 
 
+class _OtherDecodedResult:
+    decoded_result_id = "other"
+
+    def __len__(self) -> int:
+        return 4
+
+
 def _store() -> CompiledProblemStore:
     return CompiledProblemStore(
         feature_matrix=np.zeros((16, 1), dtype=np.float32),
@@ -90,6 +97,21 @@ def test_paper_windowed_falls_back_to_fullset_for_short_spans() -> None:
     assert len(summary.runs) == 1
     assert summary.runs[0].metadata["mode"] == "fullset_fallback"
     assert summary.metrics.values == pytest.approx(reference.metrics.values)
+
+
+def test_evaluator_rejects_incompatible_decoded_result_semantics() -> None:
+    store = _store()
+    evaluator = compile_evaluator_contract(
+        EvaluatorConfig.model_validate({"id": "paper_fullset", "sampler": "fullset"})
+    )
+
+    with pytest.raises(TypeError, match="decoded-result requirement"):
+        evaluator.run(
+            store,
+            _realization_policy(),
+            _OtherDecodedResult(),
+            np.arange(store.n_samples, dtype=np.int64),
+        )
 
 
 def test_paper_windowed_falls_back_to_fullset_for_exact_spans() -> None:

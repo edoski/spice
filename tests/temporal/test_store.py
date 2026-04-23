@@ -6,13 +6,33 @@ import pytest
 from pydantic import ValidationError
 
 from spice.config import coerce_feature_set_config, coerce_problem_spec
-from spice.config.models import ChainRuntimeSpec
+from spice.config.models import ChainRuntimeSpec, WorkflowTask
+from spice.config.resolution import WorkflowRequest, resolve_workflow_config
 from spice.features import compile_feature_contract
-from spice.temporal.contracts import compile_problem_contract
+from spice.temporal.contracts import (
+    compile_problem_contract,
+    problem_runtime_metadata_from_compiler_payload,
+    problem_runtime_metadata_payload,
+)
 
 
 def _realization_policy_config() -> dict[str, object]:
     return {"id": "strict_deadline_miss"}
+
+
+def test_default_acquire_estimated_block_bootstrap_window_does_not_crash() -> None:
+    config = resolve_workflow_config(
+        WorkflowTask.ACQUIRE,
+        WorkflowRequest(preset="icdcs_2026"),
+    )
+    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    contract = compile_problem_contract(
+        problem=config.problem,
+        feature_contract=feature_contract,
+        chain_runtime=config.chain.runtime,
+    )
+
+    assert contract.initial_history_window_seconds(12.0) > contract.required_history_seconds
 
 
 def test_temporal_store_uses_real_timestamps_for_context_and_candidates() -> None:
@@ -116,6 +136,10 @@ def test_estimated_block_store_uses_corpus_calibration_for_row_geometry() -> Non
     assert runtime_metadata.calibrated_interval_seconds == 8.0
     assert runtime_metadata.lookback_interval_seconds == 8.0
     assert runtime_metadata.candidate_interval_seconds == 8.0
+
+    payload = problem_runtime_metadata_payload(runtime_metadata)
+    round_tripped = problem_runtime_metadata_from_compiler_payload("estimated_block", payload)
+    assert round_tripped == runtime_metadata
     np.testing.assert_array_equal(store.anchor_rows, np.array([1, 2, 3, 4, 5], dtype=np.int64))
     np.testing.assert_array_equal(
         store.context_start_rows,

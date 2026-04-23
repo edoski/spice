@@ -106,6 +106,7 @@ Feature execution lives in [src/spice/features](src/spice/features).
 Current feature families:
 
 - `block_native`
+- `block_open_native`
 - `time_native`
 
 Execution model:
@@ -125,6 +126,8 @@ Artifacts persist:
 - feature prerequisites
 
 Changing family implementation bytes changes the fingerprint and invalidates old artifact compatibility by design.
+Feature fingerprints use package-relative source ids plus implementation bytes,
+so equivalent checkouts under different absolute paths produce the same graph id.
 
 ## Temporal Semantics
 
@@ -143,6 +146,9 @@ Both lower into the same `CompiledProblemStore` shape:
 - `max_candidate_slots`
 
 Workflows and prediction families consume compiled contracts and stores only. They do not branch on compiler-specific runtime shapes.
+Compiler runtime metadata is serialized through compiler registry entries, not a
+central temporal union. Dataset builders persist typed builder metadata and route
+compiler-owned payloads back through the registry.
 
 ## Prediction and Evaluation
 
@@ -162,7 +168,10 @@ Family-owned responsibilities:
 - best-epoch selection
 - decode
 
-Evaluation stays separate in [src/spice/evaluation](src/spice/evaluation). Evaluators consume decoded offsets plus a compiled problem store.
+Evaluation stays separate in [src/spice/evaluation](src/spice/evaluation). Evaluators consume declared decoded-result semantics plus a compiled problem store.
+`DecodedOffsets` is one prediction-owned decoded-result implementation. Evaluator
+contracts declare the decoded-result id they accept, and workflows validate the
+prediction/evaluator pairing before inference.
 
 ## Modeling Boundary
 
@@ -230,9 +239,14 @@ State:
 Important invariants:
 
 - root-kind enforcement stays strict
-- dataset, study, and artifact ids are deterministic
-- study and artifact ids hash full resolved provenance, excluding pure output
-  locations such as `storage.root`
+- corpus ids cover raw chain/dataset storage only
+- study and artifact ids are deterministic
+- study ids hash durable search semantics but exclude run limits such as
+  `trial_count` and `timeout_seconds`
+- artifact ids hash full resolved provenance, excluding pure output locations
+  such as `storage.root`
+- workflows validate raw corpus coverage against compiled feature prerequisites,
+  lookback, warmup rows, candidate horizon, and evaluation delay
 - catalog rebuild and delete cascades are storage-owned
 - on-disk payload meanings stay explicit and typed
 
@@ -247,7 +261,14 @@ Execution and sync backends are concrete:
 - SLURM
 - checked-in sync helper actions in [src/spice/storage/sync_actions.py](src/spice/storage/sync_actions.py)
 
-Submission lives in [src/spice/execution](src/spice/execution) and always uses the checked-in L40 target spec. Storage sync lives in [src/spice/storage/sync.py](src/spice/storage/sync.py).
+Submission lives in [src/spice/execution](src/spice/execution). `--target`
+selects a named execution spec, and submission sends a resolved config snapshot
+instead of re-resolving request JSON remotely. Storage sync lives in
+[src/spice/storage/sync.py](src/spice/storage/sync.py).
+
+Reference reconstruction lives under [src/spice/reconstruction](src/spice/reconstruction)
+and is quarantined as explicit analysis tooling. It requires a user-provided
+reference root and is not on the acquire/train/evaluate/tune runtime path.
 
 ## Package Roles
 

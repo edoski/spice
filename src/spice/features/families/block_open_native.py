@@ -19,37 +19,6 @@ class BlockOpenNativeFeatureFamilyConfig(FeatureFamilyConfig):
     id: str = "block_open_native"
 
 
-def _log1p_column(blocks: pl.DataFrame, column: str) -> FloatVector:
-    return np.log1p(blocks[column].cast(pl.Float64).to_numpy().astype(np.float64, copy=False))
-
-
-def _shift(values: FloatVector, *, lag: int = 1) -> FloatVector:
-    result = np.full(values.shape[0], np.nan, dtype=np.float64)
-    if lag <= 0:
-        raise ValueError("lag must be positive")
-    if values.size <= lag:
-        return result
-    result[lag:] = values[:-lag]
-    return result
-
-
-def _delta(values: FloatVector) -> FloatVector:
-    if values.size == 0:
-        return np.empty(0, dtype=np.float64)
-    result = np.empty(values.shape[0], dtype=np.float64)
-    result[0] = np.nan
-    if values.shape[0] > 1:
-        result[1:] = np.diff(values)
-    return result
-
-
-def _binary_trend(values: FloatVector) -> FloatVector:
-    result = np.full(values.shape[0], np.nan, dtype=np.float64)
-    valid = ~np.isnan(values)
-    result[valid] = np.where(values[valid] >= 0.0, 1.0, -1.0)
-    return result
-
-
 def _rolling_stat(
     resolved_dependencies: Mapping[str, FloatVector],
     *,
@@ -75,7 +44,7 @@ def _lagged_elapsed_seconds(
     if series.timestamps.size == 0:
         return np.empty(0, dtype=np.float64)
     elapsed = series.timestamps.astype(np.float64, copy=False) - float(series.timestamps[0])
-    return _shift(elapsed)
+    return helpers.shift(elapsed)
 
 
 def _lagged_dt_seconds(
@@ -93,7 +62,7 @@ def _lagged_dt_seconds(
     result[0] = median_delta
     if series.timestamps.size > 1:
         result[1:] = deltas
-    return _shift(result)
+    return helpers.shift(result)
 
 
 def _lagged_calendar_feature(
@@ -104,7 +73,7 @@ def _lagged_calendar_feature(
     compute,
 ) -> FloatVector:
     del blocks, resolved_dependencies
-    return _shift(compute(series.timestamps))
+    return helpers.shift(compute(series.timestamps))
 
 
 def _log_base_fee_per_gas(
@@ -113,7 +82,7 @@ def _log_base_fee_per_gas(
     resolved_dependencies: Mapping[str, FloatVector],
 ) -> FloatVector:
     del series, resolved_dependencies
-    return _log1p_column(blocks, "base_fee_per_gas")
+    return helpers.log1p_column(blocks, "base_fee_per_gas")
 
 
 def _lagged_log_gas_used(
@@ -122,7 +91,7 @@ def _lagged_log_gas_used(
     resolved_dependencies: Mapping[str, FloatVector],
 ) -> FloatVector:
     del series, resolved_dependencies
-    return _shift(_log1p_column(blocks, "gas_used"))
+    return helpers.shift(helpers.log1p_column(blocks, "gas_used"))
 
 
 def _lagged_log_gas_limit(
@@ -131,7 +100,7 @@ def _lagged_log_gas_limit(
     resolved_dependencies: Mapping[str, FloatVector],
 ) -> FloatVector:
     del series, resolved_dependencies
-    return _shift(_log1p_column(blocks, "gas_limit"))
+    return helpers.shift(helpers.log1p_column(blocks, "gas_limit"))
 
 
 def _lagged_gas_ratio(
@@ -141,7 +110,7 @@ def _lagged_gas_ratio(
 ) -> FloatVector:
     del series, resolved_dependencies
     ratio = helpers.gas_utilization(blocks) * 100.0
-    return _shift(ratio)
+    return helpers.shift(ratio)
 
 
 def _feature_definitions() -> dict[str, FeatureDefinition]:
@@ -205,7 +174,7 @@ def _feature_definitions() -> dict[str, FeatureDefinition]:
                 compute=helpers.hour_cos,
             ),
         ),
-        "dow_sin": FeatureDefinition(
+        "weekday_sin": FeatureDefinition(
             (),
             0,
             1,
@@ -217,7 +186,7 @@ def _feature_definitions() -> dict[str, FeatureDefinition]:
                 compute=helpers.weekday_sin,
             ),
         ),
-        "dow_cos": FeatureDefinition(
+        "weekday_cos": FeatureDefinition(
             (),
             0,
             1,
@@ -241,7 +210,7 @@ def _feature_definitions() -> dict[str, FeatureDefinition]:
             0,
             1,
             (),
-            lambda blocks, series, resolved_dependencies: _delta(
+            lambda blocks, series, resolved_dependencies: helpers.delta(
                 resolved_dependencies["log_base_fee_per_gas"]
             ),
         ),
@@ -250,7 +219,7 @@ def _feature_definitions() -> dict[str, FeatureDefinition]:
             0,
             1,
             (),
-            lambda blocks, series, resolved_dependencies: _binary_trend(
+            lambda blocks, series, resolved_dependencies: helpers.binary_trend(
                 resolved_dependencies["dlog_base_fee"]
             ),
         ),
@@ -289,7 +258,7 @@ def _feature_definitions() -> dict[str, FeatureDefinition]:
             0,
             lag + 1,
             (),
-            lambda blocks, series, resolved_dependencies, lag=lag: _shift(
+            lambda blocks, series, resolved_dependencies, lag=lag: helpers.shift(
                 resolved_dependencies["gas_ratio"],
                 lag=lag,
             ),
@@ -299,7 +268,7 @@ def _feature_definitions() -> dict[str, FeatureDefinition]:
             0,
             lag + 1,
             (),
-            lambda blocks, series, resolved_dependencies, lag=lag: _shift(
+            lambda blocks, series, resolved_dependencies, lag=lag: helpers.shift(
                 resolved_dependencies["dlog_base_fee"],
                 lag=lag,
             ),

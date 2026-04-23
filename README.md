@@ -37,9 +37,9 @@ spice evaluate --preset icdcs_2026 --variant baseline
 Submitted workflow commands:
 
 ```bash
-spice train --preset icdcs_2026 --submit
-spice tune --preset icdcs_2026 --trial-count 20 --submit
-spice evaluate --preset icdcs_2026 --variant baseline --submit
+spice train --preset icdcs_2026 --submit --target disi_l40
+spice tune --preset icdcs_2026 --trial-count 20 --submit --target disi_l40
+spice evaluate --preset icdcs_2026 --variant baseline --submit --target disi_l40
 ```
 
 Workflow stdout is intentionally compact:
@@ -86,7 +86,7 @@ Config ownership is split across [src/spice/config](src/spice/config):
 - `resolution.py`: workflow request resolution into one typed workflow config
 - `models.py`: resolved runtime config models
 
-Modeling workflows (`train`, `tune`, `evaluate`) use the CUDA runtime. Submission is a workflow flag that always targets the checked-in L40 execution spec.
+Modeling workflows (`train`, `tune`, `evaluate`) use the CUDA runtime. Submission resolves the workflow locally, sends the resolved config snapshot to the target, and applies the target storage root before the Slurm job starts.
 
 Named specs live under [src/spice/conf](src/spice/conf):
 
@@ -110,7 +110,7 @@ Rules:
 - presets may use one `extends: <preset>` parent; parent presets must be runnable
 - child presets replace scalar/name fields and deep-merge only known config blocks
 - `acquire` resolves the selected provider into one chain-specific RPC endpoint before runtime
-- the execution target is fixed at submission time, validated through
+- the execution target is selected with `--target`, validated through
   `execution/models.py`, and not stored in presets
 - `problem.compiler.id` selects the temporal compiler
 - `feature_set.family.id` selects the feature family
@@ -132,7 +132,7 @@ Strong domain seams stay separate:
 
 Current shipped ids:
 
-- feature families: `block_native`, `time_native`
+- feature families: `block_native`, `block_open_native`, `time_native`
 - compilers: `timestamp_native`, `estimated_block`
 - prediction families: `candidate_offset_selection`, `min_block_fee_multitask`
 - evaluators: `poisson_replay`, `paper_fullset`, `paper_windowed`
@@ -153,9 +153,31 @@ These roots are derived deterministically by `storage/identity.py` and
 `storage/layout.py`. They are outputs of workflow resolution, not workflow
 composition inputs, except for `--storage-root`.
 
+Corpus ids identify raw chain/dataset storage only. Study ids include search
+semantics such as sampler seed, pruning policy, tuning space, model, problem,
+feature set, split, and training config; `trial_count` and `timeout_seconds`
+are run limits and do not change study identity.
+
 Users query by selectors such as `--dataset`, `--study`, `--model`, `--problem`, and `--variant`.
 Those selector flags are storage selectors only. They identify existing records for
 `show`, `delete`, `push`, and `pull`; they do not compose workflow configs.
+
+## Baseline Replication
+
+Thesis/internship baselines should be regenerated through normal workflows:
+
+```bash
+spice acquire --preset icdcs_2026 --chain ethereum
+spice tune --preset icdcs_2026 --chain ethereum --trial-count 20
+spice train --preset icdcs_2026 --chain ethereum --variant baseline
+spice evaluate --preset icdcs_2026 --chain ethereum --variant baseline
+```
+
+Repeat the same preset family for `polygon` and `avalanche`, and use the LSTM,
+Transformer, and Transformer-LSTM presets needed for the baseline matrix.
+Reference reconstruction tools remain quarantined under `spice reconstruct` and
+require an explicit `--reference-root`; they are analysis tools, not runtime
+workflow dependencies.
 
 ## Verification
 

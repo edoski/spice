@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from ..config.models import EvaluateConfig
 from ..core.errors import ConfigResolutionError
 from ..core.reporting import Reporter
+from ..corpus.coverage import evaluation_coverage_requirement, validate_corpus_coverage
 from ..corpus.io import load_block_frame
 from ..evaluation import compile_evaluator_contract
 from ..modeling.artifacts import load_training_artifact, validate_artifact_semantics
@@ -16,12 +19,15 @@ from ..modeling.summary import evaluation_result_fields
 from ..modeling.tuning import apply_study_best_params
 from ..prediction import compile_prediction_contract
 from ..storage.artifact import write_evaluation_state
+from ..storage.corpus import load_dataset_manifest
 from ..storage.engine import ARTIFACT_ROOT_KIND
 from ..storage.layout import resolve_workflow_paths
 from ..temporal.contracts import compile_problem_contract
 
 
 def _workflow_facts(config: EvaluateConfig) -> list[tuple[str, str]]:
+    if config.evaluation is None:
+        raise ConfigResolutionError("evaluation workflow requires evaluation")
     facts = [
         ("dataset", config.dataset.name),
         ("chain", config.chain.name),
@@ -38,11 +44,11 @@ def _workflow_facts(config: EvaluateConfig) -> list[tuple[str, str]]:
 
 
 def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
-    active_config = config
+    active_config: EvaluateConfig = config
     study_id: str | None = None
     if config.artifact.variant.value == "tuned":
         applied = apply_study_best_params(config)
-        active_config = applied.config
+        active_config = cast(EvaluateConfig, applied.config)
         study_id = applied.study_id
     paths = resolve_workflow_paths(active_config, study_id=study_id)
     artifact_dir = paths.artifact_root
@@ -79,11 +85,21 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
     if active_config.evaluation is None:
         raise ConfigResolutionError("evaluation workflow requires evaluation")
     evaluator_contract = compile_evaluator_contract(active_config.evaluation)
+    evaluator_contract.validate_prediction_contract(prediction_contract)
     if active_config.delay_seconds > loaded_artifact.manifest.max_delay_seconds:
         raise ConfigResolutionError(
             "delay_seconds exceeds artifact capability: "
             f"{active_config.delay_seconds} > {loaded_artifact.manifest.max_delay_seconds}"
         )
+    validate_corpus_coverage(
+        load_dataset_manifest(paths.corpus_state_db),
+        contract=contract,
+        feature_contract=feature_contract,
+        requirement=evaluation_coverage_requirement(
+            contract,
+            delay_seconds=active_config.delay_seconds,
+        ),
+    )
     prepared = prepare_inference_dataset(
         history_blocks,
         evaluation_blocks,

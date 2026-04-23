@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..evaluation import CompiledEvaluatorContract, EvaluationSummary
-from ..prediction import DecodedOffsets
+from ..prediction import DecodedPredictionResult
 from ..temporal.problem_store import CompiledProblemStore
 from ..temporal.realization import CompiledRealizationPolicyContract
 
@@ -17,13 +17,13 @@ def run_prediction_evaluation(
     evaluator_contract: CompiledEvaluatorContract,
     store: CompiledProblemStore,
     realization_policy: CompiledRealizationPolicyContract,
-    decoded_offsets: DecodedOffsets,
+    decoded_result: DecodedPredictionResult,
     *,
     sample_indices: IntVector,
 ) -> EvaluationSummary:
     return evaluator_contract.run(
         store,
         realization_policy,
-        decoded_offsets,
+        decoded_result,
         sample_indices,
     )

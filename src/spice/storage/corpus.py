@@ -27,7 +27,6 @@ from ..corpus.metadata import (
     ProviderMetadata,
     TimestampRangeMetadata,
 )
-from ..modeling.result_codecs import corpus_semantics_from_payload, corpus_semantics_payload
 from .engine import DATASET_ROOT_KIND, create_state_engine, ensure_state_db, touch_meta
 from .payloads import PayloadCodec, SequencePayloadStore, SingletonPayloadStore, mapping_payload
 from .schema import DATASET_TABLES, acquire_runs, dataset_manifest
@@ -112,7 +111,6 @@ def _dataset_manifest_payload(manifest: DatasetManifest) -> dict[str, object]:
             "history": _validation_payload(manifest.validation.history),
             "evaluation": _validation_payload(manifest.validation.evaluation),
         },
-        "semantics": corpus_semantics_payload(manifest.semantics),
     }
 
 
@@ -122,9 +120,6 @@ def _dataset_manifest_from_payload(payload: dict[str, object]) -> DatasetManifes
     request = mapping_payload(payload["request"], label="request")
     coverage = mapping_payload(payload["coverage"], label="coverage")
     validation = mapping_payload(payload["validation"], label="validation")
-    semantics = corpus_semantics_from_payload(
-        mapping_payload(payload["semantics"], label="semantics")
-    )
     return DatasetManifest(
         dataset=DatasetIdentity(
             id=str(dataset["id"]),
@@ -146,7 +141,6 @@ def _dataset_manifest_from_payload(payload: dict[str, object]) -> DatasetManifes
             history=_validation_from_payload(validation["history"]),
             evaluation=_validation_from_payload(validation["evaluation"]),
         ),
-        semantics=semantics,
     )
 
 

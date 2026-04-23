@@ -14,7 +14,7 @@ from ..config.models import (
     TrainConfig,
     TrainingConfig,
     TuneConfig,
-    TuningConfig,
+    TuningSearchConfig,
     TuningSpaceConfig,
     coerce_feature_set_config,
     coerce_problem_spec,
@@ -79,7 +79,7 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
         model=config.model,
         split=config.split,
         training=config.training,
-        tuning=config.tuning,
+        tuning=config.tuning.search,
         sampler_name=STUDY_SAMPLER_NAME,
         sampler_seed=config.tuning.sampler_seed,
         pruner_name=pruner_name(config.tuning.enable_pruning),
@@ -252,7 +252,7 @@ def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
         training=TrainingConfig.model_validate(
             mapping_payload(request["training"], label="study.request.training")
         ),
-        tuning=TuningConfig.model_validate(
+        tuning=TuningSearchConfig.model_validate(
             mapping_payload(request["tuning"], label="study.request.tuning")
         ),
         sampler_name=str(payload["sampler_name"]),

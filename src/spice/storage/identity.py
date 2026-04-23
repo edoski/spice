@@ -18,6 +18,7 @@ from ..config.models import (
     TrainingConfig,
     TuneConfig,
     TuningConfig,
+    TuningSearchConfig,
     TuningSpaceConfig,
 )
 from ..core.errors import ConfigResolutionError
@@ -44,7 +45,7 @@ class StudyStorageIdentity(IdentityModel):
     study: StudyConfig
     split: SplitConfig
     training: TrainingConfig
-    tuning: TuningConfig
+    tuning: TuningSearchConfig
     tuning_space: TuningSpaceConfig
 
 
@@ -79,7 +80,7 @@ class StudyRequestIdentity(IdentityModel):
     model: SerializeAsAny[ModelConfig]
     split: SplitConfig
     training: TrainingConfig
-    tuning: TuningConfig
+    tuning: TuningSearchConfig
     tuning_space: TuningSpaceConfig
 
 
@@ -112,7 +113,7 @@ def study_storage_identity(
     study: StudyConfig,
     split: SplitConfig,
     training: TrainingConfig,
-    tuning: TuningConfig,
+    tuning: TuningSearchConfig,
     tuning_space: TuningSpaceConfig,
 ) -> StudyStorageIdentity:
     return StudyStorageIdentity(
@@ -152,7 +153,7 @@ def study_storage_identity_from_config(
         study=config.study,
         split=config.split,
         training=config.training,
-        tuning=tuning,
+        tuning=tuning.search,
         tuning_space=tuning_space,
     )
 
@@ -198,7 +199,7 @@ def study_request_identity(
     model: ModelConfig,
     split: SplitConfig,
     training: TrainingConfig,
-    tuning: TuningConfig,
+    tuning: TuningSearchConfig,
     tuning_space: TuningSpaceConfig,
 ) -> StudyRequestIdentity:
     return StudyRequestIdentity(
@@ -264,7 +265,7 @@ def study_request_identity_from_tuned_config(
         model=config.model,
         split=config.split,
         training=config.training,
-        tuning=config.tuning,
+        tuning=config.tuning.search,
         tuning_space=config.tuning_space,
     )
 

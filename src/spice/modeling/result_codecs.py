@@ -22,7 +22,6 @@ from ..objectives import coerce_objective_config
 from ..prediction import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..semantics import (
     ArtifactSemantics,
-    CorpusSemantics,
     DatasetBuilderSemantics,
     FeatureSemantics,
     InputNormalizationSemantics,
@@ -34,7 +33,7 @@ from ..semantics import (
     StudySemantics,
 )
 from ..temporal.scaling import ScalerStats
-from .dataset_builders import coerce_dataset_builder_config
+from .dataset_builders import coerce_builder_runtime_metadata, coerce_dataset_builder_config
 from .families.registry import coerce_model_config
 
 if TYPE_CHECKING:
@@ -50,8 +49,6 @@ class CodecPayloadModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-_METRIC_DESCRIPTOR_ADAPTER = TypeAdapter(MetricDescriptor)
-_WINDOW_METRIC_ADAPTER = TypeAdapter(WindowMetricSummary)
 _EVALUATION_RUN_ADAPTER = TypeAdapter(EvaluationRun)
 _FEATURE_PREREQUISITES_ADAPTER = TypeAdapter(FeaturePrerequisites)
 _PROBLEM_SEMANTICS_ADAPTER = TypeAdapter(ProblemSemantics)
@@ -62,7 +59,6 @@ _REALIZATION_POLICY_SEMANTICS_ADAPTER = TypeAdapter(RealizationPolicySemantics)
 _OBJECTIVE_SEMANTICS_ADAPTER = TypeAdapter(ObjectiveSemantics)
 _REPRESENTATION_SEMANTICS_ADAPTER = TypeAdapter(RepresentationSemantics)
 _DATASET_BUILDER_SEMANTICS_ADAPTER = TypeAdapter(DatasetBuilderSemantics)
-_CORPUS_SEMANTICS_ADAPTER = TypeAdapter(CorpusSemantics)
 _STUDY_SEMANTICS_ADAPTER = TypeAdapter(StudySemantics)
 _ARTIFACT_SEMANTICS_ADAPTER = TypeAdapter(ArtifactSemantics)
 
@@ -80,7 +76,6 @@ for _adapter in (
     _OBJECTIVE_SEMANTICS_ADAPTER,
     _REPRESENTATION_SEMANTICS_ADAPTER,
     _DATASET_BUILDER_SEMANTICS_ADAPTER,
-    _CORPUS_SEMANTICS_ADAPTER,
     _STUDY_SEMANTICS_ADAPTER,
     _ARTIFACT_SEMANTICS_ADAPTER,
 ):
@@ -109,11 +104,6 @@ def _adapter_value(adapter: TypeAdapter[AdapterValueT], payload: object) -> Adap
 
 def _metric_values_payload(metrics: MetricSet) -> dict[str, float]:
     return dict(metrics.values)
-
-
-def _metric_set_from_payload(payload: object) -> MetricSet:
-    mapping = mapping_payload(payload)
-    return MetricSet(values={str(key): _float_value(value) for key, value in mapping.items()})
 
 
 def _study_config_from_name(study_name: object) -> StudyConfig | None:
@@ -182,16 +172,17 @@ class ArtifactManifestPayload(CodecPayloadModel):
             split=manifest.split.model_dump(mode="json"),
             training=manifest.training.model_dump(mode="json"),
             scaler=manifest.scaler.model_dump(mode="json", exclude_none=True),
-            builder_runtime_metadata=dict(manifest.builder_runtime_metadata),
+            builder_runtime_metadata=manifest.builder_runtime_metadata.model_dump(mode="json"),
             semantics=artifact_semantics_payload(manifest.semantics),
         )
 
     def to_manifest(self) -> TrainingArtifactManifest:
         from .results import TrainingArtifactManifest
 
+        dataset_builder = coerce_dataset_builder_config(self.dataset_builder)
         return TrainingArtifactManifest(
             artifact_id=self.artifact_id,
-            dataset_builder=coerce_dataset_builder_config(self.dataset_builder),
+            dataset_builder=dataset_builder,
             prediction=PredictionConfig.model_validate(self.prediction),
             objective=coerce_objective_config(self.objective),
             chain_name=self.chain_name,
@@ -206,8 +197,9 @@ class ArtifactManifestPayload(CodecPayloadModel):
             split=SplitConfig.model_validate(self.split),
             training=TrainingConfig.model_validate(self.training),
             scaler=ScalerStats.model_validate(self.scaler),
-            builder_runtime_metadata=mapping_payload(
-                self.builder_runtime_metadata,
+            builder_runtime_metadata=coerce_builder_runtime_metadata(
+                dataset_builder.id,
+                mapping_payload(self.builder_runtime_metadata),
             ),
             semantics=artifact_semantics_from_payload(self.semantics),
         )
@@ -403,14 +395,6 @@ def artifact_semantics_from_payload(payload: dict[str, object]) -> ArtifactSeman
     return cast(ArtifactSemantics, _adapter_value(_ARTIFACT_SEMANTICS_ADAPTER, payload))
 
 
-def corpus_semantics_payload(semantics: CorpusSemantics) -> dict[str, object]:
-    return _adapter_payload(_CORPUS_SEMANTICS_ADAPTER, semantics)
-
-
-def corpus_semantics_from_payload(payload: dict[str, object]) -> CorpusSemantics:
-    return cast(CorpusSemantics, _adapter_value(_CORPUS_SEMANTICS_ADAPTER, payload))
-
-
 def study_semantics_payload(semantics: StudySemantics) -> dict[str, object]:
     return _adapter_payload(_STUDY_SEMANTICS_ADAPTER, semantics)
 
@@ -488,7 +472,3 @@ def _metadata_value(value: object) -> str | int | float:
     if isinstance(value, float):
         return value
     return str(value)
-
-
-def _float_value(value: object) -> float:
-    return float(cast(int | float | str | bytes, value))

@@ -5,12 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
-
-
-class PredictionConfigModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
 
 @dataclass(frozen=True, slots=True)
 class MetricDescriptor:

@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import ceil
 from typing import TYPE_CHECKING
 
+from ...core.errors import ConfigResolutionError
 from ...features import (
     CompiledFeatureContract,
     ResolvedFeatureTable,
 )
-from ..contracts import CompiledProblemContract, ProblemRuntimeMetadata, TimestampRuntimeMetadata
+from ..contracts import CompiledProblemContract
 from ..problem_store import CompiledProblemStore
 from ..realization import CompiledRealizationPolicyContract
 from ..semantics import ActionSpaceMode, CandidateStartMode
@@ -23,6 +25,11 @@ if TYPE_CHECKING:
 
 class TimestampNativeCompilerConfig(ProblemCompilerConfig):
     id: str = "timestamp_native"
+
+
+@dataclass(frozen=True, slots=True)
+class TimestampRuntimeMetadata:
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +73,7 @@ class TimestampNativeCompiledProblemContract(CompiledProblemContract):
         feature_table: ResolvedFeatureTable,
         delay_seconds: int,
         *,
-        compiler_runtime_metadata: ProblemRuntimeMetadata,
+        compiler_runtime_metadata: object,
         max_candidate_slots: int,
     ) -> CompiledProblemStore:
         if not isinstance(compiler_runtime_metadata, TimestampRuntimeMetadata):
@@ -88,6 +95,20 @@ class TimestampNativeCompiledProblemContract(CompiledProblemContract):
             max_candidate_slots=max_candidate_slots,
             requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
+
+
+def runtime_metadata_payload(metadata: object) -> dict[str, object]:
+    if not isinstance(metadata, TimestampRuntimeMetadata):
+        raise TypeError("timestamp_native requires TimestampRuntimeMetadata")
+    return {}
+
+
+def runtime_metadata_from_payload(payload: Mapping[str, object]) -> TimestampRuntimeMetadata:
+    if dict(payload):
+        raise ConfigResolutionError(
+            "timestamp_native runtime metadata must be empty in artifact manifests"
+        )
+    return TimestampRuntimeMetadata()
 
 
 def compile_problem(

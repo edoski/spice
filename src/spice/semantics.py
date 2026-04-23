@@ -87,14 +87,6 @@ class DatasetBuilderSemantics:
 
 
 @dataclass(frozen=True, slots=True)
-class CorpusSemantics:
-    """Canonical corpus provenance shared by dataset manifests and acquire runs."""
-
-    problem: ProblemSemantics
-    feature: FeatureSemantics
-
-
-@dataclass(frozen=True, slots=True)
 class StudySemantics:
     """Canonical study provenance bundled from the compiled architectural seams."""
 

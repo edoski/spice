@@ -4,8 +4,18 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from types import SimpleNamespace
 
-from spice.config import WorkflowRequest, WorkflowTask
+import pytest
+
+from spice.config import (
+    EvaluateConfig,
+    TrainConfig,
+    TuneConfig,
+    WorkflowRequest,
+    WorkflowTask,
+    resolve_workflow_config,
+)
 from spice.execution.models import ExecutionWorkflowSpec
+from spice.execution.remote_runner import workflow_config_from_json
 from spice.execution.slurm_ssh import (
     ExecutionJobSubmission,
     build_execution_shell_argv,
@@ -133,7 +143,7 @@ def test_submit_execution_workflow_forwards_sbatch_dependency(monkeypatch, tmp_p
         ),
     )
 
-    monkeypatch.setattr("spice.execution.slurm_ssh.load_execution_target", lambda: target)
+    monkeypatch.setattr("spice.execution.slurm_ssh.load_execution_target", lambda _name: target)
 
     def fake_run_execution_command(_target, command: str, *, input_text: str | None = None):
         captured["command"] = command
@@ -152,7 +162,10 @@ def test_submit_execution_workflow_forwards_sbatch_dependency(monkeypatch, tmp_p
 
     submission = submit_execution_workflow(
         WorkflowTask.TRAIN,
-        request=WorkflowRequest(preset="icdcs_2026"),
+        config=resolve_workflow_config(
+            WorkflowTask.TRAIN,
+            WorkflowRequest(preset="icdcs_2026"),
+        ),
         dependency="afterok:99999",
     )
 
@@ -161,3 +174,32 @@ def test_submit_execution_workflow_forwards_sbatch_dependency(monkeypatch, tmp_p
         f"mkdir -p {tmp_path} && mkdir -p /storage && cat | sbatch --dependency=afterok:99999"
     )
     assert isinstance(captured["input_text"], str)
+
+
+@pytest.mark.parametrize(
+    ("task", "expected_type"),
+    [
+        (WorkflowTask.TRAIN, TrainConfig),
+        (WorkflowTask.TUNE, TuneConfig),
+        (WorkflowTask.EVALUATE, EvaluateConfig),
+    ],
+)
+def test_remote_runner_rehydrates_resolved_workflow_snapshots(
+    task: WorkflowTask,
+    expected_type: type[object],
+) -> None:
+    config = resolve_workflow_config(task, WorkflowRequest(preset="icdcs_2026"))
+
+    restored = workflow_config_from_json(
+        task,
+        config.model_dump_json(exclude_none=True),
+    )
+
+    assert isinstance(restored, expected_type)
+    assert isinstance(config, (TrainConfig, TuneConfig, EvaluateConfig))
+    assert isinstance(restored, (TrainConfig, TuneConfig, EvaluateConfig))
+    assert type(restored.problem.compiler) is type(config.problem.compiler)
+    assert type(restored.model) is type(config.model)
+    assert type(restored.dataset_builder) is type(config.dataset_builder)
+    assert type(restored.feature_set.family) is type(config.feature_set.family)
+    assert restored.model_dump(mode="json") == config.model_dump(mode="json")

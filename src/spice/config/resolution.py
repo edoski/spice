@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, overload
 
@@ -59,6 +60,30 @@ class WorkflowRequest(ConfigModel):
     trial_count: int | None = Field(default=None, gt=0)
     storage_root: Path | None = None
     dry_run: bool | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ModelWorkflowBase:
+    dataset: DatasetSpec
+    chain: ChainSpec
+    storage: StorageSpec
+    problem: ProblemSpec
+    model: ModelConfig[str]
+    dataset_builder: DatasetBuilderConfig
+    feature_set: FeatureSetConfig
+    prediction: PredictionConfig
+    objective: ObjectiveConfig
+    evaluation: EvaluatorConfig | None
+    study: StudyConfig
+    artifact: ArtifactConfig
+
+
+@dataclass(frozen=True, slots=True)
+class ModelWorkflowSpine:
+    training: TrainingConfig
+    split: SplitConfig
+    tuning: TuningConfig | None
+    tuning_space: TuningSpaceConfig | None
 
 
 def load_named_tuning_space(
@@ -241,20 +266,7 @@ def _resolve_model_workflow_base(
     frame: PresetFrame,
     *,
     validate_objective_benchmark: bool,
-) -> tuple[
-    DatasetSpec,
-    ChainSpec,
-    StorageSpec,
-    ProblemSpec,
-    ModelConfig[str],
-    DatasetBuilderConfig,
-    FeatureSetConfig,
-    PredictionConfig,
-    ObjectiveConfig,
-    EvaluatorConfig | None,
-    StudyConfig,
-    ArtifactConfig,
-]:
+) -> ModelWorkflowBase:
     dataset = _resolve_dataset(frame.dataset)
     chain = _resolve_chain(frame.chain)
     storage = _resolve_storage(frame.storage)
@@ -270,19 +282,19 @@ def _resolve_model_workflow_base(
     evaluation = _resolve_evaluation(frame.evaluation)
     study = _resolve_study(frame.study)
     artifact = _resolve_artifact(frame.artifact)
-    return (
-        dataset,
-        chain,
-        storage,
-        problem,
-        model,
-        dataset_builder,
-        feature_set,
-        prediction,
-        objective,
-        evaluation,
-        study,
-        artifact,
+    return ModelWorkflowBase(
+        dataset=dataset,
+        chain=chain,
+        storage=storage,
+        problem=problem,
+        model=model,
+        dataset_builder=dataset_builder,
+        feature_set=feature_set,
+        prediction=prediction,
+        objective=objective,
+        evaluation=evaluation,
+        study=study,
+        artifact=artifact,
     )
 
 
@@ -294,7 +306,7 @@ def _resolve_model_workflow_spine(
     prediction: PredictionConfig,
     require_tuning: bool,
     allow_tuned_variant: bool,
-) -> tuple[TrainingConfig, SplitConfig, TuningConfig | None, TuningSpaceConfig | None]:
+) -> ModelWorkflowSpine:
     training = frame.training
     split = frame.split
     artifact = _resolve_artifact(frame.artifact)
@@ -305,8 +317,18 @@ def _resolve_model_workflow_spine(
             model_config=model,
             problem_config=problem,
         )
-        return training, split, tuning, tuning_space
-    return training, split, None, None
+        return ModelWorkflowSpine(
+            training=training,
+            split=split,
+            tuning=tuning,
+            tuning_space=tuning_space,
+        )
+    return ModelWorkflowSpine(
+        training=training,
+        split=split,
+        tuning=None,
+        tuning_space=None,
+    )
 
 
 def _resolve_acquire_config(frame: PresetFrame) -> AcquireConfig:
@@ -328,132 +350,93 @@ def _resolve_acquire_config(frame: PresetFrame) -> AcquireConfig:
 
 
 def _resolve_train_config(frame: PresetFrame) -> TrainConfig:
-    (
-        dataset,
-        chain,
-        storage,
-        problem,
-        model,
-        dataset_builder,
-        feature_set,
-        prediction,
-        objective,
-        evaluation,
-        study,
-        artifact,
-    ) = _resolve_model_workflow_base(frame, validate_objective_benchmark=True)
-    training, split, tuning, tuning_space = _resolve_model_workflow_spine(
+    base = _resolve_model_workflow_base(frame, validate_objective_benchmark=True)
+    spine = _resolve_model_workflow_spine(
         frame,
-        model=model,
-        problem=problem,
-        prediction=prediction,
+        model=base.model,
+        problem=base.problem,
+        prediction=base.prediction,
         require_tuning=False,
         allow_tuned_variant=True,
     )
     return TrainConfig(
-        chain=chain,
-        dataset=dataset,
-        storage=storage,
-        problem=problem,
-        model=model,
-        dataset_builder=dataset_builder,
-        feature_set=feature_set,
-        prediction=prediction,
-        objective=objective,
-        evaluation=evaluation,
-        study=study,
-        artifact=artifact,
-        training=training,
-        split=split,
-        tuning=tuning,
-        tuning_space=tuning_space,
+        chain=base.chain,
+        dataset=base.dataset,
+        storage=base.storage,
+        problem=base.problem,
+        model=base.model,
+        dataset_builder=base.dataset_builder,
+        feature_set=base.feature_set,
+        prediction=base.prediction,
+        objective=base.objective,
+        evaluation=base.evaluation,
+        study=base.study,
+        artifact=base.artifact,
+        training=spine.training,
+        split=spine.split,
+        tuning=spine.tuning,
+        tuning_space=spine.tuning_space,
     )
 
 
 def _resolve_tune_config(frame: PresetFrame) -> TuneConfig:
-    (
-        dataset,
-        chain,
-        storage,
-        problem,
-        model,
-        dataset_builder,
-        feature_set,
-        prediction,
-        objective,
-        evaluation,
-        study,
-        artifact,
-    ) = _resolve_model_workflow_base(frame, validate_objective_benchmark=True)
-    training, split, tuning, tuning_space = _resolve_model_workflow_spine(
+    base = _resolve_model_workflow_base(frame, validate_objective_benchmark=True)
+    spine = _resolve_model_workflow_spine(
         frame,
-        model=model,
-        problem=problem,
-        prediction=prediction,
+        model=base.model,
+        problem=base.problem,
+        prediction=base.prediction,
         require_tuning=True,
         allow_tuned_variant=False,
     )
-    assert tuning is not None
-    assert tuning_space is not None
+    assert spine.tuning is not None
+    assert spine.tuning_space is not None
     return TuneConfig(
-        chain=chain,
-        dataset=dataset,
-        storage=storage,
-        problem=problem,
-        model=model,
-        dataset_builder=dataset_builder,
-        feature_set=feature_set,
-        prediction=prediction,
-        objective=objective,
-        evaluation=evaluation,
-        study=study,
-        artifact=artifact,
-        training=training,
-        split=split,
-        tuning=tuning,
-        tuning_space=tuning_space,
+        chain=base.chain,
+        dataset=base.dataset,
+        storage=base.storage,
+        problem=base.problem,
+        model=base.model,
+        dataset_builder=base.dataset_builder,
+        feature_set=base.feature_set,
+        prediction=base.prediction,
+        objective=base.objective,
+        evaluation=base.evaluation,
+        study=base.study,
+        artifact=base.artifact,
+        training=spine.training,
+        split=spine.split,
+        tuning=spine.tuning,
+        tuning_space=spine.tuning_space,
     )
 
 
 def _resolve_evaluate_config(frame: PresetFrame) -> EvaluateConfig:
-    (
-        dataset,
-        chain,
-        storage,
-        problem,
-        model,
-        dataset_builder,
-        feature_set,
-        prediction,
-        objective,
-        evaluation,
-        study,
-        artifact,
-    ) = _resolve_model_workflow_base(frame, validate_objective_benchmark=False)
-    training, split, tuning, tuning_space = _resolve_model_workflow_spine(
+    base = _resolve_model_workflow_base(frame, validate_objective_benchmark=False)
+    spine = _resolve_model_workflow_spine(
         frame,
-        model=model,
-        problem=problem,
-        prediction=prediction,
+        model=base.model,
+        problem=base.problem,
+        prediction=base.prediction,
         require_tuning=False,
         allow_tuned_variant=True,
     )
     return EvaluateConfig(
-        chain=chain,
-        dataset=dataset,
-        storage=storage,
-        problem=problem,
-        model=model,
-        dataset_builder=dataset_builder,
-        feature_set=feature_set,
-        prediction=prediction,
-        objective=objective,
-        evaluation=evaluation,
-        study=study,
-        artifact=artifact,
-        training=training,
-        split=split,
+        chain=base.chain,
+        dataset=base.dataset,
+        storage=base.storage,
+        problem=base.problem,
+        model=base.model,
+        dataset_builder=base.dataset_builder,
+        feature_set=base.feature_set,
+        prediction=base.prediction,
+        objective=base.objective,
+        evaluation=base.evaluation,
+        study=base.study,
+        artifact=base.artifact,
+        training=spine.training,
+        split=spine.split,
         delay_seconds=frame.delay_seconds,
-        tuning=tuning,
-        tuning_space=tuning_space,
+        tuning=spine.tuning,
+        tuning_space=spine.tuning_space,
     )

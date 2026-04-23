@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
 import torch
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
 IntVector = NDArray[np.int64]
 BoolMatrix = NDArray[np.bool_]
+OFFSET_DECODED_RESULT_ID = "candidate_offsets"
 
 
 def _coerce_cpu_int64_vector(
@@ -54,10 +55,19 @@ def _coerce_bool_matrix(
     return values.detach().to(dtype=torch.bool)
 
 
+@runtime_checkable
+class DecodedPredictionResult(Protocol):
+    @property
+    def decoded_result_id(self) -> str: ...
+
+    def __len__(self) -> int: ...
+
+
 class DecodedOffsets:
     """Prediction-owned decoded offset buffer backed by a CPU int64 tensor."""
 
     __slots__ = ("_tensor",)
+    decoded_result_id = OFFSET_DECODED_RESULT_ID
 
     def __init__(self, tensor: torch.Tensor) -> None:
         self._tensor = _coerce_cpu_int64_vector(tensor, label="decoded_offsets")
@@ -97,6 +107,12 @@ class DecodedOffsets:
     def select(self, sample_positions: torch.Tensor | IntVector) -> IntVector:
         positions = _coerce_cpu_int64_vector(sample_positions, label="sample_positions")
         return self._tensor.index_select(0, positions).numpy()
+
+
+def require_decoded_offsets(result: DecodedPredictionResult) -> DecodedOffsets:
+    if not isinstance(result, DecodedOffsets):
+        raise TypeError("Evaluator requires candidate offset decoded results")
+    return result
 
 
 class ModelInputBatch(Protocol):
@@ -153,7 +169,11 @@ ComputeBatchLossAndStateFn = Callable[
     tuple[torch.Tensor, object],
 ]
 CreateEpochAccumulatorFn = Callable[[], EpochMetricAccumulator]
-DecodeSelectedOffsetsIntoFn = Callable[[DecodedOffsets, Any, "ActionSpaceDecodeContext"], None]
+AllocateDecodedResultFn = Callable[[int], DecodedPredictionResult]
+DecodeBatchResultIntoFn = Callable[
+    [DecodedPredictionResult, Any, "ActionSpaceDecodeContext"],
+    None,
+]
 
 
 def masked_offset_argmax(logits: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
@@ -235,7 +255,9 @@ class CompiledPredictionContract:
     prepare_targets_fn: PrepareTargetsFn
     compute_batch_loss_and_state_fn: ComputeBatchLossAndStateFn
     create_epoch_accumulator_fn: CreateEpochAccumulatorFn
-    decode_selected_offsets_into_fn: DecodeSelectedOffsetsIntoFn
+    decoded_result_id: str
+    allocate_decoded_result_fn: AllocateDecodedResultFn
+    decode_batch_result_into_fn: DecodeBatchResultIntoFn
     fit_training_state_fn: FitTrainingStateFn | None = None
 
     @property
@@ -283,13 +305,18 @@ class CompiledPredictionContract:
     def create_epoch_accumulator(self) -> EpochMetricAccumulator:
         return self.create_epoch_accumulator_fn()
 
-    def allocate_decoded_offsets(self, sample_count: int) -> DecodedOffsets:
-        return DecodedOffsets.allocate(sample_count)
+    def allocate_decoded_result(self, sample_count: int) -> DecodedPredictionResult:
+        return self.allocate_decoded_result_fn(sample_count)
 
-    def decode_selected_offsets_into(
+    def decode_batch_result_into(
         self,
-        predictions: DecodedOffsets,
+        predictions: DecodedPredictionResult,
         outputs: ModelOutputs,
         decode_context: ActionSpaceDecodeContext,
     ) -> None:
-        self.decode_selected_offsets_into_fn(predictions, outputs, decode_context)
+        if predictions.decoded_result_id != self.decoded_result_id:
+            raise TypeError(
+                "Prediction decoded result kind does not match prediction contract: "
+                f"{predictions.decoded_result_id} != {self.decoded_result_id}"
+            )
+        self.decode_batch_result_into_fn(predictions, outputs, decode_context)

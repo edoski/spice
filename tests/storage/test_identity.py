@@ -121,6 +121,32 @@ def test_study_id_uses_full_resolved_identity(
 
 
 @pytest.mark.parametrize(
+    ("name", "tuning_update"),
+    [
+        ("trial_count_limit", {"trial_count": 40}),
+        ("timeout_limit", {"timeout_seconds": 3600}),
+    ],
+)
+def test_study_id_ignores_tuning_run_limits(
+    tmp_path,
+    isolate_conf_root,
+    name: str,
+    tuning_update: dict[str, object],
+) -> None:
+    conf_root = isolate_conf_root()
+    payload = _base_preset(conf_root)
+    tuning = cast(dict[str, object], payload["tuning"])
+    payload["tuning"] = {**tuning, **tuning_update}
+    _write_preset(conf_root, name, payload)
+
+    base = _tune_paths(tmp_path, preset="icdcs_2026")
+    changed = _tune_paths(tmp_path, preset=name)
+
+    assert base.study_id is not None
+    assert changed.study_id == base.study_id
+
+
+@pytest.mark.parametrize(
     ("name", "override", "variant"),
     [
         (

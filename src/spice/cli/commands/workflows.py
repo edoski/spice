@@ -4,8 +4,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -35,13 +36,15 @@ def _submit_selected_workflow(
     *,
     task: WorkflowTask,
     request: WorkflowRequest,
+    target_name: str,
     dependency: str | None,
     detach: bool,
 ) -> None:
-    resolve_workflow_config(task, request)
+    config = resolve_workflow_config(task, request)
     submission = submit_execution_workflow(
         task,
-        request=request,
+        config=config,
+        target_name=target_name,
         dependency=dependency,
     )
     typer.echo(
@@ -83,10 +86,18 @@ def _validate_submission_flags(
         raise SpiceOperatorError("--dependency and --detach require --submit")
 
 
+def _target_option() -> object:
+    return _submission_option(
+        "--target",
+        metavar="TARGET",
+        help="Submit to a named execution target.",
+    )
+
+
 def _run_resolved_workflow(
     *,
     task: WorkflowTask,
-    runner,
+    runner: Callable[[Any], None],
     request: WorkflowRequest,
 ) -> None:
     runner(resolve_workflow_config(task, request))
@@ -235,6 +246,7 @@ def train_command(
             help="Pass one Slurm dependency spec such as afterok:12345.",
         ),
     ] = None,
+    target: Annotated[str, _target_option()] = "disi_l40",
     detach: Annotated[
         bool,
         typer.Option(
@@ -264,6 +276,7 @@ def train_command(
         _submit_selected_workflow(
             task=WorkflowTask.TRAIN,
             request=submit_request,
+            target_name=target,
             dependency=dependency,
             detach=detach,
         )
@@ -341,6 +354,7 @@ def tune_command(
             help="Pass one Slurm dependency spec such as afterok:12345.",
         ),
     ] = None,
+    target: Annotated[str, _target_option()] = "disi_l40",
     detach: Annotated[
         bool,
         typer.Option(
@@ -369,6 +383,7 @@ def tune_command(
         _submit_selected_workflow(
             task=WorkflowTask.TUNE,
             request=submit_request,
+            target_name=target,
             dependency=dependency,
             detach=detach,
         )
@@ -461,6 +476,7 @@ def evaluate_command(
             help="Pass one Slurm dependency spec such as afterok:12345.",
         ),
     ] = None,
+    target: Annotated[str, _target_option()] = "disi_l40",
     detach: Annotated[
         bool,
         typer.Option(
@@ -492,6 +508,7 @@ def evaluate_command(
         _submit_selected_workflow(
             task=WorkflowTask.EVALUATE,
             request=submit_request,
+            target_name=target,
             dependency=dependency,
             detach=detach,
         )

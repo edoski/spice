@@ -11,6 +11,7 @@ from ...contracts import (
     ActionSpaceDecodeContext,
     CompiledPredictionContract,
     DecodedOffsets,
+    DecodedPredictionResult,
     IntVector,
     PredictionTargetBatch,
     PreparedPredictionTargets,
@@ -56,11 +57,13 @@ def _create_epoch_accumulator():
     return create_epoch_accumulator()
 
 
-def _decode_selected_offsets_into(
-    predictions: DecodedOffsets,
+def _decode_candidate_offsets_into(
+    predictions: DecodedPredictionResult,
     outputs: ModelOutputs,
     decode_context: ActionSpaceDecodeContext,
 ) -> None:
+    if not isinstance(predictions, DecodedOffsets):
+        raise TypeError("candidate_offset_selection decodes candidate offsets")
     predictions.write(
         decode_context.sample_positions,
         masked_offset_argmax(candidate_logits(outputs), decode_context.action_mask),
@@ -80,5 +83,7 @@ def compile_prediction_family(
         prepare_targets_fn=_prepare_targets,
         compute_batch_loss_and_state_fn=_compute_batch_loss_and_state,
         create_epoch_accumulator_fn=_create_epoch_accumulator,
-        decode_selected_offsets_into_fn=_decode_selected_offsets_into,
+        decoded_result_id=DecodedOffsets.decoded_result_id,
+        allocate_decoded_result_fn=DecodedOffsets.allocate,
+        decode_batch_result_into_fn=_decode_candidate_offsets_into,
     )

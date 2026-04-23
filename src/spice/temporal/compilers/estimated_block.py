@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, cast
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from pydantic import Field
 
+from ...core.errors import ConfigResolutionError
 from ...features import (
     CompiledFeatureContract,
     FeaturePrerequisites,
@@ -17,15 +19,12 @@ from ...features import (
 )
 from ..contracts import (
     CompiledProblemContract,
-    EstimatedBlockRuntimeMetadata,
-    ProblemRuntimeMetadata,
 )
 from ..problem_store import CompiledProblemStore
 from ..realization import CompiledRealizationPolicyContract
 from ..semantics import ActionSpaceMode, CandidateStartMode
 from ._shared import (
     calibrate_positive_timestamp_delta_seconds,
-    resolve_bootstrap_interval_seconds,
     resolve_runtime_interval_seconds,
 )
 from .base import ProblemCompilerConfig
@@ -57,6 +56,15 @@ class EstimatedBlockCompilerConfig(ProblemCompilerConfig):
 
 
 @dataclass(frozen=True, slots=True)
+class EstimatedBlockRuntimeMetadata:
+    calibrated_interval_seconds: float
+    lookback_interval_seconds: float
+    candidate_interval_seconds: float
+    lookback_steps: int
+    capability_candidate_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
     lookback_interval_source: EstimatedBlockIntervalSource
     candidate_interval_source: EstimatedBlockIntervalSource
@@ -65,13 +73,13 @@ class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
 
     def initial_history_window_seconds(self, recent_block_interval_seconds: float | None) -> int:
         minimum_window = self.required_history_seconds + self.max_delay_seconds
-        lookback_interval_seconds = resolve_bootstrap_interval_seconds(
-            source=self.lookback_interval_source,
+        lookback_interval_seconds = _bootstrap_interval_seconds(
+            self.lookback_interval_source,
             recent_block_interval_seconds=recent_block_interval_seconds,
             nominal_block_time_seconds=self.nominal_block_time_seconds,
         )
-        candidate_interval_seconds = resolve_bootstrap_interval_seconds(
-            source=self.candidate_interval_source,
+        candidate_interval_seconds = _bootstrap_interval_seconds(
+            self.candidate_interval_source,
             recent_block_interval_seconds=recent_block_interval_seconds,
             nominal_block_time_seconds=self.nominal_block_time_seconds,
         )
@@ -153,7 +161,7 @@ class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
         feature_table: ResolvedFeatureTable,
         delay_seconds: int,
         *,
-        compiler_runtime_metadata: ProblemRuntimeMetadata,
+        compiler_runtime_metadata: object,
         max_candidate_slots: int,
     ) -> CompiledProblemStore:
         if not isinstance(compiler_runtime_metadata, EstimatedBlockRuntimeMetadata):
@@ -179,6 +187,58 @@ class EstimatedBlockCompiledProblemContract(CompiledProblemContract):
             max_candidate_slots=max_candidate_slots,
             requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
+
+
+def _bootstrap_interval_seconds(
+    source: EstimatedBlockIntervalSource,
+    *,
+    recent_block_interval_seconds: float | None,
+    nominal_block_time_seconds: float | None,
+) -> float | None:
+    if source is EstimatedBlockIntervalSource.NOMINAL_CHAIN_RUNTIME:
+        return nominal_block_time_seconds
+    if recent_block_interval_seconds is None or recent_block_interval_seconds <= 0:
+        return None
+    return recent_block_interval_seconds
+
+
+def runtime_metadata_payload(metadata: object) -> dict[str, object]:
+    if not isinstance(metadata, EstimatedBlockRuntimeMetadata):
+        raise TypeError("estimated_block requires EstimatedBlockRuntimeMetadata")
+    return {
+        "calibrated_interval_seconds": metadata.calibrated_interval_seconds,
+        "lookback_interval_seconds": metadata.lookback_interval_seconds,
+        "candidate_interval_seconds": metadata.candidate_interval_seconds,
+        "lookback_steps": metadata.lookback_steps,
+        "capability_candidate_count": metadata.capability_candidate_count,
+    }
+
+
+def runtime_metadata_from_payload(
+    payload: Mapping[str, object],
+) -> EstimatedBlockRuntimeMetadata:
+    raw_payload = dict(payload)
+    return EstimatedBlockRuntimeMetadata(
+        calibrated_interval_seconds=_float_payload(raw_payload, "calibrated_interval_seconds"),
+        lookback_interval_seconds=_float_payload(raw_payload, "lookback_interval_seconds"),
+        candidate_interval_seconds=_float_payload(raw_payload, "candidate_interval_seconds"),
+        lookback_steps=_int_payload(raw_payload, "lookback_steps"),
+        capability_candidate_count=_int_payload(raw_payload, "capability_candidate_count"),
+    )
+
+
+def _float_payload(payload: Mapping[str, object], key: str) -> float:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ConfigResolutionError(f"Invalid float runtime metadata field: {key}")
+    return float(value)
+
+
+def _int_payload(payload: Mapping[str, object], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigResolutionError(f"Invalid integer runtime metadata field: {key}")
+    return int(value)
 
 
 def compile_problem(

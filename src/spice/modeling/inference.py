@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..prediction import (
     CompiledPredictionContract,
-    DecodedOffsets,
+    DecodedPredictionResult,
     decode_context_from_batch,
 )
 from ..temporal.problem_store import CompiledProblemStore, IntVector
@@ -30,7 +30,7 @@ def predict_with_model(
     store: CompiledProblemStore,
     sample_indices: IntVector,
     batch_size: int,
-) -> DecodedOffsets:
+) -> DecodedPredictionResult:
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
 
@@ -40,10 +40,10 @@ def predict_with_model(
         model_config=model_config,
     )
     model.to(runtime.resolved_device)
-    predictions = prediction_contract.allocate_decoded_offsets(int(sample_indices.shape[0]))
+    predictions = prediction_contract.allocate_decoded_result(int(sample_indices.shape[0]))
 
     def _decode_batch(batch, outputs) -> None:
-        prediction_contract.decode_selected_offsets_into(
+        prediction_contract.decode_batch_result_into(
             predictions,
             outputs,
             decode_context_from_batch(batch),

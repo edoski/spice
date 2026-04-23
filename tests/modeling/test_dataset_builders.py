@@ -6,6 +6,7 @@ import numpy as np
 import polars as pl
 
 from spice.config import TrainConfig, WorkflowTask
+from spice.modeling.dataset_builders import ProfessorTemporalBuilderRuntimeMetadata
 from spice.modeling.pipeline import build_training_spec, prepare_training_dataset
 from tests.dataset_helpers import make_history_rows
 
@@ -45,8 +46,9 @@ def test_professor_dataset_builder_prepares_seq_len_without_builder_owned_class_
     )
 
     assert config.dataset_builder.id == "professor_temporal"
-    assert int(prepared.builder_runtime_metadata["seq_len"]) >= 64
-    assert float(prepared.builder_runtime_metadata["median_dt_seconds"]) > 0.0
+    assert isinstance(prepared.builder_runtime_metadata, ProfessorTemporalBuilderRuntimeMetadata)
+    assert prepared.builder_runtime_metadata.sequence_length >= 64
+    assert prepared.builder_runtime_metadata.median_dt_seconds > 0.0
     assert prepared.max_candidate_slots == prepared.store.max_candidate_slots
     assert prepared.split_indices.train.size > 0
     assert prepared.split_indices.validation.size > 0
@@ -86,7 +88,8 @@ def test_professor_dataset_builder_keeps_global_feature_timeline_across_splits(
     spec = build_training_spec(config)
     prepared = prepare_training_dataset(blocks, spec=spec)
 
-    assert prepared.builder_runtime_metadata["split_strategy"] == "global_feature_table"
+    assert isinstance(prepared.builder_runtime_metadata, ProfessorTemporalBuilderRuntimeMetadata)
+    assert prepared.builder_runtime_metadata.split_strategy == "global_feature_table"
 
 
 def test_professor_dataset_builder_keeps_candidate_window_arrays_aligned_after_seq_trim(

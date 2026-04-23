@@ -161,15 +161,19 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
 
     def _fake_resolve(task: WorkflowTask, request) -> object:
         events.append(("resolve", (task, request)))
-        return SimpleNamespace()
+        return SimpleNamespace(
+            study=SimpleNamespace(name=request.study),
+            artifact=SimpleNamespace(variant=SimpleNamespace(value=request.variant)),
+        )
 
     def _fake_submit(
         task: WorkflowTask,
         *,
-        request,
+        config,
+        target_name: str = "disi_l40",
         dependency: str | None = None,
     ) -> ExecutionJobSubmission:
-        events.append(("submit", (task, request, dependency)))
+        events.append(("submit", (task, config, target_name, dependency)))
         return ExecutionJobSubmission(
             task=task,
             target=SimpleNamespace(spec=SimpleNamespace(follow_by_default=False)),
@@ -200,15 +204,15 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
     assert resolved_task is WorkflowTask.TRAIN
     assert request.study == "default"
     assert request.variant == "baseline"
-    submitted_task, submitted_request, dependency = cast(
-        tuple[WorkflowTask, object, str | None],
+    submitted_task, submitted_config, target_name, dependency = cast(
+        tuple[WorkflowTask, object, str, str | None],
         events[1][1],
     )
     assert submitted_task is WorkflowTask.TRAIN
+    assert target_name == "disi_l40"
     assert dependency is None
-    assert submitted_request.preset == "icdcs_2026"
-    assert submitted_request.study == "default"
-    assert submitted_request.variant == "baseline"
+    assert submitted_config.study.name == "default"
+    assert submitted_config.artifact.variant.value == "baseline"
     assert (
         "submit workflow=train job_id=12345 log=/remote/logs/spice-train-12345.out"
         in result.stdout

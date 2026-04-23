@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TypeVar
 from uuid import uuid4
 
-from ..core.errors import DeleteBlockedError, SelectorResolutionError
+from ..core.errors import DeleteBlockedError, SelectorResolutionError, StateLayoutError
 from ..core.files import prune_empty_directories, remove_path
 from .artifact import load_artifact_manifest
 from .catalog import (
@@ -304,6 +304,7 @@ def _delete_artifact_record(storage_root: Path, record: CatalogArtifactRecord) -
             artifact_id=record.artifact_id,
         ),
         stop_dir_name="artifacts",
+        expected_root_kind=RootKind.ARTIFACT,
     )
 
 
@@ -316,6 +317,7 @@ def _delete_study_record(storage_root: Path, record: CatalogStudyRecord) -> None
             study_id=record.study_id,
         ),
         stop_dir_name="studies",
+        expected_root_kind=RootKind.STUDY,
     )
 
 
@@ -328,6 +330,7 @@ def _delete_dataset_record(storage_root: Path, record: CatalogDatasetRecord) -> 
             dataset_id=record.dataset_id,
         ),
         stop_dir_name="corpora",
+        expected_root_kind=RootKind.CORPUS,
     )
 
 
@@ -337,10 +340,46 @@ def _delete_catalog_root_record(
     root_path: Path,
     catalog_delete: Callable[[Path], None],
     stop_dir_name: str,
+    expected_root_kind: RootKind,
 ) -> None:
+    root_path = _validated_catalog_root_path(
+        storage_root,
+        root_path=root_path,
+        stop_dir_name=stop_dir_name,
+        expected_root_kind=expected_root_kind,
+    )
     remove_path(root_path)
     catalog_delete(catalog_db_path(storage_root))
     prune_empty_directories(root_path.parent, stop_at=storage_root / stop_dir_name)
+
+
+def _validated_catalog_root_path(
+    storage_root: Path,
+    *,
+    root_path: Path,
+    stop_dir_name: str,
+    expected_root_kind: RootKind,
+) -> Path:
+    storage_root = storage_root.resolve()
+    expected_parent = (storage_root / stop_dir_name).resolve()
+    resolved_root = root_path.resolve()
+    try:
+        resolved_root.relative_to(expected_parent)
+    except ValueError as exc:
+        raise StateLayoutError(
+            f"Catalog root path is outside storage {stop_dir_name} root: {root_path}"
+        ) from exc
+
+    db_path = state_db_path(resolved_root)
+    if not db_path.is_file():
+        raise StateLayoutError(f"Catalog root is missing state DB: {db_path}")
+    actual_root_kind = detect_root_kind(db_path)
+    if actual_root_kind is not expected_root_kind:
+        raise StateLayoutError(
+            "Catalog root kind mismatch: "
+            f"expected {expected_root_kind}, got {actual_root_kind}"
+        )
+    return resolved_root
 
 
 def _roots_under(parent: Path) -> list[Path]:

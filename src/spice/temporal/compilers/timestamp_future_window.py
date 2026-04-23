@@ -15,11 +15,7 @@ from ...features import (
     ResolvedFeatureTable,
 )
 from ...modeling.families.base import ConfigModel
-from ..contracts import (
-    CompiledProblemContract,
-    ProblemRuntimeMetadata,
-    TimestampFutureWindowRuntimeMetadata,
-)
+from ..contracts import CompiledProblemContract
 from ..problem_store import CompiledProblemStore
 from ..realization import CompiledRealizationPolicyContract
 from ..semantics import ActionSpaceMode, CandidateStartMode
@@ -105,6 +101,13 @@ class TimestampFutureWindowCompilerConfig(ProblemCompilerConfig):
 
 
 @dataclass(frozen=True, slots=True)
+class TimestampFutureWindowRuntimeMetadata:
+    action_interval_estimator_id: str
+    action_interval_seconds: float
+    capability_action_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
     action_interval_estimator: TimestampFutureWindowIntervalEstimatorConfig
     nominal_block_time_seconds: float | None
@@ -168,7 +171,7 @@ class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
         feature_table: ResolvedFeatureTable,
         delay_seconds: int,
         *,
-        compiler_runtime_metadata: ProblemRuntimeMetadata,
+        compiler_runtime_metadata: object,
         max_candidate_slots: int,
     ) -> CompiledProblemStore:
         if not isinstance(compiler_runtime_metadata, TimestampFutureWindowRuntimeMetadata):
@@ -225,6 +228,48 @@ def compile_problem(
         action_interval_estimator=compiler_config.action_interval_estimator,
         nominal_block_time_seconds=nominal_block_time_seconds,
     )
+
+
+def runtime_metadata_payload(metadata: object) -> dict[str, object]:
+    if not isinstance(metadata, TimestampFutureWindowRuntimeMetadata):
+        raise TypeError("timestamp_future_window requires TimestampFutureWindowRuntimeMetadata")
+    return {
+        "action_interval_estimator_id": metadata.action_interval_estimator_id,
+        "action_interval_seconds": metadata.action_interval_seconds,
+        "capability_action_count": metadata.capability_action_count,
+    }
+
+
+def runtime_metadata_from_payload(
+    payload: Mapping[str, object],
+) -> TimestampFutureWindowRuntimeMetadata:
+    raw_payload = dict(payload)
+    return TimestampFutureWindowRuntimeMetadata(
+        action_interval_estimator_id=_str_payload(raw_payload, "action_interval_estimator_id"),
+        action_interval_seconds=_float_payload(raw_payload, "action_interval_seconds"),
+        capability_action_count=_int_payload(raw_payload, "capability_action_count"),
+    )
+
+
+def _float_payload(payload: Mapping[str, object], key: str) -> float:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"Invalid float runtime metadata field: {key}")
+    return float(value)
+
+
+def _int_payload(payload: Mapping[str, object], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"Invalid integer runtime metadata field: {key}")
+    return int(value)
+
+
+def _str_payload(payload: Mapping[str, object], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"Invalid string runtime metadata field: {key}")
+    return value
 
 
 def _action_count_for_delay(

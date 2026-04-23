@@ -71,17 +71,6 @@ def dataset_sections(
                 ("evaluation rows", str(manifest.validation.evaluation.rows)),
             ],
         ),
-        (
-            "provenance",
-            [
-                ("problem", manifest.semantics.problem.problem_id),
-                ("compiler", manifest.semantics.problem.compiler_id),
-                ("feature set", manifest.semantics.feature.feature_set_id),
-                ("feature family", manifest.semantics.feature.feature_family_id),
-                ("lookback", f"{manifest.semantics.problem.lookback_seconds}s"),
-                ("capability", f"{manifest.semantics.problem.max_delay_seconds}s"),
-            ],
-        ),
     ]
     if description.runs:
         sections.append(

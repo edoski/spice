@@ -109,14 +109,15 @@ def test_selection_loss_prefers_cheaper_candidates_and_ignores_masked_slots() ->
 
 def test_candidate_offset_decode_ignores_masked_slots() -> None:
     contract = _prediction_contract()
-    predictions = contract.allocate_decoded_offsets(1)
+    predictions = contract.allocate_decoded_result(1)
+    assert isinstance(predictions, DecodedOffsets)
     outputs = ModelOutputs(
         heads={
             CANDIDATE_LOGITS_HEAD_ID: torch.tensor([[4.0, -4.0, 100.0]], dtype=torch.float32)
         }
     )
 
-    contract.decode_selected_offsets_into(
+    contract.decode_batch_result_into(
         predictions,
         outputs,
         ActionSpaceDecodeContext(

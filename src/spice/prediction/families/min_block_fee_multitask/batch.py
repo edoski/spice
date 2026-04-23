@@ -84,7 +84,11 @@ class PreparedMinBlockFeeTargets:
         self,
         device: torch.device,
     ) -> PreparedMinBlockFeeTargets:
-        if self.candidate_mask.device == device:
+        if (
+            self.candidate_mask.device == device
+            and self.min_block_offsets.device == device
+            and self.min_block_log_fees.device == device
+        ):
             return self
         non_blocking = device.type == "cuda"
         return PreparedMinBlockFeeTargets(

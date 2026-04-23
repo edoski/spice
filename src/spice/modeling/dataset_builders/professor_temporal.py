@@ -8,11 +8,11 @@ import numpy as np
 import polars as pl
 
 from ...core.errors import ConfigResolutionError
-from ...temporal.contracts import ProblemRuntimeMetadata
 from ...temporal.problem_store import (
     CompiledProblemStore,
     DatasetSplitIndices,
     filter_sample_indices_by_timestamp_window,
+    with_fixed_context_length,
 )
 from ...temporal.scaling import transform_feature_matrix
 from ..pipeline import (
@@ -23,9 +23,10 @@ from ..pipeline import (
 )
 from .base import (
     CompiledDatasetBuilderContract,
+    ProfessorTemporalBuilderRuntimeMetadata,
     ProfessorTemporalDatasetBuilderConfig,
-    builder_runtime_metadata,
     compiler_runtime_metadata_from_builder_payload,
+    professor_temporal_runtime_metadata,
 )
 
 
@@ -75,7 +76,7 @@ def _build_selected_store(
     blocks: pl.DataFrame,
     *,
     spec: TrainingSpec,
-) -> tuple[CompiledProblemStore, ProblemRuntimeMetadata]:
+) -> tuple[CompiledProblemStore, object]:
     feature_table = spec.feature_contract.build_table(_prepare_blocks(blocks))
     if feature_table.feature_prerequisites != spec.contract.feature_prerequisites:
         raise ValueError(
@@ -84,40 +85,6 @@ def _build_selected_store(
             f"got {feature_table.feature_prerequisites.model_dump(mode='json')}"
         )
     return spec.contract.build_capability_store(feature_table)
-
-
-def _apply_sequence_length(
-    store: CompiledProblemStore,
-    *,
-    seq_len: int,
-    history_seconds: int,
-    warmup_rows: int,
-) -> CompiledProblemStore:
-    if seq_len <= 0:
-        raise ValueError("seq_len must be positive")
-    context_start_rows = store.anchor_rows - seq_len + 1
-    valid_anchor_mask = context_start_rows >= 0
-    valid_anchor_mask &= context_start_rows >= warmup_rows
-    if history_seconds > 0:
-        valid_anchor_mask &= (
-            store.timestamps[np.maximum(context_start_rows, 0)] - store.timestamps[0]
-        ) >= history_seconds
-    anchor_rows = store.anchor_rows[valid_anchor_mask].astype(np.int64, copy=False)
-    if anchor_rows.size == 0:
-        raise ValueError("professor builder split produced no supervised samples")
-    return replace(
-        store,
-        anchor_rows=anchor_rows,
-        context_start_rows=context_start_rows[valid_anchor_mask].astype(np.int64, copy=False),
-        candidate_start_rows=store.candidate_start_rows[valid_anchor_mask].astype(
-            np.int64,
-            copy=False,
-        ),
-        candidate_end_rows=store.candidate_end_rows[valid_anchor_mask].astype(
-            np.int64,
-            copy=False,
-        ),
-    )
 
 
 def _train_scaler(
@@ -189,9 +156,9 @@ def prepare_training_dataset(blocks: pl.DataFrame, spec: TrainingSpec) -> Prepar
     history_seconds = spec.contract.feature_prerequisites.history_seconds
     warmup_rows = spec.contract.feature_prerequisites.warmup_rows
     store_raw, compiler_runtime_metadata = _build_selected_store(selected_blocks, spec=spec)
-    store = _apply_sequence_length(
+    store = with_fixed_context_length(
         store_raw,
-        seq_len=seq_len,
+        context_length=seq_len,
         history_seconds=history_seconds,
         warmup_rows=warmup_rows,
     )
@@ -215,15 +182,12 @@ def prepare_training_dataset(blocks: pl.DataFrame, spec: TrainingSpec) -> Prepar
         store=scaled_store,
         split_indices=split_indices,
         scaler=scaler,
-        builder_runtime_metadata=builder_runtime_metadata(
+        builder_runtime_metadata=professor_temporal_runtime_metadata(
             compiler_runtime_metadata=compiler_runtime_metadata,
-            extra={
-                "seq_len": int(seq_len),
-                "median_dt_seconds": float(median_dt_seconds),
-                "min_sequence_length": spec.dataset_builder.min_sequence_length,
-                "max_sequence_length": spec.dataset_builder.max_sequence_length,
-                "split_strategy": "global_feature_table",
-            },
+            sequence_length=int(seq_len),
+            median_dt_seconds=float(median_dt_seconds),
+            min_sequence_length=spec.dataset_builder.min_sequence_length,
+            max_sequence_length=spec.dataset_builder.max_sequence_length,
         ),
     )
 
@@ -238,7 +202,8 @@ def prepare_inference_dataset(
         spec.builder_runtime_metadata,
         compiler_id=spec.contract.compiler_id,
     )
-    seq_len = _builder_int(spec.builder_runtime_metadata, "seq_len")
+    if not isinstance(spec.builder_runtime_metadata, ProfessorTemporalBuilderRuntimeMetadata):
+        raise ConfigResolutionError("professor builder requires professor runtime metadata")
     feature_table = spec.feature_contract.build_table(combined_blocks)
     store = spec.contract.build_delay_store(
         feature_table,
@@ -246,9 +211,9 @@ def prepare_inference_dataset(
         compiler_runtime_metadata=compiler_runtime_metadata,
         max_candidate_slots=spec.max_candidate_slots,
     )
-    store = _apply_sequence_length(
+    store = with_fixed_context_length(
         store,
-        seq_len=seq_len,
+        context_length=spec.builder_runtime_metadata.sequence_length,
         history_seconds=spec.contract.feature_prerequisites.history_seconds,
         warmup_rows=spec.contract.feature_prerequisites.warmup_rows,
     )
@@ -272,14 +237,6 @@ def prepare_inference_dataset(
         store=scaled_store,
         sample_indices=sample_indices,
     )
-
-
-def _builder_int(payload: dict[str, object], key: str) -> int:
-    value = payload.get(key)
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise ConfigResolutionError(f"builder runtime metadata field must be an integer: {key}")
-    return int(value)
-
 
 def compile_dataset_builder(
     config: ProfessorTemporalDatasetBuilderConfig,

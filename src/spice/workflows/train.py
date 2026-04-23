@@ -15,11 +15,13 @@ from ..core.errors import ConfigResolutionError
 from ..core.files import promote_paths_atomic, prune_empty_directories, remove_path
 from ..core.rendering import metric_string
 from ..core.reporting import Reporter
+from ..corpus.coverage import training_coverage_requirement, validate_corpus_coverage
 from ..modeling.persisted_training import run_persisted_training
 from ..modeling.pipeline import build_training_spec
 from ..modeling.summary import training_result_fields
 from ..modeling.training import TrainingEpochProgress
 from ..modeling.tuning import apply_study_best_params
+from ..storage.corpus import load_dataset_manifest
 from ..storage.engine import ARTIFACT_ROOT_KIND
 from ..storage.layout import resolve_workflow_paths
 from ..storage.roots import reindex_root
@@ -132,15 +134,21 @@ def _fit_epoch_message(
 
 def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
     active_reporter = reporter or Reporter()
-    active_config = config
+    active_config: TrainConfig = config
     study_id: str | None = None
     if config.artifact.variant is ArtifactVariant.TUNED:
         applied = apply_study_best_params(config)
-        active_config = applied.config
+        active_config = cast(TrainConfig, applied.config)
         study_id = applied.study_id
     paths = resolve_workflow_paths(active_config, study_id=study_id)
     active_reporter.header("train", _workflow_facts(active_config))
     spec = build_training_spec(active_config)
+    validate_corpus_coverage(
+        load_dataset_manifest(paths.corpus_state_db),
+        contract=spec.contract,
+        feature_contract=spec.feature_contract,
+        requirement=training_coverage_requirement(spec.contract),
+    )
     artifact_dir = paths.artifact_root
     history_block_path = paths.history_dir
     if artifact_dir is None:

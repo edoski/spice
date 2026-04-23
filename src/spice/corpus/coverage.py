@@ -1,0 +1,104 @@
+# pyright: strict
+
+"""Workflow-level corpus coverage validation."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from ..core.errors import StateConflictError
+from ..features import CompiledFeatureContract
+from ..temporal.contracts import CompiledProblemContract
+from .metadata import DatasetManifest, DatasetWindowMetadata
+
+
+@dataclass(frozen=True, slots=True)
+class CorpusCoverageRequirement:
+    history_seconds: int
+    history_rows: int
+    evaluation_delay_seconds: int | None = None
+
+
+def training_coverage_requirement(
+    contract: CompiledProblemContract,
+) -> CorpusCoverageRequirement:
+    return CorpusCoverageRequirement(
+        history_seconds=contract.required_history_seconds + contract.max_delay_seconds,
+        history_rows=contract.warmup_rows + contract.sample_count,
+    )
+
+
+def evaluation_coverage_requirement(
+    contract: CompiledProblemContract,
+    *,
+    delay_seconds: int,
+) -> CorpusCoverageRequirement:
+    if delay_seconds <= 0:
+        raise StateConflictError("Evaluation delay must be positive")
+    if delay_seconds > contract.max_delay_seconds:
+        raise StateConflictError(
+            "Evaluation delay exceeds compiled problem capability: "
+            f"{delay_seconds} > {contract.max_delay_seconds}"
+        )
+    return CorpusCoverageRequirement(
+        history_seconds=contract.required_history_seconds,
+        history_rows=contract.warmup_rows,
+        evaluation_delay_seconds=delay_seconds,
+    )
+
+
+def validate_corpus_coverage(
+    manifest: DatasetManifest,
+    *,
+    contract: CompiledProblemContract,
+    feature_contract: CompiledFeatureContract,
+    requirement: CorpusCoverageRequirement,
+) -> None:
+    if feature_contract.feature_prerequisites != contract.feature_prerequisites:
+        raise StateConflictError(
+            "Feature prerequisites do not match compiled problem prerequisites"
+        )
+    if manifest.chain.chain_id <= 0:
+        raise StateConflictError("Corpus manifest has invalid chain metadata")
+    _validate_clean_split(manifest, split="history")
+    _require_window_span(
+        manifest.coverage.history,
+        minimum_seconds=requirement.history_seconds,
+        label="history coverage",
+    )
+    if manifest.validation.history.rows < requirement.history_rows:
+        raise StateConflictError(
+            "Corpus history rows are insufficient for compiled problem: "
+            f"{manifest.validation.history.rows} < {requirement.history_rows}"
+        )
+    if requirement.evaluation_delay_seconds is not None:
+        _validate_clean_split(manifest, split="evaluation")
+        _require_window_span(
+            manifest.coverage.evaluation,
+            minimum_seconds=requirement.evaluation_delay_seconds,
+            label="evaluation coverage",
+        )
+
+
+def _validate_clean_split(manifest: DatasetManifest, *, split: str) -> None:
+    report = (
+        manifest.validation.history if split == "history" else manifest.validation.evaluation
+    )
+    if report.status != "clean":
+        raise StateConflictError(f"Corpus {split} validation is not clean: {report.status}")
+    if report.rows <= 0:
+        raise StateConflictError(f"Corpus {split} split is empty")
+
+
+def _require_window_span(
+    window: DatasetWindowMetadata,
+    *,
+    minimum_seconds: int,
+    label: str,
+) -> None:
+    available_seconds = window.end_timestamp - window.start_timestamp
+    if available_seconds < minimum_seconds:
+        raise StateConflictError(
+            f"{label} is insufficient for compiled workflow: "
+            f"{available_seconds}s < {minimum_seconds}s"
+        )

@@ -11,6 +11,7 @@ from .contracts import (
     ActionSpaceDecodeContext,
     CompiledPredictionContract,
     DecodedOffsets,
+    DecodedPredictionResult,
     EpochMetricAccumulator,
     ModelInputBatch,
     PredictionBatch,
@@ -24,6 +25,7 @@ from .registry import (
 
 __all__ = [
     "CompiledPredictionContract",
+    "DecodedPredictionResult",
     "DecodedOffsets",
     "EpochMetricAccumulator",
     "ActionSpaceDecodeContext",

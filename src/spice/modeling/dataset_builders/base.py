@@ -4,18 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import polars as pl
 from pydantic import Field, field_validator, model_validator
 
-from ...core.errors import ConfigResolutionError
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import DatasetBuilderSemantics
 
 if TYPE_CHECKING:
-    from ...temporal.contracts import ProblemRuntimeMetadata
     from ..pipeline import (
         InferencePreparationSpec,
         PreparedInferenceDataset,
@@ -49,9 +47,26 @@ class ProfessorTemporalDatasetBuilderConfig(DatasetBuilderConfig):
         return self
 
 
-BuilderRuntimeMetadata = dict[str, object]
+class BuilderRuntimeMetadata(ConfigModel):
+    compiler_runtime_metadata: dict[str, object]
 
-_COMPILER_RUNTIME_METADATA_KEY = "compiler_runtime_metadata"
+
+class StandardTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
+    pass
+
+
+class ProfessorTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
+    sequence_length: int = Field(gt=0)
+    median_dt_seconds: float = Field(gt=0.0)
+    min_sequence_length: int = Field(gt=0)
+    max_sequence_length: int = Field(gt=0)
+    split_strategy: Literal["global_feature_table"] = "global_feature_table"
+
+    @model_validator(mode="after")
+    def validate_sequence_bounds(self) -> ProfessorTemporalBuilderRuntimeMetadata:
+        if self.max_sequence_length < self.min_sequence_length:
+            raise ValueError("max_sequence_length must be >= min_sequence_length")
+        return self
 
 
 PrepareTrainingFn = Callable[[pl.DataFrame, "TrainingSpec"], "PreparedTrainingDataset"]
@@ -105,32 +120,65 @@ def _compile_professor_temporal(
     return compile_dataset_builder(config)
 
 
-def builder_runtime_metadata(
+def standard_temporal_runtime_metadata(
     *,
-    compiler_runtime_metadata: ProblemRuntimeMetadata,
-    extra: Mapping[str, object] | None = None,
-) -> BuilderRuntimeMetadata:
+    compiler_runtime_metadata: object,
+) -> StandardTemporalBuilderRuntimeMetadata:
     from ...temporal.contracts import problem_runtime_metadata_payload
 
-    payload: BuilderRuntimeMetadata = {
-        _COMPILER_RUNTIME_METADATA_KEY: problem_runtime_metadata_payload(compiler_runtime_metadata)
-    }
-    if extra is not None:
-        payload.update(dict(extra))
-    return payload
+    return StandardTemporalBuilderRuntimeMetadata(
+        compiler_runtime_metadata=problem_runtime_metadata_payload(compiler_runtime_metadata)
+    )
+
+
+def professor_temporal_runtime_metadata(
+    *,
+    compiler_runtime_metadata: object,
+    sequence_length: int,
+    median_dt_seconds: float,
+    min_sequence_length: int,
+    max_sequence_length: int,
+) -> ProfessorTemporalBuilderRuntimeMetadata:
+    from ...temporal.contracts import problem_runtime_metadata_payload
+
+    return ProfessorTemporalBuilderRuntimeMetadata(
+        compiler_runtime_metadata=problem_runtime_metadata_payload(compiler_runtime_metadata),
+        sequence_length=sequence_length,
+        median_dt_seconds=median_dt_seconds,
+        min_sequence_length=min_sequence_length,
+        max_sequence_length=max_sequence_length,
+    )
 
 
 def compiler_runtime_metadata_from_builder_payload(
-    payload: Mapping[str, object],
+    payload: BuilderRuntimeMetadata,
     *,
     compiler_id: str,
-) -> ProblemRuntimeMetadata:
+) -> object:
     from ...temporal.contracts import problem_runtime_metadata_from_compiler_payload
 
-    raw_payload = payload.get(_COMPILER_RUNTIME_METADATA_KEY)
-    if not isinstance(raw_payload, Mapping):
-        raise ConfigResolutionError("builder runtime metadata is missing compiler_runtime_metadata")
-    return problem_runtime_metadata_from_compiler_payload(compiler_id, raw_payload)
+    return problem_runtime_metadata_from_compiler_payload(
+        compiler_id,
+        payload.compiler_runtime_metadata,
+    )
+
+
+def coerce_builder_runtime_metadata(
+    builder_id: str,
+    payload: Mapping[str, object] | BuilderRuntimeMetadata,
+) -> BuilderRuntimeMetadata:
+    raw_payload = (
+        payload.model_dump(mode="json")
+        if isinstance(payload, BuilderRuntimeMetadata)
+        else dict(payload)
+    )
+    if builder_id == "standard_temporal":
+        return StandardTemporalBuilderRuntimeMetadata.model_validate(raw_payload)
+    if builder_id == "professor_temporal":
+        return ProfessorTemporalBuilderRuntimeMetadata.model_validate(raw_payload)
+    raise ValueError(
+        "dataset_builder.id must be one of: standard_temporal, professor_temporal"
+    )
 
 
 def coerce_dataset_builder_config(

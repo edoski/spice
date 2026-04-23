@@ -180,10 +180,11 @@ def _load_unique_class_counts(notebook_path: Path) -> list[dict[str, float]]:
 
 
 def _output_text_chunks(output: dict[str, object]) -> list[str]:
-    if isinstance(output.get("text"), list):
-        return ["".join(output["text"])]
-    if isinstance(output.get("text"), str):
-        return [str(output["text"])]
+    text = output.get("text")
+    if isinstance(text, list):
+        return ["".join(str(chunk) for chunk in text)]
+    if isinstance(text, str):
+        return [text]
     data = output.get("data")
     if isinstance(data, dict):
         text_plain = data.get("text/plain")

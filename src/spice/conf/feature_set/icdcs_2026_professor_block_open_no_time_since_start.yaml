@@ -9,8 +9,8 @@ outputs:
   - dt_seconds
   - hour_sin
   - hour_cos
-  - dow_sin
-  - dow_cos
+  - weekday_sin
+  - weekday_cos
   - base_fee_trend
   - dlog_base_fee
   - roll10_mean_logfee

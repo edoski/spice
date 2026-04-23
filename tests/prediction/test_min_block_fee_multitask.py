@@ -8,8 +8,11 @@ import torch
 
 from spice.config import PredictionConfig
 from spice.modeling.models import ModelOutputs
-from spice.prediction import ActionSpaceDecodeContext, compile_prediction_contract
-from spice.prediction.families.min_block_fee_multitask.batch import MinBlockFeeTrainingState
+from spice.prediction import ActionSpaceDecodeContext, DecodedOffsets, compile_prediction_contract
+from spice.prediction.families.min_block_fee_multitask.batch import (
+    MinBlockFeeTrainingState,
+    PreparedMinBlockFeeTargets,
+)
 from spice.prediction.families.min_block_fee_multitask.outputs import (
     MIN_LOG_FEE_HEAD_ID,
     OFFSET_LOGITS_HEAD_ID,
@@ -135,8 +138,9 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     assert metrics.require("offset_accuracy") == pytest_approx(1.0)
     assert metrics.require("regression_loss") == pytest_approx(0.0)
 
-    predictions = contract.allocate_decoded_offsets(store.n_samples)
-    contract.decode_selected_offsets_into(
+    predictions = contract.allocate_decoded_result(store.n_samples)
+    assert isinstance(predictions, DecodedOffsets)
+    contract.decode_batch_result_into(
         predictions,
         outputs,
         ActionSpaceDecodeContext(
@@ -254,6 +258,29 @@ def test_min_block_fee_multitask_uses_full_action_mask_for_fixed_ex_ante_windows
     batch = prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64))
 
     assert batch.candidate_mask.cpu().numpy().all()
+
+
+def test_prepared_min_block_fee_targets_move_all_device_storage_members() -> None:
+    class TensorStub:
+        def __init__(self, device: str) -> None:
+            self.device = torch.device(device)
+
+        def to(self, device: torch.device, *, non_blocking: bool) -> TensorStub:
+            del non_blocking
+            return TensorStub(device.type)
+
+    prepared = PreparedMinBlockFeeTargets(
+        candidate_mask=TensorStub("cpu"),
+        min_block_offsets=TensorStub("meta"),
+        min_block_log_fees=TensorStub("meta"),
+    )
+
+    moved = prepared.to_device_storage(torch.device("cpu"))
+
+    assert moved is not prepared
+    assert moved.candidate_mask.device == torch.device("cpu")
+    assert moved.min_block_offsets.device == torch.device("cpu")
+    assert moved.min_block_log_fees.device == torch.device("cpu")
 
 
 def pytest_approx(value: float):

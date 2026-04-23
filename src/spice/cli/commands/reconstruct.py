@@ -7,6 +7,7 @@ from typing import Annotated
 
 import typer
 
+from ...core.errors import SpiceOperatorError
 from ...reconstruction import (
     DEFAULT_CHAINS,
     DEFAULT_DELAYS,
@@ -22,8 +23,6 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-_DEFAULT_REFERENCE_ROOT = Path("/Users/edo/dev/python/ICDCS-Model-Training")
-
 
 def _resolved_choices(
     values: list[str] | None,
@@ -33,6 +32,12 @@ def _resolved_choices(
     return default if values is None or len(values) == 0 else tuple(values)
 
 
+def _require_reference_root(reference_root: Path | None) -> Path:
+    if reference_root is None:
+        raise SpiceOperatorError("reconstruct requires --reference-root")
+    return reference_root
+
+
 @app.command("audit", short_help="Audit the current SPICE parity path.")
 def audit_command(
     preset: Annotated[
@@ -40,13 +45,13 @@ def audit_command(
         typer.Option("--preset", metavar="PRESET", help="Named preset to audit."),
     ] = "icdcs_2026_professor",
     reference_root: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--reference-root",
             metavar="PATH",
             help="Path to the ICDCS-Model-Training reference repository.",
         ),
-    ] = _DEFAULT_REFERENCE_ROOT,
+    ] = None,
     storage_root: Annotated[
         Path,
         typer.Option("--storage-root", metavar="PATH", help="Output root."),
@@ -59,7 +64,7 @@ def audit_command(
     resolved_run_name = run_name or new_run_name("audit")
     audit = run_current_parity_audit(
         preset=preset,
-        reference_root=reference_root,
+        reference_root=_require_reference_root(reference_root),
         storage_root=storage_root,
     )
     output_dir = write_audit_artifacts(
@@ -77,13 +82,13 @@ def run_command(
         typer.Option("--preset", metavar="PRESET", help="Named preset to audit."),
     ] = "icdcs_2026_professor",
     reference_root: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--reference-root",
             metavar="PATH",
             help="Path to the ICDCS-Model-Training reference repository.",
         ),
-    ] = _DEFAULT_REFERENCE_ROOT,
+    ] = None,
     chain: Annotated[
         list[str] | None,
         typer.Option(
@@ -114,11 +119,11 @@ def run_command(
     resolved_delays = tuple(delay_seconds) if delay_seconds else DEFAULT_DELAYS
     audit = run_current_parity_audit(
         preset=preset,
-        reference_root=reference_root,
+        reference_root=_require_reference_root(reference_root),
         storage_root=storage_root,
     )
     search = run_reference_search(
-        reference_root=reference_root,
+        reference_root=_require_reference_root(reference_root),
         chains=resolved_chains,
         delays=resolved_delays,
     )

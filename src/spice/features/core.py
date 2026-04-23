@@ -72,6 +72,7 @@ def feature_graph_fingerprint(
     *,
     fingerprint_sources: tuple[Path, ...],
 ) -> str:
+    package_root = Path(__file__).resolve().parents[1]
     digest = sha256()
     digest.update(feature_family_id.encode("utf-8"))
     digest.update(b"\0")
@@ -80,11 +81,18 @@ def feature_graph_fingerprint(
         digest.update(b"\0")
     for source in fingerprint_sources:
         resolved = source.resolve()
-        digest.update(str(resolved).encode("utf-8"))
+        digest.update(_fingerprint_source_id(resolved, package_root=package_root).encode("utf-8"))
         digest.update(b"\0")
         digest.update(resolved.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def _fingerprint_source_id(source: Path, *, package_root: Path) -> str:
+    try:
+        return source.relative_to(package_root).as_posix()
+    except ValueError:
+        return source.name
 
 
 def build_feature_table(

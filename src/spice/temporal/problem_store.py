@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -68,6 +68,40 @@ def tail_sample_indices(
             f"need at least {sample_count} valid anchors, got {store.n_samples}"
         )
     return np.arange(store.n_samples - sample_count, store.n_samples, dtype=np.int64)
+
+
+def with_fixed_context_length(
+    store: CompiledProblemStore,
+    *,
+    context_length: int,
+    history_seconds: int,
+    warmup_rows: int,
+) -> CompiledProblemStore:
+    if context_length <= 0:
+        raise ValueError("context_length must be positive")
+    context_start_rows = store.anchor_rows - context_length + 1
+    valid_anchor_mask = context_start_rows >= 0
+    valid_anchor_mask &= context_start_rows >= warmup_rows
+    if history_seconds > 0:
+        valid_anchor_mask &= (
+            store.timestamps[np.maximum(context_start_rows, 0)] - store.timestamps[0]
+        ) >= history_seconds
+    anchor_rows = store.anchor_rows[valid_anchor_mask].astype(np.int64, copy=False)
+    if anchor_rows.size == 0:
+        raise ValueError("fixed context length produced no supervised samples")
+    return replace(
+        store,
+        anchor_rows=anchor_rows,
+        context_start_rows=context_start_rows[valid_anchor_mask].astype(np.int64, copy=False),
+        candidate_start_rows=store.candidate_start_rows[valid_anchor_mask].astype(
+            np.int64,
+            copy=False,
+        ),
+        candidate_end_rows=store.candidate_end_rows[valid_anchor_mask].astype(
+            np.int64,
+            copy=False,
+        ),
+    )
 
 
 def filter_sample_indices_by_timestamp_window(

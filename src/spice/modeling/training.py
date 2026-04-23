@@ -84,7 +84,7 @@ def _is_improvement(
     metric_id: str,
     min_delta: float,
 ) -> bool:
-    if current_epoch == best_epoch:
+    if best_epoch == 0:
         return True
     current_value = history[current_epoch - 1].require(metric_id)
     best_value = history[best_epoch - 1].require(metric_id)
@@ -421,20 +421,16 @@ def train_model(
             )
             objective_history.append(objective_metrics)
 
-            current_best_epoch = _best_epoch_from_objective_history(
-                objective_history,
-                objective_contract=objective_contract,
-            )
             if _is_improvement(
                 current_epoch=epoch,
-                best_epoch=current_best_epoch,
+                best_epoch=best_epoch,
                 history=objective_history,
                 direction=objective_contract.direction,
                 metric_id=objective_contract.metric_id,
                 min_delta=training_config.early_stopping.min_delta,
             ):
                 best_state = _clone_cpu_state(_unwrap_compiled_model(fit_model))
-                best_epoch = current_best_epoch
+                best_epoch = epoch
                 epochs_without_improvement = 0
             else:
                 epochs_without_improvement += 1
@@ -466,11 +462,6 @@ def train_model(
             objective_contract=objective_contract,
         )
         best_state = _clone_cpu_state(_unwrap_compiled_model(fit_model))
-    else:
-        best_epoch = _best_epoch_from_objective_history(
-            objective_history,
-            objective_contract=objective_contract,
-        )
     best_value = objective_contract.value(objective_history[best_epoch - 1])
     model.load_state_dict(best_state)
     best_checkpoint_path = _checkpoint_path(

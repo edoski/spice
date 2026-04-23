@@ -89,6 +89,37 @@ def gas_utilization(blocks: pl.DataFrame) -> FloatVector:
     ).to_numpy().astype(np.float64, copy=False)
 
 
+def log1p_column(blocks: pl.DataFrame, column: str) -> FloatVector:
+    return np.log1p(blocks[column].cast(pl.Float64).to_numpy().astype(np.float64, copy=False))
+
+
+def delta(values: FloatVector) -> FloatVector:
+    if values.size == 0:
+        return np.empty(0, dtype=np.float64)
+    result = np.empty(values.shape[0], dtype=np.float64)
+    result[0] = np.nan
+    if values.shape[0] > 1:
+        result[1:] = np.diff(values)
+    return result
+
+
+def shift(values: FloatVector, *, lag: int = 1) -> FloatVector:
+    result = np.full(values.shape[0], np.nan, dtype=np.float64)
+    if lag <= 0:
+        raise ValueError("lag must be positive")
+    if values.size <= lag:
+        return result
+    result[lag:] = values[:-lag]
+    return result
+
+
+def binary_trend(values: FloatVector) -> FloatVector:
+    result = np.full(values.shape[0], np.nan, dtype=np.float64)
+    valid = ~np.isnan(values)
+    result[valid] = np.where(values[valid] >= 0.0, 1.0, -1.0)
+    return result
+
+
 def hour_sin(timestamps: IntVector) -> FloatVector:
     hours = (timestamps // 3600) % 24
     return np.sin(2.0 * math.pi * hours.astype(np.float64, copy=False) / 24.0)

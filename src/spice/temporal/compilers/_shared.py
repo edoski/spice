@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Protocol, cast
+
 import numpy as np
 
 from ...features import FeaturePrerequisites, ResolvedFeatureTable
 from ..problem_store import CompiledProblemStore
 from ..semantics import ActionSpaceMode, CandidateStartMode
+
+
+class _RecentDeltasEstimator(Protocol):
+    statistic: str
+    quantile: float | None
+    window_blocks: int
 
 
 def calibrate_positive_timestamp_delta_seconds(
@@ -83,7 +91,7 @@ def resolve_interval_estimator_seconds(
         return nominal_block_time_seconds
     if estimator_id != "recent_deltas":
         raise ValueError(f"Unsupported {compiler_label} interval estimator: {estimator_id}")
-    recent_deltas_estimator = estimator
+    recent_deltas_estimator = cast(_RecentDeltasEstimator, estimator)
     return summarize_positive_timestamp_delta_seconds(
         feature_table,
         statistic=recent_deltas_estimator.statistic,

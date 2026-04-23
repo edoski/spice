@@ -16,7 +16,7 @@ from ..config.models import (
     SplitConfig,
     TrainingConfig,
     TunedParameterSet,
-    TuningConfig,
+    TuningSearchConfig,
     TuningSpaceConfig,
 )
 from ..modeling.dataset_builders import DatasetBuilderConfig
@@ -51,7 +51,7 @@ class StudyManifest:
     model: ModelConfig
     split: SplitConfig
     training: TrainingConfig
-    tuning: TuningConfig
+    tuning: TuningSearchConfig
     sampler_name: str
     sampler_seed: int
     pruner_name: str

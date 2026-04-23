@@ -13,7 +13,7 @@ from spice.features import (
     compile_feature_contract,
     validate_feature_selection,
 )
-from spice.features.core import feature_graph_fingerprint
+from spice.features.core import _fingerprint_source_id, feature_graph_fingerprint
 
 
 def _block_frame() -> pl.DataFrame:
@@ -67,6 +67,34 @@ def _build_contract(feature_set_id: str, family_id: str, outputs: list[str]):
                 "outputs": outputs,
             }
         )
+    )
+
+
+def test_feature_fingerprint_source_id_is_package_relative() -> None:
+    package_root = Path("/repo/src/spice")
+    source = package_root / "features" / "families" / "block_native.py"
+
+    assert _fingerprint_source_id(source, package_root=package_root) == (
+        "features/families/block_native.py"
+    )
+
+
+def test_feature_fingerprint_ignores_external_absolute_parent_paths(tmp_path: Path) -> None:
+    first = tmp_path / "one" / "family.py"
+    second = tmp_path / "two" / "family.py"
+    first.parent.mkdir()
+    second.parent.mkdir()
+    first.write_text("x = 1\n")
+    second.write_text("x = 1\n")
+
+    assert feature_graph_fingerprint(
+        "family",
+        ("feature",),
+        fingerprint_sources=(first,),
+    ) == feature_graph_fingerprint(
+        "family",
+        ("feature",),
+        fingerprint_sources=(second,),
     )
 
 
@@ -321,37 +349,37 @@ def test_block_open_gas_ratio_rolls_account_for_lagged_warmup() -> None:
         (
             "icdcs_2026_professor_no_time_since_start",
             "block_native",
-            {"dt_seconds", "hour_sin", "dow_cos"},
+            {"dt_seconds", "hour_sin", "weekday_cos"},
             {"time_since_start"},
         ),
         (
             "icdcs_2026_professor_no_time_features",
             "block_native",
             {"dt_seconds"},
-            {"hour_sin", "hour_cos", "dow_sin", "dow_cos", "time_since_start"},
+            {"hour_sin", "hour_cos", "weekday_sin", "weekday_cos", "time_since_start"},
         ),
         (
             "icdcs_2026_professor_calendar_only_time",
             "block_native",
-            {"hour_sin", "hour_cos", "dow_sin", "dow_cos"},
+            {"hour_sin", "hour_cos", "weekday_sin", "weekday_cos"},
             {"dt_seconds", "time_since_start"},
         ),
         (
             "icdcs_2026_professor_block_open_no_time_since_start",
             "block_open_native",
-            {"dt_seconds", "hour_sin", "dow_cos"},
+            {"dt_seconds", "hour_sin", "weekday_cos"},
             {"time_since_start"},
         ),
         (
             "icdcs_2026_professor_block_open_no_time_features",
             "block_open_native",
             {"dt_seconds"},
-            {"hour_sin", "hour_cos", "dow_sin", "dow_cos", "time_since_start"},
+            {"hour_sin", "hour_cos", "weekday_sin", "weekday_cos", "time_since_start"},
         ),
         (
             "icdcs_2026_professor_block_open_calendar_only_time",
             "block_open_native",
-            {"hour_sin", "hour_cos", "dow_sin", "dow_cos"},
+            {"hour_sin", "hour_cos", "weekday_sin", "weekday_cos"},
             {"dt_seconds", "time_since_start"},
         ),
     ],

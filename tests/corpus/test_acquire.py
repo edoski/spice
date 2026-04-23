@@ -164,15 +164,11 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     runs = list_acquire_runs(paths.corpus_state_db)
     assert paths.corpus_state_db.is_file()
     assert summary.validation.evaluation.rows == evaluation_plan.expected_rows
-    assert summary.semantics.problem.problem_id == config.problem.id
-    assert summary.semantics.problem.compiler_id == config.problem.compiler.id
-    assert summary.semantics.feature.feature_set_id == config.feature_set.id
-    assert summary.semantics.feature.feature_family_id == config.feature_set.family.id
-    assert (
-        summary.semantics.feature.feature_graph_fingerprint
-        == feature_contract.feature_graph_fingerprint
-    )
-    assert summary.semantics.feature.feature_prerequisites == contract.feature_prerequisites
+    assert summary.dataset.id == paths.corpus_id
+    assert summary.dataset.name == config.dataset.name
+    assert summary.chain.name == config.chain.name
+    assert summary.chain.chain_id == config.chain.runtime.chain_id
+    assert feature_contract.feature_prerequisites == contract.feature_prerequisites
     assert len(runs) == 1
     assert runs[0].provider.name == config.rpc_endpoint.provider_name
     assert runs[0].provider.reference == config.rpc_endpoint.reference

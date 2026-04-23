@@ -3,10 +3,19 @@
 ## Current State
 
 - Branch: `codex/temporal-parity`
+- Current committed baseline for the active remote sweep: `5275248`
+- Remote `giano` worktree for the active sweep is synced to `5275248`.
 - Primary benchmark surface: `paper_replay_2h`
 - Diagnostic surfaces:
   - `notebook_rollout_fullset`
   - `notebook_basefee_fullset`
+- Latest completed wave:
+  - cross-chain confirmation of frozen `unsafe_reference` vs improved `safe_best`
+  - chains: Ethereum, Polygon, Avalanche
+  - delay: `36s`
+- Active Slurm state:
+  - no active jobs from the cross-chain confirmation sweep remain
+- Local cleanup work may proceed on a separate branch/worktree.
 
 ## Main Paths
 
@@ -15,14 +24,85 @@
   - feature sets: `icdcs_2026_professor*`
   - semantics: current-block action space, fixed ex-ante classes, current-row pricing, post-block features
   - why unsafe: model can act on the same block row whose finalized block facts it already sees
-  - status: best paper/professor reproduction so far
+  - status: frozen professor-like reference and main comparator
+  - governance: do not reinterpret, optimize, or rename it until the current experimental surface is locked
 
 - Safe current-block path:
   - presets: `icdcs_2026_oracle_block_open*`
   - feature sets: `icdcs_2026_professor_block_open*`
   - semantics: current-block action space, fixed ex-ante classes, current-row pricing, block-open feature contract
   - safety rule: finalized current-block features are lagged; current base fee is kept
-  - status: clean causal sibling path, still underperforming on Ethereum
+  - status: clean causal sibling path; current improved candidate is `safe_best`
+
+- `safe_best` per-family surface:
+  - `lstm`:
+    - preset: `icdcs_2026_oracle_block_open_candidate`
+    - feature policy: `no_time_features`
+    - interval policy: `recent_deltas`
+  - `transformer`:
+    - preset: `icdcs_2026_oracle_block_open_candidate_transformer`
+    - feature policy: `no_time_since_start`
+    - interval policy: nominal
+  - `transformer_lstm`:
+    - preset: `icdcs_2026_oracle_block_open_candidate_transformer_lstm`
+    - feature policy: `calendar_only_time`
+    - interval policy: `recent_deltas`
+  - rationale:
+    - time-feature ablations showed different winners by model family
+    - interval estimation helped some families but not all
+    - do not collapse to one uniform safe feature set merely to reduce YAML count
+
+## Completed Cross-Chain Confirmation Wave
+
+Decimal values below are `profit_over_baseline` on `paper_replay_2h`.
+
+| Chain | Paper Fig. 6 approx | Unsafe reference | Safe best |
+| --- | --- | --- | --- |
+| Ethereum | `0.0255 / 0.0262 / 0.0258` | `0.0248 / 0.0257 / 0.0255` | `0.0123 / 0.0113 / 0.0114` |
+| Polygon | `0.0020 / 0.0020 / 0.0019` | `0.0043 / 0.0042 / 0.0028` | `0.0045 / 0.0039 / 0.0042` |
+| Avalanche | `0.0095 / -0.0015 / 0.0058` | `0.0144 / 0.0133 / 0.0120` | `0.0132 / 0.0072 / 0.0031` |
+
+Model order: `LSTM / Transformer / Transformer-LSTM`
+
+Final missing evals:
+
+- Avalanche unsafe `transformer_lstm`:
+  - `paper_replay_2h`: `0.0120`
+  - `notebook_rollout_fullset`: `0.0340`
+  - `notebook_basefee_fullset`: `0.0102`
+- Avalanche safe_best `transformer_lstm` completed with:
+  - `paper_replay_2h`: `0.0031`
+  - `notebook_rollout_fullset`: `0.0023`
+  - `notebook_basefee_fullset`: `0.0031`
+
+Old safe block-open baseline vs current safe_best:
+
+| Chain | Old safe block-open | Current safe_best |
+| --- | --- | --- |
+| Ethereum | `0.0104 / 0.0112 / 0.0089` | `0.0123 / 0.0113 / 0.0114` |
+| Polygon | `0.0040 / 0.0023 / 0.0036` | `0.0045 / 0.0039 / 0.0042` |
+| Avalanche | `0.0121 / 0.0047 / 0.0009` | `0.0132 / 0.0072 / 0.0031` |
+
+Final read:
+
+- Ethereum:
+  - unsafe remains near the paper band
+  - safe_best improves the old safe baseline but remains below paper and unsafe
+- Polygon:
+  - safe_best generalizes well and beats both paper and the old safe baseline
+  - unsafe also beats paper
+- Avalanche:
+  - unsafe beats paper across all 3 families
+  - safe_best LSTM beats paper
+  - safe_best Transformer is positive and above the paper Transformer bar, but below unsafe
+  - safe_best Transformer-LSTM is positive but below the paper Transformer-LSTM bar
+- Overall:
+  - safe_best improves the old safe baseline on all 9 chain-family cells
+  - safe_best generalizes beyond Ethereum in the sense that it improves the safe baseline on Polygon and Avalanche
+  - safe_best is not a uniform paper-beating replacement for the unsafe reference
+  - unsafe reference remains the strongest professor-like comparator and should stay frozen
+
+No new wave has been queued.
 
 ## Verified Facts
 
@@ -31,6 +111,23 @@
 - The old realized-future action-mask oracle was too unsafe and is not the reference target.
 - Unsafe intermediate is closer to the professor setup than the old realized-mask oracle.
 - Notebook rollout is more permissive than replay because it re-decides one row at a time until the model emits `0`.
+
+## Important Comparability Caveats
+
+- Checkpoint selection differs from the professor reference code.
+  - In SPICE, model selection / early-stopping priority is economic: `profit_over_baseline`.
+  - In the professor training code, the visible selection rule appears to be validation loss.
+  - This can materially change final economic results, especially on tighter-margin chains like Polygon.
+- Our primary replay evaluator is stricter than the notebook-style evaluator.
+  - `paper_replay_2h` is a one-shot replay benchmark: the model commits to one decoded choice from the current row.
+  - The professor notebook rollout is a sequential re-decision policy: move forward one row at a time until the model emits `0`.
+  - So notebook rollout is easier to do well on and should not be read as directly equivalent to replay.
+- “Better than paper” should be stated carefully.
+  - What we can say confidently: on our benchmark surface, our implementation reproduces or exceeds the reported economic gains.
+  - What remains partially unresolved: exact parity with the professor's unpublished preprocessing, split construction, and model-selection pipeline.
+- The unsafe reference is the best professor-like reproduction, but it is still not claimed to be a perfect clone.
+  - It is the closest current match to the visible professor artifacts.
+  - It remains useful as a reference path and upper-bound-like comparator, not as proof of exact experimental identity.
 
 ## Cross-Chain Replay Results
 
@@ -98,8 +195,10 @@ Model order: `LSTM / Transformer / Transformer-LSTM`
 - There is no single universal winner across all families.
 - Notebook metrics were directionally consistent with the replay findings.
 
-## Next After This Wave
+## Interval-Estimator Rationale
 
+- This section records why the interval-estimation wave was run.
+- The implementation exists and the first Ethereum matrix is completed below.
 - Interval estimation:
   - Goal:
     - improve fixed ex-ante action sizing without using future realized timestamps
@@ -165,6 +264,90 @@ Model order: `LSTM / Transformer / Transformer-LSTM`
     - gains are chain-specific and do not justify promotion
   - Governance:
     - no compiler default change without explicit in-thread approval
+
+## Latest Completed Wave
+
+- Wave: Ethereum-only interval-estimation matrix
+- Scope:
+  - safe reference
+  - safe candidate
+  - unsafe reference
+  - all 3 families
+  - estimators:
+    - `nominal`
+    - `recent_deltas`
+- Primary surface: `paper_replay_2h`
+
+### Safe reference replay results
+
+| Family | Nominal | `recent_deltas` |
+| --- | --- | --- |
+| LSTM | `0.0096` | `0.0115` |
+| Transformer | `0.0108` | `0.0117` |
+| Transformer-LSTM | `0.0115` | `0.0107` |
+
+### Safe candidate replay results
+
+| Family | Nominal | `recent_deltas` |
+| --- | --- | --- |
+| LSTM | `0.0124` | `0.0125` |
+| Transformer | `0.0129` | `0.0120` |
+| Transformer-LSTM | `0.0110` | `0.0116` |
+
+### Unsafe reference replay results
+
+| Family | Nominal | `recent_deltas` |
+| --- | --- | --- |
+| LSTM | `0.0254` | `0.0258` |
+| Transformer | `0.0264` | `0.0259` |
+| Transformer-LSTM | `0.0258` | `0.0254` |
+
+### Main conclusions
+
+- The per-family safe candidate surface beats the safe reference surface under both estimators for all 3 families.
+- `recent_deltas` is helpful but not universal.
+- On the safe reference surface, `recent_deltas` helps `lstm` and `transformer`, but hurts `transformer_lstm`.
+- On the safe candidate surface, `recent_deltas` is:
+  - neutral/slightly positive for `lstm`
+  - negative for `transformer`
+  - positive for `transformer_lstm`
+- On the unsafe reference surface, `recent_deltas` only moves results slightly and does not change the overall picture.
+- Best safe replay results from this wave are:
+  - `lstm`: safe candidate + `recent_deltas` = `0.0125`
+  - `transformer`: safe candidate + nominal = `0.0129`
+  - `transformer_lstm`: safe candidate + `recent_deltas` = `0.0116`
+
+## Near-Term Decision Queue
+
+- Cross-chain confirmation sweep is complete.
+  - final Avalanche unsafe `transformer_lstm` replay and notebook metrics are captured above
+  - no active Slurm jobs from this wave remain
+  - the `cross-chain-confirm` heartbeat can be stopped after the in-thread final summary
+- Decide whether `safe_best` becomes the working safe reference.
+  - this is not automatic default promotion
+  - keep the unsafe reference frozen as the professor-like comparator
+  - keep per-family safe_best feature/interval choices unless results justify simplification
+- Run a small checkpoint-selection parity check before major new feature work.
+  - compare economic-objective selection against validation-loss selection
+  - reason: this directly addresses why our Polygon/Avalanche results can exceed paper bars
+  - goal: improve comparability claims without changing the feature surface
+- Do not queue additional experiment waves automatically.
+  - feature engineering, UQ, dynamic windows, and cleanup promotion all require explicit in-thread approval
+- Local cleanup may now be synced to `giano` when desired, provided it is intentionally separate from the completed benchmark state.
+
+## Thesis / Internship Position
+
+- Internship 1 baseline-replication goal:
+  - economically, the unsafe professor-like reference reproduces or exceeds the reported paper gains on the project benchmark surface
+  - exact professor-pipeline parity remains caveated because preprocessing, splits, evaluator semantics, and checkpoint selection are not fully identical
+  - this is sufficient for a careful claim that the same research problem and model families have been reproduced on a comparable benchmark surface, not for claiming a perfect clone
+- Internship 1 optimization goal:
+  - partially accomplished through time-feature ablations and interval-estimator experiments
+  - full Bayesian HPO, loss-weight sweeps, and lookback-horizon sweeps remain optional future work rather than completed work
+- Thesis / Internship 2 direction:
+  - uncertainty quantification and dynamic prediction-window sizing remain aligned with the codebase direction
+  - the cleanup plan supports these ideas by making evaluator compatibility, decoded prediction outputs, and temporal metadata ownership explicit
+  - a committed benchmark ledger should be added before thesis-scale experiment expansion
 
 ## Deferred Future Feature Ideas
 
@@ -282,8 +465,46 @@ Model order: `LSTM / Transformer / Transformer-LSTM`
 ## Deferred Cleanup
 
 - Do not delete old paths blindly.
+- Cleanup should be a clean break once the experiment surface is stable.
+- Generated artifacts, corpora, studies, summaries, and manifests may be invalidated after cleanup.
+- No compatibility adapters, migrations, or legacy shims should be added just to preserve old generated state.
 - After the experimental surface stabilizes:
   - keep one unsafe reference path
   - keep one safe path
   - rename implementations around semantics, not provenance
   - remove stale configs only with explicit justification
+- Stale YAML cleanup is desired, but only after the unsafe reference and safe reference are locked.
+  - preserve configs that define ledgered thesis/reporting surfaces until their results are documented
+  - remove alias-style legacy feature names only after checked-in presets no longer require them
+  - do not sacrifice measurable safe-path performance merely to reduce YAML count
+- Naming direction once cleanup begins:
+  - the frozen unsafe professor-like reference should become the canonical `icdcs_2026` preset surface
+  - rationale: in project usage, `icdcs_2026` means the paper-reference reproduction surface
+  - keep the safe path under explicit semantic naming, e.g. block-open/current-block-safe naming
+  - do not perform this rename until the reference surfaces are locked and stale YAML cleanup is underway
+- Main cleanup themes:
+  - fix correctness bugs first:
+    - estimated-block bootstrap interval resolution
+    - early-stopping `min_delta` comparison
+    - complete tensor movement in `PreparedMinBlockFeeTargets.to_device_storage()`
+    - storage-root containment checks before recursive deletion
+  - restore compiler ownership of temporal runtime metadata
+  - make builder metadata typed and registry-owned
+  - generalize prediction decoded outputs beyond `DecodedOffsets`
+  - make evaluators declare and validate compatible decoded-result semantics
+  - split large evaluator implementation into registry, engines, sampler policies, metrics, and summaries
+  - make workflow request models task-specific
+  - submit resolved workflow snapshots remotely instead of re-resolving request JSON on the cluster
+  - clean corpus/study/artifact identity semantics
+  - remove dead codecs, stale docs, parity defaults, and redundant feature helpers with justification
+- Cleanup must not be synced to `giano` while active benchmark jobs or dependent evals still rely on the old remote worktree.
+
+## Deferred Benchmark Ledger
+
+- Current artifact SQLite state is useful for runtime provenance, but it is not a committed historical benchmark ledger.
+- Keep `PROGRESS.md` as the narrative experiment log.
+- Add a committed benchmark ledger later, likely under `benchmarks/`, with:
+  - wave metadata: commit, branch, chains, models, presets, feature policies, evaluators, delay, metric
+  - result rows: chain, family, surface, evaluator, artifact id, evaluation id, job id, row counts, metrics
+  - an export command that reads artifact state and writes stable CSV/JSONL outputs
+- Keep raw `outputs/` artifacts and Slurm logs untracked.

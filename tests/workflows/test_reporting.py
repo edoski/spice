@@ -68,6 +68,8 @@ def test_train_workflow_emits_compact_epoch_output(
         lambda _config: SimpleNamespace(
             training=SimpleNamespace(max_epochs=3),
             prediction_contract=SimpleNamespace(primary_metric_id="profit_over_baseline"),
+            contract=object(),
+            feature_contract=object(),
         ),
     )
 
@@ -91,6 +93,9 @@ def test_train_workflow_emits_compact_epoch_output(
         return SimpleNamespace(summary=object())
 
     monkeypatch.setattr(train_workflow, "run_persisted_training", fake_run_persisted_training)
+    monkeypatch.setattr(train_workflow, "load_dataset_manifest", lambda *_args: object())
+    monkeypatch.setattr(train_workflow, "training_coverage_requirement", lambda *_args: object())
+    monkeypatch.setattr(train_workflow, "validate_corpus_coverage", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(train_workflow, "promote_paths_atomic", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(train_workflow, "reindex_root", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
@@ -153,6 +158,8 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
                     callback(self, trial)
 
     fake_study = FakeStudy()
+    monkeypatch.setattr(tune_workflow, "load_dataset_manifest", lambda *_args: object())
+    monkeypatch.setattr(tune_workflow, "validate_corpus_coverage", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         tune_workflow,
         "open_tuning_study",
