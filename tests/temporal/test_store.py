@@ -310,3 +310,65 @@ def test_timestamp_future_window_supports_current_row_fixed_action_windows() -> 
     assert runtime_metadata.capability_action_count == 4
     assert store.max_candidate_slots == 4
     assert store.action_space_mode.value == "fixed_ex_ante"
+
+
+def test_timestamp_future_window_fixed_ex_ante_derives_width_from_realized_training_window(
+) -> None:
+    feature_contract = compile_feature_contract(
+        feature_set=coerce_feature_set_config(
+            {
+                "id": "test_timestamp_future_window_avalanche_like",
+                "family": {"id": "time_native"},
+                "outputs": ["seconds_since_previous_block", "elapsed_seconds"],
+            }
+        )
+    )
+    blocks = pl.DataFrame(
+        {
+            "block_number": np.arange(600, 650, dtype=np.int64),
+            "timestamp": np.arange(50, dtype=np.int64),
+            "base_fee_per_gas": np.full(50, 1_000_000_000, dtype=np.int64),
+            "gas_used": np.full(50, 18_000_000, dtype=np.int64),
+            "gas_limit": np.full(50, 30_000_000, dtype=np.int64),
+            "chain_id": np.ones(50, dtype=np.int64),
+        }
+    )
+    feature_table = feature_contract.build_table(blocks)
+    contract = compile_problem_contract(
+        problem=coerce_problem_spec(
+            {
+                "id": "test_timestamp_future_window_avalanche_like",
+                "lookback_seconds": 24,
+                "sample_count": 4,
+                "max_delay_seconds": 36,
+                "compiler": {
+                    "id": "timestamp_future_window",
+                    "action_interval_source": "nominal_chain_runtime",
+                    "candidate_start_mode": "current_row",
+                },
+                "realization_policy": _realization_policy_config(),
+            }
+        ),
+        feature_contract=feature_contract,
+        chain_runtime=ChainRuntimeSpec(
+            chain_id=43114,
+            uses_poa_extra_data=False,
+            nominal_block_time_seconds=1.6,
+        ),
+    )
+
+    store, runtime_metadata = contract.build_capability_store(feature_table)
+
+    assert runtime_metadata.capability_action_count == 23
+    assert store.max_candidate_slots > runtime_metadata.capability_action_count
+    assert store.max_candidate_slots == int(store.candidate_counts.max())
+
+    delay_store = contract.build_delay_store(
+        feature_table,
+        36,
+        compiler_runtime_metadata=runtime_metadata,
+        max_candidate_slots=runtime_metadata.capability_action_count,
+    )
+
+    assert delay_store.max_candidate_slots == runtime_metadata.capability_action_count
+    assert int(delay_store.candidate_counts.max()) > delay_store.max_candidate_slots

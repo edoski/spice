@@ -115,7 +115,10 @@ def build_timestamp_window_store(
     selected_candidate_ends = candidate_end_rows[anchor_rows].astype(np.int64, copy=False)
     selected_candidate_counts = selected_candidate_ends - selected_candidate_starts
     if fixed_candidate_count is not None:
-        if np.any(selected_candidate_counts > fixed_candidate_count):
+        if (
+            action_space_mode is not ActionSpaceMode.FIXED_EX_ANTE
+            and np.any(selected_candidate_counts > fixed_candidate_count)
+        ):
             raise ValueError(
                 fixed_candidate_count_error
                 or "Configured fixed candidate count is too small for this dataset"
@@ -129,7 +132,10 @@ def build_timestamp_window_store(
             if max_candidate_slots is None
             else int(max_candidate_slots)
         )
-        if np.any(selected_candidate_counts > resolved_max_candidate_slots):
+        if (
+            action_space_mode is not ActionSpaceMode.FIXED_EX_ANTE
+            and np.any(selected_candidate_counts > resolved_max_candidate_slots)
+        ):
             raise ValueError("Configured max_candidate_slots is too small for this dataset")
     if resolved_max_candidate_slots <= 0:
         raise ValueError("max_candidate_slots must be positive")

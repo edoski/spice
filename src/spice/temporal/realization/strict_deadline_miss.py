@@ -86,16 +86,17 @@ def _prepare_supervised_targets(
             window_summary.candidate_counts,
             strict=True,
         )
-        ):
-        if int(candidate_count) > max_candidate_slots:
-            raise ValueError(
-                "strict_deadline_miss requires fixed action space to upper-bound realized "
-                "future candidates"
-            )
+    ):
         candidate_values = store.log_base_fees[start_row:end_row]
         if store.action_space_mode.value == "fixed_ex_ante":
             candidate_mask[row, :] = True
-            candidate_log_fees[row, :candidate_count] = candidate_values
+            slot_count = min(int(candidate_count), max_candidate_slots)
+            candidate_log_fees[row, :slot_count] = candidate_values[:slot_count]
+            if int(window_summary.optimum_offsets[row]) >= max_candidate_slots:
+                raise ValueError(
+                    "strict_deadline_miss fixed action space must cover optimum offsets "
+                    "for supervised targets"
+                )
             if int(candidate_count) < max_candidate_slots:
                 if int(end_row) >= store.n_rows:
                     raise ValueError(

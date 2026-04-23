@@ -108,11 +108,6 @@ class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
             delay_seconds=self.max_delay_seconds,
             candidate_start_mode=self.candidate_start_mode,
             action_space_mode=self.action_space_mode,
-            fixed_candidate_count=capability_action_count,
-            fixed_candidate_count_error=(
-                "timestamp_future_window requires fixed action space to upper-bound realized "
-                "future candidates"
-            ),
             requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
         return (
@@ -148,11 +143,7 @@ class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
             delay_seconds=delay_seconds,
             candidate_start_mode=self.candidate_start_mode,
             action_space_mode=self.action_space_mode,
-            fixed_candidate_count=max_candidate_slots,
-            fixed_candidate_count_error=(
-                "timestamp_future_window requires fixed action space to upper-bound realized "
-                "future candidates"
-            ),
+            max_candidate_slots=max_candidate_slots,
             requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
 
