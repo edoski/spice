@@ -517,11 +517,6 @@ Model order: `LSTM / Transformer / Transformer-LSTM`
 
 ## Remaining Cleanup / Architecture Work
 
-- After unsafe and safe reference surfaces are locked, simplify configs around one unsafe reference and one explicit safe path.
-  - keep the frozen unsafe same-block reference as canonical `same_block_closed`
-  - keep the safe path under explicit block-open/current-block-safe naming
-  - preserve configs that define ledgered thesis/reporting surfaces until their results are documented
-  - remove stale YAML only with explicit justification
 - Remaining architecture cleanup:
   - restore compiler ownership of temporal runtime metadata
   - make builder metadata typed and registry-owned
@@ -534,10 +529,13 @@ Model order: `LSTM / Transformer / Transformer-LSTM`
 
 ## Deferred Benchmark Ledger
 
-- Current artifact SQLite state is useful for runtime provenance, but it is not a committed historical benchmark ledger.
-- Keep `PROGRESS.md` as the narrative experiment log.
-- Add a committed benchmark ledger later, likely under `benchmarks/`, with:
-  - wave metadata: commit, branch, chains, models, surfaces, feature policies, evaluators, delay, metric
-  - result rows: chain, family, surface, evaluator, artifact id, evaluation id, job id, row counts, metrics
-  - an export command that reads artifact state and writes stable CSV/JSONL outputs
+- Keep SQLite artifact state as operational provenance and the query source for local/remote runs.
+- Do not use SQLite as the committed canonical benchmark ledger.
+  - reason: binary state is hard to diff, review, merge, and separate from partial local runs
+- Keep `PROGRESS.md` as the narrative experiment log, not the structured source of truth.
+- Add a committed benchmark ledger later under `benchmarks/`:
+  - wave metadata: `benchmarks/waves/<wave_id>.yaml`
+  - result rows: `benchmarks/results/<wave_id>.csv` or JSONL
+  - fields: commit, branch, chains, models, surfaces, feature policies, evaluators, objectives, delay, metric, artifact ids, evaluation ids, job ids, row counts, final metric values
+  - export command: read artifact SQLite state and write stable CSV/JSONL rows once a wave is ready to preserve
 - Keep raw `outputs/` artifacts and Slurm logs untracked.
