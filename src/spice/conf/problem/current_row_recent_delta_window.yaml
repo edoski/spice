@@ -1,0 +1,13 @@
+id: current_row_recent_delta_window
+lookback_seconds: 600
+sample_count: 400000
+max_delay_seconds: 36
+compiler:
+  id: timestamp_future_window
+  action_interval_estimator:
+    id: recent_deltas
+    window_blocks: 256
+    statistic: median
+  candidate_start_mode: current_row
+realization_policy:
+  id: strict_deadline_miss

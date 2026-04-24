@@ -1,0 +1,16 @@
+chain: ethereum
+dataset: icdcs_2026
+provider: publicnode
+dataset_builder: fixed_context_temporal
+prediction: icdcs_2026
+acquisition: default
+training: default
+split: default
+tuning: default
+model: lstm
+tuning_space: lstm_fixed_context
+objective: profit_poisson_replay_2h
+evaluation: poisson_replay_2h
+delay_seconds: 36
+problem: current_row_nominal_window
+feature_set: same_block_closed_full

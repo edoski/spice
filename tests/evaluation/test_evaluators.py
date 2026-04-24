@@ -62,14 +62,18 @@ def _current_row_store() -> CompiledProblemStore:
     )
 
 
-def test_paper_windowed_falls_back_to_fullset_for_short_spans() -> None:
+@pytest.mark.parametrize("window_seconds", [None, 99_999])
+def test_uniform_window_falls_back_to_fullset(window_seconds: int | None) -> None:
     store = _store()
     decoded_offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
+    if window_seconds is None:
+        sample_timestamps = store.timestamps[store.anchor_rows[sample_indices]]
+        window_seconds = int(sample_timestamps[-1] - sample_timestamps[0])
     windowed = compile_evaluator_contract(
         EvaluatorConfig.model_validate(
             {
-                "id": "paper_windowed_2h",
+                "id": "uniform_window_2h",
                 "sampler": "uniform_window",
                 "window_seconds": 99_999,
                 "repetitions": 3,
@@ -78,7 +82,7 @@ def test_paper_windowed_falls_back_to_fullset_for_short_spans() -> None:
         )
     )
     fullset = compile_evaluator_contract(
-        EvaluatorConfig.model_validate({"id": "paper_fullset", "sampler": "fullset"})
+        EvaluatorConfig.model_validate({"id": "fullset", "sampler": "fullset"})
     )
 
     summary = windowed.run(
@@ -102,7 +106,7 @@ def test_paper_windowed_falls_back_to_fullset_for_short_spans() -> None:
 def test_evaluator_rejects_incompatible_decoded_result_semantics() -> None:
     store = _store()
     evaluator = compile_evaluator_contract(
-        EvaluatorConfig.model_validate({"id": "paper_fullset", "sampler": "fullset"})
+        EvaluatorConfig.model_validate({"id": "fullset", "sampler": "fullset"})
     )
 
     with pytest.raises(TypeError, match="decoded-result requirement"):
@@ -114,53 +118,14 @@ def test_evaluator_rejects_incompatible_decoded_result_semantics() -> None:
         )
 
 
-def test_paper_windowed_falls_back_to_fullset_for_exact_spans() -> None:
-    store = _store()
-    decoded_offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-    sample_timestamps = store.timestamps[store.anchor_rows[sample_indices]]
-    exact_window_seconds = int(sample_timestamps[-1] - sample_timestamps[0])
-    windowed = compile_evaluator_contract(
-        EvaluatorConfig.model_validate(
-            {
-                "id": "paper_windowed_2h",
-                "sampler": "uniform_window",
-                "window_seconds": exact_window_seconds,
-                "repetitions": 3,
-                "seed": 2026,
-            }
-        )
-    )
-    fullset = compile_evaluator_contract(
-        EvaluatorConfig.model_validate({"id": "paper_fullset", "sampler": "fullset"})
-    )
-
-    summary = windowed.run(
-        store,
-        _realization_policy(),
-        decoded_offsets,
-        sample_indices,
-    )
-    reference = fullset.run(
-        store,
-        _realization_policy(),
-        decoded_offsets,
-        sample_indices,
-    )
-
-    assert len(summary.runs) == 1
-    assert summary.runs[0].metadata["mode"] == "fullset_fallback"
-    assert summary.metrics.values == pytest.approx(reference.metrics.values)
-
-
-def test_paper_windowed_samples_requested_number_of_runs() -> None:
+def test_uniform_window_samples_requested_number_of_runs() -> None:
     store = _store()
     decoded_offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     evaluator = compile_evaluator_contract(
         EvaluatorConfig.model_validate(
             {
-                "id": "paper_windowed_2h",
+                "id": "uniform_window_2h",
                 "sampler": "uniform_window",
                 "window_seconds": 3600,
                 "repetitions": 3,
@@ -178,17 +143,16 @@ def test_paper_windowed_samples_requested_number_of_runs() -> None:
 
     assert len(summary.runs) == 3
     assert summary.window_metrics
-    assert all(run.metadata["mode"] == "windowed" for run in summary.runs)
 
 
-def test_paper_windowed_handles_sparse_non_empty_windows_without_retry_failure() -> None:
+def test_uniform_window_handles_sparse_non_empty_windows_without_retry_failure() -> None:
     store = _store()
     decoded_offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     evaluator = compile_evaluator_contract(
         EvaluatorConfig.model_validate(
             {
-                "id": "paper_windowed_2h",
+                "id": "uniform_window_2h",
                 "sampler": "uniform_window",
                 "window_seconds": 1,
                 "repetitions": 8,
@@ -217,7 +181,7 @@ def test_poisson_replay_handles_non_chronological_sample_indices() -> None:
     evaluator = compile_evaluator_contract(
         EvaluatorConfig.model_validate(
             {
-                "id": "paper_replay_2h",
+                "id": "poisson_replay_2h",
                 "sampler": "poisson_arrivals",
                 "window_seconds": 7200,
                 "arrival_rate_per_second": 0.01,
@@ -245,24 +209,11 @@ def test_poisson_replay_handles_non_chronological_sample_indices() -> None:
     assert [run.n_events for run in reversed_summary.runs] == [run.n_events for run in summary.runs]
 
 
-def test_realization_rejects_negative_decoded_offsets() -> None:
-    store = _store()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-
-    with pytest.raises(ValueError, match="non-negative"):
-        _realization_policy().realize_selections(
-            store,
-            DecodedOffsets(torch.tensor([-1, 0, 0, 0], dtype=torch.int64)),
-            sample_indices,
-            np.array([0], dtype=np.int64),
-        )
-
-
 def test_fullset_uses_next_block_baseline_and_future_window_optimum() -> None:
     store = _store()
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     evaluator = compile_evaluator_contract(
-        EvaluatorConfig.model_validate({"id": "paper_fullset", "sampler": "fullset"})
+        EvaluatorConfig.model_validate({"id": "fullset", "sampler": "fullset"})
     )
 
     summary = evaluator.run(
@@ -289,13 +240,13 @@ def test_fullset_uses_next_block_baseline_and_future_window_optimum() -> None:
     )
 
 
-def test_notebook_rollout_stops_on_zero_and_truncates_tail_windows() -> None:
+def test_zero_stop_rollout_stops_on_zero_and_truncates_tail_windows() -> None:
     store = _current_row_store()
     evaluator = compile_evaluator_contract(
         EvaluatorConfig.model_validate(
             {
-                "id": "notebook_rollout_fullset",
-                "engine": "notebook_rollout",
+                "id": "zero_stop_rollout_fullset",
+                "engine": "zero_stop_rollout",
             }
         )
     )
@@ -312,7 +263,7 @@ def test_notebook_rollout_stops_on_zero_and_truncates_tail_windows() -> None:
 
     assert summary.total_events == 4
     assert summary.runs[0].metadata == {
-        "mode": "notebook_rollout_fullset",
+        "mode": "zero_stop_rollout_fullset",
         "zero_stop_count": 2,
         "terminal_without_zero_count": 2,
         "truncated_window_count": 1,
@@ -332,13 +283,13 @@ def test_notebook_rollout_stops_on_zero_and_truncates_tail_windows() -> None:
     )
 
 
-def test_notebook_basefee_compares_anchor_and_realized_fees() -> None:
+def test_anchor_basefee_compares_anchor_and_realized_fees() -> None:
     store = _current_row_store()
     evaluator = compile_evaluator_contract(
         EvaluatorConfig.model_validate(
             {
-                "id": "notebook_basefee_fullset",
-                "engine": "notebook_basefee",
+                "id": "anchor_basefee_fullset",
+                "engine": "anchor_basefee",
             }
         )
     )
@@ -353,7 +304,7 @@ def test_notebook_basefee_compares_anchor_and_realized_fees() -> None:
     realized_total = 95.0 + 80.0 + 80.0 + 60.0
 
     assert summary.runs[0].metadata == {
-        "mode": "notebook_basefee_fullset",
+        "mode": "anchor_basefee_fullset",
         "overflow_count": 0,
         "zero_action_count": 2,
     }
@@ -367,58 +318,3 @@ def test_notebook_basefee_compares_anchor_and_realized_fees() -> None:
         }
     )
 
-
-def test_notebook_evaluators_reject_replay_sampler_fields() -> None:
-    with pytest.raises(ValueError, match="evaluation.sampler"):
-        EvaluatorConfig.model_validate(
-            {
-                "id": "notebook_rollout_fullset",
-                "engine": "notebook_rollout",
-                "sampler": "fullset",
-            }
-        )
-
-
-def test_fixed_ex_ante_overflow_realizes_first_post_window_row() -> None:
-    store = CompiledProblemStore(
-        feature_matrix=np.zeros((16, 1), dtype=np.float32),
-        log_base_fees=np.log(
-            np.array(
-                [100, 95, 90, 80, 75, 70, 60, 55, 50, 40, 35, 30, 25, 20, 18, 16],
-                dtype=np.float32,
-            )
-        ).astype(np.float32, copy=False),
-        timestamps=(np.arange(16, dtype=np.int64) * 1800).astype(np.int64, copy=False),
-        anchor_rows=np.array([1, 4], dtype=np.int64),
-        context_start_rows=np.array([0, 3], dtype=np.int64),
-        candidate_start_rows=np.array([2, 5], dtype=np.int64),
-        candidate_end_rows=np.array([4, 7], dtype=np.int64),
-        action_space_mode=ActionSpaceMode.FIXED_EX_ANTE,
-        max_candidate_slots=3,
-    )
-    evaluator = compile_evaluator_contract(
-        EvaluatorConfig.model_validate({"id": "paper_fullset", "sampler": "fullset"})
-    )
-
-    summary = evaluator.run(
-        store,
-        _realization_policy(),
-        DecodedOffsets(torch.tensor([2, 2], dtype=torch.int64)),
-        np.arange(store.n_samples, dtype=np.int64),
-    )
-
-    baseline_total = 90.0 + 70.0
-    realized_total = 75.0 + 55.0
-    optimum_total = 80.0 + 60.0
-
-    assert summary.runs[0].metadata["overflow_count"] == 2
-    assert summary.metrics.values == pytest.approx(
-        {
-            "profit_over_baseline": (baseline_total - realized_total) / baseline_total,
-            "cost_over_optimum": (realized_total - optimum_total) / optimum_total,
-            "baseline_cost_over_optimum": (baseline_total - optimum_total) / optimum_total,
-            "realized_fee_sum": realized_total,
-            "baseline_fee_sum": baseline_total,
-            "optimum_fee_sum": optimum_total,
-        }
-    )

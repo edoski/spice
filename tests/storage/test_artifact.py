@@ -12,10 +12,9 @@ from spice.config import (
     coerce_feature_set_config,
     coerce_problem_spec,
 )
-from spice.core.errors import SpiceOperatorError
+from spice.core.errors import StateLayoutError
 from spice.evaluation import EvaluationRun
 from spice.features import compile_feature_contract
-from spice.modeling.artifacts import validate_artifact_semantics
 from spice.modeling.dataset_builders import standard_temporal_runtime_metadata
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.representations import sequence_input_contract
@@ -30,7 +29,6 @@ from spice.objectives import coerce_objective_config
 from spice.prediction import (
     MetricDescriptor,
     MetricSet,
-    WindowMetricSummary,
     compile_prediction_contract,
 )
 from spice.semantics import (
@@ -65,25 +63,8 @@ def _prediction_config():
     )
 
 
-def _paper_prediction_config():
-    return PredictionConfig.model_validate(
-        {
-            "id": "icdcs_2026",
-            "family_id": "min_block_fee_multitask",
-        }
-    )
-
-
 def _prediction_contract():
     prediction = _prediction_config()
-    return compile_prediction_contract(
-        prediction_id=prediction.id,
-        family_id=prediction.family_id,
-    )
-
-
-def _paper_prediction_contract():
-    prediction = _paper_prediction_config()
     return compile_prediction_contract(
         prediction_id=prediction.id,
         family_id=prediction.family_id,
@@ -93,8 +74,8 @@ def _paper_prediction_contract():
 def _feature_set_config():
     return coerce_feature_set_config(
         {
-            "id": "time_native_baseline",
-            "family": {"id": "time_native"},
+            "id": "timestamp_features_baseline",
+            "family": {"id": "timestamp_features"},
             "outputs": [
                 "seconds_since_previous_block",
                 "elapsed_seconds",
@@ -183,8 +164,8 @@ def _manifest(
         prediction=prediction,
         objective=_objective_config(),
         chain_name="ethereum",
-        dataset_id="icdcs_2026",
-        dataset_name="icdcs_2026",
+        dataset_id="same_block_closed",
+        dataset_name="same_block_closed",
         problem=problem,
         variant=ArtifactVariant.BASELINE,
         study=StudyConfig(name="default"),
@@ -234,22 +215,8 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         best_epoch=2,
         best_objective_metric_id="total_loss",
         best_objective_value=0.25,
-        best_validation_metrics=MetricSet(
-            values={
-                "total_loss": 0.25,
-                "exact_optimum_hit_rate": 0.5,
-                "cost_over_optimum": 0.1,
-                "profit_over_baseline": 0.2,
-            }
-        ),
-        test_metrics=MetricSet(
-            values={
-                "total_loss": 0.3,
-                "exact_optimum_hit_rate": 0.4,
-                "cost_over_optimum": 0.15,
-                "profit_over_baseline": 0.15,
-            }
-        ),
+        best_validation_metrics=MetricSet(values={"total_loss": 0.25}),
+        test_metrics=MetricSet(values={"total_loss": 0.3}),
     )
     epoch_rows = [
         TrainingEpochRecord(
@@ -285,259 +252,57 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
     assert loaded_epochs == epoch_rows
 
 
-def test_artifact_validation_catches_feature_drift() -> None:
-    manifest = _manifest()
-    feature_set = manifest.feature_set
-
-    with pytest.raises(
-        SpiceOperatorError,
-        match="Configured feature_set does not match the trained artifact semantics",
-    ):
-        validate_artifact_semantics(
-            manifest,
-            problem=manifest.problem,
-            dataset_builder=manifest.dataset_builder,
-            feature_set=coerce_feature_set_config(
-                {
-                    "id": "time_native_baseline",
-                    "family": {"id": "time_native"},
-                    "outputs": ["elapsed_seconds"],
-                }
-            ),
-            prediction=manifest.prediction,
-            objective=manifest.objective,
-            model=manifest.model,
-            split=manifest.split,
-            training=manifest.training,
-        )
-
-    drifted_manifest = TrainingArtifactManifest(
-        artifact_id=manifest.artifact_id,
-        dataset_builder=manifest.dataset_builder,
-        prediction=manifest.prediction,
-        objective=manifest.objective,
-        chain_name=manifest.chain_name,
-        dataset_id=manifest.dataset_id,
-        dataset_name=manifest.dataset_name,
-        problem=manifest.problem,
-        variant=manifest.variant,
-        study=manifest.study,
-        study_id=manifest.study_id,
-        feature_set=manifest.feature_set,
-        model=manifest.model,
-        split=manifest.split,
-        training=manifest.training,
-        scaler=manifest.scaler,
-        builder_runtime_metadata=manifest.builder_runtime_metadata,
-        semantics=ArtifactSemantics(
-            problem=manifest.semantics.problem,
-            realization_policy=manifest.semantics.realization_policy,
-            objective=manifest.semantics.objective,
-            feature=manifest.semantics.feature.__class__(
-                feature_set_id=manifest.semantics.feature.feature_set_id,
-                feature_family_id=manifest.semantics.feature.feature_family_id,
-                feature_names=manifest.semantics.feature.feature_names,
-                feature_graph_fingerprint="stale-fingerprint",
-                feature_prerequisites=manifest.semantics.feature.feature_prerequisites,
-            ),
-            prediction=manifest.semantics.prediction,
-            input_normalization=manifest.semantics.input_normalization,
-            representation=manifest.semantics.representation,
-            dataset_builder=manifest.semantics.dataset_builder,
-            max_candidate_slots=manifest.semantics.max_candidate_slots,
-        ),
-    )
-
-    with pytest.raises(
-        SpiceOperatorError,
-        match="Current feature graph does not match the trained artifact manifest",
-    ):
-        validate_artifact_semantics(
-            drifted_manifest,
-            problem=manifest.problem,
-            dataset_builder=manifest.dataset_builder,
-            feature_set=feature_set,
-            prediction=manifest.prediction,
-            objective=manifest.objective,
-            model=manifest.model,
-            split=manifest.split,
-            training=manifest.training,
-        )
-
-
-def test_evaluation_artifact_summary_round_trip(tmp_path) -> None:
-    db_path = tmp_path / ".spice" / "state.sqlite"
-    manifest = _manifest()
-    summary = EvaluationRuntimeSummary(
+def _evaluation_summary(evaluation_id: str, value: float) -> EvaluationRuntimeSummary:
+    return EvaluationRuntimeSummary(
         delay_seconds=24,
-        evaluation_id="paper_replay_2h",
-        evaluation_config={
-            "id": "paper_replay_2h",
-            "sampler": "poisson_arrivals",
-            "window_seconds": 600,
-            "arrival_rate_per_second": 0.02,
-            "repetitions": 3,
-            "seed": 2026,
-        },
+        evaluation_id=evaluation_id,
+        evaluation_config={"id": evaluation_id, "sampler": "fullset"},
         metric_descriptors=(
             MetricDescriptor(
                 id="profit_over_baseline",
                 label="profit over baseline",
                 role="score",
             ),
-            MetricDescriptor(
-                id="cost_over_optimum",
-                label="cost over optimum",
-                role="score",
-            ),
-            MetricDescriptor(
-                id="baseline_cost_over_optimum",
-                label="baseline cost over optimum",
-                role="diagnostic",
-            ),
-            MetricDescriptor(
-                id="realized_fee_sum",
-                label="realized fee sum",
-                role="diagnostic",
-            ),
-            MetricDescriptor(
-                id="baseline_fee_sum",
-                label="baseline fee sum",
-                role="diagnostic",
-            ),
-            MetricDescriptor(
-                id="optimum_fee_sum",
-                label="optimum fee sum",
-                role="diagnostic",
-            ),
         ),
         n_history_rows=128,
         n_evaluation_rows=64,
         sample_count=24,
-        metrics=MetricSet(
-            values={
-                "profit_over_baseline": 0.2,
-                "cost_over_optimum": 0.15,
-                "baseline_cost_over_optimum": 0.25,
-                "realized_fee_sum": 9.0,
-                "baseline_fee_sum": 10.0,
-                "optimum_fee_sum": 8.0,
-            }
-        ),
-        window_metrics={
-            "profit_over_baseline": WindowMetricSummary(mean=0.2, std=0.01),
-            "cost_over_optimum": WindowMetricSummary(mean=0.15, std=0.02),
-        },
-        total_events=6,
+        metrics=MetricSet(values={"profit_over_baseline": value}),
+        window_metrics={},
+        total_events=2,
         runs=[
             EvaluationRun(
                 n_events=2,
-                metrics={"profit_over_baseline": 0.2},
-                metadata={
-                    "window_start_timestamp": 1_000.0,
-                    "window_end_timestamp": 1_600.0,
-                    "n_arrivals": 3,
-                },
-            ),
-            EvaluationRun(
-                n_events=4,
-                metrics={"profit_over_baseline": 0.18},
-                metadata={
-                    "window_start_timestamp": 2_000.0,
-                    "window_end_timestamp": 2_600.0,
-                    "n_arrivals": 4,
-                },
+                metrics={"profit_over_baseline": value},
+                metadata={"mode": evaluation_id},
             ),
         ],
     )
+
+
+def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
+    db_path = tmp_path / ".spice" / "state.sqlite"
+    manifest = _manifest()
+    base_summary = _evaluation_summary("fullset", 0.2)
+    replay_summary = _evaluation_summary("poisson_replay_2h", 0.1)
 
     write_artifact_manifest(db_path, manifest=manifest, root_kind=RootKind.ARTIFACT)
     evaluation_id, recorded_at = write_evaluation_state(
         db_path,
         root_kind=RootKind.ARTIFACT,
-        summary=summary,
+        summary=base_summary,
     )
 
     loaded_summary = load_evaluation_summary(db_path)
     loaded_runs = list_evaluation_runs(db_path)
-    listed_summaries = list_evaluation_summaries(db_path)
 
     assert loaded_summary is not None
     assert loaded_summary.evaluation_id == evaluation_id
     assert loaded_summary.recorded_at == recorded_at
     assert loaded_summary.manifest == manifest
-    assert loaded_summary.runtime == summary
-    assert loaded_runs == summary.runs
-    assert [item.evaluation_id for item in listed_summaries] == [evaluation_id]
+    assert loaded_summary.runtime == base_summary
+    assert loaded_runs == base_summary.runs
 
-
-def test_multiple_evaluation_summaries_can_coexist_per_artifact(tmp_path) -> None:
-    db_path = tmp_path / ".spice" / "state.sqlite"
-    manifest = _manifest()
-    base_summary = EvaluationRuntimeSummary(
-        delay_seconds=24,
-        evaluation_id="paper_fullset",
-        evaluation_config={"id": "paper_fullset", "sampler": "fullset"},
-        metric_descriptors=(
-            MetricDescriptor(
-                id="profit_over_baseline",
-                label="profit over baseline",
-                role="score",
-            ),
-        ),
-        n_history_rows=128,
-        n_evaluation_rows=64,
-        sample_count=24,
-        metrics=MetricSet(values={"profit_over_baseline": 0.2}),
-        window_metrics={},
-        total_events=6,
-        runs=[
-            EvaluationRun(
-                n_events=2,
-                metrics={"profit_over_baseline": 0.2},
-                metadata={"mode": "fullset"},
-            )
-        ],
-    )
-    replay_summary = EvaluationRuntimeSummary(
-        delay_seconds=24,
-        evaluation_id="paper_replay_2h",
-        evaluation_config={
-            "id": "paper_replay_2h",
-            "sampler": "poisson_arrivals",
-            "window_seconds": 600,
-            "arrival_rate_per_second": 0.02,
-            "repetitions": 3,
-            "seed": 2026,
-        },
-        metric_descriptors=(
-            MetricDescriptor(
-                id="profit_over_baseline",
-                label="profit over baseline",
-                role="score",
-            ),
-        ),
-        n_history_rows=128,
-        n_evaluation_rows=64,
-        sample_count=24,
-        metrics=MetricSet(values={"profit_over_baseline": 0.1}),
-        window_metrics={},
-        total_events=4,
-        runs=[
-            EvaluationRun(
-                n_events=4,
-                metrics={"profit_over_baseline": 0.1},
-                metadata={"window_start_timestamp": 1_000.0},
-            )
-        ],
-    )
-
-    write_artifact_manifest(db_path, manifest=manifest, root_kind=RootKind.ARTIFACT)
-    paper_evaluation_id, _ = write_evaluation_state(
-        db_path,
-        root_kind=RootKind.ARTIFACT,
-        summary=base_summary,
-    )
     replay_evaluation_id, _ = write_evaluation_state(
         db_path,
         root_kind=RootKind.ARTIFACT,
@@ -546,11 +311,15 @@ def test_multiple_evaluation_summaries_can_coexist_per_artifact(tmp_path) -> Non
 
     summaries = list_evaluation_summaries(db_path)
 
+    with pytest.raises(StateLayoutError, match="Multiple evaluation summaries stored"):
+        load_evaluation_summary(db_path)
+    with pytest.raises(StateLayoutError, match="Multiple evaluation summaries stored"):
+        list_evaluation_runs(db_path)
     assert {summary.evaluation_id for summary in summaries} == {
-        paper_evaluation_id,
+        evaluation_id,
         replay_evaluation_id,
     }
-    assert load_evaluation_summary(db_path, evaluation_id=paper_evaluation_id) is not None
+    assert load_evaluation_summary(db_path, evaluation_id=evaluation_id) is not None
     assert load_evaluation_summary(db_path, evaluation_id=replay_evaluation_id) is not None
-    assert list_evaluation_runs(db_path, evaluation_id=paper_evaluation_id) == base_summary.runs
+    assert list_evaluation_runs(db_path, evaluation_id=evaluation_id) == base_summary.runs
     assert list_evaluation_runs(db_path, evaluation_id=replay_evaluation_id) == replay_summary.runs

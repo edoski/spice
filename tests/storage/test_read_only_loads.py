@@ -12,6 +12,16 @@ from spice.storage.artifact import (
     load_training_summary,
 )
 from spice.storage.corpus import list_acquire_runs, load_dataset_manifest
+from spice.storage.study_manifest import load_study_manifest, try_load_study_manifest
+
+
+def test_study_reads_are_read_only_for_missing_db(tmp_path: Path) -> None:
+    db_path = tmp_path / "studies" / "ethereum" / "study-1" / ".spice" / "state.sqlite"
+
+    assert try_load_study_manifest(db_path) is None
+    with pytest.raises(MissingStateError, match="Missing study manifest"):
+        load_study_manifest(db_path)
+    assert not db_path.exists()
 
 
 def test_dataset_reads_are_read_only_for_missing_db(tmp_path: Path) -> None:

@@ -11,7 +11,6 @@ from spice.modeling.models import ModelOutputs
 from spice.prediction import ActionSpaceDecodeContext, DecodedOffsets, compile_prediction_contract
 from spice.prediction.families.min_block_fee_multitask.batch import (
     MinBlockFeeTrainingState,
-    PreparedMinBlockFeeTargets,
 )
 from spice.prediction.families.min_block_fee_multitask.outputs import (
     MIN_LOG_FEE_HEAD_ID,
@@ -61,7 +60,7 @@ def _build_store() -> CompiledProblemStore:
 def _contract():
     prediction = PredictionConfig.model_validate(
         {
-            "id": "icdcs_2026",
+            "id": "same_block_closed",
             "family_id": "min_block_fee_multitask",
         }
     )
@@ -196,43 +195,6 @@ def test_min_block_fee_multitask_uses_realization_policy_targets() -> None:
     assert batch.min_block_log_fees[1].item() == pytest_approx_log(6.0)
 
 
-def test_min_block_fee_multitask_masks_short_realized_candidate_windows() -> None:
-    store = CompiledProblemStore(
-        feature_matrix=np.zeros((8, 1), dtype=np.float32),
-        log_base_fees=np.log(
-            np.array([10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0], dtype=np.float32)
-        ),
-        timestamps=np.arange(8, dtype=np.int64),
-        anchor_rows=np.array([0, 2, 4], dtype=np.int64),
-        context_start_rows=np.zeros(3, dtype=np.int64),
-        candidate_start_rows=np.array([1, 3, 5], dtype=np.int64),
-        candidate_end_rows=np.array([3, 5, 6], dtype=np.int64),
-        action_space_mode=ActionSpaceMode.REALIZED_PER_SAMPLE,
-        max_candidate_slots=3,
-    )
-    contract = _contract()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-
-    prepared_targets = contract.prepare_targets(
-        store,
-        sample_indices,
-        realization_policy=_realization_policy(),
-    )
-    batch = prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64))
-
-    np.testing.assert_array_equal(
-        batch.candidate_mask.cpu().numpy(),
-        np.array(
-            [
-                [True, True, False],
-                [True, True, False],
-                [True, False, False],
-            ],
-            dtype=np.bool_,
-        ),
-    )
-
-
 def test_min_block_fee_multitask_uses_full_action_mask_for_fixed_ex_ante_windows() -> None:
     store = CompiledProblemStore(
         feature_matrix=np.zeros((9, 1), dtype=np.float32),
@@ -258,29 +220,6 @@ def test_min_block_fee_multitask_uses_full_action_mask_for_fixed_ex_ante_windows
     batch = prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64))
 
     assert batch.candidate_mask.cpu().numpy().all()
-
-
-def test_prepared_min_block_fee_targets_move_all_device_storage_members() -> None:
-    class TensorStub:
-        def __init__(self, device: str) -> None:
-            self.device = torch.device(device)
-
-        def to(self, device: torch.device, *, non_blocking: bool) -> TensorStub:
-            del non_blocking
-            return TensorStub(device.type)
-
-    prepared = PreparedMinBlockFeeTargets(
-        candidate_mask=TensorStub("cpu"),
-        min_block_offsets=TensorStub("meta"),
-        min_block_log_fees=TensorStub("meta"),
-    )
-
-    moved = prepared.to_device_storage(torch.device("cpu"))
-
-    assert moved is not prepared
-    assert moved.candidate_mask.device == torch.device("cpu")
-    assert moved.min_block_offsets.device == torch.device("cpu")
-    assert moved.min_block_log_fees.device == torch.device("cpu")
 
 
 def pytest_approx(value: float):

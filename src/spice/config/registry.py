@@ -21,10 +21,14 @@ from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.registry import coerce_model_config
 from ..objectives import coerce_objective_config
 from .models import (
+    AcquisitionConfig,
     ChainSpec,
     DatasetSpec,
     PredictionConfig,
     ProviderSpec,
+    SplitConfig,
+    TrainingConfig,
+    TuningConfig,
     coerce_feature_set_config,
     coerce_problem_spec,
 )
@@ -34,6 +38,8 @@ _CONF_ROOT = _PACKAGE_CONF_ROOT
 
 
 class ConfigGroup(StrEnum):
+    ACQUISITION = "acquisition"
+    BENCHMARK = "benchmark"
     CHAIN = "chain"
     DATASET = "dataset"
     DATASET_BUILDER = "dataset-builder"
@@ -43,9 +49,12 @@ class ConfigGroup(StrEnum):
     MODEL = "model"
     OBJECTIVE = "objective"
     PREDICTION = "prediction"
-    PRESET = "preset"
     PROBLEM = "problem"
     PROVIDER = "provider"
+    SPLIT = "split"
+    SURFACE = "surface"
+    TRAINING = "training"
+    TUNING = "tuning"
     TUNING_SPACE = "tuning-space"
 
 
@@ -63,18 +72,53 @@ class GroupSpec:
     public: bool = False
 
 
-def _validate_preset_frame(payload: dict[str, object]) -> BaseModel:
-    from .presets import PresetFrame
+def _validate_surface_frame(payload: dict[str, object]) -> BaseModel:
+    from .surfaces import SurfaceFrame
 
-    return PresetFrame.model_validate(payload)
+    return SurfaceFrame.model_validate(payload)
 
 
 _GROUP_SPECS = (
     GroupSpec(
-        token=ConfigGroup.PRESET.value,
-        directory="preset",
-        seed_name="icdcs_2026",
-        validate=_validate_preset_frame,
+        token=ConfigGroup.SURFACE.value,
+        directory="surface",
+        seed_name="same_block_closed",
+        validate=_validate_surface_frame,
+        public=True,
+    ),
+    GroupSpec(
+        token=ConfigGroup.BENCHMARK.value,
+        directory="benchmark",
+        seed_name="safe_delay_sensitivity",
+        validate=lambda payload: _canonicalize_mapping(payload),
+        public=True,
+    ),
+    GroupSpec(
+        token=ConfigGroup.ACQUISITION.value,
+        directory="acquisition",
+        seed_name="default",
+        validate=AcquisitionConfig.model_validate,
+        public=True,
+    ),
+    GroupSpec(
+        token=ConfigGroup.TRAINING.value,
+        directory="training",
+        seed_name="default",
+        validate=TrainingConfig.model_validate,
+        public=True,
+    ),
+    GroupSpec(
+        token=ConfigGroup.SPLIT.value,
+        directory="split",
+        seed_name="default",
+        validate=SplitConfig.model_validate,
+        public=True,
+    ),
+    GroupSpec(
+        token=ConfigGroup.TUNING.value,
+        directory="tuning",
+        seed_name="default",
+        validate=TuningConfig.model_validate,
         public=True,
     ),
     GroupSpec(
@@ -98,7 +142,7 @@ _GROUP_SPECS = (
     GroupSpec(
         token=ConfigGroup.PROBLEM.value,
         directory="problem",
-        seed_name="icdcs_2026",
+        seed_name="current_row_nominal_window",
         validate=coerce_problem_spec,
         identity_field="id",
         seed_from_requested_name=True,
@@ -120,12 +164,14 @@ _GROUP_SPECS = (
         validate=coerce_dataset_builder_config,
         identity_field="id",
         seed_from_requested_name=True,
+        public=True,
     ),
     GroupSpec(
         token=ConfigGroup.EVALUATION.value,
         directory="evaluation",
-        seed_name="paper_fullset",
+        seed_name="fullset",
         validate=EvaluatorConfig.model_validate,
+        public=True,
     ),
     GroupSpec(
         token=ConfigGroup.EXECUTION.value,
@@ -134,14 +180,16 @@ _GROUP_SPECS = (
         validate=ExecutionSpec.model_validate,
         identity_field="id",
         seed_from_requested_name=True,
+        public=True,
     ),
     GroupSpec(
         token=ConfigGroup.FEATURE_SET.value,
         directory="feature_set",
-        seed_name="icdcs_2026",
+        seed_name="same_block_closed_full",
         validate=coerce_feature_set_config,
         identity_field="id",
         seed_from_requested_name=True,
+        public=True,
     ),
     GroupSpec(
         token=ConfigGroup.MODEL.value,
@@ -149,6 +197,7 @@ _GROUP_SPECS = (
         seed_name="lstm",
         validate=coerce_model_config,
         seed_from_requested_name=True,
+        public=True,
     ),
     GroupSpec(
         token=ConfigGroup.OBJECTIVE.value,
@@ -156,6 +205,7 @@ _GROUP_SPECS = (
         seed_name="validation_total_loss",
         validate=coerce_objective_config,
         seed_from_requested_name=False,
+        public=True,
     ),
     GroupSpec(
         token=ConfigGroup.PREDICTION.value,
@@ -164,6 +214,7 @@ _GROUP_SPECS = (
         validate=PredictionConfig.model_validate,
         identity_field="id",
         seed_from_requested_name=True,
+        public=True,
     ),
     GroupSpec(
         token=ConfigGroup.TUNING_SPACE.value,
@@ -171,12 +222,13 @@ _GROUP_SPECS = (
         seed_name="lstm_default",
         validate=lambda payload: _canonicalize_mapping(payload),
         seed_from_requested_name=True,
+        public=True,
     ),
 )
 _GROUP_SPEC_BY_TOKEN = {spec.token: spec for spec in _GROUP_SPECS}
 _GROUP_SPEC_BY_DIRECTORY = {spec.directory: spec for spec in _GROUP_SPECS}
 _NAMED_GROUP_KEYS = tuple(
-    spec.directory for spec in _GROUP_SPECS if spec.directory != "preset"
+    spec.directory for spec in _GROUP_SPECS if spec.directory != "benchmark"
 )
 _PUBLIC_GROUP_TOKENS = tuple(spec.token for spec in _GROUP_SPECS if spec.public)
 _PUBLIC_GROUP_DIRECTORIES = tuple(

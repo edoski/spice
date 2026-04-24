@@ -35,13 +35,13 @@ class StandardTemporalDatasetBuilderConfig(DatasetBuilderConfig):
     id: str = "standard_temporal"
 
 
-class ProfessorTemporalDatasetBuilderConfig(DatasetBuilderConfig):
-    id: str = "professor_temporal"
+class FixedContextTemporalDatasetBuilderConfig(DatasetBuilderConfig):
+    id: str = "fixed_context_temporal"
     min_sequence_length: int = Field(default=64, gt=0)
     max_sequence_length: int = Field(default=4096, gt=0)
 
     @model_validator(mode="after")
-    def validate_sequence_bounds(self) -> ProfessorTemporalDatasetBuilderConfig:
+    def validate_sequence_bounds(self) -> FixedContextTemporalDatasetBuilderConfig:
         if self.max_sequence_length < self.min_sequence_length:
             raise ValueError("max_sequence_length must be >= min_sequence_length")
         return self
@@ -55,7 +55,7 @@ class StandardTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
     pass
 
 
-class ProfessorTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
+class FixedContextTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
     sequence_length: int = Field(gt=0)
     median_dt_seconds: float = Field(gt=0.0)
     min_sequence_length: int = Field(gt=0)
@@ -63,7 +63,7 @@ class ProfessorTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
     split_strategy: Literal["global_feature_table"] = "global_feature_table"
 
     @model_validator(mode="after")
-    def validate_sequence_bounds(self) -> ProfessorTemporalBuilderRuntimeMetadata:
+    def validate_sequence_bounds(self) -> FixedContextTemporalBuilderRuntimeMetadata:
         if self.max_sequence_length < self.min_sequence_length:
             raise ValueError("max_sequence_length must be >= min_sequence_length")
         return self
@@ -112,10 +112,10 @@ def _compile_standard_temporal(
     return compile_dataset_builder(config)
 
 
-def _compile_professor_temporal(
-    config: ProfessorTemporalDatasetBuilderConfig,
+def _compile_fixed_context_temporal(
+    config: FixedContextTemporalDatasetBuilderConfig,
 ) -> CompiledDatasetBuilderContract:
-    from .professor_temporal import compile_dataset_builder
+    from .fixed_context_temporal import compile_dataset_builder
 
     return compile_dataset_builder(config)
 
@@ -131,17 +131,17 @@ def standard_temporal_runtime_metadata(
     )
 
 
-def professor_temporal_runtime_metadata(
+def fixed_context_temporal_runtime_metadata(
     *,
     compiler_runtime_metadata: object,
     sequence_length: int,
     median_dt_seconds: float,
     min_sequence_length: int,
     max_sequence_length: int,
-) -> ProfessorTemporalBuilderRuntimeMetadata:
+) -> FixedContextTemporalBuilderRuntimeMetadata:
     from ...temporal.contracts import problem_runtime_metadata_payload
 
-    return ProfessorTemporalBuilderRuntimeMetadata(
+    return FixedContextTemporalBuilderRuntimeMetadata(
         compiler_runtime_metadata=problem_runtime_metadata_payload(compiler_runtime_metadata),
         sequence_length=sequence_length,
         median_dt_seconds=median_dt_seconds,
@@ -174,10 +174,10 @@ def coerce_builder_runtime_metadata(
     )
     if builder_id == "standard_temporal":
         return StandardTemporalBuilderRuntimeMetadata.model_validate(raw_payload)
-    if builder_id == "professor_temporal":
-        return ProfessorTemporalBuilderRuntimeMetadata.model_validate(raw_payload)
+    if builder_id == "fixed_context_temporal":
+        return FixedContextTemporalBuilderRuntimeMetadata.model_validate(raw_payload)
     raise ValueError(
-        "dataset_builder.id must be one of: standard_temporal, professor_temporal"
+        "dataset_builder.id must be one of: standard_temporal, fixed_context_temporal"
     )
 
 
@@ -194,10 +194,10 @@ def coerce_dataset_builder_config(
         raise TypeError("dataset_builder must be a mapping or config model")
     if builder_id == "standard_temporal":
         return StandardTemporalDatasetBuilderConfig.model_validate(raw_payload)
-    if builder_id == "professor_temporal":
-        return ProfessorTemporalDatasetBuilderConfig.model_validate(raw_payload)
+    if builder_id == "fixed_context_temporal":
+        return FixedContextTemporalDatasetBuilderConfig.model_validate(raw_payload)
     raise ValueError(
-        "dataset_builder.id must be one of: standard_temporal, professor_temporal"
+        "dataset_builder.id must be one of: standard_temporal, fixed_context_temporal"
     )
 
 
@@ -208,10 +208,10 @@ def compile_dataset_builder_contract(
         return _compile_standard_temporal(
             StandardTemporalDatasetBuilderConfig.model_validate(config)
         )
-    if config.id == "professor_temporal":
-        return _compile_professor_temporal(
-            ProfessorTemporalDatasetBuilderConfig.model_validate(config)
+    if config.id == "fixed_context_temporal":
+        return _compile_fixed_context_temporal(
+            FixedContextTemporalDatasetBuilderConfig.model_validate(config)
         )
     raise ValueError(
-        "dataset_builder.id must be one of: standard_temporal, professor_temporal"
+        "dataset_builder.id must be one of: standard_temporal, fixed_context_temporal"
     )

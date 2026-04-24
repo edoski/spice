@@ -13,7 +13,7 @@ from spice.features import (
     compile_feature_contract,
     validate_feature_selection,
 )
-from spice.features.core import _fingerprint_source_id, feature_graph_fingerprint
+from spice.features.core import feature_graph_fingerprint
 
 
 def _block_frame() -> pl.DataFrame:
@@ -70,15 +70,6 @@ def _build_contract(feature_set_id: str, family_id: str, outputs: list[str]):
     )
 
 
-def test_feature_fingerprint_source_id_is_package_relative() -> None:
-    package_root = Path("/repo/src/spice")
-    source = package_root / "features" / "families" / "block_native.py"
-
-    assert _fingerprint_source_id(source, package_root=package_root) == (
-        "features/families/block_native.py"
-    )
-
-
 def test_feature_fingerprint_ignores_external_absolute_parent_paths(tmp_path: Path) -> None:
     first = tmp_path / "one" / "family.py"
     second = tmp_path / "two" / "family.py"
@@ -98,7 +89,7 @@ def test_feature_fingerprint_ignores_external_absolute_parent_paths(tmp_path: Pa
     )
 
 
-def _assert_block_native(feature_contract, feature_table) -> None:
+def _assert_same_block_closed(feature_contract, feature_table) -> None:
     assert feature_contract.feature_prerequisites == FeaturePrerequisites(
         history_seconds=0,
         warmup_rows=199,
@@ -116,7 +107,7 @@ def _assert_block_native(feature_contract, feature_table) -> None:
     assert feature_table.feature_matrix[199, 2] > 0.0
 
 
-def _assert_time_native(feature_contract, feature_table) -> None:
+def _assert_timestamp_features(feature_contract, feature_table) -> None:
     assert feature_contract.feature_prerequisites == FeaturePrerequisites(
         history_seconds=600,
         warmup_rows=0,
@@ -134,7 +125,7 @@ def _assert_time_native(feature_contract, feature_table) -> None:
     assert feature_table.feature_matrix[20, 2] > 0.0
 
 
-def _assert_professor_block_native(feature_contract, feature_table) -> None:
+def _assert_fixed_context_same_block_closed(feature_contract, feature_table) -> None:
     assert feature_contract.feature_prerequisites == FeaturePrerequisites(
         history_seconds=0,
         warmup_rows=9,
@@ -163,7 +154,7 @@ def _assert_professor_block_native(feature_contract, feature_table) -> None:
     assert feature_table.feature_matrix[9, 6] == pytest.approx(0.0)
 
 
-def _assert_professor_block_open(feature_contract, feature_table) -> None:
+def _assert_fixed_context_block_open(feature_contract, feature_table) -> None:
     assert feature_contract.feature_prerequisites == FeaturePrerequisites(
         history_seconds=0,
         warmup_rows=2,
@@ -198,30 +189,30 @@ def _assert_professor_block_open(feature_contract, feature_table) -> None:
     ("feature_set_id", "family_id", "outputs", "frame_factory", "assertions"),
     [
         (
-            "test_block_native",
-            "block_native",
+            "test_same_block_closed",
+            "same_block_closed",
             [
                 "elapsed_blocks",
                 "rolling_mean_log_base_fee_10",
                 "trend_slope_200",
             ],
             _block_frame,
-            _assert_block_native,
+            _assert_same_block_closed,
         ),
         (
-            "test_time_native",
-            "time_native",
+            "test_timestamp_features",
+            "timestamp_features",
             [
                 "seconds_since_previous_block",
                 "rolling_mean_log_base_fee_60s",
                 "trend_slope_600s",
             ],
             _time_frame,
-            _assert_time_native,
+            _assert_timestamp_features,
         ),
         (
-            "test_professor_block_native",
-            "block_native",
+            "test_fixed_context_same_block_closed",
+            "same_block_closed",
             [
                 "log_base_fee_per_gas",
                 "dt_seconds",
@@ -232,11 +223,11 @@ def _assert_professor_block_open(feature_contract, feature_table) -> None:
                 "roll10_std_gr",
             ],
             _block_frame,
-            _assert_professor_block_native,
+            _assert_fixed_context_same_block_closed,
         ),
         (
-            "test_professor_block_open",
-            "block_open_native",
+            "test_fixed_context_block_open",
+            "block_open_lagged",
             [
                 "log_base_fee_per_gas",
                 "gas_ratio",
@@ -247,7 +238,7 @@ def _assert_professor_block_open(feature_contract, feature_table) -> None:
                 "dlogfee_lag1",
             ],
             _block_open_frame,
-            _assert_professor_block_open,
+            _assert_fixed_context_block_open,
         ),
     ],
 )
@@ -267,16 +258,16 @@ def test_feature_family_builds_expected_table(
 @pytest.mark.parametrize(
     ("feature_set_id", "feature_family_id", "feature_names", "message"),
     [
-        ("test", "block_native", (), "feature_set.outputs must not be empty"),
+        ("test", "same_block_closed", (), "feature_set.outputs must not be empty"),
         (
             "test",
-            "block_native",
+            "same_block_closed",
             ("elapsed_blocks", "elapsed_blocks"),
             "feature_set.outputs must not contain duplicates: elapsed_blocks",
         ),
         (
             "test",
-            "block_native",
+            "same_block_closed",
             ("elapsed_blocks", "missing"),
             "Unknown feature outputs: missing",
         ),
@@ -299,7 +290,7 @@ def test_feature_fingerprint_changes_when_source_bytes_change(tmp_path: Path) ->
     helper.write_text("value = 2\n", encoding="utf-8")
 
     first = feature_graph_fingerprint(
-        "block_native",
+        "same_block_closed",
         ("elapsed_blocks", "trend_slope_200"),
         fingerprint_sources=(primary, helper),
     )
@@ -307,7 +298,7 @@ def test_feature_fingerprint_changes_when_source_bytes_change(tmp_path: Path) ->
     helper.write_text("value = 3\n", encoding="utf-8")
 
     second = feature_graph_fingerprint(
-        "block_native",
+        "same_block_closed",
         ("elapsed_blocks", "trend_slope_200"),
         fingerprint_sources=(primary, helper),
     )
@@ -318,7 +309,7 @@ def test_feature_fingerprint_changes_when_source_bytes_change(tmp_path: Path) ->
 def test_feature_family_requires_declared_block_columns() -> None:
     feature_contract = _build_contract(
         "test_missing_columns",
-        "block_native",
+        "same_block_closed",
         ["gas_ratio", "dt_seconds"],
     )
     frame = _block_frame().drop("gas_limit")
@@ -330,7 +321,7 @@ def test_feature_family_requires_declared_block_columns() -> None:
 def test_block_open_gas_ratio_rolls_account_for_lagged_warmup() -> None:
     feature_contract = _build_contract(
         "test_block_open_rolls",
-        "block_open_native",
+        "block_open_lagged",
         ["gas_ratio", "roll10_std_gr"],
     )
     feature_table = feature_contract.build_table(_block_open_frame())
@@ -347,40 +338,16 @@ def test_block_open_gas_ratio_rolls_account_for_lagged_warmup() -> None:
     ("feature_set_name", "family_id", "present", "absent"),
     [
         (
-            "icdcs_2026_professor_no_time_since_start",
-            "block_native",
-            {"dt_seconds", "hour_sin", "weekday_cos"},
-            {"time_since_start"},
-        ),
-        (
-            "icdcs_2026_professor_no_time_features",
-            "block_native",
+            "same_block_closed_no_time",
+            "same_block_closed",
             {"dt_seconds"},
             {"hour_sin", "hour_cos", "weekday_sin", "weekday_cos", "time_since_start"},
         ),
         (
-            "icdcs_2026_professor_calendar_only_time",
-            "block_native",
-            {"hour_sin", "hour_cos", "weekday_sin", "weekday_cos"},
-            {"dt_seconds", "time_since_start"},
-        ),
-        (
-            "icdcs_2026_professor_block_open_no_time_since_start",
-            "block_open_native",
-            {"dt_seconds", "hour_sin", "weekday_cos"},
-            {"time_since_start"},
-        ),
-        (
-            "icdcs_2026_professor_block_open_no_time_features",
-            "block_open_native",
+            "block_open_lagged_no_time",
+            "block_open_lagged",
             {"dt_seconds"},
             {"hour_sin", "hour_cos", "weekday_sin", "weekday_cos", "time_since_start"},
-        ),
-        (
-            "icdcs_2026_professor_block_open_calendar_only_time",
-            "block_open_native",
-            {"hour_sin", "hour_cos", "weekday_sin", "weekday_cos"},
-            {"dt_seconds", "time_since_start"},
         ),
     ],
 )

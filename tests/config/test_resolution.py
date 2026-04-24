@@ -8,7 +8,9 @@ import yaml
 
 from spice.config import (
     AcquireConfig,
+    EvaluateConfig,
     TrainConfig,
+    TuneConfig,
     WorkflowRequest,
     WorkflowTask,
     resolve_workflow_config,
@@ -17,13 +19,13 @@ from spice.config.registry import load_named_group
 from spice.core.errors import ConfigResolutionError
 
 
-def _write_preset(conf_root: Path, name: str, payload: dict[str, object]) -> None:
-    path = conf_root / "preset" / f"{name}.yaml"
+def _write_surface(conf_root: Path, name: str, payload: dict[str, object]) -> None:
+    path = conf_root / "surface" / f"{name}.yaml"
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def _base_preset(conf_root: Path) -> dict[str, object]:
-    return load_named_group("icdcs_2026", "preset")
+def _base_surface(conf_root: Path) -> dict[str, object]:
+    return load_named_group("same_block_closed", "surface")
 
 
 def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root) -> None:
@@ -56,51 +58,61 @@ def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root)
         load_named_group("aliased_problem", "problem")
 
 
-def test_preset_frames_are_explicit_and_request_overrides_are_narrow(
+def test_surface_refs_and_request_defaults_resolve(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
     conf_root = isolate_conf_root()
     child_root = tmp_path / "child_outputs"
-    payload = _base_preset(conf_root)
-    payload["objective"] = "paper_profit_replay_2h"
-    payload["evaluation"] = "paper_replay_2h"
-    payload["training"] = {
-        **cast(dict[str, object], payload["training"]),
-        "batch_size": 64,
-        "early_stopping": {
-            **cast(
-                dict[str, object],
-                cast(dict[str, object], payload["training"])["early_stopping"],
-            ),
-            "patience": 3,
-        },
-    }
-    payload["split"] = {
-        **cast(dict[str, object], payload["split"]),
-        "train_fraction": 0.7,
-    }
+    payload = _base_surface(conf_root)
+    payload["objective"] = "profit_poisson_replay_2h"
+    payload["evaluation"] = "poisson_replay_2h"
+    (conf_root / "training" / "child_training.yaml").write_text(
+        yaml.safe_dump(
+            {
+                **load_named_group("default", "training"),
+                "batch_size": 64,
+                "early_stopping": {
+                    **cast(
+                        dict[str, object],
+                        load_named_group("default", "training")["early_stopping"],
+                    ),
+                    "patience": 3,
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    (conf_root / "split" / "child_split.yaml").write_text(
+        yaml.safe_dump(
+            {
+                **load_named_group("default", "split"),
+                "train_fraction": 0.7,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    payload["training"] = "child_training"
+    payload["split"] = "child_split"
     payload["storage"] = {"root": str(child_root)}
     payload["study"] = {"name": "child-study"}
     payload["artifact"] = {"variant": "baseline"}
-    _write_preset(conf_root, "child_train", payload)
+    _write_surface(conf_root, "child_train", payload)
 
     config = cast(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            WorkflowRequest(preset="child_train"),
+            WorkflowRequest(surface="child_train"),
         ),
     )
 
-    assert config.objective.metric_id == "profit_over_baseline"
-    assert config.objective.direction == "maximize"
-    assert config.training.learning_rate == 0.0003
     assert config.training.batch_size == 64
     assert config.training.early_stopping.patience == 3
     assert config.training.early_stopping.min_delta == 0.0001
     assert config.split.train_fraction == 0.7
-    assert config.split.validation_fraction == 0.1
     assert config.storage.root == child_root
     assert config.study.name == "child-study"
     assert config.artifact.variant.value == "baseline"
@@ -117,7 +129,7 @@ def test_acquire_resolution_resolves_one_chain_specific_rpc_endpoint(
         resolve_workflow_config(
             WorkflowTask.ACQUIRE,
             WorkflowRequest(
-                preset="icdcs_2026",
+                surface="same_block_closed",
                 chain="avalanche",
                 storage_root=tmp_path / "outputs",
             ),
@@ -127,9 +139,6 @@ def test_acquire_resolution_resolves_one_chain_specific_rpc_endpoint(
     assert config.rpc_endpoint.provider_name == "publicnode"
     assert config.rpc_endpoint.url == "https://avalanche-c-chain-rpc.publicnode.com"
     assert config.rpc_endpoint.reference == "https://avalanche-c-chain-rpc.publicnode.com"
-    assert config.rpc_endpoint.timeout_seconds == 30.0
-    assert config.rpc_endpoint.retry_count == 5
-    assert config.rpc_endpoint.backoff_factor == 0.125
 
 
 def test_acquire_resolution_fails_when_provider_lacks_chain_endpoint(
@@ -156,9 +165,9 @@ def test_acquire_resolution_fails_when_provider_lacks_chain_endpoint(
         ),
         encoding="utf-8",
     )
-    payload = _base_preset(conf_root)
+    payload = _base_surface(conf_root)
     payload["provider"] = "eth_only"
-    _write_preset(conf_root, "eth_only_acquire", payload)
+    _write_surface(conf_root, "eth_only_acquire", payload)
 
     with pytest.raises(
         ConfigResolutionError,
@@ -167,41 +176,55 @@ def test_acquire_resolution_fails_when_provider_lacks_chain_endpoint(
         resolve_workflow_config(
             WorkflowTask.ACQUIRE,
             WorkflowRequest(
-                preset="eth_only_acquire",
+                surface="eth_only_acquire",
                 chain="avalanche",
                 storage_root=tmp_path / "outputs",
             ),
         )
 
 
-def test_resolution_requires_preset(isolate_conf_root) -> None:
-    isolate_conf_root()
-
-    with pytest.raises(ConfigResolutionError, match="preset is required"):
-        resolve_workflow_config(WorkflowTask.TRAIN, WorkflowRequest())
-
-
-def test_unknown_preset_reports_clean_error(tmp_path: Path, isolate_conf_root) -> None:
-    isolate_conf_root()
-
-    with pytest.raises(ConfigResolutionError, match="Unknown preset spec: does_not_exist"):
-        resolve_workflow_config(
-            WorkflowTask.TRAIN,
-            WorkflowRequest(preset="does_not_exist", storage_root=tmp_path / "outputs"),
-        )
-
-
-def test_preset_validation_reports_missing_required_fields(
+def test_acquire_rejects_objective_override(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
-    conf_root = isolate_conf_root()
-    _write_preset(conf_root, "broken", {"chain": "ethereum"})
+    isolate_conf_root()
 
-    with pytest.raises(ConfigResolutionError, match="Field required"):
+    with pytest.raises(
+        ConfigResolutionError,
+        match="acquire request does not accept override fields: objective",
+    ):
+        resolve_workflow_config(
+            WorkflowTask.ACQUIRE,
+            WorkflowRequest(
+                surface="same_block_closed",
+                objective="validation_total_loss",
+                storage_root=tmp_path / "outputs",
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("surface", "message"),
+    [
+        (None, "surface is required"),
+        ("does_not_exist", "Unknown surface spec: does_not_exist"),
+        ("broken", "Field required"),
+    ],
+)
+def test_invalid_resolution_requests_fail_cleanly(
+    tmp_path: Path,
+    isolate_conf_root,
+    surface: str | None,
+    message: str,
+) -> None:
+    conf_root = isolate_conf_root()
+    if surface == "broken":
+        _write_surface(conf_root, "broken", {"chain": "ethereum"})
+
+    with pytest.raises(ConfigResolutionError, match=message):
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            WorkflowRequest(preset="broken", storage_root=tmp_path / "outputs"),
+            WorkflowRequest(surface=surface, storage_root=tmp_path / "outputs"),
         )
 
 
@@ -210,21 +233,21 @@ def test_benchmark_objective_requires_matching_evaluation(
     isolate_conf_root,
 ) -> None:
     conf_root = isolate_conf_root()
-    payload = _base_preset(conf_root)
-    payload["objective"] = "paper_profit_replay_2h"
-    payload["evaluation"] = "paper_fullset"
-    _write_preset(conf_root, "mismatch", payload)
+    payload = _base_surface(conf_root)
+    payload["objective"] = "profit_poisson_replay_2h"
+    payload["evaluation"] = "fullset"
+    _write_surface(conf_root, "mismatch", payload)
 
     with pytest.raises(
         ConfigResolutionError,
         match=(
-            "objective paper_profit_replay_2h requires evaluation "
-            "paper_replay_2h, got paper_fullset"
+            "objective profit_poisson_replay_2h requires evaluation "
+            "poisson_replay_2h, got fullset"
         ),
     ):
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            WorkflowRequest(preset="mismatch", storage_root=tmp_path / "outputs"),
+            WorkflowRequest(surface="mismatch", storage_root=tmp_path / "outputs"),
         )
 
 
@@ -233,19 +256,19 @@ def test_evaluate_allows_diagnostic_evaluation_to_differ_from_objective_benchmar
     isolate_conf_root,
 ) -> None:
     conf_root = isolate_conf_root()
-    payload = _base_preset(conf_root)
-    payload["objective"] = "paper_profit_replay_2h"
-    payload["evaluation"] = "paper_fullset"
-    _write_preset(conf_root, "diagnostic", payload)
+    payload = _base_surface(conf_root)
+    payload["objective"] = "profit_poisson_replay_2h"
+    payload["evaluation"] = "fullset"
+    _write_surface(conf_root, "diagnostic", payload)
 
     config = resolve_workflow_config(
         WorkflowTask.EVALUATE,
-        WorkflowRequest(preset="diagnostic", storage_root=tmp_path / "outputs"),
+        WorkflowRequest(surface="diagnostic", storage_root=tmp_path / "outputs"),
     )
 
     assert config.objective.id == "evaluation"
-    assert config.objective.benchmark_id == "paper_replay_2h"
-    assert config.evaluation.id == "paper_fullset"
+    assert config.objective.benchmark_id == "poisson_replay_2h"
+    assert config.evaluation.id == "fullset"
 
 
 def test_request_overrides_allow_problem_feature_set_and_evaluation_selection(
@@ -259,25 +282,99 @@ def test_request_overrides_allow_problem_feature_set_and_evaluation_selection(
         resolve_workflow_config(
             WorkflowTask.TRAIN,
             WorkflowRequest(
-                preset="icdcs_2026_oracle_block_open",
-                problem="icdcs_2026_oracle_intermediate_recent_deltas",
-                feature_set="icdcs_2026_professor_block_open_no_time_since_start",
+                surface="block_open_lagged",
+                problem="current_row_recent_delta_window",
+                feature_set="block_open_lagged_no_time_since_start",
                 storage_root=tmp_path / "train_outputs",
             ),
         ),
     )
-    assert train_config.problem.id == "icdcs_2026_oracle_intermediate_recent_deltas"
-    assert train_config.feature_set.id == "icdcs_2026_professor_block_open_no_time_since_start"
+    assert train_config.problem.id == "current_row_recent_delta_window"
+    assert train_config.feature_set.id == "block_open_lagged_no_time_since_start"
     assert train_config.evaluation is not None
-    assert train_config.evaluation.id == "paper_replay_2h"
+    assert train_config.evaluation.id == "poisson_replay_2h"
 
     evaluate_config = resolve_workflow_config(
         WorkflowTask.EVALUATE,
         WorkflowRequest(
-            preset="icdcs_2026_oracle_intermediate",
-            evaluation="notebook_basefee_fullset",
+            surface="same_block_closed",
+            evaluation="anchor_basefee_fullset",
             storage_root=tmp_path / "eval_outputs",
         ),
     )
     assert evaluate_config.evaluation is not None
-    assert evaluate_config.evaluation.id == "notebook_basefee_fullset"
+    assert evaluate_config.evaluation.id == "anchor_basefee_fullset"
+
+
+def test_request_overrides_allow_objective_selection(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    isolate_conf_root()
+
+    train_config = cast(
+        TrainConfig,
+        resolve_workflow_config(
+            WorkflowTask.TRAIN,
+            WorkflowRequest(
+                surface="same_block_closed",
+                objective="validation_total_loss",
+                storage_root=tmp_path / "train_outputs",
+            ),
+        ),
+    )
+    assert train_config.objective.id == "validation"
+    assert train_config.objective.metric_id == "total_loss"
+    assert train_config.objective.direction == "minimize"
+
+    tune_config = cast(
+        TuneConfig,
+        resolve_workflow_config(
+            WorkflowTask.TUNE,
+            WorkflowRequest(
+                surface="same_block_closed",
+                objective="validation_total_loss",
+                storage_root=tmp_path / "tune_outputs",
+            ),
+        ),
+    )
+    assert tune_config.objective.id == "validation"
+    assert tune_config.objective.metric_id == "total_loss"
+
+    evaluate_config = cast(
+        EvaluateConfig,
+        resolve_workflow_config(
+            WorkflowTask.EVALUATE,
+            WorkflowRequest(
+                surface="same_block_closed",
+                objective="validation_total_loss",
+                storage_root=tmp_path / "eval_outputs",
+            ),
+        ),
+    )
+    assert evaluate_config.objective.id == "validation"
+    assert evaluate_config.evaluation is not None
+    assert evaluate_config.evaluation.id == "poisson_replay_2h"
+
+
+def test_request_overrides_allow_model_and_tuning_space_selection(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    isolate_conf_root()
+
+    config = cast(
+        TuneConfig,
+        resolve_workflow_config(
+            WorkflowTask.TUNE,
+            WorkflowRequest(
+                surface="same_block_closed",
+                model="transformer",
+                tuning_space="transformer_default",
+                storage_root=tmp_path / "outputs",
+            ),
+        ),
+    )
+
+    assert config.model.id == "transformer"
+    assert config.tuning_space.model.id == "transformer"

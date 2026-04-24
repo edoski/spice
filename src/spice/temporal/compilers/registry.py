@@ -17,10 +17,10 @@ def coerce_problem_compiler_config(
     else:
         raw_payload = dict(payload)
         compiler_id = _mapping_problem_compiler_id(raw_payload)
-    if compiler_id == "timestamp_native":
-        from .timestamp_native import TimestampNativeCompilerConfig
+    if compiler_id == "current_row_window":
+        from .current_row_window import CurrentRowWindowCompilerConfig
 
-        return TimestampNativeCompilerConfig.model_validate(raw_payload)
+        return CurrentRowWindowCompilerConfig.model_validate(raw_payload)
     if compiler_id == "timestamp_future_window":
         from .timestamp_future_window import TimestampFutureWindowCompilerConfig
 
@@ -30,7 +30,7 @@ def coerce_problem_compiler_config(
 
         return EstimatedBlockCompilerConfig.model_validate(raw_payload)
     known = ", ".join(
-        sorted(("estimated_block", "timestamp_future_window", "timestamp_native"))
+        sorted(("estimated_block", "timestamp_future_window", "current_row_window"))
     )
     raise ConfigResolutionError(
         f"Unknown problem.compiler.id: {compiler_id}. Known problem.compiler.id values: {known}"
@@ -44,10 +44,10 @@ def compile_problem(
     chain_runtime,
 ):
     compiler_id = problem.compiler.id
-    if compiler_id == "timestamp_native":
-        from .timestamp_native import compile_problem as compile_timestamp_native
+    if compiler_id == "current_row_window":
+        from .current_row_window import compile_problem as compile_current_row_window
 
-        return compile_timestamp_native(
+        return compile_current_row_window(
             problem,
             feature_contract,
             realization_policy,
@@ -75,6 +75,12 @@ def compile_problem(
 
 
 def problem_runtime_metadata_payload(metadata: object) -> dict[str, object]:
+    from .current_row_window import (
+        CurrentRowWindowRuntimeMetadata,
+    )
+    from .current_row_window import (
+        runtime_metadata_payload as current_row_window_payload,
+    )
     from .estimated_block import (
         EstimatedBlockRuntimeMetadata,
     )
@@ -87,15 +93,9 @@ def problem_runtime_metadata_payload(metadata: object) -> dict[str, object]:
     from .timestamp_future_window import (
         runtime_metadata_payload as timestamp_future_window_payload,
     )
-    from .timestamp_native import (
-        TimestampRuntimeMetadata,
-    )
-    from .timestamp_native import (
-        runtime_metadata_payload as timestamp_native_payload,
-    )
 
-    if isinstance(metadata, TimestampRuntimeMetadata):
-        return timestamp_native_payload(metadata)
+    if isinstance(metadata, CurrentRowWindowRuntimeMetadata):
+        return current_row_window_payload(metadata)
     if isinstance(metadata, EstimatedBlockRuntimeMetadata):
         return estimated_block_payload(metadata)
     if isinstance(metadata, TimestampFutureWindowRuntimeMetadata):
@@ -107,8 +107,8 @@ def problem_runtime_metadata_from_compiler_payload(
     compiler_id: str,
     payload: Mapping[str, object],
 ) -> object:
-    if compiler_id == "timestamp_native":
-        from .timestamp_native import runtime_metadata_from_payload
+    if compiler_id == "current_row_window":
+        from .current_row_window import runtime_metadata_from_payload
 
         return runtime_metadata_from_payload(payload)
     if compiler_id == "timestamp_future_window":

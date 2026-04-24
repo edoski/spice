@@ -30,7 +30,7 @@ def test_tuning_objective_controls_study_direction(
         load_workflow_config(
             WorkflowTask.TUNE,
             workspace=tmp_path,
-            preset="icdcs_2026",
+            surface="same_block_closed",
             override=override,
         ),
     )

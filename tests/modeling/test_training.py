@@ -10,42 +10,9 @@ import torch
 from spice.config.models import TrainingConfig
 from spice.modeling._runtime import CudaModelingRuntime
 from spice.modeling.representations import RepresentationRuntimeContext
-from spice.modeling.training import _is_improvement, train_model
+from spice.modeling.training import train_model
 from spice.objectives import CompiledObjectiveContract
 from spice.prediction import MetricSet
-
-
-def test_early_stopping_min_delta_uses_last_accepted_best_epoch() -> None:
-    history = [
-        MetricSet({"score": 1.0}),
-        MetricSet({"score": 1.005}),
-        MetricSet({"score": 1.02}),
-    ]
-
-    assert _is_improvement(
-        current_epoch=1,
-        best_epoch=0,
-        history=history[:1],
-        direction="maximize",
-        metric_id="score",
-        min_delta=0.01,
-    )
-    assert not _is_improvement(
-        current_epoch=2,
-        best_epoch=1,
-        history=history[:2],
-        direction="maximize",
-        metric_id="score",
-        min_delta=0.01,
-    )
-    assert _is_improvement(
-        current_epoch=3,
-        best_epoch=1,
-        history=history,
-        direction="maximize",
-        metric_id="score",
-        min_delta=0.01,
-    )
 
 
 def test_training_checkpoint_state_and_best_epoch_ignore_sub_delta_best(

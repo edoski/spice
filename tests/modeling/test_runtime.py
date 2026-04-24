@@ -10,7 +10,6 @@ from spice.modeling._runtime import (
     compute_device_resident_budget,
     default_device_resident_safety_margin,
     ensure_cuda_runtime_ready,
-    resolve_cuda_device,
 )
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.families.registry import (
@@ -19,10 +18,6 @@ from spice.modeling.families.registry import (
 )
 from spice.modeling.families.transformer import TransformerModelConfig
 from spice.modeling.families.transformer_lstm import TransformerLstmModelConfig
-
-
-def test_resolve_cuda_device_returns_cuda() -> None:
-    assert resolve_cuda_device() == torch.device("cuda")
 
 
 def test_ensure_cuda_runtime_ready_raises_clear_error_for_broken_cuda_runtime(
@@ -51,14 +46,23 @@ def test_ensure_cuda_runtime_ready_rejects_rocm(monkeypatch) -> None:
         ensure_cuda_runtime_ready(torch.device("cuda"))
 
 
-def test_resolve_compile_enabled_skips_transformer_auto_compile_on_small_cuda_gpu(
+@pytest.mark.parametrize(
+    ("multi_processor_count", "expected"),
+    [
+        (32, False),
+        (72, True),
+    ],
+)
+def test_transformer_auto_compile_depends_on_cuda_gpu_size(
     monkeypatch,
+    multi_processor_count: int,
+    expected: bool,
 ) -> None:
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
     monkeypatch.setattr(
         torch.cuda,
         "get_device_properties",
-        lambda index: SimpleNamespace(multi_processor_count=32),
+        lambda index: SimpleNamespace(multi_processor_count=multi_processor_count),
     )
 
     enabled = resolve_model_compile_enabled(
@@ -73,32 +77,7 @@ def test_resolve_compile_enabled_skips_transformer_auto_compile_on_small_cuda_gp
         ),
     )
 
-    assert enabled is False
-
-
-def test_resolve_compile_enabled_keeps_transformer_auto_compile_on_big_cuda_gpu(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
-    monkeypatch.setattr(
-        torch.cuda,
-        "get_device_properties",
-        lambda index: SimpleNamespace(multi_processor_count=72),
-    )
-
-    enabled = resolve_model_compile_enabled(
-        device=torch.device("cuda"),
-        model_config=TransformerModelConfig(
-            dropout=0.1,
-            d_model=16,
-            nhead=4,
-            transformer_layers=2,
-            feedforward_dim=32,
-            head_hidden_dim=8,
-        ),
-    )
-
-    assert enabled is True
+    assert enabled is expected
 
 
 def test_recurrent_families_disable_auto_compile_on_cuda() -> None:
@@ -162,8 +141,19 @@ def test_recurrent_families_default_to_fp32_on_cuda() -> None:
     )
 
 
-def test_transformer_default_precision_prefers_bf16_on_supported_cuda(monkeypatch) -> None:
-    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: True)
+@pytest.mark.parametrize(
+    ("bf16_supported", "expected"),
+    [
+        (True, "bf16-mixed"),
+        (False, "16-mixed"),
+    ],
+)
+def test_transformer_default_precision_tracks_bf16_support(
+    monkeypatch,
+    bf16_supported: bool,
+    expected: str,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: bf16_supported)
 
     assert (
         resolve_model_training_precision(
@@ -177,26 +167,7 @@ def test_transformer_default_precision_prefers_bf16_on_supported_cuda(monkeypatc
                 head_hidden_dim=8,
             ),
         )
-        == "bf16-mixed"
-    )
-
-
-def test_transformer_default_precision_falls_back_to_fp16_without_bf16(monkeypatch) -> None:
-    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: False)
-
-    assert (
-        resolve_model_training_precision(
-            device=torch.device("cuda"),
-            model_config=TransformerModelConfig(
-                dropout=0.1,
-                d_model=16,
-                nhead=4,
-                transformer_layers=2,
-                feedforward_dim=32,
-                head_hidden_dim=8,
-            ),
-        )
-        == "16-mixed"
+        == expected
     )
 
 

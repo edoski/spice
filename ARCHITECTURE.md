@@ -41,47 +41,60 @@ This keeps corpus storage, temporal lowering, and prediction behavior independen
 Config resolution lives in [src/spice/config](src/spice/config):
 
 - `registry.py`: named spec discovery, validation, and canonical YAML helpers
-- `presets.py`: preset overlay validation, `extends` resolution, request overlays
+- `surfaces.py`: surface frame validation and request overlays
+- `benchmarks.py`: expanded benchmark case validation and command rendering
 - `resolution.py`: workflow request handling and payload-to-config resolution
 - `models.py`: resolved runtime config models
 
 Flow:
 
-1. load named YAML specs from [src/spice/conf](src/spice/conf)
-2. resolve one preset, including its single optional `extends` parent chain
-3. apply the small workflow override surface
+1. load one `surface` YAML from [src/spice/conf](src/spice/conf)
+2. load referenced typed specs such as `acquisition`, `training`, `split`, and `tuning`
+3. apply CLI or benchmark case overrides
 4. validate one typed workflow config and resolve one chain-specific RPC endpoint for `acquire`
 5. derive deterministic storage identities and paths through storage helpers
 
-Presets are the workflow-owned experiment unit. Internally they are overlay configs
-resolved through one `extends` chain, which keeps user-facing YAML readable without
-making every internal seam a workflow flag.
+Surfaces hold durable benchmark context. They name stable specs such as chain,
+dataset, provider, problem, dataset builder, prediction, and workflow-section refs.
+Benchmarks hold run variation and expand into explicit workflow requests.
 
 Public `spice config` groups:
 
-- `preset`
-- `dataset`
+- `surface`
+- `benchmark`
+- `acquisition`
 - `chain`
+- `dataset`
+- `dataset_builder`
+- `evaluation`
+- `execution`
+- `feature_set`
+- `model`
+- `objective`
+- `prediction`
 - `provider`
 - `problem`
-
-Internal registry-loaded groups:
-
-- `model`
-- `dataset_builder`
-- `feature_set`
-- `prediction`
-- `evaluation`
-- `objective`
+- `split`
+- `training`
+- `tuning`
 - `tuning_space`
-- `execution`
 
 Workflow selectors:
 
-- `preset`
+- `surface`
 - `chain`
+- `problem`
+- `feature_set`
+- `objective`
+- `evaluation`
+- `model`
+- `tuning_space`
+- `acquisition`
+- `training`
+- `split`
+- `tuning`
 
-`provider` remains a named config seam and public config group, but it is preset-owned
+`provider` remains a named config seam and public config group, but it is surface-owned
 runtime configuration rather than a workflow selector. `acquire` resolves that provider
 spec into one chain-specific RPC endpoint before runtime code starts.
 
@@ -105,9 +118,9 @@ Feature execution lives in [src/spice/features](src/spice/features).
 
 Current feature families:
 
-- `block_native`
-- `block_open_native`
-- `time_native`
+- `same_block_closed`
+- `block_open_lagged`
+- `timestamp_features`
 
 Execution model:
 
@@ -135,8 +148,15 @@ Temporal lowering lives in [src/spice/temporal](src/spice/temporal).
 
 Current compilers:
 
-- `timestamp_native`
+- `current_row_window`
 - `estimated_block`
+- `timestamp_future_window`
+
+Current mechanism surfaces:
+
+- `same_block_closed`: unsafe same-block reference. The action is priced in the current row and features can include finalized facts from that row.
+- `block_open_lagged`: safe same-block context. Current base fee remains available, but finalized block facts are lagged to what is known at block open.
+- `next_block_nominal_window`: diagnostic next-block nominal window. It preserves the old paper-truth mechanics without making it a canonical surface.
 
 Both lower into the same `CompiledProblemStore` shape:
 
@@ -179,7 +199,7 @@ Model families live in [src/spice/modeling/families](src/spice/modeling/families
 
 The current shipped representation is `sequence_inputs`. That boundary stays real even though only one public representation id ships today, because models still consume prepared inputs through an explicit representation seam rather than family-specific input wiring.
 
-Dataset preparation is a separate seam in [src/spice/modeling/dataset_builders](src/spice/modeling/dataset_builders). The current shipped builders are `standard_temporal` and `professor_temporal`.
+Dataset preparation is a separate seam in [src/spice/modeling/dataset_builders](src/spice/modeling/dataset_builders). The current shipped builders are `standard_temporal` and `fixed_context_temporal`.
 
 ## CLI Shape
 
@@ -268,7 +288,7 @@ instead of re-resolving request JSON remotely. Storage sync lives in
 
 ## Package Roles
 
-- `config`: registry-backed YAML access, preset overlays, workflow request resolution, typed runtime config models
+- `config`: registry-backed YAML access, surface resolution, benchmark expansion, typed runtime config models
 - `features`: explicit feature-family contracts and execution
 - `temporal`: compiler contracts and compiled problem-store lowering
 - `prediction`: family-owned prediction semantics

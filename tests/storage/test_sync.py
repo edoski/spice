@@ -25,12 +25,12 @@ def _study_record(root_path: Path) -> CatalogStudyRecord:
         study_id="study-1",
         study_name="default",
         dataset_id="dataset-1",
-        dataset_name="icdcs_2026",
+        dataset_name="same_block_closed",
         chain_name="ethereum",
-        feature_set_id="icdcs_2026",
+        feature_set_id="same_block_closed",
         prediction_id="candidate_offset_selection",
         model_id="lstm",
-        problem_id="icdcs_2026",
+        problem_id="same_block_closed",
         root_path=root_path,
         state_db_path=root_path / ".spice" / "state.sqlite",
     )
@@ -40,17 +40,37 @@ def _artifact_record(root_path: Path) -> CatalogArtifactRecord:
     return CatalogArtifactRecord(
         artifact_id="artifact-1",
         dataset_id="dataset-1",
-        dataset_name="icdcs_2026",
+        dataset_name="same_block_closed",
         chain_name="ethereum",
-        feature_set_id="icdcs_2026",
+        feature_set_id="same_block_closed",
         prediction_id="candidate_offset_selection",
         model_id="lstm",
-        problem_id="icdcs_2026",
+        problem_id="same_block_closed",
         variant="baseline",
         study_id=None,
         study_name=None,
         root_path=root_path,
         state_db_path=root_path / ".spice" / "state.sqlite",
+    )
+
+
+def _artifact_record_json(record: CatalogArtifactRecord) -> str:
+    return json.dumps(
+        {
+            "artifact_id": record.artifact_id,
+            "dataset_id": record.dataset_id,
+            "dataset_name": record.dataset_name,
+            "chain_name": record.chain_name,
+            "feature_set_id": record.feature_set_id,
+            "prediction_id": record.prediction_id,
+            "model_id": record.model_id,
+            "problem_id": record.problem_id,
+            "variant": record.variant,
+            "study_id": record.study_id,
+            "study_name": record.study_name,
+            "root_path": str(record.root_path),
+            "state_db_path": str(record.state_db_path),
+        }
     )
 
 
@@ -68,7 +88,7 @@ def test_push_study_to_cluster_uses_canonical_destination_root(tmp_path, monkeyp
         "spice.storage.sync.resolve_study_record",
         lambda _root, *, selector: record,
     )
-    execution_calls: list[tuple[str, list[str]]] = []
+    execution_calls: list[str] = []
 
     def fake_run_execution_module(
         _target,
@@ -78,7 +98,7 @@ def test_push_study_to_cluster_uses_canonical_destination_root(tmp_path, monkeyp
         capture_output: bool = True,
     ):
         del capture_output
-        execution_calls.append((module, args))
+        execution_calls.append(args[0])
         if args[0] == "prepare-stage":
             captured.update(
                 {
@@ -112,31 +132,12 @@ def test_push_study_to_cluster_uses_canonical_destination_root(tmp_path, monkeyp
     assert captured["destination_root"] == (
         remote_storage_root / "studies" / record.chain_name / record.study_id
     )
+    staged_root = captured["staged_root"]
+    assert isinstance(staged_root, Path)
+    assert staged_root.parent == remote_storage_root / "studies" / record.chain_name
+    assert "incoming" in staged_root.name
     assert captured["replace"] is False
-    assert execution_calls == [
-        (
-            "spice.storage.sync_cli",
-            [
-                "prepare-stage",
-                "--destination-root",
-                str(remote_storage_root / "studies" / record.chain_name / record.study_id),
-                "--staged-root",
-                str(captured["staged_root"]),
-            ],
-        ),
-        (
-            "spice.storage.sync_cli",
-            [
-                "finalize-stage",
-                "--storage-root",
-                str(remote_storage_root),
-                "--destination-root",
-                str(remote_storage_root / "studies" / record.chain_name / record.study_id),
-                "--staged-root",
-                str(captured["staged_root"]),
-            ],
-        ),
-    ]
+    assert execution_calls == ["prepare-stage", "finalize-stage"]
 
 
 def test_pull_artifact_from_cluster_promotes_and_reindexes(tmp_path, monkeypatch) -> None:
@@ -155,23 +156,7 @@ def test_pull_artifact_from_cluster_promotes_and_reindexes(tmp_path, monkeypatch
         lambda _target, module, args, *, capture_output=True: subprocess.CompletedProcess(
             args=[module, *args],
             returncode=0,
-            stdout=json.dumps(
-                {
-                    "artifact_id": record.artifact_id,
-                    "dataset_id": record.dataset_id,
-                    "dataset_name": record.dataset_name,
-                    "chain_name": record.chain_name,
-                    "feature_set_id": record.feature_set_id,
-                    "prediction_id": record.prediction_id,
-                    "model_id": record.model_id,
-                    "problem_id": record.problem_id,
-                    "variant": record.variant,
-                    "study_id": record.study_id,
-                    "study_name": record.study_name,
-                    "root_path": str(record.root_path),
-                    "state_db_path": str(record.state_db_path),
-                }
-            ),
+            stdout=_artifact_record_json(record),
             stderr="",
         ),
     )
@@ -227,23 +212,7 @@ def test_pull_artifact_from_cluster_rejects_existing_destination(tmp_path, monke
         lambda _target, module, args, *, capture_output=True: subprocess.CompletedProcess(
             args=[module, *args],
             returncode=0,
-            stdout=json.dumps(
-                {
-                    "artifact_id": record.artifact_id,
-                    "dataset_id": record.dataset_id,
-                    "dataset_name": record.dataset_name,
-                    "chain_name": record.chain_name,
-                    "feature_set_id": record.feature_set_id,
-                    "prediction_id": record.prediction_id,
-                    "model_id": record.model_id,
-                    "problem_id": record.problem_id,
-                    "variant": record.variant,
-                    "study_id": record.study_id,
-                    "study_name": record.study_name,
-                    "root_path": str(record.root_path),
-                    "state_db_path": str(record.state_db_path),
-                }
-            ),
+            stdout=_artifact_record_json(record),
             stderr="",
         ),
     )

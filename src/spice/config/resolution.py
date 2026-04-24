@@ -1,4 +1,4 @@
-"""Workflow request handling and preset resolution."""
+"""Workflow request handling and surface resolution."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from ..modeling.tuned_config import coerce_tuning_space_config
 from ..objectives import ObjectiveConfig, coerce_objective_config
 from .models import (
     AcquireConfig,
+    AcquisitionConfig,
     ArtifactConfig,
     ChainSpec,
     DatasetBuilderConfig,
@@ -39,8 +40,8 @@ from .models import (
     coerce_feature_set_config,
     coerce_problem_spec,
 )
-from .presets import PresetFrame, apply_request_overrides, load_preset_frame
 from .registry import load_named_group
+from .surfaces import SurfaceFrame, apply_request_overrides, load_surface_frame
 
 _MODEL_GROUP = "model"
 _TUNING_SPACE_GROUP = "tuning_space"
@@ -49,11 +50,18 @@ WorkflowConfig = AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig
 
 
 class WorkflowRequest(ConfigModel):
-    preset: str | None = None
+    surface: str | None = None
     chain: str | None = None
     problem: str | None = None
     feature_set: str | None = None
+    objective: str | None = None
     evaluation: str | None = None
+    model: str | None = None
+    tuning_space: str | None = None
+    acquisition: str | None = None
+    training: str | None = None
+    split: str | None = None
+    tuning: str | None = None
     study: str | None = None
     variant: str | None = None
     delay_seconds: int | None = Field(default=None, gt=0)
@@ -136,16 +144,23 @@ def resolve_workflow_config(
 ) -> WorkflowConfig:
     """Resolve one workflow request into one validated workflow config."""
 
-    if request.preset is None:
-        raise ConfigResolutionError("preset is required")
+    if request.surface is None:
+        raise ConfigResolutionError("surface is required")
     try:
         frame = apply_request_overrides(
-            load_preset_frame(request.preset),
+            load_surface_frame(request.surface),
             workflow=workflow_kind,
             chain=request.chain,
             problem=request.problem,
             feature_set=request.feature_set,
+            objective=request.objective,
             evaluation=request.evaluation,
+            model=request.model,
+            tuning_space=request.tuning_space,
+            acquisition=request.acquisition,
+            training=request.training,
+            split=request.split,
+            tuning=request.tuning,
             study=request.study,
             variant=request.variant,
             delay_seconds=request.delay_seconds,
@@ -153,23 +168,25 @@ def resolve_workflow_config(
             storage_root=request.storage_root,
             dry_run=request.dry_run,
         )
-        return _resolve_preset_frame(workflow_kind, frame)
+        return _resolve_surface_frame(workflow_kind, frame, request=request)
     except ConfigResolutionError:
         raise
     except (ValidationError, ValueError, TypeError) as exc:
         raise ConfigResolutionError(str(exc)) from exc
 
 
-def _resolve_preset_frame(
+def _resolve_surface_frame(
     workflow: WorkflowTask,
-    frame: PresetFrame,
+    frame: SurfaceFrame,
+    *,
+    request: WorkflowRequest,
 ) -> WorkflowConfig:
     if workflow is WorkflowTask.ACQUIRE:
-        return _resolve_acquire_config(frame)
+        return _resolve_acquire_config(frame, dry_run=request.dry_run)
     if workflow is WorkflowTask.TRAIN:
         return _resolve_train_config(frame)
     if workflow is WorkflowTask.TUNE:
-        return _resolve_tune_config(frame)
+        return _resolve_tune_config(frame, trial_count=request.trial_count)
     if workflow is WorkflowTask.EVALUATE:
         return _resolve_evaluate_config(frame)
     raise ConfigResolutionError(f"Unsupported workflow: {workflow.value}")
@@ -201,6 +218,22 @@ def _resolve_prediction(name: str) -> PredictionConfig:
 
 def _resolve_model(name: str) -> ModelConfig[str]:
     return coerce_model_config(load_named_group(name, _MODEL_GROUP))
+
+
+def _resolve_acquisition(name: str) -> AcquisitionConfig:
+    return AcquisitionConfig.model_validate(load_named_group(name, "acquisition"))
+
+
+def _resolve_training(name: str) -> TrainingConfig:
+    return TrainingConfig.model_validate(load_named_group(name, "training"))
+
+
+def _resolve_split(name: str) -> SplitConfig:
+    return SplitConfig.model_validate(load_named_group(name, "split"))
+
+
+def _resolve_tuning(name: str) -> TuningConfig:
+    return TuningConfig.model_validate(load_named_group(name, "tuning"))
 
 
 def _resolve_evaluation(name: str | None) -> EvaluatorConfig | None:
@@ -263,7 +296,7 @@ def _resolve_rpc_endpoint(
 
 
 def _resolve_model_workflow_base(
-    frame: PresetFrame,
+    frame: SurfaceFrame,
     *,
     validate_objective_benchmark: bool,
 ) -> ModelWorkflowBase:
@@ -271,12 +304,12 @@ def _resolve_model_workflow_base(
     chain = _resolve_chain(frame.chain)
     storage = _resolve_storage(frame.storage)
     problem = _resolve_problem(frame.problem)
-    model = _resolve_model(frame.model)
+    model = _resolve_model(_required(frame.model, "model"))
     dataset_builder = _resolve_dataset_builder(frame.dataset_builder)
-    feature_set = _resolve_feature_set(frame.feature_set)
+    feature_set = _resolve_feature_set(_required(frame.feature_set, "feature_set"))
     prediction = _resolve_prediction(frame.prediction)
     objective = _resolve_objective(
-        frame.objective,
+        _required(frame.objective, "objective"),
         evaluation_name=frame.evaluation if validate_objective_benchmark else None,
     )
     evaluation = _resolve_evaluation(frame.evaluation)
@@ -299,7 +332,7 @@ def _resolve_model_workflow_base(
 
 
 def _resolve_model_workflow_spine(
-    frame: PresetFrame,
+    frame: SurfaceFrame,
     *,
     model: ModelConfig[str],
     problem: ProblemSpec,
@@ -307,13 +340,13 @@ def _resolve_model_workflow_spine(
     require_tuning: bool,
     allow_tuned_variant: bool,
 ) -> ModelWorkflowSpine:
-    training = frame.training
-    split = frame.split
+    training = _resolve_training(frame.training)
+    split = _resolve_split(frame.split)
     artifact = _resolve_artifact(frame.artifact)
     if require_tuning or (allow_tuned_variant and artifact.variant.value == "tuned"):
-        tuning = frame.tuning
+        tuning = _resolve_tuning(frame.tuning)
         tuning_space = load_named_tuning_space(
-            frame.tuning_space,
+            _required(frame.tuning_space, "tuning_space"),
             model_config=model,
             problem_config=problem,
         )
@@ -331,13 +364,18 @@ def _resolve_model_workflow_spine(
     )
 
 
-def _resolve_acquire_config(frame: PresetFrame) -> AcquireConfig:
+def _resolve_acquire_config(frame: SurfaceFrame, *, dry_run: bool | None) -> AcquireConfig:
     dataset = _resolve_dataset(frame.dataset)
     chain = _resolve_chain(frame.chain)
     storage = _resolve_storage(frame.storage)
     problem = _resolve_problem(frame.problem)
     rpc_endpoint = _resolve_rpc_endpoint(frame.provider, chain=chain)
-    feature_set = _resolve_feature_set(frame.feature_set)
+    feature_set = _resolve_feature_set(_required(frame.feature_set, "feature_set"))
+    acquisition = _resolve_acquisition(frame.acquisition)
+    if dry_run is not None:
+        acquisition = AcquisitionConfig.model_validate(
+            {**acquisition.model_dump(mode="json"), "dry_run": dry_run}
+        )
     return AcquireConfig(
         chain=chain,
         dataset=dataset,
@@ -345,11 +383,11 @@ def _resolve_acquire_config(frame: PresetFrame) -> AcquireConfig:
         problem=problem,
         feature_set=feature_set,
         rpc_endpoint=rpc_endpoint,
-        acquisition=frame.acquisition,
+        acquisition=acquisition,
     )
 
 
-def _resolve_train_config(frame: PresetFrame) -> TrainConfig:
+def _resolve_train_config(frame: SurfaceFrame) -> TrainConfig:
     base = _resolve_model_workflow_base(frame, validate_objective_benchmark=True)
     spine = _resolve_model_workflow_spine(
         frame,
@@ -379,7 +417,7 @@ def _resolve_train_config(frame: PresetFrame) -> TrainConfig:
     )
 
 
-def _resolve_tune_config(frame: PresetFrame) -> TuneConfig:
+def _resolve_tune_config(frame: SurfaceFrame, *, trial_count: int | None) -> TuneConfig:
     base = _resolve_model_workflow_base(frame, validate_objective_benchmark=True)
     spine = _resolve_model_workflow_spine(
         frame,
@@ -391,6 +429,11 @@ def _resolve_tune_config(frame: PresetFrame) -> TuneConfig:
     )
     assert spine.tuning is not None
     assert spine.tuning_space is not None
+    tuning = spine.tuning
+    if trial_count is not None:
+        tuning = TuningConfig.model_validate(
+            {**tuning.model_dump(mode="json"), "trial_count": trial_count}
+        )
     return TuneConfig(
         chain=base.chain,
         dataset=base.dataset,
@@ -406,12 +449,12 @@ def _resolve_tune_config(frame: PresetFrame) -> TuneConfig:
         artifact=base.artifact,
         training=spine.training,
         split=spine.split,
-        tuning=spine.tuning,
+        tuning=tuning,
         tuning_space=spine.tuning_space,
     )
 
 
-def _resolve_evaluate_config(frame: PresetFrame) -> EvaluateConfig:
+def _resolve_evaluate_config(frame: SurfaceFrame) -> EvaluateConfig:
     base = _resolve_model_workflow_base(frame, validate_objective_benchmark=False)
     spine = _resolve_model_workflow_spine(
         frame,
@@ -436,7 +479,19 @@ def _resolve_evaluate_config(frame: PresetFrame) -> EvaluateConfig:
         artifact=base.artifact,
         training=spine.training,
         split=spine.split,
-        delay_seconds=frame.delay_seconds,
+        delay_seconds=_required_int(frame.delay_seconds, "delay_seconds"),
         tuning=spine.tuning,
         tuning_space=spine.tuning_space,
     )
+
+
+def _required(value: str | None, label: str) -> str:
+    if value is None:
+        raise ConfigResolutionError(f"{label} is required")
+    return value
+
+
+def _required_int(value: int | None, label: str) -> int:
+    if value is None:
+        raise ConfigResolutionError(f"{label} is required")
+    return value

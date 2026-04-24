@@ -249,7 +249,7 @@ def study_request_identity_from_tuned_config(
 ) -> StudyRequestIdentity:
     if config.tuning is None or config.tuning_space is None:
         raise ConfigResolutionError(
-            "tuned artifact requests require tuning and tuning_space in the preset"
+            "tuned artifact requests require tuning and tuning_space in the surface"
         )
     return study_request_identity(
         study_name=config.study.name,
@@ -287,6 +287,6 @@ def _study_definition(
         return config.tuning, config.tuning_space
     if config.tuning is None or config.tuning_space is None:
         raise ConfigResolutionError(
-            "tuned artifact requests require tuning and tuning_space in the preset"
+            "tuned artifact requests require tuning and tuning_space in the surface"
         )
     return config.tuning, config.tuning_space

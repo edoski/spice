@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 import torch
 
 from spice.config import PredictionConfig
@@ -114,21 +113,6 @@ def test_sequence_input_storage_modes_yield_identical_batches() -> None:
         assert torch.equal(left.action_mask, right.action_mask)
 
 
-def test_sequence_input_device_storage_requires_cuda() -> None:
-    store = _test_store()
-    sample_indices = np.array([3, 0, 2, 1], dtype=np.int64)
-    contract = sequence_input_contract()
-    prepared = contract.prepare(
-        store,
-        sample_indices,
-        runtime_context=RepresentationRuntimeContext(
-            batch_size=2,
-            available_host_memory_bytes=1,
-        ),
-    )
-
-    with pytest.raises(ValueError, match="requires CUDA"):
-        prepared.to_device_storage(torch.device("cpu"))
 def test_prediction_batch_source_binds_current_family_targets() -> None:
     store = _test_store()
     sample_indices = np.array([0, 1, 2, 3], dtype=np.int64)

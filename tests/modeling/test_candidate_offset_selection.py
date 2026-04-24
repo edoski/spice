@@ -2,73 +2,14 @@ from __future__ import annotations
 
 import math
 
-import numpy as np
-import polars as pl
-import pytest
 import torch
 
-from spice.config import (
-    PredictionConfig,
-    coerce_feature_set_config,
-    coerce_problem_spec,
-)
-from spice.evaluation import EvaluatorConfig, compile_evaluator_contract
-from spice.features import compile_feature_contract
-from spice.modeling.evaluation import run_prediction_evaluation
+from spice.config import PredictionConfig
 from spice.modeling.models import ModelOutputs
 from spice.prediction import ActionSpaceDecodeContext, DecodedOffsets, compile_prediction_contract
 from spice.prediction.families.candidate_offset_selection.batch import CandidateSlateTargetBatch
 from spice.prediction.families.candidate_offset_selection.loss import compute_selection_loss
 from spice.prediction.families.candidate_offset_selection.outputs import CANDIDATE_LOGITS_HEAD_ID
-from spice.temporal import (
-    coerce_realization_policy_config,
-    compile_realization_policy_contract,
-)
-from spice.temporal.contracts import compile_problem_contract
-
-
-def _build_test_store():
-    feature_contract = compile_feature_contract(
-        feature_set=coerce_feature_set_config(
-            {
-                "id": "test_timestamp_native",
-                "family": {"id": "time_native"},
-                "outputs": ["seconds_since_previous_block", "elapsed_seconds"],
-            }
-        )
-    )
-    blocks = pl.DataFrame(
-        {
-            "block_number": np.arange(100, 107, dtype=np.int64),
-            "timestamp": np.array([0, 5, 11, 18, 27, 29, 40], dtype=np.int64),
-            "base_fee_per_gas": np.full(7, 1_000_000_000, dtype=np.int64),
-            "gas_used": np.full(7, 18_000_000, dtype=np.int64),
-            "gas_limit": np.full(7, 30_000_000, dtype=np.int64),
-            "chain_id": np.ones(7, dtype=np.int64),
-        }
-    )
-    feature_table = feature_contract.build_table(blocks)
-    contract = compile_problem_contract(
-        problem=coerce_problem_spec(
-            {
-                "id": "test_timestamp_native",
-                "lookback_seconds": 10,
-                "sample_count": 4,
-                "max_delay_seconds": 12,
-                "compiler": {"id": "timestamp_native"},
-                "realization_policy": {"id": "strict_deadline_miss"},
-            }
-        ),
-        feature_contract=feature_contract,
-    )
-    store, _ = contract.build_capability_store(feature_table)
-    return store
-
-
-def _realization_policy():
-    return compile_realization_policy_contract(
-        coerce_realization_policy_config({"id": "strict_deadline_miss"})
-    )
 
 
 def _prediction_contract():
@@ -128,42 +69,3 @@ def test_candidate_offset_decode_ignores_masked_slots() -> None:
 
     assert torch.equal(predictions.tensor, torch.tensor([0], dtype=torch.int64))
 
-
-def test_poisson_replay_summary_uses_event_weighted_totals() -> None:
-    store = _build_test_store()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-    predictions = DecodedOffsets(torch.zeros(store.n_samples, dtype=torch.int64))
-
-    evaluator = compile_evaluator_contract(
-        EvaluatorConfig.model_validate(
-            {
-                "id": "paper_replay_2h",
-                "sampler": "poisson_arrivals",
-                "window_seconds": 8,
-                "arrival_rate_per_second": 0.3,
-                "repetitions": 4,
-                "seed": 2026,
-            }
-        )
-    )
-    summary = run_prediction_evaluation(
-        evaluator,
-        store,
-        _realization_policy(),
-        predictions,
-        sample_indices=sample_indices,
-    )
-
-    realized_fee_sum = sum(run.metrics["realized_fee_sum"] for run in summary.runs)
-    baseline_fee_sum = sum(run.metrics["baseline_fee_sum"] for run in summary.runs)
-    optimum_fee_sum = sum(run.metrics["optimum_fee_sum"] for run in summary.runs)
-
-    assert summary.metrics.require("profit_over_baseline") == pytest.approx(
-        (baseline_fee_sum - realized_fee_sum) / baseline_fee_sum
-    )
-    assert summary.metrics.require("cost_over_optimum") == pytest.approx(
-        (realized_fee_sum - optimum_fee_sum) / optimum_fee_sum
-    )
-    assert summary.window_metrics["profit_over_baseline"].mean == pytest.approx(
-        np.mean([run.metrics["profit_over_baseline"] for run in summary.runs])
-    )

@@ -28,34 +28,23 @@ def _artifact_record(root_path):
     )
 
 
-def test_delete_artifact_rejects_catalog_path_outside_storage_root(tmp_path) -> None:
+@pytest.mark.parametrize("case", ["outside", "kind_mismatch", "missing_db"])
+def test_delete_artifact_rejects_invalid_catalog_roots(tmp_path, case: str) -> None:
     storage_root = tmp_path / "outputs"
-    outside_root = tmp_path / "outside-artifact"
-    outside_root.mkdir()
+    if case == "outside":
+        artifact_root = tmp_path / "outside-artifact"
+        artifact_root.mkdir()
+        message = "outside storage artifacts root"
+    else:
+        artifact_root = storage_root / "artifacts" / "ethereum" / "art_1"
+        if case == "kind_mismatch":
+            ensure_state_db(state_db_path(artifact_root), root_kind=RootKind.STUDY, tables=())
+            message = "Catalog root kind mismatch"
+        else:
+            artifact_root.mkdir(parents=True)
+            message = "missing state DB"
 
-    with pytest.raises(StateLayoutError, match="outside storage artifacts root"):
-        _delete_artifact_record(storage_root, _artifact_record(outside_root))
-
-    assert outside_root.exists()
-
-
-def test_delete_artifact_rejects_catalog_root_kind_mismatch(tmp_path) -> None:
-    storage_root = tmp_path / "outputs"
-    artifact_root = storage_root / "artifacts" / "ethereum" / "art_1"
-    ensure_state_db(state_db_path(artifact_root), root_kind=RootKind.STUDY, tables=())
-
-    with pytest.raises(StateLayoutError, match="Catalog root kind mismatch"):
-        _delete_artifact_record(storage_root, _artifact_record(artifact_root))
-
-    assert artifact_root.exists()
-
-
-def test_delete_artifact_rejects_catalog_root_without_state_db(tmp_path) -> None:
-    storage_root = tmp_path / "outputs"
-    artifact_root = storage_root / "artifacts" / "ethereum" / "art_1"
-    artifact_root.mkdir(parents=True)
-
-    with pytest.raises(StateLayoutError, match="missing state DB"):
+    with pytest.raises(StateLayoutError, match=message):
         _delete_artifact_record(storage_root, _artifact_record(artifact_root))
 
     assert artifact_root.exists()

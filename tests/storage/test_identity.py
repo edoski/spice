@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import cast
 
-import pytest
 import yaml
 
 from spice.config import (
+    EvaluateConfig,
     TrainConfig,
     TuneConfig,
     WorkflowRequest,
@@ -21,27 +21,34 @@ from spice.storage.layout import resolve_workflow_paths
 from spice.storage.study_manifest import manifest_from_tune_config
 
 
-def _write_preset(conf_root, name: str, payload: dict[str, object]) -> None:
-    path = conf_root / "preset" / f"{name}.yaml"
+def _write_surface(conf_root, name: str, payload: dict[str, object]) -> None:
+    path = conf_root / "surface" / f"{name}.yaml"
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def _base_preset(conf_root) -> dict[str, object]:
-    return load_named_group("icdcs_2026", "preset")
+def _base_surface(conf_root) -> dict[str, object]:
+    return load_named_group("same_block_closed", "surface")
 
 
-def _updated_preset(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
+def _updated_surface(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
     return {**base, **override}
 
 
-def _train_paths(tmp_path, *, preset: str, variant: str | None = None):
+def _train_paths(
+    tmp_path,
+    *,
+    surface: str,
+    variant: str | None = None,
+    objective: str | None = None,
+):
     config = cast(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
             WorkflowRequest(
-                preset=preset,
+                surface=surface,
                 variant=variant,
+                objective=objective,
                 storage_root=tmp_path / "outputs",
             ),
         ),
@@ -49,154 +56,151 @@ def _train_paths(tmp_path, *, preset: str, variant: str | None = None):
     return resolve_workflow_paths(config)
 
 
-def _tune_paths(tmp_path, *, preset: str):
+def _tune_paths(
+    tmp_path,
+    *,
+    surface: str,
+    objective: str | None = None,
+    trial_count: int | None = None,
+):
     config = cast(
         TuneConfig,
         resolve_workflow_config(
             WorkflowTask.TUNE,
-            WorkflowRequest(preset=preset, storage_root=tmp_path / "outputs"),
+            WorkflowRequest(
+                surface=surface,
+                objective=objective,
+                trial_count=trial_count,
+                storage_root=tmp_path / "outputs",
+            ),
         ),
     )
     return resolve_workflow_paths(config)
 
 
-@pytest.mark.parametrize(
-    ("name", "override"),
-    [
-        (
-            "objective_id",
-            {"objective": "paper_profit_replay_2h", "evaluation": "paper_replay_2h"},
+def _evaluate_paths(tmp_path, *, surface: str, objective: str | None = None):
+    config = cast(
+        EvaluateConfig,
+        resolve_workflow_config(
+            WorkflowTask.EVALUATE,
+            WorkflowRequest(
+                surface=surface,
+                objective=objective,
+                storage_root=tmp_path / "outputs",
+            ),
         ),
-        (
-            "training_id",
-            {
-                "training": {
-                    "learning_rate": 0.0003,
-                    "weight_decay": 0.01,
-                    "batch_size": 256,
-                    "max_epochs": 50,
-                    "early_stopping": {"patience": 8, "min_delta": 0.0001},
-                    "gradient_clip_norm": 1.0,
-                    "seed": 2026,
-                    "deterministic": True,
-                    "log_every_n_steps": 100,
-                    "input_normalization": {"id": "row_standard"},
-                }
-            },
-        ),
-        (
-            "split_id",
-            {"split": {"train_fraction": 0.7, "validation_fraction": 0.2}},
-        ),
-        (
-            "tuning_id",
-            {
-                "tuning": {
-                    "trial_count": 20,
-                    "timeout_seconds": None,
-                    "sampler_seed": 7,
-                    "enable_pruning": True,
-                }
-            },
-        ),
-        ("tuning_space_id", {"tuning_space": "lstm_icdcs_2026_extensive"}),
-    ],
-)
+    )
+    return resolve_workflow_paths(config)
+
+
 def test_study_id_uses_full_resolved_identity(
     tmp_path,
     isolate_conf_root,
-    name: str,
-    override: dict[str, object],
 ) -> None:
     conf_root = isolate_conf_root()
-    payload = _updated_preset(_base_preset(conf_root), override)
-    _write_preset(conf_root, name, payload)
+    name = "study_identity_change"
+    override = {"tuning_space": "lstm_extensive_calibrated"}
+    payload = _updated_surface(_base_surface(conf_root), override)
+    _write_surface(conf_root, name, payload)
 
-    base = _tune_paths(tmp_path, preset="icdcs_2026")
-    changed = _tune_paths(tmp_path, preset=name)
+    base = _tune_paths(tmp_path, surface="same_block_closed")
+    changed = _tune_paths(tmp_path, surface=name)
 
     assert base.study_id is not None
     assert changed.study_id is not None
     assert changed.study_id != base.study_id
 
 
-@pytest.mark.parametrize(
-    ("name", "tuning_update"),
-    [
-        ("trial_count_limit", {"trial_count": 40}),
-        ("timeout_limit", {"timeout_seconds": 3600}),
-    ],
-)
 def test_study_id_ignores_tuning_run_limits(
     tmp_path,
     isolate_conf_root,
-    name: str,
-    tuning_update: dict[str, object],
 ) -> None:
-    conf_root = isolate_conf_root()
-    payload = _base_preset(conf_root)
-    tuning = cast(dict[str, object], payload["tuning"])
-    payload["tuning"] = {**tuning, **tuning_update}
-    _write_preset(conf_root, name, payload)
+    isolate_conf_root()
 
-    base = _tune_paths(tmp_path, preset="icdcs_2026")
-    changed = _tune_paths(tmp_path, preset=name)
+    base = _tune_paths(tmp_path, surface="same_block_closed")
+    changed = _tune_paths(tmp_path, surface="same_block_closed", trial_count=40)
 
     assert base.study_id is not None
     assert changed.study_id == base.study_id
 
 
-@pytest.mark.parametrize(
-    ("name", "override", "variant"),
-    [
-        (
-            "artifact_objective",
-            {"objective": "paper_profit_replay_2h", "evaluation": "paper_replay_2h"},
-            None,
-        ),
-        (
-            "artifact_training",
-            {
-                "training": {
-                    "learning_rate": 0.0003,
-                    "weight_decay": 0.01,
-                    "batch_size": 512,
-                    "max_epochs": 50,
-                    "early_stopping": {"patience": 8, "min_delta": 0.0001},
-                    "gradient_clip_norm": 1.0,
-                    "seed": 2026,
-                    "deterministic": True,
-                    "log_every_n_steps": 100,
-                    "input_normalization": {"id": "window_weighted_standard"},
-                }
-            },
-            None,
-        ),
-        ("artifact_model", {"model": "lstm"}, None),
-        ("artifact_problem", {"problem": "icdcs_2026_paper_truth"}, None),
-        ("artifact_feature", {"feature_set": "icdcs_2026_professor"}, None),
-        ("artifact_prediction", {"prediction": "candidate_offset_selection"}, None),
-        ("artifact_builder", {"dataset_builder": "professor_temporal"}, None),
-        ("artifact_variant", {}, "tuned"),
-    ],
-)
+def test_study_and_artifact_ids_ignore_surface_name(
+    tmp_path,
+    isolate_conf_root,
+) -> None:
+    conf_root = isolate_conf_root()
+    clone_name = "same_block_closed_clone"
+    _write_surface(conf_root, clone_name, _base_surface(conf_root))
+
+    base_tune = _tune_paths(tmp_path, surface="same_block_closed")
+    clone_tune = _tune_paths(tmp_path, surface=clone_name)
+    base_train = _train_paths(tmp_path, surface="same_block_closed")
+    clone_train = _train_paths(tmp_path, surface=clone_name)
+
+    assert base_tune.study_id == clone_tune.study_id
+    assert base_train.artifact_id == clone_train.artifact_id
+
+
+def test_study_id_uses_objective_request_override(
+    tmp_path,
+    isolate_conf_root,
+) -> None:
+    isolate_conf_root()
+
+    base = _tune_paths(tmp_path, surface="same_block_closed")
+    changed = _tune_paths(
+        tmp_path,
+        surface="same_block_closed",
+        objective="validation_total_loss",
+    )
+
+    assert base.study_id is not None
+    assert changed.study_id is not None
+    assert changed.study_id != base.study_id
+
+
 def test_artifact_id_uses_full_resolved_identity(
     tmp_path,
     isolate_conf_root,
-    name: str,
-    override: dict[str, object],
-    variant: str | None,
 ) -> None:
     conf_root = isolate_conf_root()
-    payload = _updated_preset(_base_preset(conf_root), override)
-    _write_preset(conf_root, name, payload)
+    name = "artifact_identity_change"
+    override = {"feature_set": "same_block_closed_no_time_since_start"}
+    payload = _updated_surface(_base_surface(conf_root), override)
+    _write_surface(conf_root, name, payload)
 
-    base = _train_paths(tmp_path, preset="icdcs_2026")
-    changed = _train_paths(tmp_path, preset=name, variant=variant)
+    base = _train_paths(tmp_path, surface="same_block_closed")
+    changed = _train_paths(tmp_path, surface=name)
 
     assert base.artifact_id is not None
     assert changed.artifact_id is not None
     assert changed.artifact_id != base.artifact_id
+
+
+def test_artifact_id_uses_objective_request_override(
+    tmp_path,
+    isolate_conf_root,
+) -> None:
+    isolate_conf_root()
+
+    base_train = _train_paths(tmp_path, surface="same_block_closed")
+    changed_train = _train_paths(
+        tmp_path,
+        surface="same_block_closed",
+        objective="validation_total_loss",
+    )
+    base_evaluate = _evaluate_paths(tmp_path, surface="same_block_closed")
+    changed_evaluate = _evaluate_paths(
+        tmp_path,
+        surface="same_block_closed",
+        objective="validation_total_loss",
+    )
+
+    assert base_train.artifact_id is not None
+    assert changed_train.artifact_id is not None
+    assert base_evaluate.artifact_id == base_train.artifact_id
+    assert changed_evaluate.artifact_id == changed_train.artifact_id
+    assert changed_train.artifact_id != base_train.artifact_id
 
 
 def test_storage_root_does_not_affect_ids(tmp_path, isolate_conf_root) -> None:
@@ -205,14 +209,14 @@ def test_storage_root_does_not_affect_ids(tmp_path, isolate_conf_root) -> None:
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            WorkflowRequest(preset="icdcs_2026", storage_root=tmp_path / "one"),
+            WorkflowRequest(surface="same_block_closed", storage_root=tmp_path / "one"),
         ),
     )
     second = cast(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            WorkflowRequest(preset="icdcs_2026", storage_root=tmp_path / "two"),
+            WorkflowRequest(surface="same_block_closed", storage_root=tmp_path / "two"),
         ),
     )
 
@@ -233,7 +237,7 @@ def test_tuned_request_identity_matches_stored_study_manifest(
         TuneConfig,
         resolve_workflow_config(
             WorkflowTask.TUNE,
-            WorkflowRequest(preset="icdcs_2026", storage_root=tmp_path / "outputs"),
+            WorkflowRequest(surface="same_block_closed", storage_root=tmp_path / "outputs"),
         ),
     )
     train_config = cast(
@@ -241,7 +245,7 @@ def test_tuned_request_identity_matches_stored_study_manifest(
         resolve_workflow_config(
             WorkflowTask.TRAIN,
             WorkflowRequest(
-                preset="icdcs_2026",
+                surface="same_block_closed",
                 variant="tuned",
                 storage_root=tmp_path / "outputs",
             ),

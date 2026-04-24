@@ -37,7 +37,7 @@ REPLAY_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
     ),
 )
 
-NOTEBOOK_ROLLOUT_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
+ZERO_STOP_ROLLOUT_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
     MetricDescriptor(
         id="profit_over_baseline",
         label="profit over baseline",
@@ -85,7 +85,7 @@ NOTEBOOK_ROLLOUT_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
     ),
 )
 
-NOTEBOOK_BASEFEE_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
+ANCHOR_BASEFEE_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
     MetricDescriptor(
         id="fee_delta_over_anchor",
         label="fee delta over anchor",

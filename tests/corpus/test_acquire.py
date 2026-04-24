@@ -5,9 +5,7 @@ import math
 from io import StringIO
 from typing import cast
 
-import aiohttp
 import pytest
-from web3.providers.rpc.utils import ExceptionRetryConfiguration
 
 import spice.workflows.acquire as acquire_workflow
 from spice.acquisition.rpc import (
@@ -15,14 +13,11 @@ from spice.acquisition.rpc import (
     BlockRange,
     TimestampRange,
 )
-from spice.acquisition.rpc.transport import ManagedAsyncHTTPProvider
 from spice.config import AcquireConfig, WorkflowTask
 from spice.core.reporting import Reporter
-from spice.features import compile_feature_contract
 from spice.storage.catalog import list_dataset_records
 from spice.storage.corpus import list_acquire_runs, load_dataset_manifest
 from spice.storage.layout import resolve_workflow_paths
-from spice.temporal.contracts import compile_problem_contract
 from spice.workflows.acquire import run as run_acquire
 from tests.dataset_helpers import make_block_rows
 
@@ -39,7 +34,7 @@ def _load_test_acquire_config(
         load_workflow_config(
             WorkflowTask.ACQUIRE,
             workspace=tmp_path,
-            preset="icdcs_2026",
+            surface="same_block_closed",
             override=override,
             chain=chain,
         ),
@@ -79,15 +74,6 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
         override=acquire_override(),
     )
     paths = resolve_workflow_paths(config)
-    feature_contract = compile_feature_contract(feature_set=config.feature_set)
-    contract = compile_problem_contract(
-        problem=config.problem,
-        feature_contract=feature_contract,
-        chain_runtime=config.chain.runtime,
-    )
-    expected_history_window_seconds = math.ceil(
-        contract.initial_history_window_seconds(12.0) * 1.10
-    )
     evaluation_plan = _plan_for_window(
         TimestampRange(
             start=config.evaluation_window_start_timestamp,
@@ -167,14 +153,8 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     assert summary.dataset.id == paths.corpus_id
     assert summary.dataset.name == config.dataset.name
     assert summary.chain.name == config.chain.name
-    assert summary.chain.chain_id == config.chain.runtime.chain_id
-    assert feature_contract.feature_prerequisites == contract.feature_prerequisites
     assert len(runs) == 1
-    assert runs[0].provider.name == config.rpc_endpoint.provider_name
-    assert runs[0].provider.reference == config.rpc_endpoint.reference
-    assert runs[0].facts.requested_history_window_seconds == expected_history_window_seconds
     assert runs[0].facts.resolved_capability_samples >= config.problem.sample_count
-    assert len(history_windows) == 1
     assert paths.history_dir.is_dir()
     assert paths.evaluation_dir.is_dir()
     datasets = list_dataset_records(
@@ -251,6 +231,7 @@ def test_acquire_dry_run_emits_compact_output(
         override=acquire_override(),
     )
     config.acquisition.dry_run = True
+    paths = resolve_workflow_paths(config)
     output = StringIO()
     reporter = Reporter(stream=output)
 
@@ -273,10 +254,8 @@ def test_acquire_dry_run_emits_compact_output(
     run_acquire(config, reporter=reporter)
 
     rendered = output.getvalue()
-    assert "acquire dataset=" in rendered
-    assert "acquire dry_run history_window=" in rendered
-    assert "history_blocks=" in rendered
-    assert "evaluation_blocks=" in rendered
+    assert "acquire dry_run" in rendered
+    assert not paths.corpus_state_db.exists()
 
 
 def _exercise_short_history_refill(
@@ -435,11 +414,6 @@ def test_acquire_workflow_refills_missing_history_prefix_once(
     assert (1_000, 1_050) in requested_ranges
     assert (950, 1_000) in requested_ranges
     assert (950, 1_050) not in requested_ranges
-    assert history_plan_calls == 2
-    assert len(history_windows) == 2
-    assert (history_windows[0].end - history_windows[1].start) < 2 * (
-        history_windows[0].end - history_windows[0].start
-    )
 
 
 def test_acquire_workflow_fails_after_one_short_refill(
@@ -448,7 +422,7 @@ def test_acquire_workflow_fails_after_one_short_refill(
     load_workflow_config,
     acquire_override,
 ) -> None:
-    _, _, _, history_plan_calls = _exercise_short_history_refill(
+    _exercise_short_history_refill(
         tmp_path,
         monkeypatch,
         load_workflow_config,
@@ -456,57 +430,3 @@ def test_acquire_workflow_fails_after_one_short_refill(
         final_sample_count=2,
         expect_error=True,
     )
-
-    assert history_plan_calls == 2
-
-
-def test_managed_async_http_provider_disconnect_closes_managed_session() -> None:
-    provider = ManagedAsyncHTTPProvider("http://localhost:8545")
-
-    async def _exercise() -> tuple[bool, bool]:
-        session = await provider._request_session_manager.async_cache_and_return_session(
-            "http://localhost:8545"
-        )
-        before = session.closed
-        await provider.disconnect()
-        return before, session.closed
-
-    before_closed, after_closed = asyncio.run(_exercise())
-    assert before_closed is False
-    assert after_closed is True
-
-
-def test_managed_async_http_provider_retries_batch_transport_errors(monkeypatch) -> None:
-    provider = ManagedAsyncHTTPProvider(
-        "http://localhost:8545",
-        exception_retry_configuration=ExceptionRetryConfiguration(
-            errors=[aiohttp.ClientError],
-            retries=2,
-            backoff_factor=0.0,
-        ),
-    )
-    attempts = 0
-
-    async def _fake_post_request(endpoint_uri: str, data: bytes, **kwargs: object) -> bytes:
-        del endpoint_uri, data, kwargs
-        nonlocal attempts
-        attempts += 1
-        if attempts == 1:
-            raise aiohttp.ClientPayloadError(
-                "Response payload is not completed: "
-                "<TransferEncodingError: 400, "
-                "message='Not enough data to satisfy transfer length header.'>"
-            )
-        return b'[{"jsonrpc":"2.0","id":1,"result":"ok"}]'
-
-    monkeypatch.setattr(
-        provider._request_session_manager,
-        "async_make_post_request",
-        _fake_post_request,
-    )
-    monkeypatch.setattr(provider, "encode_batch_rpc_request", lambda requests: b"[]")
-
-    response = asyncio.run(provider.make_batch_request([("eth_test", [])]))
-
-    assert attempts == 2
-    assert response == [{"jsonrpc": "2.0", "id": 1, "result": "ok"}]

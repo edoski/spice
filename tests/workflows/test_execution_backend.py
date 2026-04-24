@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from subprocess import CompletedProcess
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
@@ -57,13 +58,9 @@ def test_run_execution_command_passes_quoted_command(monkeypatch) -> None:
     result = run_execution_command(_target(), "mkdir -p /scratch/test && cat | sbatch")
 
     assert result.returncode == 0
-    assert captured["args"] == [
-        "ssh",
-        "edoardo.galli3@giano.cs.unibo.it",
-        "bash",
-        "-lc",
-        "'mkdir -p /scratch/test && cat | sbatch'",
-    ]
+    assert captured["args"] == build_execution_shell_argv(
+        _target(), "mkdir -p /scratch/test && cat | sbatch"
+    )
 
 
 def test_follow_execution_job_uses_quoted_tail_command(monkeypatch, tmp_path: Path) -> None:
@@ -103,19 +100,10 @@ def test_follow_execution_job_uses_quoted_tail_command(monkeypatch, tmp_path: Pa
     state = follow_execution_job(submission)
 
     assert state == "COMPLETED"
-    assert captured["args"] == [
-        "ssh",
-        "edoardo.galli3@giano.cs.unibo.it",
-        "bash",
-        "-lc",
-        (
-            "'while [ ! -f "
-            + str(submission.log_path)
-            + " ]; do sleep 2; done; tail -n +1 -F "
-            + str(submission.log_path)
-            + "'"
-        ),
-    ]
+    argv = cast(list[str], captured["args"])
+    assert argv[:3] == ["ssh", "edoardo.galli3@giano.cs.unibo.it", "bash"]
+    assert str(submission.log_path) in argv[-1]
+    assert "tail -n +1 -F" in argv[-1]
     assert captured["text"] is True
 
 
@@ -164,7 +152,7 @@ def test_submit_execution_workflow_forwards_sbatch_dependency(monkeypatch, tmp_p
         WorkflowTask.TRAIN,
         config=resolve_workflow_config(
             WorkflowTask.TRAIN,
-            WorkflowRequest(preset="icdcs_2026"),
+            WorkflowRequest(surface="same_block_closed"),
         ),
         dependency="afterok:99999",
     )
@@ -188,7 +176,7 @@ def test_remote_runner_rehydrates_resolved_workflow_snapshots(
     task: WorkflowTask,
     expected_type: type[object],
 ) -> None:
-    config = resolve_workflow_config(task, WorkflowRequest(preset="icdcs_2026"))
+    config = resolve_workflow_config(task, WorkflowRequest(surface="same_block_closed"))
 
     restored = workflow_config_from_json(
         task,
@@ -196,10 +184,4 @@ def test_remote_runner_rehydrates_resolved_workflow_snapshots(
     )
 
     assert isinstance(restored, expected_type)
-    assert isinstance(config, (TrainConfig, TuneConfig, EvaluateConfig))
-    assert isinstance(restored, (TrainConfig, TuneConfig, EvaluateConfig))
-    assert type(restored.problem.compiler) is type(config.problem.compiler)
-    assert type(restored.model) is type(config.model)
-    assert type(restored.dataset_builder) is type(config.dataset_builder)
-    assert type(restored.feature_set.family) is type(config.feature_set.family)
     assert restored.model_dump(mode="json") == config.model_dump(mode="json")

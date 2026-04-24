@@ -8,15 +8,18 @@ from dataclasses import dataclass
 from ..core.errors import ConfigResolutionError
 from .core import validate_feature_names
 from .families.base import FeatureFamily, FeatureFamilyConfig
-from .families.block_native import (
-    BLOCK_NATIVE_FAMILY,
-    BlockNativeFeatureFamilyConfig,
+from .families.block_open_lagged import (
+    BLOCK_OPEN_LAGGED_FAMILY,
+    BlockOpenLaggedFeatureFamilyConfig,
 )
-from .families.block_open_native import (
-    BLOCK_OPEN_NATIVE_FAMILY,
-    BlockOpenNativeFeatureFamilyConfig,
+from .families.same_block_closed import (
+    SAME_BLOCK_CLOSED_FAMILY,
+    SameBlockClosedFeatureFamilyConfig,
 )
-from .families.time_native import TIME_NATIVE_FAMILY, TimeNativeFeatureFamilyConfig
+from .families.timestamp_features import (
+    TIMESTAMP_FEATURES_FAMILY,
+    TimestampFeaturesFeatureFamilyConfig,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,17 +29,17 @@ class _FeatureFamilyEntry:
 
 
 _FEATURE_FAMILIES: dict[str, _FeatureFamilyEntry] = {
-    "block_native": _FeatureFamilyEntry(
-        config_type=BlockNativeFeatureFamilyConfig,
-        family=BLOCK_NATIVE_FAMILY,
+    "same_block_closed": _FeatureFamilyEntry(
+        config_type=SameBlockClosedFeatureFamilyConfig,
+        family=SAME_BLOCK_CLOSED_FAMILY,
     ),
-    "block_open_native": _FeatureFamilyEntry(
-        config_type=BlockOpenNativeFeatureFamilyConfig,
-        family=BLOCK_OPEN_NATIVE_FAMILY,
+    "block_open_lagged": _FeatureFamilyEntry(
+        config_type=BlockOpenLaggedFeatureFamilyConfig,
+        family=BLOCK_OPEN_LAGGED_FAMILY,
     ),
-    "time_native": _FeatureFamilyEntry(
-        config_type=TimeNativeFeatureFamilyConfig,
-        family=TIME_NATIVE_FAMILY,
+    "timestamp_features": _FeatureFamilyEntry(
+        config_type=TimestampFeaturesFeatureFamilyConfig,
+        family=TIMESTAMP_FEATURES_FAMILY,
     ),
 }
 

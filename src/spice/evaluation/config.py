@@ -22,8 +22,8 @@ class EvaluationSampler(StrEnum):
 
 class EvaluationEngine(StrEnum):
     REPLAY = "replay"
-    NOTEBOOK_ROLLOUT = "notebook_rollout"
-    NOTEBOOK_BASEFEE = "notebook_basefee"
+    ZERO_STOP_ROLLOUT = "zero_stop_rollout"
+    ANCHOR_BASEFEE = "anchor_basefee"
 
 
 class EvaluatorConfig(EvaluationConfigModel):

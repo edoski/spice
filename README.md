@@ -28,18 +28,18 @@ Repo helper: `spice-sync-remote <branch>` pushes the branch to both `origin` and
 Local workflow commands:
 
 ```bash
-spice acquire --preset icdcs_2026
-spice train --preset icdcs_2026 --variant baseline
-spice tune --preset icdcs_2026 --trial-count 20
-spice evaluate --preset icdcs_2026 --variant baseline
+spice acquire --surface same_block_closed
+spice train --surface same_block_closed --variant baseline
+spice tune --surface same_block_closed --trial-count 20
+spice evaluate --surface same_block_closed --variant baseline
 ```
 
 Submitted workflow commands:
 
 ```bash
-spice train --preset icdcs_2026 --submit --target disi_l40
-spice tune --preset icdcs_2026 --trial-count 20 --submit --target disi_l40
-spice evaluate --preset icdcs_2026 --variant baseline --submit --target disi_l40
+spice train --surface same_block_closed --submit --target disi_l40
+spice tune --surface same_block_closed --trial-count 20 --submit --target disi_l40
+spice evaluate --surface same_block_closed --variant baseline --submit --target disi_l40
 ```
 
 Workflow stdout is intentionally compact:
@@ -51,14 +51,14 @@ Workflow stdout is intentionally compact:
 Examples:
 
 ```text
-acquire dataset=icdcs_2026 chain=ethereum problem=icdcs_2026 provider=publicnode
+acquire dataset=icdcs_2026 chain=ethereum problem=current_row_nominal_window provider=publicnode
 acquire complete history=reused history_blocks=4096 evaluation=created evaluation_blocks=512
 
-train dataset=icdcs_2026 chain=ethereum problem=icdcs_2026 prediction=candidate_offset_selection model=lstm variant=baseline
+train dataset=icdcs_2026 chain=ethereum problem=current_row_nominal_window prediction=candidate_offset_selection model=lstm variant=baseline
 fit epoch=3/12 objective.profit_over_baseline=0.0184 validation.profit_over_baseline=0.0184 best_epoch=3 best.profit_over_baseline=0.0184
 train complete artifact=outputs/artifacts/ethereum/... best_epoch=9 validation.profit_over_baseline=0.0211 test.profit_over_baseline=0.0179
 
-tune dataset=icdcs_2026 chain=ethereum problem=icdcs_2026 feature_set=icdcs_2026 prediction=candidate_offset_selection model=lstm study=default trials=20
+tune dataset=icdcs_2026 chain=ethereum problem=current_row_nominal_window feature_set=same_block_closed_full prediction=candidate_offset_selection model=lstm study=default trials=20
 trial 4/20 complete value=0.0211 best_epoch=7
 best improved trial=4 value=0.0211
 ```
@@ -68,12 +68,12 @@ Local config and storage commands:
 ```bash
 spice config list provider
 spice config show dataset icdcs_2026
-spice config edit problem icdcs_2026
+spice config edit problem current_row_nominal_window
 spice show dataset
-spice show artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --variant baseline
-spice delete artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --variant baseline
+spice show artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
+spice delete artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
 spice push dataset --chain avalanche --dataset icdcs_2026
-spice pull artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem icdcs_2026 --variant baseline
+spice pull artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
 spice refresh catalog
 ```
 
@@ -82,7 +82,8 @@ spice refresh catalog
 Config ownership is split across [src/spice/config](src/spice/config):
 
 - `registry.py`: named YAML discovery, validation, and canonical load/edit helpers
-- `presets.py`: preset overlay models, single-parent `extends`, and request overlays
+- `surfaces.py`: surface frame models and request overlays
+- `benchmarks.py`: benchmark case expansion and validation
 - `resolution.py`: workflow request resolution into one typed workflow config
 - `models.py`: resolved runtime config models
 
@@ -90,28 +91,29 @@ Modeling workflows (`train`, `tune`, `evaluate`) use the CUDA runtime. Submissio
 
 Named specs live under [src/spice/conf](src/spice/conf):
 
-- `preset/`: workflow bundles and the user-facing experiment unit
+- `surface/`: durable benchmark context and workflow-section refs
+- `benchmark/`: expanded experiment batches
+- `acquisition/`, `training/`, `split/`, `tuning/`: workflow-section refs
 - `dataset/`: evaluation-date selectors
 - `chain/`: chain runtime specs
 - `provider/`: HTTP RPC transport and per-chain endpoint specs
 - `execution/`: internal submission target spec
 - `problem/`: delay budgets and sampling contracts
-- internal registry-loaded seams: `model/`, `feature_set/`, `prediction/`,
-  `dataset_builder/`, `evaluation/`, `objective/`, `tuning_space/`
+- other seams: `model/`, `feature_set/`, `prediction/`, `dataset_builder/`,
+  `evaluation/`, `objective/`, `tuning_space/`
 
 Rules:
 
-- presets are the main workflow entrypoint
-- internally, presets resolve as one overlay chain rather than one flat full spec
-- workflow CLI composition is preset-first; only `--chain` remains as a seam selector
+- surfaces are the main workflow entrypoint
+- benchmarks expand into explicit workflow requests and never submit jobs
+- workflow CLI composition is surface-first, with explicit selectors for model,
+  tuning space, problem, feature set, objective, evaluation, and workflow-section refs
 - run knobs stay explicit: `--dry-run`, `--trial-count`, `--delay-seconds`,
   `--study`, and `--variant`
-- `provider` is preset-owned runtime config, not a workflow CLI selector
-- presets may use one `extends: <preset>` parent; parent presets must be runnable
-- child presets replace scalar/name fields and deep-merge only known config blocks
+- `provider` is surface-owned runtime config, not a workflow CLI selector
 - `acquire` resolves the selected provider into one chain-specific RPC endpoint before runtime
 - the execution target is selected with `--target`, validated through
-  `execution/models.py`, and not stored in presets
+  `execution/models.py`, and not stored in surfaces
 - `problem.compiler.id` selects the temporal compiler
 - `feature_set.family.id` selects the feature family
 - `prediction.family.id` selects the prediction family
@@ -132,10 +134,10 @@ Strong domain seams stay separate:
 
 Current shipped ids:
 
-- feature families: `block_native`, `block_open_native`, `time_native`
-- compilers: `timestamp_native`, `estimated_block`
+- feature families: `same_block_closed`, `block_open_lagged`, `timestamp_features`
+- compilers: `current_row_window`, `estimated_block`
 - prediction families: `candidate_offset_selection`, `min_block_fee_multitask`
-- evaluators: `poisson_replay`, `paper_fullset`, `paper_windowed`
+- evaluators: `poisson_replay_2h`, `fullset`, `uniform_window_2h`
 - input normalization: `row_standard`, `window_weighted_standard`
 - representation: `sequence_inputs`
 
@@ -167,14 +169,14 @@ Those selector flags are storage selectors only. They identify existing records 
 Thesis/internship baselines should be regenerated through normal workflows:
 
 ```bash
-spice acquire --preset icdcs_2026 --chain ethereum
-spice tune --preset icdcs_2026 --chain ethereum --trial-count 20
-spice train --preset icdcs_2026 --chain ethereum --variant baseline
-spice evaluate --preset icdcs_2026 --chain ethereum --variant baseline
+spice acquire --surface same_block_closed --chain ethereum
+spice tune --surface same_block_closed --chain ethereum --trial-count 20
+spice train --surface same_block_closed --chain ethereum --variant baseline
+spice evaluate --surface same_block_closed --chain ethereum --variant baseline
 ```
 
-Repeat the same preset family for `polygon` and `avalanche`, and use the LSTM,
-Transformer, and Transformer-LSTM presets needed for the baseline matrix.
+Repeat the same surface for `polygon` and `avalanche`, and use `--model` plus
+`--tuning-space` or benchmark cases for the baseline matrix.
 
 ## Verification
 

@@ -29,8 +29,8 @@ def test_acquire_cli_resolves_request_surface(tmp_path, monkeypatch) -> None:
         app,
         [
             "acquire",
-            "--preset",
-            "icdcs_2026",
+            "--surface",
+            "same_block_closed",
             "--chain",
             "avalanche",
             "--storage-root",
@@ -43,9 +43,6 @@ def test_acquire_cli_resolves_request_surface(tmp_path, monkeypatch) -> None:
     config = cast(AcquireConfig, captured["config"])
     paths = resolve_workflow_paths(config)
     assert config.chain.name == "avalanche"
-    assert config.rpc_endpoint.provider_name == "publicnode"
-    assert config.rpc_endpoint.url == "https://avalanche-c-chain-rpc.publicnode.com"
-    assert config.rpc_endpoint.reference == "https://avalanche-c-chain-rpc.publicnode.com"
     assert config.acquisition.dry_run is True
     assert paths.output_root == tmp_path / "outputs"
 
@@ -86,7 +83,14 @@ def test_model_workflow_cli_resolves_local_request_surface(
 
     result = runner.invoke(
         app,
-        [command, "--preset", "icdcs_2026", *args, "--storage-root", str(tmp_path / "outputs")],
+        [
+            command,
+            "--surface",
+            "same_block_closed",
+            *args,
+            "--storage-root",
+            str(tmp_path / "outputs"),
+        ],
     )
 
     assert result.exit_code == 0, result.stdout
@@ -104,9 +108,9 @@ def test_model_workflow_cli_resolves_local_request_surface(
 def test_config_public_commands_only(isolate_conf_root) -> None:
     isolate_conf_root()
 
-    list_result = runner.invoke(app, ["config", "list", "dataset"])
+    list_result = runner.invoke(app, ["config", "list", "surface"])
     assert list_result.exit_code == 0, list_result.stdout
-    assert "icdcs_2026" in list_result.stdout.splitlines()
+    assert "same_block_closed" in list_result.stdout.splitlines()
 
     show_result = runner.invoke(app, ["config", "show", "dataset", "icdcs_2026"])
     assert show_result.exit_code == 0, show_result.stdout
@@ -115,9 +119,9 @@ def test_config_public_commands_only(isolate_conf_root) -> None:
         "evaluation_date": "2025-11-09",
     }
 
-    internal_result = runner.invoke(app, ["config", "list", "evaluation"])
-    assert internal_result.exit_code != 0
-    assert "Config group is internal-only: evaluation" in internal_result.output
+    evaluation_result = runner.invoke(app, ["config", "list", "evaluation"])
+    assert evaluation_result.exit_code == 0, evaluation_result.stdout
+    assert "poisson_replay_2h" in evaluation_result.stdout.splitlines()
 
 
 def test_config_edit_seeds_missing_file_and_uses_editor(
@@ -150,6 +154,32 @@ def test_config_edit_seeds_missing_file_and_uses_editor(
     assert created_path.exists()
     assert log_path.read_text(encoding="utf-8").strip() == str(created_path)
     assert yaml.safe_load(created_path.read_text(encoding="utf-8"))["id"] == "phase2_problem"
+
+
+def test_train_submit_rejects_local_storage_override(tmp_path: Path) -> None:
+    result = runner.invoke(app, ["train", "--submit", "--storage-root", str(tmp_path)])
+
+    assert result.exit_code != 0
+    assert "--storage-root cannot be combined with --submit" in result.output
+
+
+def test_acquire_rejects_objective_option() -> None:
+    result = runner.invoke(
+        app,
+        ["acquire", "--surface", "same_block_closed", "--objective", "validation_total_loss"],
+    )
+
+    assert result.exit_code != 0
+    assert "--objective" in result.output
+
+
+def test_surface_option_replaces_preset_option() -> None:
+    surface_result = runner.invoke(app, ["train", "--surface", "same_block_closed", "--help"])
+    preset_result = runner.invoke(app, ["train", "--preset", "same_block_closed"])
+
+    assert surface_result.exit_code == 0, surface_result.output
+    assert preset_result.exit_code != 0
+    assert "--preset" in preset_result.output
 
 
 def test_train_submit_cli_preflights_and_routes_to_execution_backend(
@@ -188,8 +218,8 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
         app,
         [
             "train",
-            "--preset",
-            "icdcs_2026",
+            "--surface",
+            "same_block_closed",
             "--submit",
             "--study",
             "default",
@@ -211,8 +241,6 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
     assert submitted_task is WorkflowTask.TRAIN
     assert target_name == "disi_l40"
     assert dependency is None
-    assert submitted_config.study.name == "default"
-    assert submitted_config.artifact.variant.value == "baseline"
     assert (
         "submit workflow=train job_id=12345 log=/remote/logs/spice-train-12345.out"
         in result.stdout

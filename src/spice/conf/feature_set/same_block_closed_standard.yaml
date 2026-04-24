@@ -1,0 +1,24 @@
+id: same_block_closed_standard
+family:
+  id: same_block_closed
+outputs:
+- log_base_fee
+- gas_utilization
+- hour_sin
+- hour_cos
+- weekday_sin
+- weekday_cos
+- elapsed_blocks
+- trend_slope_200
+- rolling_mean_log_base_fee_10
+- rolling_std_log_base_fee_10
+- rolling_mean_gas_utilization_10
+- rolling_std_gas_utilization_10
+- rolling_mean_log_base_fee_50
+- rolling_std_log_base_fee_50
+- rolling_mean_gas_utilization_50
+- rolling_std_gas_utilization_50
+- rolling_mean_log_base_fee_200
+- rolling_std_log_base_fee_200
+- rolling_mean_gas_utilization_200
+- rolling_std_gas_utilization_200

@@ -105,11 +105,17 @@ def _run_resolved_workflow(
 
 def _build_model_workflow_request(
     *,
-    preset: str | None,
+    surface: str | None,
     chain: str | None,
     problem: str | None = None,
     feature_set: str | None = None,
+    objective: str | None = None,
     evaluation: str | None = None,
+    model: str | None = None,
+    tuning_space: str | None = None,
+    training: str | None = None,
+    split: str | None = None,
+    tuning: str | None = None,
     study: str | None = None,
     variant: str | None = None,
     delay_seconds: int | None = None,
@@ -117,11 +123,17 @@ def _build_model_workflow_request(
     storage_root: Path | None = None,
 ) -> WorkflowRequest:
     return WorkflowRequest(
-        preset=preset,
+        surface=surface,
         chain=chain,
         problem=problem,
         feature_set=feature_set,
+        objective=objective,
         evaluation=evaluation,
+        model=model,
+        tuning_space=tuning_space,
+        training=training,
+        split=split,
+        tuning=tuning,
         study=study,
         variant=variant,
         delay_seconds=delay_seconds,
@@ -131,12 +143,12 @@ def _build_model_workflow_request(
 
 
 def acquire_command(
-    preset: Annotated[
+    surface: Annotated[
         str | None,
         _selection_option(
-            "--preset",
-            metavar="PRESET",
-            help="Resolve a named workflow preset.",
+            "--surface",
+            metavar="SURFACE",
+            help="Resolve a named workflow surface.",
         ),
     ] = None,
     chain: Annotated[
@@ -153,6 +165,14 @@ def acquire_command(
             "--feature-set",
             metavar="FEATURE_SET",
             help="Override the feature-set spec.",
+        ),
+    ] = None,
+    acquisition: Annotated[
+        str | None,
+        _selection_option(
+            "--acquisition",
+            metavar="ACQUISITION",
+            help="Override the acquisition spec.",
         ),
     ] = None,
     storage_root: Annotated[
@@ -178,10 +198,11 @@ def acquire_command(
         resolve_workflow_config(
             WorkflowTask.ACQUIRE,
             WorkflowRequest(
-                preset=preset,
+                surface=surface,
                 chain=chain,
                 problem=problem,
                 feature_set=feature_set,
+                acquisition=acquisition,
                 storage_root=storage_root,
                 dry_run=dry_run,
             ),
@@ -190,12 +211,12 @@ def acquire_command(
 
 
 def train_command(
-    preset: Annotated[
+    surface: Annotated[
         str | None,
         _selection_option(
-            "--preset",
-            metavar="PRESET",
-            help="Resolve a named workflow preset.",
+            "--surface",
+            metavar="SURFACE",
+            help="Resolve a named workflow surface.",
         ),
     ] = None,
     chain: Annotated[
@@ -213,6 +234,50 @@ def train_command(
             metavar="FEATURE_SET",
             help="Override the feature-set spec.",
         ),
+    ] = None,
+    objective: Annotated[
+        str | None,
+        _selection_option(
+            "--objective",
+            metavar="OBJECTIVE",
+            help="Override the objective spec.",
+        ),
+    ] = None,
+    evaluation: Annotated[
+        str | None,
+        _selection_option(
+            "--evaluation",
+            metavar="EVALUATION",
+            help="Override the evaluation spec.",
+        ),
+    ] = None,
+    model: Annotated[
+        str | None,
+        _selection_option("--model", metavar="MODEL", help="Override the model spec."),
+    ] = None,
+    tuning_space: Annotated[
+        str | None,
+        _selection_option(
+            "--tuning-space",
+            metavar="TUNING_SPACE",
+            help="Override the tuning-space spec.",
+        ),
+    ] = None,
+    training: Annotated[
+        str | None,
+        _selection_option(
+            "--training",
+            metavar="TRAINING",
+            help="Override the training spec.",
+        ),
+    ] = None,
+    split: Annotated[
+        str | None,
+        _selection_option("--split", metavar="SPLIT", help="Override the split spec."),
+    ] = None,
+    tuning: Annotated[
+        str | None,
+        _selection_option("--tuning", metavar="TUNING", help="Override the tuning spec."),
     ] = None,
     study: Annotated[
         str | None,
@@ -265,10 +330,17 @@ def train_command(
         storage_root=storage_root,
     )
     submit_request = _build_model_workflow_request(
-        preset=preset,
+        surface=surface,
         chain=chain,
         problem=problem,
         feature_set=feature_set,
+        objective=objective,
+        evaluation=evaluation,
+        model=model,
+        tuning_space=tuning_space,
+        training=training,
+        split=split,
+        tuning=tuning,
         study=study,
         variant=variant,
     )
@@ -282,10 +354,17 @@ def train_command(
         )
         return
     local_request = _build_model_workflow_request(
-        preset=preset,
+        surface=surface,
         chain=chain,
         problem=problem,
         feature_set=feature_set,
+        objective=objective,
+        evaluation=evaluation,
+        model=model,
+        tuning_space=tuning_space,
+        training=training,
+        split=split,
+        tuning=tuning,
         study=study,
         variant=variant,
         storage_root=storage_root,
@@ -298,12 +377,12 @@ def train_command(
 
 
 def tune_command(
-    preset: Annotated[
+    surface: Annotated[
         str | None,
         _selection_option(
-            "--preset",
-            metavar="PRESET",
-            help="Resolve a named workflow preset.",
+            "--surface",
+            metavar="SURFACE",
+            help="Resolve a named workflow surface.",
         ),
     ] = None,
     chain: Annotated[
@@ -321,6 +400,54 @@ def tune_command(
             metavar="FEATURE_SET",
             help="Override the feature-set spec.",
         ),
+    ] = None,
+    objective: Annotated[
+        str | None,
+        _selection_option(
+            "--objective",
+            metavar="OBJECTIVE",
+            help="Override the objective spec.",
+        ),
+    ] = None,
+    evaluation: Annotated[
+        str | None,
+        _selection_option(
+            "--evaluation",
+            metavar="EVALUATION",
+            help="Override the evaluation spec.",
+        ),
+    ] = None,
+    model: Annotated[
+        str | None,
+        _selection_option("--model", metavar="MODEL", help="Override the model spec."),
+    ] = None,
+    tuning_space: Annotated[
+        str | None,
+        _selection_option(
+            "--tuning-space",
+            metavar="TUNING_SPACE",
+            help="Override the tuning-space spec.",
+        ),
+    ] = None,
+    training: Annotated[
+        str | None,
+        _selection_option(
+            "--training",
+            metavar="TRAINING",
+            help="Override the training spec.",
+        ),
+    ] = None,
+    split: Annotated[
+        str | None,
+        _selection_option("--split", metavar="SPLIT", help="Override the split spec."),
+    ] = None,
+    tuning: Annotated[
+        str | None,
+        _selection_option("--tuning", metavar="TUNING", help="Override the tuning spec."),
+    ] = None,
+    study: Annotated[
+        str | None,
+        _selection_option("--study", metavar="STUDY", help="Override the study name."),
     ] = None,
     trial_count: Annotated[
         int | None,
@@ -373,10 +500,18 @@ def tune_command(
         storage_root=storage_root,
     )
     submit_request = _build_model_workflow_request(
-        preset=preset,
+        surface=surface,
         chain=chain,
         problem=problem,
         feature_set=feature_set,
+        objective=objective,
+        evaluation=evaluation,
+        model=model,
+        tuning_space=tuning_space,
+        training=training,
+        split=split,
+        tuning=tuning,
+        study=study,
         trial_count=trial_count,
     )
     if submit:
@@ -389,10 +524,18 @@ def tune_command(
         )
         return
     local_request = _build_model_workflow_request(
-        preset=preset,
+        surface=surface,
         chain=chain,
         problem=problem,
         feature_set=feature_set,
+        objective=objective,
+        evaluation=evaluation,
+        model=model,
+        tuning_space=tuning_space,
+        training=training,
+        split=split,
+        tuning=tuning,
+        study=study,
         trial_count=trial_count,
         storage_root=storage_root,
     )
@@ -404,12 +547,12 @@ def tune_command(
 
 
 def evaluate_command(
-    preset: Annotated[
+    surface: Annotated[
         str | None,
         _selection_option(
-            "--preset",
-            metavar="PRESET",
-            help="Resolve a named workflow preset.",
+            "--surface",
+            metavar="SURFACE",
+            help="Resolve a named workflow surface.",
         ),
     ] = None,
     chain: Annotated[
@@ -428,6 +571,14 @@ def evaluate_command(
             help="Override the feature-set spec.",
         ),
     ] = None,
+    objective: Annotated[
+        str | None,
+        _selection_option(
+            "--objective",
+            metavar="OBJECTIVE",
+            help="Override the objective spec.",
+        ),
+    ] = None,
     evaluation: Annotated[
         str | None,
         _selection_option(
@@ -435,6 +586,34 @@ def evaluate_command(
             metavar="EVALUATION",
             help="Override the evaluation spec.",
         ),
+    ] = None,
+    model: Annotated[
+        str | None,
+        _selection_option("--model", metavar="MODEL", help="Override the model spec."),
+    ] = None,
+    tuning_space: Annotated[
+        str | None,
+        _selection_option(
+            "--tuning-space",
+            metavar="TUNING_SPACE",
+            help="Override the tuning-space spec.",
+        ),
+    ] = None,
+    training: Annotated[
+        str | None,
+        _selection_option(
+            "--training",
+            metavar="TRAINING",
+            help="Override the training spec.",
+        ),
+    ] = None,
+    split: Annotated[
+        str | None,
+        _selection_option("--split", metavar="SPLIT", help="Override the split spec."),
+    ] = None,
+    tuning: Annotated[
+        str | None,
+        _selection_option("--tuning", metavar="TUNING", help="Override the tuning spec."),
     ] = None,
     study: Annotated[
         str | None,
@@ -495,11 +674,17 @@ def evaluate_command(
         storage_root=storage_root,
     )
     submit_request = _build_model_workflow_request(
-        preset=preset,
+        surface=surface,
         chain=chain,
         problem=problem,
         feature_set=feature_set,
+        objective=objective,
         evaluation=evaluation,
+        model=model,
+        tuning_space=tuning_space,
+        training=training,
+        split=split,
+        tuning=tuning,
         study=study,
         variant=variant,
         delay_seconds=delay_seconds,
@@ -514,11 +699,17 @@ def evaluate_command(
         )
         return
     local_request = _build_model_workflow_request(
-        preset=preset,
+        surface=surface,
         chain=chain,
         problem=problem,
         feature_set=feature_set,
+        objective=objective,
         evaluation=evaluation,
+        model=model,
+        tuning_space=tuning_space,
+        training=training,
+        split=split,
+        tuning=tuning,
         study=study,
         variant=variant,
         delay_seconds=delay_seconds,
