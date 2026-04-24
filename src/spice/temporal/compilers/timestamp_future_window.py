@@ -1,4 +1,4 @@
-"""Timestamp-bounded problem compiler with explicit candidate-start semantics."""
+"""Timestamp-bounded problem compiler with fixed current-row candidate semantics."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from ...modeling.families.base import ConfigModel
 from ..contracts import CompiledProblemContract
 from ..problem_store import CompiledProblemStore
 from ..realization import CompiledRealizationPolicyContract
-from ..semantics import ActionSpaceMode, CandidateStartMode
 from ._shared import (
     build_timestamp_window_store,
     resolve_bootstrap_interval_seconds,
@@ -72,7 +71,6 @@ class TimestampFutureWindowCompilerConfig(ProblemCompilerConfig):
     action_interval_estimator: SerializeAsAny[TimestampFutureWindowIntervalEstimatorConfig] = (
         Field(default_factory=TimestampFutureWindowNominalIntervalEstimatorConfig)
     )
-    candidate_start_mode: CandidateStartMode = CandidateStartMode.NEXT_BLOCK
 
     @field_validator("action_interval_estimator", mode="before")
     @classmethod
@@ -146,15 +144,12 @@ class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
         capability_action_count = _action_count_for_delay(
             self.max_delay_seconds,
             action_interval_seconds,
-            candidate_start_mode=self.candidate_start_mode,
         )
         store = build_timestamp_window_store(
             feature_table,
             feature_prerequisites=self.feature_prerequisites,
             lookback_seconds=self.lookback_seconds,
             delay_seconds=self.max_delay_seconds,
-            candidate_start_mode=self.candidate_start_mode,
-            action_space_mode=self.action_space_mode,
             requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
         return (
@@ -188,8 +183,6 @@ class TimestampFutureWindowCompiledProblemContract(CompiledProblemContract):
             feature_prerequisites=self.feature_prerequisites,
             lookback_seconds=self.lookback_seconds,
             delay_seconds=delay_seconds,
-            candidate_start_mode=self.candidate_start_mode,
-            action_space_mode=self.action_space_mode,
             max_candidate_slots=max_candidate_slots,
             requires_post_window_row=self.realization_policy.requires_post_window_row,
         )
@@ -223,8 +216,6 @@ def compile_problem(
         max_delay_seconds=problem.max_delay_seconds,
         feature_prerequisites=feature_contract.feature_prerequisites,
         realization_policy=replace(realization_policy, requires_post_window_row=True),
-        candidate_start_mode=compiler_config.candidate_start_mode,
-        action_space_mode=ActionSpaceMode.FIXED_EX_ANTE,
         action_interval_estimator=compiler_config.action_interval_estimator,
         nominal_block_time_seconds=nominal_block_time_seconds,
     )
@@ -275,12 +266,7 @@ def _str_payload(payload: Mapping[str, object], key: str) -> str:
 def _action_count_for_delay(
     max_delay_seconds: int,
     interval_seconds: float,
-    *,
-    candidate_start_mode: CandidateStartMode,
 ) -> int:
     if interval_seconds <= 0:
         raise ValueError("interval_seconds must be positive")
-    future_count = max(1, math.floor(max_delay_seconds / interval_seconds))
-    if candidate_start_mode is CandidateStartMode.CURRENT_ROW:
-        return future_count + 1
-    return future_count
+    return max(1, math.floor(max_delay_seconds / interval_seconds)) + 1

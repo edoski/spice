@@ -28,9 +28,8 @@ delay_seconds: 36
 
 Canonical mechanism surfaces:
 
-- `same_block_closed`: unsafe same-block closed reference.
-- `block_open_lagged`: safe block-open feature contract with lagged finalized block facts.
-- `next_block_nominal_window`: diagnostic next-block nominal-window mechanics.
+- `same_block_closed`: paper-faithful unsafe same-block closed path.
+- `block_open_lagged`: safe current-row sibling with lagged finalized block facts.
 
 `model`, `feature_set`, `objective`, `evaluation`, `tuning_space`, `delay_seconds`, `study`, `variant`, and `trial_count` may be supplied by benchmark cases or CLI overrides when a surface leaves variation to the run request.
 

@@ -135,7 +135,7 @@ Strong domain seams stay separate:
 Current shipped ids:
 
 - feature families: `same_block_closed`, `block_open_lagged`, `timestamp_features`
-- compilers: `current_row_window`, `estimated_block`
+- compilers: `estimated_block`, `timestamp_future_window`
 - prediction families: `candidate_offset_selection`, `min_block_fee_multitask`
 - evaluators: `poisson_replay_2h`, `fullset`, `uniform_window_2h`
 - input normalization: `row_standard`, `window_weighted_standard`

@@ -10,7 +10,6 @@ from ..config.models import ChainRuntimeSpec, ProblemSpec
 from ..features import CompiledFeatureContract, FeaturePrerequisites
 from ..semantics import ProblemSemantics
 from .realization import CompiledRealizationPolicyContract, compile_realization_policy_contract
-from .semantics import ActionSpaceMode, CandidateStartMode
 
 if TYPE_CHECKING:
     from ..features import ResolvedFeatureTable
@@ -28,8 +27,6 @@ class CompiledProblemContract:
     max_delay_seconds: int
     feature_prerequisites: FeaturePrerequisites
     realization_policy: CompiledRealizationPolicyContract
-    candidate_start_mode: CandidateStartMode
-    action_space_mode: ActionSpaceMode
 
     @property
     def semantics(self) -> ProblemSemantics:
@@ -39,8 +36,6 @@ class CompiledProblemContract:
             lookback_seconds=self.lookback_seconds,
             sample_count=self.sample_count,
             max_delay_seconds=self.max_delay_seconds,
-            candidate_start_mode=self.candidate_start_mode.value,
-            action_space_mode=self.action_space_mode.value,
         )
 
     @property

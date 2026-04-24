@@ -8,6 +8,5 @@ compiler:
     id: recent_deltas
     window_blocks: 256
     statistic: median
-  candidate_start_mode: current_row
 realization_policy:
   id: strict_deadline_miss

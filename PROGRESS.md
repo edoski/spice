@@ -4,7 +4,7 @@
 
 - Current unsafe surface: `same_block_closed`
 - Current safe surface: `block_open_lagged`
-- Diagnostic surface: `next_block_nominal_window`
+- Current paper-style nominal-grid compiler: `estimated_block`
 - Primary evaluator: `poisson_replay_2h`
 - Diagnostic evaluators:
   - `zero_stop_rollout_fullset`
@@ -13,6 +13,11 @@
   - cross-chain confirmation of frozen same-block unsafe reference vs improved block-open safe candidate (`safe_best` historical role)
   - chains: Ethereum, Polygon, Avalanche
   - delay: `36s`
+
+## Future Benchmark Sweeps
+
+- Sweep fixed `estimated_block` against the modern current-row timestamp paths. It now keeps the paper-style nominal block grid while mapping offset `0` to the current row.
+- Re-run lookback-window sweeps for modern `same_block_closed` and `block_open_lagged`, including `900s` and longer windows. Earlier lookback work was mostly on estimated-block paths and should not be treated as modern-path evidence.
 
 ## Overnight Checkpoint-Parity Run
 
@@ -86,7 +91,7 @@ Checkpoint parity read:
 
 - Safe current-block path:
   - surface: `block_open_lagged`
-  - problem family: `current_row_realized_window*`
+  - problem family: `current_row_nominal_window*`
   - feature sets: `block_open_lagged_full*`
   - semantics: current-block action space, fixed ex-ante classes, current-row pricing, block-open feature contract
   - safety rule: finalized current-block features are lagged; current base fee is kept

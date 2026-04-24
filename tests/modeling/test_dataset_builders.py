@@ -92,4 +92,8 @@ def test_fixed_context_dataset_builder_keeps_candidate_window_arrays_aligned_aft
 
     assert prepared.store.anchor_rows.shape == prepared.store.candidate_start_rows.shape
     assert prepared.store.anchor_rows.shape == prepared.store.candidate_end_rows.shape
-    np.testing.assert_array_less(prepared.store.anchor_rows, prepared.store.candidate_start_rows)
+    np.testing.assert_array_equal(prepared.store.anchor_rows, prepared.store.candidate_start_rows)
+    np.testing.assert_array_less(
+        prepared.store.candidate_start_rows,
+        prepared.store.candidate_end_rows,
+    )

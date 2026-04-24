@@ -10,7 +10,6 @@ from spice.temporal import (
     compile_realization_policy_contract,
 )
 from spice.temporal.problem_store import CompiledProblemStore
-from spice.temporal.semantics import ActionSpaceMode
 
 
 def _realization_policy():
@@ -19,7 +18,7 @@ def _realization_policy():
     )
 
 
-def _store(action_space_mode: ActionSpaceMode) -> CompiledProblemStore:
+def _store() -> CompiledProblemStore:
     return CompiledProblemStore(
         feature_matrix=np.zeros((8, 1), dtype=np.float32),
         log_base_fees=np.log(np.array([100, 95, 90, 80, 75, 70, 60, 55], dtype=np.float32)),
@@ -28,13 +27,12 @@ def _store(action_space_mode: ActionSpaceMode) -> CompiledProblemStore:
         context_start_rows=np.array([0, 3], dtype=np.int64),
         candidate_start_rows=np.array([2, 5], dtype=np.int64),
         candidate_end_rows=np.array([4, 7], dtype=np.int64),
-        action_space_mode=action_space_mode,
         max_candidate_slots=3,
     )
 
 
 def test_strict_deadline_miss_rejects_negative_decoded_offsets() -> None:
-    store = _store(ActionSpaceMode.REALIZED_PER_SAMPLE)
+    store = _store()
 
     with pytest.raises(ValueError, match="non-negative"):
         _realization_policy().realize_selections(
@@ -46,7 +44,7 @@ def test_strict_deadline_miss_rejects_negative_decoded_offsets() -> None:
 
 
 def test_fixed_ex_ante_overflow_realizes_first_post_window_row() -> None:
-    store = _store(ActionSpaceMode.FIXED_EX_ANTE)
+    store = _store()
 
     realized = _realization_policy().realize_selections(
         store,

@@ -15,7 +15,6 @@ from spice.temporal import (
     compile_realization_policy_contract,
 )
 from spice.temporal.problem_store import CompiledProblemStore
-from spice.temporal.semantics import ActionSpaceMode
 
 
 def _test_store() -> CompiledProblemStore:
@@ -32,19 +31,19 @@ def _test_store() -> CompiledProblemStore:
                 [0.3, 0.7, 0.8],
                 [1.2, 0.8, 0.9],
                 [-0.7, 0.9, 1.0],
+                [0.9, 1.0, 1.1],
             ],
             dtype=np.float32,
         ),
         log_base_fees=np.array(
-            [0.1, 0.2, 0.15, 0.3, 0.25, 0.05, 0.4, 0.12, 0.22, 0.18],
+            [0.1, 0.2, 0.15, 0.3, 0.25, 0.05, 0.4, 0.12, 0.22, 0.18, 0.2],
             dtype=np.float32,
         ),
-        timestamps=np.array([0, 5, 11, 19, 28, 40, 55, 71, 88, 106], dtype=np.int64),
+        timestamps=np.array([0, 5, 11, 19, 28, 40, 55, 71, 88, 106, 125], dtype=np.int64),
         anchor_rows=np.array([2, 4, 5, 7], dtype=np.int64),
         context_start_rows=np.array([0, 1, 0, 4], dtype=np.int64),
         candidate_start_rows=np.array([3, 5, 6, 8], dtype=np.int64),
         candidate_end_rows=np.array([5, 8, 7, 10], dtype=np.int64),
-        action_space_mode=ActionSpaceMode.REALIZED_PER_SAMPLE,
         max_candidate_slots=3,
     )
 
@@ -136,6 +135,6 @@ def test_prediction_batch_source_binds_current_family_targets() -> None:
     assert tuple(first_batch.targets.candidate_log_fees.shape) == (2, 3)
     assert tuple(first_batch.targets.candidate_mask.shape) == (2, 3)
     assert first_batch.targets.candidate_mask.tolist() == [
-        [True, True, False],
+        [True, True, True],
         [True, True, True],
     ]

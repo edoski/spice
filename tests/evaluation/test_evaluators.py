@@ -11,7 +11,6 @@ from spice.temporal import (
     compile_realization_policy_contract,
 )
 from spice.temporal.problem_store import CompiledProblemStore
-from spice.temporal.semantics import ActionSpaceMode
 
 
 class _OtherDecodedResult:
@@ -35,7 +34,6 @@ def _store() -> CompiledProblemStore:
         context_start_rows=np.array([0, 3, 6, 9], dtype=np.int64),
         candidate_start_rows=np.array([2, 5, 8, 11], dtype=np.int64),
         candidate_end_rows=np.array([4, 7, 10, 13], dtype=np.int64),
-        action_space_mode=ActionSpaceMode.REALIZED_PER_SAMPLE,
         max_candidate_slots=2,
     )
 
@@ -57,7 +55,6 @@ def _current_row_store() -> CompiledProblemStore:
         context_start_rows=np.array([0, 1, 2, 3], dtype=np.int64),
         candidate_start_rows=np.array([1, 2, 3, 4], dtype=np.int64),
         candidate_end_rows=np.array([3, 4, 5, 6], dtype=np.int64),
-        action_space_mode=ActionSpaceMode.FIXED_EX_ANTE,
         max_candidate_slots=2,
     )
 
@@ -209,7 +206,7 @@ def test_poisson_replay_handles_non_chronological_sample_indices() -> None:
     assert [run.n_events for run in reversed_summary.runs] == [run.n_events for run in summary.runs]
 
 
-def test_fullset_uses_next_block_baseline_and_future_window_optimum() -> None:
+def test_fullset_uses_candidate_start_baseline_and_future_window_optimum() -> None:
     store = _store()
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     evaluator = compile_evaluator_contract(

@@ -148,15 +148,17 @@ Temporal lowering lives in [src/spice/temporal](src/spice/temporal).
 
 Current compilers:
 
-- `current_row_window`
 - `estimated_block`
 - `timestamp_future_window`
 
 Current mechanism surfaces:
 
-- `same_block_closed`: unsafe same-block reference. The action is priced in the current row and features can include finalized facts from that row.
-- `block_open_lagged`: safe same-block context. Current base fee remains available, but finalized block facts are lagged to what is known at block open.
-- `next_block_nominal_window`: diagnostic next-block nominal window. It preserves the old paper-truth mechanics without making it a canonical surface.
+- `same_block_closed`: paper-faithful unsafe same-block path. The action is priced in the current row and features can include finalized facts from that row.
+- `block_open_lagged`: safe current-row sibling. Current base fee remains available, but finalized block facts are lagged to what is known at block open.
+
+All live compilers anchor candidate offset `0` to the current row and use fixed
+ex-ante action slots. `estimated_block` keeps the paper-style nominal block grid,
+but its action slots are current-row inclusive.
 
 Both lower into the same `CompiledProblemStore` shape:
 

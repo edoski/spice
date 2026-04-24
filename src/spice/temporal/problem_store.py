@@ -8,8 +8,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from .semantics import ActionSpaceMode
-
 if TYPE_CHECKING:
     from ..config.models import SplitConfig
 
@@ -35,7 +33,6 @@ class CompiledProblemStore:
     context_start_rows: IntVector
     candidate_start_rows: IntVector
     candidate_end_rows: IntVector
-    action_space_mode: ActionSpaceMode
     max_candidate_slots: int
 
     @property
@@ -120,18 +117,10 @@ def build_action_mask(
     sample_indices: IntVector,
 ) -> BoolMatrix:
     resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
-    if store.action_space_mode is ActionSpaceMode.FIXED_EX_ANTE:
-        return np.ones(
-            (resolved_sample_indices.shape[0], store.max_candidate_slots),
-            dtype=np.bool_,
-        )
-    candidate_counts = store.candidate_counts[resolved_sample_indices]
-    if np.any(candidate_counts <= 0):
-        raise ValueError("action mask requires at least one future candidate per sample")
-    if np.any(candidate_counts > store.max_candidate_slots):
-        raise ValueError("candidate counts exceed store.max_candidate_slots")
-    slot_ids = np.arange(store.max_candidate_slots, dtype=np.int64)
-    return (slot_ids[None, :] < candidate_counts[:, None]).astype(np.bool_, copy=False)
+    return np.ones(
+        (resolved_sample_indices.shape[0], store.max_candidate_slots),
+        dtype=np.bool_,
+    )
 
 
 def chronological_split_indices(

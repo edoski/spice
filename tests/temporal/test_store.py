@@ -18,62 +18,6 @@ def _realization_policy_config() -> dict[str, object]:
     return {"id": "strict_deadline_miss"}
 
 
-def test_temporal_store_uses_real_timestamps_for_context_and_candidates() -> None:
-    feature_contract = compile_feature_contract(
-        feature_set=coerce_feature_set_config(
-            {
-                "id": "test_current_row_window",
-                "family": {"id": "timestamp_features"},
-                "outputs": ["seconds_since_previous_block", "elapsed_seconds"],
-            }
-        )
-    )
-    blocks = pl.DataFrame(
-        {
-            "block_number": np.arange(100, 107, dtype=np.int64),
-            "timestamp": np.array([0, 5, 11, 18, 27, 29, 40], dtype=np.int64),
-            "base_fee_per_gas": np.full(7, 1_000_000_000, dtype=np.int64),
-            "gas_used": np.full(7, 18_000_000, dtype=np.int64),
-            "gas_limit": np.full(7, 30_000_000, dtype=np.int64),
-            "chain_id": np.ones(7, dtype=np.int64),
-        }
-    )
-    feature_table = feature_contract.build_table(blocks)
-    contract = compile_problem_contract(
-        problem=coerce_problem_spec(
-            {
-                "id": "test_current_row_window",
-                "lookback_seconds": 10,
-                "sample_count": 4,
-                "max_delay_seconds": 12,
-                "compiler": {"id": "current_row_window"},
-                "realization_policy": _realization_policy_config(),
-            }
-        ),
-        feature_contract=feature_contract,
-        chain_runtime=ChainRuntimeSpec(
-            chain_id=1,
-            uses_poa_extra_data=False,
-            nominal_block_time_seconds=12.0,
-        ),
-    )
-    store, _ = contract.build_capability_store(feature_table)
-
-    np.testing.assert_array_equal(
-        store.anchor_rows,
-        np.array([0, 1, 2, 3, 4, 5, 6], dtype=np.int64),
-    )
-    np.testing.assert_array_equal(
-        store.context_start_rows,
-        np.array([0, 0, 1, 2, 3, 4, 6], dtype=np.int64),
-    )
-    np.testing.assert_array_equal(
-        store.candidate_end_rows - store.candidate_start_rows,
-        np.array([3, 2, 2, 3, 2, 2, 1], dtype=np.int64),
-    )
-    assert store.max_candidate_slots == 3
-
-
 def test_estimated_block_store_uses_corpus_calibration_for_row_geometry() -> None:
     feature_contract = compile_feature_contract(
         feature_set=coerce_feature_set_config(
@@ -132,11 +76,13 @@ def test_estimated_block_store_uses_corpus_calibration_for_row_geometry() -> Non
         store.candidate_end_rows,
         np.array([4, 5, 6, 7, 8], dtype=np.int64),
     )
+    np.testing.assert_array_equal(store.candidate_start_rows, store.anchor_rows)
     np.testing.assert_array_equal(
         store.candidate_counts,
-        np.array([2, 2, 2, 2, 2], dtype=np.int64),
+        np.array([3, 3, 3, 3, 3], dtype=np.int64),
     )
-    assert store.max_candidate_slots == 2
+    assert runtime_metadata.capability_candidate_count == 3
+    assert store.max_candidate_slots == 3
 
 
 def test_estimated_block_supports_nominal_lookback_and_mean_calibrated_candidates() -> None:
@@ -191,21 +137,65 @@ def test_estimated_block_supports_nominal_lookback_and_mean_calibrated_candidate
     assert runtime_metadata.candidate_interval_seconds == np.mean(
         np.array([7, 8, 11, 8, 11, 8, 12, 9], dtype=np.float64)
     )
-    assert store.max_candidate_slots == 3
+    assert store.max_candidate_slots == 4
 
 
-@pytest.mark.parametrize(
-    ("candidate_start_mode", "expected_start_row", "expected_action_count"),
-    [
-        (None, 1, 3),
-        ("current_row", 0, 4),
-    ],
-)
-def test_timestamp_future_window_builds_fixed_action_windows(
-    candidate_start_mode: str | None,
-    expected_start_row: int,
-    expected_action_count: int,
+@pytest.mark.parametrize(("delay_seconds", "expected_slots"), [(12, 2), (36, 4)])
+def test_estimated_block_nominal_grid_includes_current_row_offset_zero(
+    delay_seconds: int,
+    expected_slots: int,
 ) -> None:
+    feature_contract = compile_feature_contract(
+        feature_set=coerce_feature_set_config(
+            {
+                "id": "test_estimated_block_nominal_grid",
+                "family": {"id": "timestamp_features"},
+                "outputs": ["seconds_since_previous_block", "elapsed_seconds"],
+            }
+        )
+    )
+    blocks = pl.DataFrame(
+        {
+            "block_number": np.arange(500, 510, dtype=np.int64),
+            "timestamp": np.arange(0, 120, 12, dtype=np.int64),
+            "base_fee_per_gas": np.full(10, 1_000_000_000, dtype=np.int64),
+            "gas_used": np.full(10, 18_000_000, dtype=np.int64),
+            "gas_limit": np.full(10, 30_000_000, dtype=np.int64),
+            "chain_id": np.ones(10, dtype=np.int64),
+        }
+    )
+    feature_table = feature_contract.build_table(blocks)
+    contract = compile_problem_contract(
+        problem=coerce_problem_spec(
+            {
+                "id": "test_estimated_block_nominal_grid",
+                "lookback_seconds": 24,
+                "sample_count": 3,
+                "max_delay_seconds": delay_seconds,
+                "compiler": {
+                    "id": "estimated_block",
+                    "lookback_interval_source": "nominal_chain_runtime",
+                    "candidate_interval_source": "nominal_chain_runtime",
+                },
+                "realization_policy": _realization_policy_config(),
+            }
+        ),
+        feature_contract=feature_contract,
+        chain_runtime=ChainRuntimeSpec(
+            chain_id=1,
+            uses_poa_extra_data=False,
+            nominal_block_time_seconds=12.0,
+        ),
+    )
+
+    store, runtime_metadata = contract.build_capability_store(feature_table)
+
+    assert runtime_metadata.capability_candidate_count == expected_slots
+    assert store.max_candidate_slots == expected_slots
+    np.testing.assert_array_equal(store.candidate_start_rows, store.anchor_rows)
+
+
+def test_timestamp_future_window_builds_fixed_action_windows() -> None:
     feature_contract = compile_feature_contract(
         feature_set=coerce_feature_set_config(
             {
@@ -233,17 +223,10 @@ def test_timestamp_future_window_builds_fixed_action_windows(
                 "lookback_seconds": 24,
                 "sample_count": 4,
                 "max_delay_seconds": 36,
-                "compiler": (
-                    {
-                        "id": "timestamp_future_window",
-                        "action_interval_estimator": {"id": "nominal"},
-                    }
-                    | (
-                        {"candidate_start_mode": candidate_start_mode}
-                        if candidate_start_mode is not None
-                        else {}
-                    )
-                ),
+                "compiler": {
+                    "id": "timestamp_future_window",
+                    "action_interval_estimator": {"id": "nominal"},
+                },
                 "realization_policy": _realization_policy_config(),
             }
         ),
@@ -258,12 +241,11 @@ def test_timestamp_future_window_builds_fixed_action_windows(
     store, runtime_metadata = contract.build_capability_store(feature_table)
 
     np.testing.assert_array_equal(store.anchor_rows, np.array([0, 1, 2, 3, 4], dtype=np.int64))
-    assert int(store.candidate_start_rows[0]) == expected_start_row
+    np.testing.assert_array_equal(store.candidate_start_rows, store.anchor_rows)
     assert runtime_metadata.action_interval_seconds == 12.0
     assert runtime_metadata.action_interval_estimator_id == "nominal"
-    assert runtime_metadata.capability_action_count == expected_action_count
-    assert store.max_candidate_slots == expected_action_count
-    assert store.action_space_mode.value == "fixed_ex_ante"
+    assert runtime_metadata.capability_action_count == 4
+    assert store.max_candidate_slots == 4
 
 
 def test_timestamp_future_window_fixed_ex_ante_derives_width_from_realized_training_window(
@@ -298,7 +280,6 @@ def test_timestamp_future_window_fixed_ex_ante_derives_width_from_realized_train
                 "compiler": {
                     "id": "timestamp_future_window",
                     "action_interval_estimator": {"id": "nominal"},
-                    "candidate_start_mode": "current_row",
                 },
                 "realization_policy": _realization_policy_config(),
             }
@@ -379,4 +360,4 @@ def test_timestamp_future_window_supports_recent_delta_interval_estimator() -> N
 
     assert runtime_metadata.action_interval_estimator_id == "recent_deltas"
     assert runtime_metadata.action_interval_seconds == 11.5
-    assert runtime_metadata.capability_action_count == 3
+    assert runtime_metadata.capability_action_count == 4

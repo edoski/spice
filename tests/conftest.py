@@ -80,28 +80,19 @@ def model_workflow_override():
         lookback_seconds: int = 120,
         max_delay_seconds: int = 36,
         delay_seconds: int | None = None,
-        compiler_id: str = "estimated_block",
     ) -> dict[str, object]:
         problem = _named_group_copy("current_row_nominal_window", "problem")
         problem["id"] = "test_problem"
         problem["lookback_seconds"] = lookback_seconds
         problem["sample_count"] = sample_count
         problem["max_delay_seconds"] = max_delay_seconds
-        problem["compiler"] = (
-            {"id": "current_row_window"}
-            if compiler_id == "current_row_window"
-            else cast(dict[str, object], problem["compiler"])
-        )
+        problem["compiler"] = cast(dict[str, object], problem["compiler"])
         dataset = _named_group_copy("icdcs_2026", "dataset")
         dataset["evaluation_date"] = TEST_EVALUATION_DATE.isoformat()
         return {
             "chain": "ethereum",
             "model": "lstm",
-            "feature_set": (
-                "timestamp_features_baseline"
-                if compiler_id == "current_row_window"
-                else "same_block_closed_full"
-            ),
+            "feature_set": "same_block_closed_full",
             "dataset": dataset,
             "problem": problem,
             "delay_seconds": max_delay_seconds if delay_seconds is None else delay_seconds,
@@ -172,7 +163,6 @@ def acquire_override():
         problem["lookback_seconds"] = lookback_seconds
         problem["sample_count"] = sample_count
         problem["max_delay_seconds"] = max_delay_seconds
-        problem["compiler"] = {"id": "current_row_window"}
         dataset = _named_group_copy("icdcs_2026", "dataset")
         dataset["evaluation_date"] = TEST_EVALUATION_DATE.isoformat()
         return {

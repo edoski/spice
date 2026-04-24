@@ -88,25 +88,21 @@ def _prepare_supervised_targets(
         )
     ):
         candidate_values = store.log_base_fees[start_row:end_row]
-        if store.action_space_mode.value == "fixed_ex_ante":
-            candidate_mask[row, :] = True
-            slot_count = min(int(candidate_count), max_candidate_slots)
-            candidate_log_fees[row, :slot_count] = candidate_values[:slot_count]
-            if int(window_summary.optimum_offsets[row]) >= max_candidate_slots:
+        candidate_mask[row, :] = True
+        slot_count = min(int(candidate_count), max_candidate_slots)
+        candidate_log_fees[row, :slot_count] = candidate_values[:slot_count]
+        if int(window_summary.optimum_offsets[row]) >= max_candidate_slots:
+            raise ValueError(
+                "strict_deadline_miss action space must cover optimum offsets "
+                "for supervised targets"
+            )
+        if int(candidate_count) < max_candidate_slots:
+            if int(end_row) >= store.n_rows:
                 raise ValueError(
-                    "strict_deadline_miss fixed action space must cover optimum offsets "
-                    "for supervised targets"
+                    "strict_deadline_miss requires a post-window row "
+                    "for overflow supervision"
                 )
-            if int(candidate_count) < max_candidate_slots:
-                if int(end_row) >= store.n_rows:
-                    raise ValueError(
-                        "strict_deadline_miss fixed action space requires a post-window row "
-                        "for overflow supervision"
-                    )
-                candidate_log_fees[row, candidate_count:] = store.log_base_fees[int(end_row)]
-            continue
-        candidate_mask[row, :candidate_count] = True
-        candidate_log_fees[row, :candidate_count] = candidate_values
+            candidate_log_fees[row, candidate_count:] = store.log_base_fees[int(end_row)]
     return PreparedSupervisedRealizationTargets(
         candidate_mask=candidate_mask,
         candidate_log_fees=candidate_log_fees,
@@ -132,14 +128,12 @@ def _realize_selections(
     if np.any(requested_offsets < 0):
         raise ValueError("decoded_offsets must be non-negative")
     overflow_mask = requested_offsets >= window_summary.candidate_counts
-    if np.any(overflow_mask) and store.action_space_mode.value != "fixed_ex_ante":
-        raise ValueError("decoded_offsets exceed the valid action space for one or more samples")
     overflow_without_post_window = np.any(
         window_summary.post_window_rows[overflow_mask] >= store.n_rows
     )
     if np.any(overflow_mask) and overflow_without_post_window:
         raise ValueError(
-            "strict_deadline_miss fixed action space requires a post-window row "
+            "strict_deadline_miss requires a post-window row "
             "for overflow realization"
         )
     resolved_offsets = requested_offsets.copy()
