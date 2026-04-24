@@ -68,4 +68,3 @@ def test_candidate_offset_decode_ignores_masked_slots() -> None:
     )
 
     assert torch.equal(predictions.tensor, torch.tensor([0], dtype=torch.int64))
-

@@ -380,4 +380,3 @@ def test_timestamp_future_window_supports_recent_delta_interval_estimator() -> N
     assert runtime_metadata.action_interval_estimator_id == "recent_deltas"
     assert runtime_metadata.action_interval_seconds == 11.5
     assert runtime_metadata.capability_action_count == 3
-

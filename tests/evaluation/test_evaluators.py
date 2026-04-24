@@ -317,4 +317,3 @@ def test_anchor_basefee_compares_anchor_and_realized_fees() -> None:
             "zero_action_rate": 0.5,
         }
     )
-
