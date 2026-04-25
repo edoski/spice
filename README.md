@@ -1,16 +1,163 @@
 # SPICE
 
-SPICE is a temporal fee-timing pipeline for EVM chains. It acquires canonical block corpora, builds resolved feature tables through explicit feature families, tunes models, trains artifacts, and evaluates stored artifacts under real delay budgets.
+SPICE is a temporal fee-timing research pipeline for EVM chains. It acquires canonical block data, builds feature tables, constructs temporal decision problems, trains neural models, tunes studies, stores artifacts, and evaluates fee-timing decisions under real delay budgets.
+
+The project is organized around explicit seams: configs resolve into typed contracts, contracts compile concrete implementations, workflows orchestrate storage effects, and docs are split into generic architecture and concrete implementation guides.
+
+## Start Here
+
+Read in this order if you are new to the codebase and the domain:
+
+```text
+README.md
+  -> ARCHITECTURE.md
+  -> src/spice/ARCHITECTURE.md
+  -> src/spice/conf/IMPLEMENTATIONS.md
+  -> package ARCHITECTURE.md files
+  -> package IMPLEMENTATIONS.md files
+```
+
+Use this rule:
+
+| File | Purpose |
+| --- | --- |
+| `ARCHITECTURE.md` | Generic structure, boundaries, data flow, dependency direction. |
+| `IMPLEMENTATIONS.md` | Current concrete engines, families, algorithms, YAML presets, math, and failure modes. |
+
+Architecture docs explain the shape of the system. Implementation docs explain what the current code actually runs.
+
+## Learning Paths
+
+### Beginner ML And Modeling Path
+
+This path explains how raw block rows become model predictions:
+
+```text
+features
+  -> temporal problems
+  -> dataset builders
+  -> model families
+  -> prediction families
+  -> objectives
+  -> evaluation
+```
+
+Read:
+
+1. [Feature family implementations](src/spice/features/families/IMPLEMENTATIONS.md)
+2. [Temporal compiler implementations](src/spice/temporal/compilers/IMPLEMENTATIONS.md)
+3. [Realization policy implementation](src/spice/temporal/realization/IMPLEMENTATIONS.md)
+4. [Input normalization implementations](src/spice/temporal/input_normalization/IMPLEMENTATIONS.md)
+5. [Dataset builder implementations](src/spice/modeling/dataset_builders/IMPLEMENTATIONS.md)
+6. [Model family implementations](src/spice/modeling/families/IMPLEMENTATIONS.md)
+7. [Prediction family implementations](src/spice/prediction/families/IMPLEMENTATIONS.md)
+8. [Objective implementations](src/spice/objectives/IMPLEMENTATIONS.md)
+9. [Evaluator implementations](src/spice/evaluation/IMPLEMENTATIONS.md)
+
+The key mental model:
+
+```text
+canonical block rows
+  -> feature matrix
+  -> temporal problem store
+  -> sequence batches
+  -> neural model
+  -> decoded offsets
+  -> evaluator metrics
+```
+
+### Data Acquisition And Storage Path
+
+This path explains how chain data is downloaded, validated, committed, indexed, and transferred:
+
+```text
+RPC acquisition
+  -> corpus builders
+  -> corpus validation
+  -> storage roots
+  -> catalog
+  -> sync
+```
+
+Read:
+
+1. [RPC acquisition implementations](src/spice/acquisition/rpc/IMPLEMENTATIONS.md)
+2. [Corpus implementations](src/spice/corpus/IMPLEMENTATIONS.md)
+3. [Corpus builder implementations](src/spice/corpus/builders/IMPLEMENTATIONS.md)
+4. [Storage implementations](src/spice/storage/IMPLEMENTATIONS.md)
+5. [Catalog implementations](src/spice/storage/catalog/IMPLEMENTATIONS.md)
+
+The key mental model:
+
+```text
+timestamp window
+  -> block range
+  -> RPC batches
+  -> canonical parquet rows
+  -> root state DB
+  -> derived catalog row
+```
+
+### Workflow And Operations Path
+
+This path explains how users run work:
+
+```text
+YAML presets
+  -> config resolution
+  -> CLI command
+  -> local workflow or remote submit
+  -> storage effect
+```
+
+Read:
+
+1. [Config preset implementations](src/spice/conf/IMPLEMENTATIONS.md)
+2. [Config resolution implementations](src/spice/config/IMPLEMENTATIONS.md)
+3. [Workflow implementations](src/spice/workflows/IMPLEMENTATIONS.md)
+4. [Execution implementations](src/spice/execution/IMPLEMENTATIONS.md)
+5. [CLI command implementations](src/spice/cli/commands/IMPLEMENTATIONS.md)
+
+The key mental model:
+
+```text
+surface name + overrides
+  -> resolved workflow config
+  -> acquire/train/tune/evaluate
+  -> corpus/study/artifact state
+```
+
+## Core Terms
+
+| Term | Meaning |
+| --- | --- |
+| Corpus | Stored canonical block data for one chain/dataset/evaluation date. |
+| History rows | Rows before the evaluation window, used for training and warmup. |
+| Evaluation rows | Rows in the evaluation day, used for diagnostic replay. |
+| Feature | Numeric observable derived from block rows. |
+| Sample | One temporal decision example. |
+| Anchor row | Row representing the decision time for a sample. |
+| Context rows | Past rows the model may observe. |
+| Candidate window | Future row interval the model may choose from. |
+| Candidate offset | Integer action relative to the candidate-window start. |
+| Realization policy | Rule that maps decoded offsets to actual outcome rows. |
+| DecodedOffsets | Current decoded prediction ABI consumed by evaluators. |
+| Artifact | Persisted trained model plus exact manifest and runtime state. |
+| Study | Persisted tuning state and Optuna trial database. |
+| Evaluator | Runtime scorer that turns decoded predictions into metrics. |
+| Surface | High-level YAML recipe combining chain, dataset, model, features, problem, objective, and evaluation. |
 
 ## Stack
 
-- `Typer` for the CLI
-- `Pydantic` + `PyYAML` for config loading
-- `SQLAlchemy Core` for SPICE-owned state
-- `Polars` for corpus IO and validation
-- `PyTorch` for modeling
-- `Optuna` for tuning
-- `web3.py` for RPC access
+| Tool | Use |
+| --- | --- |
+| Typer | CLI |
+| Pydantic + PyYAML | Config models and YAML loading |
+| SQLAlchemy Core | SPICE-owned SQLite state |
+| Polars | Corpus IO and validation |
+| PyTorch | Modeling |
+| Optuna | Tuning |
+| web3.py | RPC access |
 
 ## Setup
 
@@ -20,12 +167,19 @@ uv sync --extra dev
 source .venv/bin/activate
 ```
 
-`uv` manages the repo-local `.venv/`. If you do not want to activate it, prefix commands with `uv run`.
-Repo helper: `spice-sync-remote <branch>` pushes the branch to both `origin` and `giano-sync`.
+`uv` manages the repo-local `.venv/`. Without activation, prefix commands with `uv run`.
 
-## CLI
+Repo helper:
 
-Local workflow commands:
+```bash
+spice-sync-remote <branch>
+```
+
+This pushes the branch to both `origin` and `giano-sync`.
+
+## CLI Quickstart
+
+Local workflows:
 
 ```bash
 spice acquire --surface same_block_closed
@@ -34,154 +188,96 @@ spice tune --surface same_block_closed --trial-count 20
 spice evaluate --surface same_block_closed --variant baseline
 ```
 
-Submitted workflow commands:
+Remote train/tune/evaluate submission:
 
 ```bash
-spice train --surface same_block_closed --submit --target disi_l40
-spice tune --surface same_block_closed --trial-count 20 --submit --target disi_l40
-spice evaluate --surface same_block_closed --variant baseline --submit --target disi_l40
+spice train --surface same_block_closed --variant baseline --submit
+spice tune --surface same_block_closed --trial-count 20 --submit
+spice evaluate --surface same_block_closed --variant baseline --submit
 ```
 
-Workflow stdout is intentionally compact:
+The CLI owns the default remote target, `disi_l40`. Execution and sync APIs receive explicit targets below the CLI layer.
 
-- one header line with the selected facts
-- a few milestone lines for real state changes
-- one final result line
-
-Examples:
-
-```text
-acquire dataset=icdcs_2026 chain=ethereum problem=current_row_nominal_window provider=publicnode
-acquire complete history=reused history_blocks=4096 evaluation=created evaluation_blocks=512
-
-train dataset=icdcs_2026 chain=ethereum problem=current_row_nominal_window prediction=candidate_offset_selection model=lstm variant=baseline
-fit epoch=3/12 objective.profit_over_baseline=0.0184 validation.profit_over_baseline=0.0184 best_epoch=3 best.profit_over_baseline=0.0184
-train complete artifact=outputs/artifacts/ethereum/... best_epoch=9 validation.profit_over_baseline=0.0211 test.profit_over_baseline=0.0179
-
-tune dataset=icdcs_2026 chain=ethereum problem=current_row_nominal_window feature_set=same_block_closed_full prediction=candidate_offset_selection model=lstm study=default trials=20
-trial 4/20 complete value=0.0211 best_epoch=7
-best improved trial=4 value=0.0211
-```
-
-Local config and storage commands:
+Config and storage inspection:
 
 ```bash
 spice config list provider
 spice config show dataset icdcs_2026
 spice config edit problem current_row_nominal_window
+
 spice show dataset
-spice show artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
-spice delete artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
-spice push dataset --chain avalanche --dataset icdcs_2026
-spice pull artifact --chain avalanche --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
+spice show artifact --chain ethereum --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
+spice delete artifact --chain ethereum --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
 spice refresh catalog
 ```
 
-## Config
+Transfer:
 
-Config ownership is split across [src/spice/config](src/spice/config):
+```bash
+spice push dataset --chain ethereum --dataset icdcs_2026
+spice push study --chain ethereum --dataset icdcs_2026 --model lstm --problem current_row_nominal_window
+spice pull study --chain ethereum --dataset icdcs_2026 --model lstm --problem current_row_nominal_window
+spice pull artifact --chain ethereum --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
+```
 
-- `registry.py`: named YAML discovery, validation, and canonical load/edit helpers
-- `surfaces.py`: surface frame models and request overlays
-- `benchmarks.py`: benchmark case expansion and validation
-- `resolution.py`: workflow request resolution into one typed workflow config
-- `models.py`: resolved runtime config models
+## Current Concrete IDs
 
-Modeling workflows (`train`, `tune`, `evaluate`) use the CUDA runtime. Submission resolves the workflow locally, sends the resolved config snapshot to the target, and applies the target storage root before the Slurm job starts.
-
-Named specs live under [src/spice/conf](src/spice/conf):
-
-- `surface/`: durable benchmark context and workflow-section refs
-- `benchmark/`: expanded experiment batches
-- `acquisition/`, `training/`, `split/`, `tuning/`: workflow-section refs
-- `dataset/`: evaluation-date selectors
-- `chain/`: chain runtime specs
-- `provider/`: HTTP RPC transport and per-chain endpoint specs
-- `execution/`: internal submission target spec
-- `problem/`: delay budgets and sampling contracts
-- other seams: `model/`, `feature_set/`, `prediction/`, `dataset_builder/`,
-  `evaluation/`, `objective/`, `tuning_space/`
-
-Rules:
-
-- surfaces are the main workflow entrypoint
-- benchmarks expand into explicit workflow requests and never submit jobs
-- workflow CLI composition is surface-first, with explicit selectors for model,
-  tuning space, problem, feature set, objective, evaluation, and workflow-section refs
-- run knobs stay explicit: `--dry-run`, `--trial-count`, `--delay-seconds`,
-  `--study`, and `--variant`
-- `provider` is surface-owned runtime config, not a workflow CLI selector
-- `acquire` resolves the selected provider into one chain-specific RPC endpoint before runtime
-- the execution target is selected with `--target`, validated through
-  `execution/models.py`, and not stored in surfaces
-- `problem.compiler.id` selects the temporal compiler
-- `feature_set.family.id` selects the feature family
-- `prediction.family.id` selects the prediction family
-- `dataset_builder.id` selects the dataset preparation path
-- `acquire` requests a cushioned bootstrap history window and allows one measured prefix refill
-- `train` and `evaluate` validate that the selected feature graph matches the stored artifact
-
-## Core Seams
-
-Strong domain seams stay separate:
-
-- feature family
-- temporal compiler
-- prediction family
-- evaluator
-- model family
-- representation
-
-Current shipped ids:
-
-- feature families: `same_block_closed`, `block_open_lagged`, `timestamp_features`
-- compilers: `estimated_block`, `timestamp_future_window`
-- prediction families: `candidate_offset_selection`, `min_block_fee_multitask`
-- evaluators: `poisson_replay_2h_mean`, `poisson_replay_2h_total`, `fullset`
-- input normalization: `row_standard`, `window_weighted_standard`
-- representation: `sequence_inputs`
+| Seam | Current ids |
+| --- | --- |
+| Feature families | `same_block_closed`, `block_open_lagged`, `timestamp_features` |
+| Temporal compilers | `timestamp_future_window`, `estimated_block` |
+| Realization policies | `strict_deadline_miss` |
+| Input normalization | `row_standard`, `window_weighted_standard` |
+| Dataset builders | `standard_temporal`, `fixed_context_temporal` |
+| Model families | `lstm`, `transformer`, `transformer_lstm` |
+| Prediction families | `candidate_offset_selection`, `min_block_fee_multitask` |
+| Evaluator engines | `replay`, `zero_stop_rollout`, `anchor_basefee` |
+| Remote target | `disi_l40` |
 
 ## Output Layout
 
-- catalog: `outputs/.spice/catalog.sqlite`
-- history corpus: `outputs/corpora/<chain>/<corpus_id>/history/...`
-- evaluation corpus: `outputs/corpora/<chain>/<corpus_id>/evaluation/...`
-- corpus state: `outputs/corpora/<chain>/<corpus_id>/.spice/state.sqlite`
-- tuned study state: `outputs/studies/<chain>/<study_id>/.spice/state.sqlite`
-- model artifacts: `outputs/artifacts/<chain>/<artifact_id>/...`
-- artifact state: `outputs/artifacts/<chain>/<artifact_id>/.spice/state.sqlite`
-
-These roots are derived deterministically by `storage/identity.py` and
-`storage/layout.py`. They are outputs of workflow resolution, not workflow
-composition inputs, except for `--storage-root`.
-
-Corpus ids identify raw chain/dataset storage only. Study ids include search
-semantics such as sampler seed, pruning policy, tuning space, model, problem,
-feature set, split, and training config; `trial_count` and `timeout_seconds`
-are run limits and do not change study identity.
-
-Users query by selectors such as `--dataset`, `--study`, `--model`, `--problem`, and `--variant`.
-Those selector flags are storage selectors only. They identify existing records for
-`show`, `delete`, `push`, and `pull`; they do not compose workflow configs.
-
-## Baseline Replication
-
-Thesis/internship baselines should be regenerated through normal workflows:
-
-```bash
-spice acquire --surface same_block_closed --chain ethereum
-spice tune --surface same_block_closed --chain ethereum --trial-count 20
-spice train --surface same_block_closed --chain ethereum --variant baseline
-spice evaluate --surface same_block_closed --chain ethereum --variant baseline
+```text
+outputs/
+  .spice/catalog.sqlite
+  corpora/<chain>/<corpus_id>/
+    history/
+    evaluation/
+    .spice/state.sqlite
+  studies/<chain>/<study_id>/
+    .spice/state.sqlite
+  artifacts/<chain>/<artifact_id>/
+    model.pt
+    checkpoints/
+    .spice/state.sqlite
 ```
 
-Repeat the same surface for `polygon` and `avalanche`, and use `--model` plus
-`--tuning-space` or benchmark cases for the baseline matrix.
+Root state DBs and manifests are source of truth. The catalog is derived and can be refreshed.
 
 ## Verification
 
 ```bash
-uv run ruff check src tests
+uv run ruff check .
 uv run pyright
 uv run pytest -q
+```
+
+YAML specs can be validated through the config registry:
+
+```bash
+uv run python - <<'PY'
+from spice.config.registry import load_named_group, named_group_keys, list_group_names
+
+count = 0
+errors = []
+for group in named_group_keys():
+    for name in list_group_names(group):
+        try:
+            load_named_group(name, group)
+        except Exception as exc:
+            errors.append((group, name, type(exc).__name__, str(exc)))
+        count += 1
+print(f"validated={count} errors={len(errors)}")
+for error in errors:
+    print(error)
+PY
 ```
