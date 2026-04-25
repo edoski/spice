@@ -62,26 +62,73 @@ Storage identity does not include the surface or benchmark name. It changes when
 
 ## Benchmarks
 
-`benchmark/*.yaml` is experiment-batch shorthand. Each case expands into concrete workflow commands. `workflow` is scalar per case. List-valued fields expand cartesian within that case, and paired or irregular axes should be separate cases.
+`benchmark/*.yaml` defines experiment matrices and workflow DAGs. Each case has a scalar
+`base`, standard `dimensions`, and one or more ordered `steps`. Global dimensions apply
+to all steps; step dimensions apply only to that step. Local `after` dependencies become
+Slurm dependencies during remote submission.
 
 ```yaml
 cases:
-  - surface: block_open_lagged
-    workflow: evaluate
-    model: lstm
-    tuning_space: lstm_fixed_context
-    feature_set: block_open_lagged_calendar_only_time
-    objective: profit_poisson_replay_2h_mean
-    evaluation: poisson_replay_2h_mean
-    delay_seconds: [12, 24, 36]
-    study: safe_lstm_direct
-    variant: baseline
+  - id: lookback_window_sweep
+    base:
+      surface: block_open_lagged
+      training: default
+      split: default
+      tuning: extensive
+      study: lookback_window_sweep
+    dimensions:
+      models:
+        - set:
+            model: lstm
+            tuning_space: lstm_large_capacity
+      problems:
+        - grid:
+            base: current_row_nominal_window
+            fields:
+              lookback_seconds: [600, 900, 1200]
+              sample_count: [1000000]
+    steps:
+      - id: tune
+        workflow: tune
+        set:
+          objective: validation_total_loss
+          evaluation: fullset
+          trial_count: 100
+      - id: train_tuned
+        workflow: train
+        after: [tune]
+        set:
+          objective: validation_total_loss
+          evaluation: fullset
+          variant: tuned
+      - id: evaluate
+        workflow: evaluate
+        after: [train_tuned]
+        set:
+          objective: profit_poisson_replay_2h_mean
+          evaluation: poisson_replay_2h_mean
+          variant: tuned
+          delay_seconds: 36
 ```
 
-Expansion validates every row before printing anything:
+Planning validates every row before printing anything:
 
 ```bash
-spice benchmark expand safe_delay_sensitivity
+spice benchmark plan lookback_window_sweep
 ```
 
-V1 only prints shell-safe commands. It does not submit jobs, schedule dependencies, maintain ledgers, or run heartbeat logic.
+Remote submission writes local run state under `outputs/benchmarks/runs/<name>/<timestamp>/`
+and uses the configured remote target:
+
+```bash
+spice benchmark submit lookback_window_sweep
+```
+
+Collection pulls remote studies/artifacts through storage sync and prints JSONL status.
+Use `--write` only when all expected evaluation rows are complete; missing rows abort the
+ledger write.
+
+```bash
+spice benchmark collect lookback_window_sweep
+spice benchmark collect lookback_window_sweep --write
+```

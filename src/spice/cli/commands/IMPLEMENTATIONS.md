@@ -72,7 +72,18 @@ All transfer commands use selector filters and explicit target resolution. `--re
 
 ## Config And Benchmark Commands
 
-Config commands inspect resolved config and available specs. Benchmark commands run benchmark-oriented utilities through the same config resolution stack.
+Config commands inspect resolved config and available specs.
+
+Benchmark commands use the same config resolution stack:
+
+| Command | Behavior |
+| --- | --- |
+| `benchmark plan <name>` | Print resolved workflow-step JSONL for one checked-in benchmark spec. |
+| `benchmark submit <name>` | Submit the plan to the default remote target, write run state, and print submission JSONL. |
+| `benchmark collect <name>` | Pull remote studies/artifacts for a submitted run and print collection JSONL. |
+
+`benchmark collect --write` appends complete, non-duplicate evaluation rows to
+`benchmarks/results.csv`. Missing expected evaluation rows abort the write.
 
 ## Invariants
 
@@ -86,4 +97,3 @@ Config commands inspect resolved config and available specs. Benchmark commands 
 ## Extension Pattern
 
 New commands should parse user intent, resolve typed config or selectors, then delegate to workflow/storage/execution functions. Keep business logic in owner packages.
-

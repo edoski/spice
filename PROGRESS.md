@@ -1,6 +1,6 @@
 # Progress
 
-_Last verified: 2026-04-25 19:09 CEST_
+_Last verified: 2026-04-25 19:47 CEST_
 
 ## Status Snapshot
 
@@ -141,7 +141,7 @@ Optional LSTM expansion, only if LSTM remains in scope:
 - `head_hidden_dim: [256, 512, 1024]`.
 - `dropout: [0.0, 0.1, 0.2, 0.3]`.
 
-Large-capacity tuning-space support is implemented for model-capacity fields. Benchmark dimension planning, remote submission support, run-state capture, result collection, and concrete planned sweep specs are implemented; launch decisions remain deferred until remote wave results and final launch cells/study names are settled.
+Launch decisions remain deferred until remote wave results and final launch cells/study names are settled.
 
 Benchmark sweep operator flow:
 
@@ -196,16 +196,6 @@ Completed feature findings kept for current relevance:
 
 ### Architecture Cleanup
 
-Completed cleanup:
-
-- Compiler runtime metadata serializes through compiler-id dispatch.
-- Builder metadata remains typed, with compiler payloads rehydrated through the compiler registry.
-- Workflow request models are task-specific.
-- Remote execution submits resolved workflow config snapshots.
-- Corpus, study, and artifact identity use resolved paths consistently, with dataset evaluation date included in corpus identity.
-
-Remaining cleanup:
-
 - Remove stale docs, dead codecs/configs, parity defaults, and redundant feature helpers after remote jobs finish or are archived.
 - Keep raw `outputs/` artifacts and Slurm logs untracked.
 
@@ -215,7 +205,7 @@ Remaining cleanup:
 
 Internship 1 baseline replication is economically supported on this benchmark context: the unsafe professor-like reference reproduces or exceeds reported paper gains. This is not a perfect clone claim because professor preprocessing, split construction, model selection, and evaluator semantics are not fully identical.
 
-Internship 1 optimization is partially supported by time-feature ablations, interval-estimator experiments, and the current HPO wave. Full Bayesian HPO, lookback sweeps, sample-count sweeps, and larger model-capacity searches remain planned work.
+Internship 1 optimization is partially supported by time-feature ablations, interval-estimator experiments, and the current HPO wave. Lookback sweeps, sample-count sweeps, problem-family sweeps, and larger model-capacity searches remain to run.
 
 Thesis / Internship 2 direction remains aligned with uncertainty quantification and dynamic prediction-window sizing. Thesis-scale expansion should record completed current benchmark results in `benchmarks/results.csv`.
 
