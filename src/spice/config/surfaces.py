@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic import Field
 
 from ..modeling.families.base import ConfigModel
-from .models import ArtifactConfig, StorageSpec, StudyConfig
+from .models import ArtifactConfig, ProblemSpec, StorageSpec, StudyConfig
 from .registry import load_named_group
 
 
@@ -15,7 +15,7 @@ class SurfaceFrame(ConfigModel):
     chain: str
     dataset: str
     provider: str
-    problem: str
+    problem: str | ProblemSpec
     dataset_builder: str
     feature_set: str | None = None
     prediction: str
@@ -41,7 +41,7 @@ def apply_request_overrides(
     frame: SurfaceFrame,
     *,
     chain: str | None,
-    problem: str | None,
+    problem: str | ProblemSpec | None,
     feature_set: str | None,
     objective: str | None,
     evaluation: str | None,

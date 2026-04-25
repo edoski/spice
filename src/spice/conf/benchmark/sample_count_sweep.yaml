@@ -1,0 +1,59 @@
+cases:
+  - id: sample_count_sweep
+    base:
+      training: default
+      split: default
+      tuning: extensive
+      study: sample_count_sweep
+    dimensions:
+      data:
+        - set: {surface: same_block_closed, chain: ethereum}
+        - set: {surface: same_block_closed, chain: polygon}
+        - set: {surface: same_block_closed, chain: avalanche}
+        - set: {surface: block_open_lagged, chain: ethereum}
+        - set: {surface: block_open_lagged, chain: polygon}
+        - set: {surface: block_open_lagged, chain: avalanche}
+      models:
+        - set:
+            model: lstm
+            tuning_space: lstm_large_capacity
+        - set:
+            model: transformer
+            tuning_space: transformer_large_capacity
+        - set:
+            model: transformer_lstm
+            tuning_space: transformer_lstm_large_capacity
+      problems:
+        - grid:
+            base: current_row_nominal_window
+            fields:
+              sample_count: [400000, 1000000, 3000000]
+    steps:
+      - id: tune
+        workflow: tune
+        set:
+          objective: validation_total_loss
+          evaluation: fullset
+          trial_count: 120
+      - id: train_tuned
+        workflow: train
+        after: [tune]
+        set:
+          objective: validation_total_loss
+          evaluation: fullset
+          variant: tuned
+      - id: evaluate_tuned
+        workflow: evaluate
+        after: [train_tuned]
+        dimensions:
+          scoring:
+            - set:
+                objective: profit_poisson_replay_2h_mean
+                evaluation: poisson_replay_2h_mean
+            - set:
+                objective: profit_poisson_replay_2h_total
+                evaluation: poisson_replay_2h_total
+          runtime:
+            - set:
+                variant: tuned
+                delay_seconds: 36

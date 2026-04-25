@@ -1,6 +1,6 @@
 # Progress
 
-_Last verified: 2026-04-25 12:36 CEST_
+_Last verified: 2026-04-25 19:09 CEST_
 
 ## Status Snapshot
 
@@ -141,9 +141,9 @@ Optional LSTM expansion, only if LSTM remains in scope:
 - `head_hidden_dim: [256, 512, 1024]`.
 - `dropout: [0.0, 0.1, 0.2, 0.3]`.
 
-Large-capacity tuning-space support is implemented for model-capacity fields. Benchmark command YAMLs are intentionally deferred until remote wave results and final launch cells/study names are settled.
+Large-capacity tuning-space support is implemented for model-capacity fields. Benchmark dimension planning, remote submission support, and concrete planned sweep specs are implemented; launch decisions remain deferred until remote wave results and final launch cells/study names are settled.
 
-Other planned sweeps:
+Configured sweep specs awaiting launch decisions:
 
 - Re-run lookback-window sweeps for modern `same_block_closed` and `block_open_lagged`, including `900s` and longer windows. Earlier lookback evidence was mostly on estimated-block paths.
 - Compare `current_row_nominal_window` against `current_row_recent_delta_window` using one simple median-of-training-deltas policy.

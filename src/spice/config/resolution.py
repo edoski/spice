@@ -205,6 +205,21 @@ def resolve_workflow_config(
         raise ConfigResolutionError(str(exc)) from exc
 
 
+def resolve_workflow_frame_config(
+    workflow_kind: WorkflowTask,
+    frame: SurfaceFrame,
+    *,
+    request: WorkflowConfigRequest,
+) -> WorkflowConfig:
+    try:
+        _validate_request_kind(workflow_kind, request)
+        return _resolve_surface_frame(workflow_kind, frame, request=request)
+    except ConfigResolutionError:
+        raise
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise ConfigResolutionError(str(exc)) from exc
+
+
 def _resolve_surface_frame(
     workflow: WorkflowTask,
     frame: SurfaceFrame,
@@ -348,7 +363,9 @@ def _resolve_chain(name: str) -> ChainSpec:
     return ChainSpec.model_validate(load_named_group(name, "chain"))
 
 
-def _resolve_problem(name: str) -> ProblemSpec:
+def _resolve_problem(name: str | ProblemSpec) -> ProblemSpec:
+    if isinstance(name, ProblemSpec):
+        return name
     return coerce_problem_spec(load_named_group(name, "problem"))
 
 

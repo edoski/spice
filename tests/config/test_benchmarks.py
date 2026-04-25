@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from spice.config.benchmarks import expand_benchmark_commands
+from spice.config.benchmarks import plan_benchmark
 from spice.core.errors import ConfigResolutionError
 
 
@@ -12,110 +12,156 @@ def _write_benchmark(conf_root, name: str, payload: dict[str, object]) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def test_benchmark_expands_cases_in_order_and_matrix_axes(isolate_conf_root) -> None:
+def test_benchmark_dimensions_expand_resolved_plan(isolate_conf_root) -> None:
     conf_root = isolate_conf_root()
     _write_benchmark(
         conf_root,
-        "matrix_case",
+        "dimension_case",
         {
             "cases": [
                 {
-                    "surface": "block_open_lagged",
-                    "workflow": "evaluate",
-                    "feature_set": [
-                        "block_open_lagged_no_time_since_start",
-                        "block_open_lagged_calendar_only_time",
+                    "id": "window_sweep",
+                    "base": {
+                        "surface": "block_open_lagged",
+                        "training": "default",
+                        "split": "default",
+                        "tuning": "extensive",
+                        "study": "window_sweep",
+                    },
+                    "dimensions": {
+                        "models": [
+                            {"set": {"model": "lstm", "tuning_space": "lstm_large_capacity"}},
+                            {
+                                "set": {
+                                    "model": "transformer",
+                                    "tuning_space": "transformer_large_capacity",
+                                }
+                            },
+                        ],
+                        "problems": [
+                            {"ref": "current_row_recent_delta_window"},
+                            {
+                                "grid": {
+                                    "base": "current_row_nominal_window",
+                                    "fields": {
+                                        "lookback_seconds": [600, 900],
+                                        "sample_count": [1000000, 2000000],
+                                    },
+                                }
+                            },
+                        ],
+                    },
+                    "steps": [
+                        {
+                            "id": "tune",
+                            "workflow": "tune",
+                            "set": {
+                                "objective": "validation_total_loss",
+                                "evaluation": "fullset",
+                                "trial_count": 3,
+                            },
+                        },
+                        {
+                            "id": "evaluate",
+                            "workflow": "evaluate",
+                            "after": ["tune"],
+                            "dimensions": {
+                                "scoring": [
+                                    {
+                                        "set": {
+                                            "objective": "profit_poisson_replay_2h_mean",
+                                            "evaluation": "poisson_replay_2h_mean",
+                                        }
+                                    },
+                                    {
+                                        "set": {
+                                            "objective": "profit_poisson_replay_2h_total",
+                                            "evaluation": "poisson_replay_2h_total",
+                                        }
+                                    },
+                                ],
+                                "runtime": [
+                                    {"set": {"variant": "tuned", "delay_seconds": 36}},
+                                ],
+                            },
+                        },
                     ],
-                    "objective": "profit_poisson_replay_2h_mean",
-                    "evaluation": "poisson_replay_2h_mean",
-                    "delay_seconds": [12, 24],
-                    "study": "safe_lstm_direct",
-                    "variant": "baseline",
-                },
-                {
-                    "surface": "same_block_closed",
-                    "workflow": "train",
-                    "study": "unsafe_lstm_direct",
-                    "variant": "baseline",
                 },
             ],
         },
     )
 
-    commands = expand_benchmark_commands("matrix_case")
+    plan = plan_benchmark("dimension_case")
 
-    assert commands == [
-        (
-            "spice evaluate --surface block_open_lagged "
-            "--feature-set block_open_lagged_no_time_since_start "
-            "--objective profit_poisson_replay_2h_mean --evaluation poisson_replay_2h_mean "
-            "--study safe_lstm_direct --variant baseline --delay-seconds 12"
-        ),
-        (
-            "spice evaluate --surface block_open_lagged "
-            "--feature-set block_open_lagged_no_time_since_start "
-            "--objective profit_poisson_replay_2h_mean --evaluation poisson_replay_2h_mean "
-            "--study safe_lstm_direct --variant baseline --delay-seconds 24"
-        ),
-        (
-            "spice evaluate --surface block_open_lagged "
-            "--feature-set block_open_lagged_calendar_only_time "
-            "--objective profit_poisson_replay_2h_mean --evaluation poisson_replay_2h_mean "
-            "--study safe_lstm_direct --variant baseline --delay-seconds 12"
-        ),
-        (
-            "spice evaluate --surface block_open_lagged "
-            "--feature-set block_open_lagged_calendar_only_time "
-            "--objective profit_poisson_replay_2h_mean --evaluation poisson_replay_2h_mean "
-            "--study safe_lstm_direct --variant baseline --delay-seconds 24"
-        ),
-        (
-            "spice train --surface same_block_closed --study unsafe_lstm_direct "
-            "--variant baseline"
-        ),
-    ]
+    assert len(plan) == 30
+    tuned_problems = {
+        entry.config.problem.id
+        for entry in plan
+        if entry.config.problem.id.startswith("current_row_nominal_window__")
+    }
+    assert (
+        "current_row_nominal_window__lookback_seconds-600__sample_count-1000000"
+        in tuned_problems
+    )
+    assert all(
+        entry.config.model.id == "lstm"
+        for entry in plan
+        if "models-model-lstm__tuning_space-lstm_large_capacity" in entry.run_id
+    )
+    evaluate_entries = [entry for entry in plan if entry.step_id == "evaluate"]
+    assert evaluate_entries
+    assert all(len(entry.depends_on) == 1 for entry in evaluate_entries)
+    assert all(entry.config.artifact.variant.value == "tuned" for entry in evaluate_entries)
 
 
-def test_benchmark_validates_all_rows_before_printing(isolate_conf_root) -> None:
+def test_benchmark_rejects_invalid_problem_grid(isolate_conf_root) -> None:
     conf_root = isolate_conf_root()
     _write_benchmark(
         conf_root,
-        "invalid_case",
+        "invalid_grid",
         {
             "cases": [
                 {
-                    "surface": "same_block_closed",
-                    "workflow": "evaluate",
-                    "delay_seconds": [12, 0],
-                    "variant": "baseline",
-                },
-            ],
+                    "id": "bad",
+                    "base": {"surface": "same_block_closed"},
+                    "dimensions": {
+                        "problems": [
+                            {
+                                "grid": {
+                                    "base": "current_row_nominal_window",
+                                    "fields": {"sample_count": [0]},
+                                }
+                            }
+                        ]
+                    },
+                    "steps": [{"id": "tune", "workflow": "tune"}],
+                }
+            ]
         },
     )
 
-    with pytest.raises(
-        ConfigResolutionError,
-        match="benchmark invalid_case case 0 expanded row 1:",
-    ):
-        expand_benchmark_commands("invalid_case")
+    with pytest.raises(ConfigResolutionError, match="values must be positive"):
+        plan_benchmark("invalid_grid")
 
 
-def test_benchmark_rejects_scheduler_shape(isolate_conf_root) -> None:
+def test_benchmark_rejects_step_dependency_cycles(isolate_conf_root) -> None:
     conf_root = isolate_conf_root()
     _write_benchmark(
         conf_root,
-        "scheduler_field",
+        "cycle",
         {
             "cases": [
                 {
-                    "surface": "same_block_closed",
-                    "workflow": "train",
-                    "variant": "baseline",
-                    "submit": True,
-                },
-            ],
+                    "id": "bad",
+                    "base": {"surface": "same_block_closed"},
+                    "steps": [
+                        {"id": "train", "workflow": "train", "after": ["evaluate"]},
+                        {"id": "evaluate", "workflow": "evaluate", "after": ["train"]},
+                    ],
+                }
+            ]
         },
     )
 
-    with pytest.raises(ConfigResolutionError, match="unknown benchmark case fields: submit"):
-        expand_benchmark_commands("scheduler_field")
+    with pytest.raises(ConfigResolutionError, match="future step"):
+        plan_benchmark("cycle")
