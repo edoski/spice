@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import field_validator
 
-from ...core.specs import lookup_local_spec, require_mapping_id
+from ...core.errors import ConfigResolutionError
+from ...core.specs import lookup_local_spec, require_mapping_id, require_spec_config
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import RealizationPolicySemantics
@@ -108,15 +109,15 @@ class CompiledRealizationPolicyContract:
 @dataclass(frozen=True, slots=True)
 class RealizationPolicySpec:
     config_type: type[RealizationPolicyConfig]
-    compile_contract: Callable[[RealizationPolicyConfig], CompiledRealizationPolicyContract]
+    compile_contract: Callable[[Any], CompiledRealizationPolicyContract]
 
 
 def _compile_strict_deadline_miss(
-    config: RealizationPolicyConfig,
+    config: Any,
 ) -> CompiledRealizationPolicyContract:
-    from .strict_deadline_miss import StrictDeadlineMissConfig, compile_realization_policy
+    from .strict_deadline_miss import compile_realization_policy
 
-    return compile_realization_policy(StrictDeadlineMissConfig.model_validate(config))
+    return compile_realization_policy(config)
 
 
 def _realization_policy_specs() -> dict[str, RealizationPolicySpec]:
@@ -148,11 +149,15 @@ def coerce_realization_policy_config(
         raw_payload = dict(payload)
         policy_id = require_mapping_id(raw_payload, "problem.realization_policy.id")
     else:
-        raise TypeError("problem.realization_policy must be a mapping or config model")
+        raise ConfigResolutionError(
+            "problem.realization_policy must be a mapping or config model"
+        )
     return realization_policy_spec(policy_id).config_type.model_validate(raw_payload)
 
 
 def compile_realization_policy_contract(
     config: RealizationPolicyConfig,
 ) -> CompiledRealizationPolicyContract:
-    return realization_policy_spec(config.id).compile_contract(config)
+    spec = realization_policy_spec(config.id)
+    concrete_config = require_spec_config(config, spec.config_type, "realization policy config")
+    return spec.compile_contract(concrete_config)

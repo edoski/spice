@@ -9,6 +9,7 @@ from .errors import ConfigResolutionError
 
 SpecIdT = TypeVar("SpecIdT")
 SpecT = TypeVar("SpecT")
+ConfigT = TypeVar("ConfigT")
 
 
 def require_mapping_id(payload: Mapping[str, object], field_label: str) -> str:
@@ -32,3 +33,9 @@ def lookup_local_spec(
     raise ConfigResolutionError(
         f"Unknown {field_label}: {spec_id}. Known values: {known}"
     )
+
+
+def require_spec_config(config: object, config_type: type[ConfigT], label: str) -> ConfigT:
+    if isinstance(config, config_type):
+        return config
+    raise ConfigResolutionError(f"{label} must be {config_type.__name__}")

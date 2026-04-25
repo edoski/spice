@@ -36,7 +36,7 @@ def db_url(path: Path) -> str:
     return f"sqlite:///{path.resolve().as_posix()}"
 
 
-def create_state_engine(path: Path, *, create_dirs: bool = False) -> Engine:
+def create_sqlite_engine(path: Path, *, create_dirs: bool = False) -> Engine:
     if create_dirs:
         path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(
@@ -56,13 +56,17 @@ def create_state_engine(path: Path, *, create_dirs: bool = False) -> Engine:
     return engine
 
 
+def create_state_engine(path: Path, *, create_dirs: bool = False) -> Engine:
+    return create_sqlite_engine(path, create_dirs=create_dirs)
+
+
 def ensure_state_db(path: Path, *, root_kind: RootKind, tables: Iterable[Table]) -> None:
     managed_tables = (spice_meta, *tuple(tables))
     engine = create_state_engine(path, create_dirs=True)
     try:
         metadata.create_all(engine, tables=managed_tables)
         with engine.begin() as conn:
-            _ensure_table_shapes(conn, tables=managed_tables)
+            ensure_table_shapes(conn, tables=managed_tables)
             _ensure_root_kind(conn, root_kind=root_kind)
             touch_meta(conn, root_kind=root_kind)
     finally:
@@ -107,6 +111,12 @@ def detect_root_kind(path: Path) -> RootKind:
         engine.dispose()
 
 
+def require_root_kind(path: Path, expected: RootKind) -> None:
+    actual = detect_root_kind(path)
+    if actual is not expected:
+        raise StateLayoutError(f"SPICE state root kind mismatch: expected {expected}, got {actual}")
+
+
 def table_exists(path: Path, table_name: str) -> bool:
     if not path.is_file():
         return False
@@ -129,7 +139,7 @@ def _ensure_root_kind(conn: Connection, *, root_kind: RootKind) -> None:
         )
 
 
-def _ensure_table_shapes(conn: Connection, *, tables: Iterable[Table]) -> None:
+def ensure_table_shapes(conn: Connection, *, tables: Iterable[Table]) -> None:
     inspector = inspect(conn)
     for table in tables:
         expected_columns = tuple(column.name for column in table.columns)

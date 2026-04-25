@@ -8,14 +8,16 @@ from spice.config import (
     SplitConfig,
     StudyConfig,
     TrainingConfig,
-    coerce_dataset_builder_config,
     coerce_feature_set_config,
     coerce_problem_spec,
 )
 from spice.core.errors import StateLayoutError
 from spice.evaluation import EvaluationRun
 from spice.features import compile_feature_contract
-from spice.modeling.dataset_builders import standard_temporal_runtime_metadata
+from spice.modeling.dataset_builders import (
+    coerce_dataset_builder_config,
+    standard_temporal_runtime_metadata,
+)
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.representations import sequence_input_contract
 from spice.modeling.results import (
@@ -44,11 +46,12 @@ from spice.storage.artifact import (
     load_artifact_manifest,
     load_evaluation_summary,
     load_training_summary,
+    upsert_evaluation_state,
     write_artifact_manifest,
-    write_evaluation_state,
     write_training_state,
 )
-from spice.storage.engine import RootKind
+from spice.storage.engine import DATASET_ROOT_KIND, ensure_state_db
+from spice.storage.schema import DATASET_TABLES
 from spice.temporal.compilers.estimated_block import EstimatedBlockRuntimeMetadata
 from spice.temporal.contracts import compile_problem_contract
 from spice.temporal.scaling import ScalerStats
@@ -234,10 +237,9 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         ),
     ]
 
-    write_artifact_manifest(db_path, manifest=manifest, root_kind=RootKind.ARTIFACT)
+    write_artifact_manifest(db_path, manifest=manifest)
     write_training_state(
         db_path,
-        root_kind=RootKind.ARTIFACT,
         summary=summary,
         epoch_rows=epoch_rows,
     )
@@ -259,6 +261,7 @@ def _evaluation_summary(evaluation_id: str, value: float) -> EvaluationRuntimeSu
         evaluation_id=evaluation_id,
         evaluation_config={
             "id": evaluation_id,
+            "engine": "replay",
             "sampler": "fullset",
             "aggregation": {"id": "total_ratio"},
         },
@@ -266,7 +269,7 @@ def _evaluation_summary(evaluation_id: str, value: float) -> EvaluationRuntimeSu
             MetricDescriptor(
                 id="profit_over_baseline",
                 label="profit over baseline",
-                role="score",
+                role="primary",
             ),
         ),
         n_history_rows=128,
@@ -291,10 +294,9 @@ def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
     base_summary = _evaluation_summary("fullset", 0.2)
     replay_summary = _evaluation_summary("poisson_replay_2h_mean", 0.1)
 
-    write_artifact_manifest(db_path, manifest=manifest, root_kind=RootKind.ARTIFACT)
-    evaluation_id, recorded_at = write_evaluation_state(
+    write_artifact_manifest(db_path, manifest=manifest)
+    evaluation_id, recorded_at = upsert_evaluation_state(
         db_path,
-        root_kind=RootKind.ARTIFACT,
         summary=base_summary,
     )
 
@@ -308,9 +310,8 @@ def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
     assert loaded_summary.runtime == base_summary
     assert loaded_runs == base_summary.runs
 
-    replay_evaluation_id, _ = write_evaluation_state(
+    replay_evaluation_id, _ = upsert_evaluation_state(
         db_path,
-        root_kind=RootKind.ARTIFACT,
         summary=replay_summary,
     )
 
@@ -328,3 +329,11 @@ def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
     assert load_evaluation_summary(db_path, evaluation_id=replay_evaluation_id) is not None
     assert list_evaluation_runs(db_path, evaluation_id=evaluation_id) == base_summary.runs
     assert list_evaluation_runs(db_path, evaluation_id=replay_evaluation_id) == replay_summary.runs
+
+
+def test_evaluation_run_listing_rejects_non_artifact_root_kind(tmp_path) -> None:
+    db_path = tmp_path / ".spice" / "state.sqlite"
+    ensure_state_db(db_path, root_kind=DATASET_ROOT_KIND, tables=DATASET_TABLES)
+
+    with pytest.raises(StateLayoutError, match="root kind mismatch"):
+        list_evaluation_runs(db_path)

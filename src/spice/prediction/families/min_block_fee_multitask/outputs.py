@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 
 from ...base import PredictionHeadSpec, PredictionOutputSpec
+from ...masking import masked_distribution_logits
 
 OFFSET_LOGITS_HEAD_ID = "min_block_offset_logits"
 MIN_LOG_FEE_HEAD_ID = "min_block_log_fee"
@@ -22,4 +23,4 @@ def build_output_spec(max_candidate_slots: int) -> PredictionOutputSpec:
 
 
 def masked_offset_logits(logits: torch.Tensor, candidate_mask: torch.Tensor) -> torch.Tensor:
-    return logits.masked_fill(~candidate_mask, torch.finfo(logits.dtype).min)
+    return masked_distribution_logits(logits, candidate_mask)

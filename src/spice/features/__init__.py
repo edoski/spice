@@ -13,7 +13,7 @@ from .families import (
     FeatureFamilyConfig,
     FeaturePrerequisites,
 )
-from .registry import coerce_feature_family_config, feature_family, validate_feature_selection
+from .registry import coerce_feature_family_config, validate_feature_selection
 
 __all__ = [
     "CanonicalBlockSeries",
@@ -24,6 +24,5 @@ __all__ = [
     "build_feature_table",
     "compile_feature_contract",
     "coerce_feature_family_config",
-    "feature_family",
     "validate_feature_selection",
 ]

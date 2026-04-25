@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import field_validator
 
-from ...core.specs import lookup_local_spec, require_mapping_id
+from ...core.errors import ConfigResolutionError
+from ...core.specs import lookup_local_spec, require_mapping_id, require_spec_config
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import InputNormalizationSemantics
@@ -65,26 +66,23 @@ class CompiledInputNormalizationContract:
 @dataclass(frozen=True, slots=True)
 class InputNormalizationSpec:
     config_type: type[InputNormalizationConfig]
-    compile_contract: Callable[[InputNormalizationConfig], CompiledInputNormalizationContract]
+    compile_contract: Callable[[Any], CompiledInputNormalizationContract]
 
 
 def _compile_row_standard(
-    config: InputNormalizationConfig,
+    config: Any,
 ) -> CompiledInputNormalizationContract:
-    from .row_standard import RowStandardConfig, compile_input_normalization
+    from .row_standard import compile_input_normalization
 
-    return compile_input_normalization(RowStandardConfig.model_validate(config))
+    return compile_input_normalization(config)
 
 
 def _compile_window_weighted_standard(
-    config: InputNormalizationConfig,
+    config: Any,
 ) -> CompiledInputNormalizationContract:
-    from .window_weighted_standard import (
-        WindowWeightedStandardConfig,
-        compile_input_normalization,
-    )
+    from .window_weighted_standard import compile_input_normalization
 
-    return compile_input_normalization(WindowWeightedStandardConfig.model_validate(config))
+    return compile_input_normalization(config)
 
 
 def _input_normalization_specs() -> dict[str, InputNormalizationSpec]:
@@ -121,11 +119,19 @@ def coerce_input_normalization_config(
         raw_payload = dict(payload)
         normalization_id = require_mapping_id(raw_payload, "training.input_normalization.id")
     else:
-        raise TypeError("training.input_normalization must be a mapping or config model")
+        raise ConfigResolutionError(
+            "training.input_normalization must be a mapping or config model"
+        )
     return input_normalization_spec(normalization_id).config_type.model_validate(raw_payload)
 
 
 def compile_input_normalization_contract(
     config: InputNormalizationConfig,
 ) -> CompiledInputNormalizationContract:
-    return input_normalization_spec(config.id).compile_contract(config)
+    spec = input_normalization_spec(config.id)
+    concrete_config = require_spec_config(
+        config,
+        spec.config_type,
+        "input normalization config",
+    )
+    return spec.compile_contract(concrete_config)

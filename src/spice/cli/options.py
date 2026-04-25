@@ -10,6 +10,8 @@ import typer
 
 from ..core.reporting import Reporter
 
+DEFAULT_REMOTE_TARGET = "disi_l40"
+
 ChainFilterOption = Annotated[
     str | None,
     typer.Option("--chain", metavar="CHAIN", help="Filter by chain."),
@@ -41,6 +43,15 @@ StudyFilterOption = Annotated[
 VariantFilterOption = Annotated[
     str | None,
     typer.Option("--variant", metavar="VARIANT", help="Filter by artifact variant."),
+]
+RemoteTargetOption = Annotated[
+    str,
+    typer.Option(
+        "--target",
+        metavar="TARGET",
+        help="Use a named execution target.",
+        rich_help_panel="Execution",
+    ),
 ]
 StorageRootReadOption = Annotated[
     Path | None,

@@ -14,12 +14,14 @@ from ...storage.sync import (
     push_study_to_cluster,
 )
 from ..options import (
+    DEFAULT_REMOTE_TARGET,
     ChainFilterOption,
     DatasetFilterOption,
     FeatureSetFilterOption,
     ModelFilterOption,
     PredictionFilterOption,
     ProblemFilterOption,
+    RemoteTargetOption,
     StorageRootReadOption,
     StudyFilterOption,
     VariantFilterOption,
@@ -45,11 +47,13 @@ def push_dataset_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
     storage_root: StorageRootReadOption = None,
+    target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     replace: ReplaceOption = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
     record = push_dataset_to_cluster(
         storage_root=root,
+        target_name=target,
         selector=DatasetSelector(chain_name=chain, dataset_name=dataset),
         replace=replace,
     )
@@ -66,11 +70,13 @@ def push_study_command(
     problem: ProblemFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootReadOption = None,
+    target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     replace: ReplaceOption = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
     record = push_study_to_cluster(
         storage_root=root,
+        target_name=target,
         selector=StudySelector(
             chain_name=chain,
             dataset_name=dataset,
@@ -96,11 +102,13 @@ def pull_artifact_command(
     variant: VariantFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootReadOption = None,
+    target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     replace: ReplaceOption = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
     record, dataset_present = pull_artifact_from_cluster(
         storage_root=root,
+        target_name=target,
         selector=ArtifactSelector(
             chain_name=chain,
             dataset_name=dataset,
@@ -134,11 +142,13 @@ def pull_study_command(
     problem: ProblemFilterOption = None,
     study: StudyFilterOption = None,
     storage_root: StorageRootReadOption = None,
+    target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     replace: ReplaceOption = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
     record = pull_study_from_cluster(
         storage_root=root,
+        target_name=target,
         selector=StudySelector(
             chain_name=chain,
             dataset_name=dataset,

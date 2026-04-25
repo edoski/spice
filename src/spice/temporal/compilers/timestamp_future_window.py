@@ -142,7 +142,7 @@ class TimestampFutureWindowCompilerConfig(ProblemCompilerConfig):
         elif isinstance(value, Mapping):
             raw_payload = dict(value)
         else:
-            raise TypeError("timestamp_future_window.action_interval_estimator must be a mapping")
+            raise ValueError("timestamp_future_window.action_interval_estimator must be a mapping")
         estimator_id = require_mapping_id(
             raw_payload,
             "timestamp_future_window.action_interval_estimator.id",

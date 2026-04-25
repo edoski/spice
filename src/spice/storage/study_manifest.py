@@ -33,7 +33,7 @@ from ..modeling.result_codecs import study_semantics_from_payload, study_semanti
 from ..modeling.tuned_config import coerce_tuning_space_config
 from ..objectives import coerce_objective_config
 from ..semantics import StudySemantics
-from .engine import STUDY_ROOT_KIND, create_state_engine, ensure_state_db
+from .engine import STUDY_ROOT_KIND, create_state_engine, ensure_state_db, require_root_kind
 from .identity import (
     IdentityModel,
     identity_payload,
@@ -118,6 +118,7 @@ def load_study_manifest(db_path: Path) -> StudyManifest:
 
     if not db_path.is_file():
         raise MissingStateError(f"Missing study manifest: {db_path}")
+    require_root_kind(db_path, STUDY_ROOT_KIND)
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
@@ -132,6 +133,7 @@ def load_study_manifest(db_path: Path) -> StudyManifest:
 def try_load_study_manifest(db_path: Path) -> StudyManifest | None:
     if not db_path.is_file():
         return None
+    require_root_kind(db_path, STUDY_ROOT_KIND)
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
@@ -290,5 +292,5 @@ def pruner_name(enable_pruning: bool) -> str:
 
 def coerce_int(value: object, *, label: str) -> int:
     if not isinstance(value, int):
-        raise TypeError(f"{label} must be an integer")
+        raise StateLayoutError(f"{label} must be an integer")
     return value

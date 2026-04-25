@@ -19,6 +19,7 @@ from ..config.models import (
     TuningSearchConfig,
     TuningSpaceConfig,
 )
+from ..core.errors import StateLayoutError
 from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import ModelConfig
 from ..modeling.tuned_config import coerce_tuned_parameter_set
@@ -193,5 +194,5 @@ def build_study_summary(manifest: StudyManifest, study: optuna.Study) -> StudySu
 def trial_params_payload(params: TunedParameterSet) -> dict[str, object]:
     payload = params.model_dump(mode="json", exclude_none=True)
     if not isinstance(payload, dict):
-        raise TypeError("TunedParameterSet did not serialize to a mapping payload")
+        raise StateLayoutError("TunedParameterSet did not serialize to a mapping payload")
     return payload

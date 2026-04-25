@@ -1,4 +1,5 @@
 id: poisson_replay_2h_total
+engine: replay
 sampler: poisson_arrivals
 aggregation:
   id: total_ratio

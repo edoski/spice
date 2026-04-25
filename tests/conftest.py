@@ -123,6 +123,7 @@ def model_workflow_override():
             },
             "evaluation": {
                 "id": "poisson_replay_2h_mean",
+                "engine": "replay",
                 "sampler": "poisson_arrivals",
                 "aggregation": {"id": "event_mean"},
                 "window_seconds": 600,

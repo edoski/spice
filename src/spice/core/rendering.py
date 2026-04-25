@@ -3,8 +3,23 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Protocol
 
-from ..prediction import MetricDescriptor, WindowMetricSummary
+
+class _MetricDescriptorLike(Protocol):
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def label(self) -> str: ...
+
+
+class _WindowMetricSummaryLike(Protocol):
+    @property
+    def mean(self) -> float: ...
+
+    @property
+    def std(self) -> float: ...
 
 
 def value_string(value: object) -> str:
@@ -22,7 +37,7 @@ def metric_string(value: float) -> str:
 
 
 def metric_bundle_string(
-    descriptors: Sequence[MetricDescriptor],
+    descriptors: Sequence[_MetricDescriptorLike],
     metrics: Mapping[str, float],
 ) -> str:
     if descriptors:
@@ -39,8 +54,8 @@ def metric_bundle_string(
 
 
 def window_metric_fields(
-    descriptors: Sequence[MetricDescriptor],
-    metrics: Mapping[str, WindowMetricSummary],
+    descriptors: Sequence[_MetricDescriptorLike],
+    metrics: Mapping[str, _WindowMetricSummaryLike],
 ) -> list[tuple[str, str]]:
     return [
         (

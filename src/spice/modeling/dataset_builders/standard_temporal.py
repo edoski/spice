@@ -26,21 +26,24 @@ from .base import (
     StandardTemporalDatasetBuilderConfig,
     compiler_runtime_metadata_from_builder_payload,
     standard_temporal_runtime_metadata,
+    validate_feature_prerequisites,
 )
 
 
+def _prepare_blocks(blocks: pl.DataFrame, *, allow_empty: bool = False) -> pl.DataFrame:
+    if blocks.height == 0 and not allow_empty:
+        raise ValueError("dataset builder received an empty block frame")
+    return blocks.sort("block_number")
+
+
 def prepare_training_dataset(blocks: pl.DataFrame, spec: TrainingSpec) -> PreparedTrainingDataset:
-    sorted_blocks = blocks.sort("block_number")
-    if sorted_blocks.height == 0:
-        raise ValueError("Training dataset is empty")
+    sorted_blocks = _prepare_blocks(blocks)
     feature_table = spec.feature_contract.build_table(sorted_blocks)
-    if feature_table.feature_prerequisites != spec.contract.feature_prerequisites:
-        raise ValueError(
-            "Resolved feature prerequisites do not match the current feature graph: "
-            f"expected {spec.contract.feature_prerequisites.model_dump(mode='json')}, "
-            f"got {feature_table.feature_prerequisites.model_dump(mode='json')}"
-        )
-    store, compiler_runtime_metadata = spec.contract.build_capability_store(feature_table)
+    validate_feature_prerequisites(
+        feature_table.feature_prerequisites,
+        spec.problem_contract.feature_prerequisites,
+    )
+    store, compiler_runtime_metadata = spec.problem_contract.build_capability_store(feature_table)
     selected_sample_indices = tail_sample_indices(store, sample_count=spec.problem.sample_count)
     split_positions = chronological_split_indices(int(selected_sample_indices.shape[0]), spec.split)
     split_indices = DatasetSplitIndices(
@@ -64,13 +67,13 @@ def prepare_training_dataset(blocks: pl.DataFrame, spec: TrainingSpec) -> Prepar
         n_rows_used=used_end - used_start,
         sample_count=int(selected_sample_indices.shape[0]),
         feature=spec.feature_contract.semantics,
-        realization_policy=spec.contract.realization_policy,
+        realization_policy=spec.problem_contract.realization_policy,
         store=scaled_store,
         split_indices=split_indices,
         scaler=scaler,
         builder_runtime_metadata=standard_temporal_runtime_metadata(
-            compiler_id=spec.contract.compiler_id,
-            compiler_runtime_metadata=compiler_runtime_metadata
+            compiler_id=spec.problem_contract.compiler_id,
+            compiler_runtime_metadata=compiler_runtime_metadata,
         ),
     )
 
@@ -80,17 +83,23 @@ def prepare_inference_dataset(
     evaluation_blocks: pl.DataFrame,
     spec: InferencePreparationSpec,
 ) -> PreparedInferenceDataset:
-    sorted_history_blocks = history_blocks.sort("block_number")
-    if sorted_history_blocks.height == 0:
-        raise ValueError("History dataset is empty")
-    combined_blocks = pl.concat([sorted_history_blocks, evaluation_blocks.sort("block_number")])
+    sorted_history_blocks = _prepare_blocks(history_blocks)
+    combined_blocks = pl.concat(
+        [
+            sorted_history_blocks,
+            _prepare_blocks(
+                evaluation_blocks,
+                allow_empty=True,
+            ),
+        ]
+    )
     feature_table = spec.feature_contract.build_table(combined_blocks)
-    store = spec.contract.build_delay_store(
+    store = spec.problem_contract.build_delay_store(
         feature_table,
         spec.delay_seconds,
         compiler_runtime_metadata=compiler_runtime_metadata_from_builder_payload(
             spec.builder_runtime_metadata,
-            compiler_id=spec.contract.compiler_id,
+            compiler_id=spec.problem_contract.compiler_id,
         ),
         max_candidate_slots=spec.max_candidate_slots,
     )
@@ -110,7 +119,7 @@ def prepare_inference_dataset(
         n_evaluation_rows=evaluation_blocks.height,
         sample_count=int(sample_indices.shape[0]),
         feature=spec.feature_contract.semantics,
-        realization_policy=spec.contract.realization_policy,
+        realization_policy=spec.problem_contract.realization_policy,
         store=scaled_store,
         sample_indices=sample_indices,
     )

@@ -8,7 +8,6 @@ from pathlib import Path
 
 from ..prediction import MetricSet
 from ..storage.artifact import write_training_state
-from ..storage.engine import RootKind
 from .artifacts import (
     TrainingArtifactManifest,
     build_training_artifact_manifest,
@@ -71,7 +70,6 @@ def run_persisted_training(
     spec: TrainingSpec,
     artifact_dir: Path,
     persist_artifact: bool = True,
-    state_root_kind: RootKind | None = None,
     on_prepare_complete: Callable[[PreparedTrainingDataset], None] | None = None,
     on_fit_start: Callable[[], None] | None = None,
     on_epoch_end: EpochEndCallback | None = None,
@@ -90,12 +88,9 @@ def run_persisted_training(
 
     artifact_paths: list[Path] = []
     if persist_artifact:
-        if state_root_kind is None:
-            raise ValueError("state_root_kind is required when persist_artifact is true")
         persist_training_artifact(
             artifact_dir,
             manifest=manifest,
-            root_kind=state_root_kind,
             model=training_run.model,
         )
         loaded_artifact = load_training_artifact(artifact_dir)
@@ -112,7 +107,6 @@ def run_persisted_training(
         )
         write_training_state(
             artifact_dir / ".spice" / "state.sqlite",
-            root_kind=state_root_kind,
             summary=runtime_summary,
             epoch_rows=list(iter_epoch_records(training_run)),
         )

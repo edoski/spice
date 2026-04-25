@@ -8,11 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
-from sqlalchemy import Table, and_, create_engine, inspect, select
+from sqlalchemy import Table, and_, inspect, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.sql.elements import ColumnElement
 
+from ..engine import create_sqlite_engine, ensure_table_shapes
 from .records import CatalogArtifactRecord, CatalogDatasetRecord, CatalogStudyRecord
 from .schema import artifact_index, dataset_index, metadata, study_index
 
@@ -79,6 +80,8 @@ def ensure_catalog_db(path: Path) -> None:
     engine = _create_engine(path, create_dirs=True)
     try:
         metadata.create_all(engine)
+        with engine.begin() as conn:
+            ensure_table_shapes(conn, tables=(dataset_index, study_index, artifact_index))
     finally:
         engine.dispose()
 
@@ -306,9 +309,7 @@ def list_artifacts_for_study(path: Path, *, study_id: str) -> list[CatalogArtifa
 
 
 def _create_engine(path: Path, *, create_dirs: bool = False):
-    if create_dirs:
-        path.parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(f"sqlite:///{path.resolve().as_posix()}", future=True)
+    return create_sqlite_engine(path, create_dirs=create_dirs)
 
 
 def _upsert_record(
@@ -332,7 +333,11 @@ def _upsert_record(
             conn.execute(
                 statement.on_conflict_do_update(
                     index_elements=[key_column],
-                    set_={key: value for key, value in payload.items() if key != key_column.name},
+                    set_={
+                        key: value
+                        for key, value in payload.items()
+                        if key not in {key_column.name, "created_at"}
+                    },
                 )
             )
     finally:

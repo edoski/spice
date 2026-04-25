@@ -63,7 +63,7 @@ class TrainingSpec:
     dataset_builder: DatasetBuilderConfig
     dataset_builder_contract: CompiledDatasetBuilderContract
     feature_contract: CompiledFeatureContract
-    contract: CompiledProblemContract
+    problem_contract: CompiledProblemContract
     feature_set: FeatureSetConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
@@ -82,7 +82,7 @@ class TrainingSpec:
 @dataclass(slots=True)
 class InferencePreparationSpec:
     feature_contract: CompiledFeatureContract
-    contract: CompiledProblemContract
+    problem_contract: CompiledProblemContract
     delay_seconds: int
     builder_runtime_metadata: BuilderRuntimeMetadata
     scaler: ScalerStats
@@ -107,7 +107,7 @@ def build_training_spec(config: TrainConfig | TuneConfig, *, paths: WorkflowPath
         dataset_builder=config.dataset_builder,
         dataset_builder_contract=context.dataset_builder_contract,
         feature_contract=context.feature_contract,
-        contract=context.problem_contract,
+        problem_contract=context.problem_contract,
         feature_set=config.feature_set,
         prediction=config.prediction,
         objective=config.objective,
@@ -192,7 +192,7 @@ def prepare_inference_dataset(
     *,
     dataset_builder_contract: CompiledDatasetBuilderContract,
     feature_contract: CompiledFeatureContract,
-    contract: CompiledProblemContract,
+    problem_contract: CompiledProblemContract,
     delay_seconds: int,
     builder_runtime_metadata: BuilderRuntimeMetadata,
     scaler: ScalerStats,
@@ -205,7 +205,7 @@ def prepare_inference_dataset(
         evaluation_blocks,
         spec=InferencePreparationSpec(
             feature_contract=feature_contract,
-            contract=contract,
+            problem_contract=problem_contract,
             delay_seconds=delay_seconds,
             builder_runtime_metadata=builder_runtime_metadata,
             scaler=scaler,

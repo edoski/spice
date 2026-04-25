@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, overload
 
+from .engine import state_db_path
 from .identity import (
     artifact_storage_identity_from_config,
     study_storage_identity_from_config,
@@ -16,6 +17,10 @@ if TYPE_CHECKING:
     from ..config.models import AcquireConfig, ModelWorkflowConfig
 
 _CATALOG_DB_FILENAME = "catalog.sqlite"
+CORPORA_ROOT_NAME = "corpora"
+STUDIES_ROOT_NAME = "studies"
+ARTIFACTS_ROOT_NAME = "artifacts"
+STATE_DIR_NAME = ".spice"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +49,19 @@ class WorkflowIdentity:
 
 
 def catalog_db_path(storage_root: Path) -> Path:
-    return storage_root / ".spice" / _CATALOG_DB_FILENAME
+    return storage_root / STATE_DIR_NAME / _CATALOG_DB_FILENAME
+
+
+def corpus_root_path(storage_root: Path, *, chain_name: str, corpus_id: str) -> Path:
+    return storage_root / CORPORA_ROOT_NAME / chain_name / corpus_id
+
+
+def study_root_path(storage_root: Path, *, chain_name: str, study_id: str) -> Path:
+    return storage_root / STUDIES_ROOT_NAME / chain_name / study_id
+
+
+def artifact_root_path(storage_root: Path, *, chain_name: str, artifact_id: str) -> Path:
+    return storage_root / ARTIFACTS_ROOT_NAME / chain_name / artifact_id
 
 
 def build_workflow_paths(
@@ -54,16 +71,24 @@ def build_workflow_paths(
     identity: WorkflowIdentity,
 ) -> WorkflowPaths:
     catalog_db = catalog_db_path(output_root)
-    corpus_root = output_root / "corpora" / chain_name / identity.corpus_id
+    corpus_root = corpus_root_path(
+        output_root,
+        chain_name=chain_name,
+        corpus_id=identity.corpus_id,
+    )
     study_root = (
         None
         if identity.study_id is None
-        else output_root / "studies" / chain_name / identity.study_id
+        else study_root_path(output_root, chain_name=chain_name, study_id=identity.study_id)
     )
     artifact_root = (
         None
         if identity.artifact_id is None
-        else output_root / "artifacts" / chain_name / identity.artifact_id
+        else artifact_root_path(
+            output_root,
+            chain_name=chain_name,
+            artifact_id=identity.artifact_id,
+        )
     )
 
     return WorkflowPaths(
@@ -73,17 +98,17 @@ def build_workflow_paths(
         corpus_root=corpus_root,
         history_dir=corpus_root / "history",
         evaluation_dir=corpus_root / "evaluation",
-        corpus_state_db=corpus_root / ".spice" / "state.sqlite",
+        corpus_state_db=state_db_path(corpus_root),
         artifact_id=identity.artifact_id,
         artifact_root=artifact_root,
         checkpoint_dir=None if artifact_root is None else artifact_root / "checkpoints",
         artifact_state_db=(
-            None if artifact_root is None else artifact_root / ".spice" / "state.sqlite"
+            None if artifact_root is None else state_db_path(artifact_root)
         ),
         study_id=identity.study_id,
         study_root=study_root,
         study_state_db=(
-            None if study_root is None else study_root / ".spice" / "state.sqlite"
+            None if study_root is None else state_db_path(study_root)
         ),
     )
 

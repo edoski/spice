@@ -13,6 +13,7 @@ from ..core.errors import ConfigResolutionError
 from ..core.validation import validate_path_segment
 from ..evaluation import EvaluatorConfig, compile_evaluator_contract
 from ..modeling.families.base import ConfigModel
+from ..modeling.scoring import EvaluationScoringContext, score_evaluation
 from ..prediction import MetricSet
 from ..semantics import ObjectiveSemantics
 
@@ -154,23 +155,18 @@ def compile_objective_contract(
 
     def _evaluate(validation_metrics: MetricSet, context: ObjectiveEvaluationContext) -> MetricSet:
         del validation_metrics
-        from ..modeling.inference import predict_with_model
-
-        evaluator_contract.validate_prediction_contract(context.prediction_contract)
-        decoded_offsets = predict_with_model(
-            context.model,
-            model_config=context.model_config,
-            prediction_contract=context.prediction_contract,
-            representation_contract=context.representation_contract,
-            store=context.store,
-            sample_indices=context.sample_indices,
-            batch_size=context.batch_size,
-        )
-        return evaluator_contract.run(
-            context.store,
-            context.realization_policy,
-            decoded_offsets,
-            context.sample_indices,
+        return score_evaluation(
+            EvaluationScoringContext(
+                model=context.model,
+                model_config=context.model_config,
+                prediction_contract=context.prediction_contract,
+                representation_contract=context.representation_contract,
+                evaluator_contract=evaluator_contract,
+                realization_policy=context.realization_policy,
+                store=context.store,
+                sample_indices=context.sample_indices,
+                batch_size=context.batch_size,
+            )
         ).metrics
 
     return CompiledObjectiveContract(

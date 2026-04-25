@@ -5,18 +5,19 @@ from __future__ import annotations
 import numpy as np
 
 from ..core.errors import SpiceOperatorError
+from ..prediction import DecodedOffsets
 from ..prediction.contracts import DecodedPredictionResult, require_decoded_offsets
 from ..temporal.problem_store import CompiledProblemStore
 from ..temporal.realization import CompiledRealizationPolicyContract
 from .aggregation import ReplayAggregationSpec, replay_aggregation_spec
-from .config import EvaluatorConfig
-from .contracts import EvaluationSummary, IntVector
-from .shared import (
+from .config import EvaluationSampler, ReplayEvaluatorConfig
+from .contracts import CompiledEvaluatorContract, EvaluationSummary, IntVector, RunEvaluatorFn
+from .metrics import REPLAY_METRIC_DESCRIPTORS
+from .replay_summary import summarize_runs, summarize_selected_costs
+from .sampling import (
     chronological_sample_view,
     sample_poisson_arrivals,
     select_sample_positions_for_arrivals,
-    summarize_runs,
-    summarize_selected_costs,
 )
 
 
@@ -49,7 +50,7 @@ def run_poisson_arrivals(
     decoded_result: DecodedPredictionResult,
     sample_indices: IntVector,
     *,
-    config: EvaluatorConfig,
+    config: ReplayEvaluatorConfig,
 ) -> EvaluationSummary:
     decoded_offsets = require_decoded_offsets(decoded_result)
     aggregation = replay_aggregation_spec(config.aggregation_id)
@@ -119,6 +120,56 @@ def _required_int(value: int | None, label: str) -> int:
     if value is None:
         raise ValueError(f"Missing required field: {label}")
     return value
+
+
+def compile_replay_evaluator_contract(
+    config: ReplayEvaluatorConfig,
+) -> CompiledEvaluatorContract:
+    aggregation = replay_aggregation_spec(config.aggregation_id)
+    if config.sampler is EvaluationSampler.FULLSET:
+
+        def run_fn(
+            store,
+            realization_policy,
+            decoded_result,
+            sample_indices,
+        ):
+            return run_fullset(
+                store,
+                realization_policy,
+                decoded_result,
+                sample_indices,
+                aggregation=aggregation,
+            )
+
+    elif config.sampler is EvaluationSampler.POISSON_ARRIVALS:
+
+        def run_fn(
+            store,
+            realization_policy,
+            decoded_result,
+            sample_indices,
+        ):
+            return run_poisson_arrivals(
+                store,
+                realization_policy,
+                decoded_result,
+                sample_indices,
+                config=config,
+            )
+
+    else:
+        raise ValueError("replay evaluator requires evaluation.sampler")
+    resolved_run_fn: RunEvaluatorFn = run_fn
+    return CompiledEvaluatorContract(
+        evaluation_id=config.id,
+        metric_descriptors=REPLAY_METRIC_DESCRIPTORS,
+        primary_metric_id="profit_over_baseline",
+        direction="maximize",
+        config_payload=config.model_dump(mode="json", exclude_none=True),
+        accepted_decoded_result_id=DecodedOffsets.decoded_result_id,
+        run_fn=resolved_run_fn,
+    )
 
 
 def _required_float(value: float | None, label: str) -> float:

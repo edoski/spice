@@ -27,6 +27,7 @@ from .base import (
     FixedContextTemporalDatasetBuilderConfig,
     compiler_runtime_metadata_from_builder_payload,
     fixed_context_temporal_runtime_metadata,
+    validate_feature_prerequisites,
 )
 
 
@@ -78,13 +79,11 @@ def _build_selected_store(
     spec: TrainingSpec,
 ) -> tuple[CompiledProblemStore, object]:
     feature_table = spec.feature_contract.build_table(_prepare_blocks(blocks))
-    if feature_table.feature_prerequisites != spec.contract.feature_prerequisites:
-        raise ValueError(
-            "Resolved feature prerequisites do not match the current feature graph: "
-            f"expected {spec.contract.feature_prerequisites.model_dump(mode='json')}, "
-            f"got {feature_table.feature_prerequisites.model_dump(mode='json')}"
-        )
-    return spec.contract.build_capability_store(feature_table)
+    validate_feature_prerequisites(
+        feature_table.feature_prerequisites,
+        spec.problem_contract.feature_prerequisites,
+    )
+    return spec.problem_contract.build_capability_store(feature_table)
 
 
 def _train_scaler(
@@ -153,8 +152,8 @@ def prepare_training_dataset(blocks: pl.DataFrame, spec: TrainingSpec) -> Prepar
         min_sequence_length=spec.dataset_builder.min_sequence_length,
         max_sequence_length=spec.dataset_builder.max_sequence_length,
     )
-    history_seconds = spec.contract.feature_prerequisites.history_seconds
-    warmup_rows = spec.contract.feature_prerequisites.warmup_rows
+    history_seconds = spec.problem_contract.feature_prerequisites.history_seconds
+    warmup_rows = spec.problem_contract.feature_prerequisites.warmup_rows
     store_raw, compiler_runtime_metadata = _build_selected_store(selected_blocks, spec=spec)
     store = with_fixed_context_length(
         store_raw,
@@ -178,12 +177,12 @@ def prepare_training_dataset(blocks: pl.DataFrame, spec: TrainingSpec) -> Prepar
         n_rows_used=scaled_store.n_rows,
         sample_count=scaled_store.n_samples,
         feature=spec.feature_contract.semantics,
-        realization_policy=spec.contract.realization_policy,
+        realization_policy=spec.problem_contract.realization_policy,
         store=scaled_store,
         split_indices=split_indices,
         scaler=scaler,
         builder_runtime_metadata=fixed_context_temporal_runtime_metadata(
-            compiler_id=spec.contract.compiler_id,
+            compiler_id=spec.problem_contract.compiler_id,
             compiler_runtime_metadata=compiler_runtime_metadata,
             sequence_length=int(seq_len),
             median_dt_seconds=float(median_dt_seconds),
@@ -201,12 +200,15 @@ def prepare_inference_dataset(
     combined_blocks = _prepare_blocks(pl.concat([history_blocks, evaluation_blocks]))
     compiler_runtime_metadata = compiler_runtime_metadata_from_builder_payload(
         spec.builder_runtime_metadata,
-        compiler_id=spec.contract.compiler_id,
+        compiler_id=spec.problem_contract.compiler_id,
     )
     if not isinstance(spec.builder_runtime_metadata, FixedContextTemporalBuilderRuntimeMetadata):
-        raise ConfigResolutionError("fixed-context builder requires fixed-context runtime metadata")
+        raise ConfigResolutionError(
+            "fixed_context_temporal builder requires fixed_context_temporal runtime metadata"
+        )
+    runtime_metadata = spec.builder_runtime_metadata
     feature_table = spec.feature_contract.build_table(combined_blocks)
-    store = spec.contract.build_delay_store(
+    store = spec.problem_contract.build_delay_store(
         feature_table,
         spec.delay_seconds,
         compiler_runtime_metadata=compiler_runtime_metadata,
@@ -214,9 +216,9 @@ def prepare_inference_dataset(
     )
     store = with_fixed_context_length(
         store,
-        context_length=spec.builder_runtime_metadata.sequence_length,
-        history_seconds=spec.contract.feature_prerequisites.history_seconds,
-        warmup_rows=spec.contract.feature_prerequisites.warmup_rows,
+        context_length=runtime_metadata.sequence_length,
+        history_seconds=spec.problem_contract.feature_prerequisites.history_seconds,
+        warmup_rows=spec.problem_contract.feature_prerequisites.warmup_rows,
     )
     sample_indices = filter_sample_indices_by_timestamp_window(
         store,
@@ -234,10 +236,11 @@ def prepare_inference_dataset(
         n_evaluation_rows=evaluation_blocks.height,
         sample_count=int(sample_indices.shape[0]),
         feature=spec.feature_contract.semantics,
-        realization_policy=spec.contract.realization_policy,
+        realization_policy=spec.problem_contract.realization_policy,
         store=scaled_store,
         sample_indices=sample_indices,
     )
+
 
 def compile_dataset_builder(
     config: FixedContextTemporalDatasetBuilderConfig,

@@ -16,7 +16,6 @@ from ..config.resolution import WorkflowConfig
 from ..core.errors import SpiceOperatorError
 from .models import ExecutionSpec, ExecutionWorkflowSpec
 
-_EXECUTION_SPEC_NAME = "disi_l40"
 _SBATCH_JOB_ID_PATTERN = re.compile(r"Submitted batch job (?P<job_id>\d+)")
 _FINAL_JOB_STATES = frozenset(
     {
@@ -66,7 +65,7 @@ def build_execution_shell_argv(target: ExecutionTarget, command: str) -> list[st
     ]
 
 
-def load_execution_target(name: str = _EXECUTION_SPEC_NAME) -> ExecutionTarget:
+def load_execution_target(name: str) -> ExecutionTarget:
     payload = load_named_group(name, "execution")
     return ExecutionTarget(
         name=name,
@@ -164,7 +163,7 @@ def submit_execution_workflow(
     task: WorkflowTask,
     *,
     config: WorkflowConfig,
-    target_name: str = _EXECUTION_SPEC_NAME,
+    target_name: str,
     dependency: str | None = None,
 ) -> ExecutionJobSubmission:
     target = load_execution_target(target_name)

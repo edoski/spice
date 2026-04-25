@@ -17,7 +17,7 @@ from typing import Any, cast
 
 from ..acquisition.rpc import BlockRpcClient, RpcController, TimestampRange, evaluation_range
 from ..config.models import AcquireConfig
-from ..core.files import promote_paths_atomic, prune_empty_directories
+from ..core.files import prune_empty_directories
 from ..core.reporting import Reporter
 from ..corpus.builders import ensure_evaluation_dataset, ensure_history_dataset
 from ..corpus.io import load_block_frame
@@ -30,7 +30,7 @@ from ..corpus.summary import acquire_dry_run_fields, acquisition_result_fields
 from ..features import CompiledFeatureContract, compile_feature_contract
 from ..storage.corpus import write_dataset_state
 from ..storage.layout import resolve_workflow_paths
-from ..storage.roots import reindex_root
+from ..storage.staging import PartialRootCommit
 from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
 
 HISTORY_WINDOW_CUSHION_RATIO = 0.10
@@ -309,14 +309,14 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
                 manifest=manifest,
                 acquire_run=acquire_run,
             )
-            promotions: list[tuple[Path, Path]] = []
-            if history_result.promote_dir is not None:
-                promotions.append((history_dir, history_result.promote_dir))
-            if evaluation_result.promote_dir is not None:
-                promotions.append((evaluation_dir, evaluation_result.promote_dir))
-            promotions.append((state_db_path, temp_state_db))
-            promote_paths_atomic(promotions)
-            reindex_root(paths.output_root, root_path=paths.corpus_root)
+            commit = PartialRootCommit(
+                storage_root=paths.output_root,
+                root_path=paths.corpus_root,
+            )
+            commit.add(history_dir, history_result.promote_dir)
+            commit.add(evaluation_dir, evaluation_result.promote_dir)
+            commit.add(state_db_path, temp_state_db)
+            commit.commit()
         active_reporter.result(
             "acquire",
             acquisition_result_fields(

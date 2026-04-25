@@ -16,6 +16,7 @@ from ..config.models import (
     coerce_feature_set_config,
     coerce_problem_spec,
 )
+from ..core.errors import StateLayoutError
 from ..evaluation import EvaluationRun
 from ..features import FeaturePrerequisites
 from ..objectives import coerce_objective_config
@@ -58,14 +59,14 @@ for _adapter in (
 
 def mapping_payload(payload: object) -> dict[str, object]:
     if not isinstance(payload, Mapping):
-        raise TypeError("Expected mapping payload")
+        raise StateLayoutError("Expected mapping payload")
     return dict(payload)
 
 
 def _adapter_payload(adapter: object, value: object) -> dict[str, object]:
     payload = cast(TypeAdapter[Any], adapter).dump_python(value, mode="json")
     if not isinstance(payload, dict):
-        raise TypeError("Expected adapter to serialize to a mapping payload")
+        raise StateLayoutError("Expected adapter to serialize to a mapping payload")
     return cast(dict[str, object], payload)
 
 
@@ -349,7 +350,6 @@ def evaluation_run_payload(run: EvaluationRun) -> dict[str, object]:
         n_events=run.n_events,
         metrics=dict(run.metrics),
         metadata={key: _metadata_value(value) for key, value in run.metadata.items()},
-        event_metric_sums=dict(run.event_metric_sums),
     )
     return _adapter_payload(_EVALUATION_RUN_ADAPTER, normalized)
 

@@ -28,26 +28,24 @@ class EvaluationAggregationConfig(EvaluationConfigModel):
     id: EvaluationAggregationId
 
 
-class EvaluationEngine(StrEnum):
-    REPLAY = "replay"
-    ZERO_STOP_ROLLOUT = "zero_stop_rollout"
-    ANCHOR_BASEFEE = "anchor_basefee"
-
-
 class EvaluatorConfig(EvaluationConfigModel):
     id: str
-    engine: EvaluationEngine = EvaluationEngine.REPLAY
+    engine: str
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return validate_path_segment(value, label="evaluation.id")
+
+
+class ReplayEvaluatorConfig(EvaluatorConfig):
+    engine: str = "replay"
     sampler: EvaluationSampler | None = None
     window_seconds: int | None = Field(default=None, gt=0)
     repetitions: int | None = Field(default=None, gt=0)
     seed: int | None = Field(default=None, ge=0)
     arrival_rate_per_second: float | None = Field(default=None, gt=0.0)
     aggregation: EvaluationAggregationConfig | None = None
-
-    @field_validator("id")
-    @classmethod
-    def validate_id(cls, value: str) -> str:
-        return validate_path_segment(value, label="evaluation.id")
 
     @property
     def aggregation_id(self) -> EvaluationAggregationId:
@@ -57,24 +55,8 @@ class EvaluatorConfig(EvaluationConfigModel):
 
     @model_validator(mode="after")
     def validate_sampler_fields(self) -> Self:
-        if self.engine is not EvaluationEngine.REPLAY:
-            _require_absent(
-                self.sampler,
-                self.window_seconds,
-                self.repetitions,
-                self.seed,
-                self.arrival_rate_per_second,
-                self.aggregation,
-                labels=(
-                    "evaluation.sampler",
-                    "evaluation.window_seconds",
-                    "evaluation.repetitions",
-                    "evaluation.seed",
-                    "evaluation.arrival_rate_per_second",
-                    "evaluation.aggregation",
-                ),
-            )
-            return self
+        if self.engine != "replay":
+            raise ValueError("evaluation.engine must be replay")
         if self.sampler is None:
             raise ValueError("Missing required fields: evaluation.sampler")
         _require_present(
@@ -107,6 +89,26 @@ class EvaluatorConfig(EvaluationConfigModel):
                 "evaluation.arrival_rate_per_second",
             ),
         )
+        return self
+
+
+class ZeroStopRolloutEvaluatorConfig(EvaluatorConfig):
+    engine: str = "zero_stop_rollout"
+
+    @model_validator(mode="after")
+    def validate_engine(self) -> Self:
+        if self.engine != "zero_stop_rollout":
+            raise ValueError("evaluation.engine must be zero_stop_rollout")
+        return self
+
+
+class AnchorBasefeeEvaluatorConfig(EvaluatorConfig):
+    engine: str = "anchor_basefee"
+
+    @model_validator(mode="after")
+    def validate_engine(self) -> Self:
+        if self.engine != "anchor_basefee":
+            raise ValueError("evaluation.engine must be anchor_basefee")
         return self
 
 

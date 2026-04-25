@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -26,7 +26,6 @@ class EvaluationRun:
     n_events: int
     metrics: dict[str, float]
     metadata: dict[str, EvaluationMetadataValue]
-    event_metric_sums: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +56,20 @@ class CompiledEvaluatorContract:
     config_payload: dict[str, object]
     accepted_decoded_result_id: str
     run_fn: RunEvaluatorFn
+
+    def __post_init__(self) -> None:
+        descriptor_ids = [descriptor.id for descriptor in self.metric_descriptors]
+        if len(descriptor_ids) != len(set(descriptor_ids)):
+            raise ValueError("Evaluator metric descriptor ids must be unique")
+        primary_ids = [
+            descriptor.id for descriptor in self.metric_descriptors if descriptor.role == "primary"
+        ]
+        if len(primary_ids) != 1:
+            raise ValueError("Evaluator contract must declare exactly one primary metric")
+        if self.primary_metric_id not in descriptor_ids:
+            raise ValueError("Evaluator primary_metric_id must match a descriptor id")
+        if primary_ids[0] != self.primary_metric_id:
+            raise ValueError("Evaluator primary descriptor must match primary_metric_id")
 
     def run(
         self,

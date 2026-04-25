@@ -2,17 +2,10 @@
 
 from __future__ import annotations
 
-import signal
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from pathlib import Path
-from types import FrameType
-from typing import Any, cast
-from uuid import uuid4
+from typing import cast
 
 from ..config.models import ArtifactVariant, TrainConfig
 from ..core.errors import ConfigResolutionError
-from ..core.files import promote_paths_atomic, prune_empty_directories, remove_path
 from ..core.rendering import metric_string
 from ..core.reporting import Reporter
 from ..corpus.coverage import training_coverage_requirement, validate_corpus_coverage
@@ -24,75 +17,7 @@ from ..modeling.tuning import apply_study_best_params
 from ..storage.corpus import load_dataset_manifest
 from ..storage.engine import ARTIFACT_ROOT_KIND
 from ..storage.layout import resolve_workflow_paths
-from ..storage.roots import reindex_root
-
-SignalHandler = Callable[[int, FrameType | None], Any] | int | None
-
-
-def _build_staged_artifact_root(artifact_root: Path) -> Path:
-    return artifact_root.parent / f".{artifact_root.name}.staging.{uuid4().hex}"
-
-
-def _cleanup_staged_artifact_root(staged_root: Path, *, prune_stop_at: Path) -> None:
-    remove_path(staged_root)
-    prune_empty_directories(staged_root.parent, stop_at=prune_stop_at)
-
-
-@contextmanager
-def _abort_cleanup(
-    reporter: Reporter,
-    *,
-    label: str,
-    cleanup: Callable[[], None],
-) -> Iterator[None]:
-    interrupted = False
-    signal_ids = [
-        getattr(signal, name)
-        for name in ("SIGINT", "SIGTERM")
-        if hasattr(signal, name)
-    ]
-    previous_handlers: dict[int, SignalHandler] = {}
-
-    def _run_cleanup() -> None:
-        cleanup()
-        reporter.milestone(f"{label} cancelled; partial outputs removed", level="warning")
-
-    def _handle_interrupt(signum: int, frame: FrameType | None) -> None:
-        nonlocal interrupted
-        interrupted = True
-        previous_handler = previous_handlers.get(signum, signal.SIG_DFL)
-        if previous_handler == signal.SIG_IGN:
-            return
-        if previous_handler == signal.SIG_DFL:
-            raise KeyboardInterrupt
-        if callable(previous_handler):
-            previous_handler(signum, frame)
-            return
-        raise KeyboardInterrupt
-
-    registered: list[int] = []
-    try:
-        for signum in signal_ids:
-            previous_handlers[signum] = signal.getsignal(signum)
-            signal.signal(signum, _handle_interrupt)
-            registered.append(signum)
-    except ValueError:
-        registered = []
-    try:
-        yield
-    except BaseException as exc:
-        if interrupted or isinstance(exc, KeyboardInterrupt):
-            _run_cleanup()
-        raise
-    finally:
-        for signum in registered:
-            try:
-                signal.signal(signum, cast(signal.Handlers, previous_handlers[signum]))
-            except ValueError:
-                pass
-    if interrupted:
-        _run_cleanup()
-        raise KeyboardInterrupt
+from ..storage.staging import staged_root
 
 
 def _workflow_facts(config: TrainConfig) -> list[tuple[str, str]]:
@@ -145,33 +70,25 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
     spec = build_training_spec(active_config, paths=paths)
     validate_corpus_coverage(
         load_dataset_manifest(paths.corpus_state_db),
-        contract=spec.contract,
+        contract=spec.problem_contract,
         feature_contract=spec.feature_contract,
-        requirement=training_coverage_requirement(spec.contract),
+        requirement=training_coverage_requirement(spec.problem_contract),
     )
     artifact_dir = paths.artifact_root
     history_block_path = paths.history_dir
     if artifact_dir is None:
         raise ConfigResolutionError("training workflow requires artifact output paths")
-    staged_artifact_root = _build_staged_artifact_root(artifact_dir)
-    prune_stop_at = artifact_dir.parent.parent
-    with _abort_cleanup(
-        active_reporter,
-        label="train",
-        cleanup=lambda: _cleanup_staged_artifact_root(
-            staged_artifact_root,
-            prune_stop_at=prune_stop_at,
-        ),
-    ):
-        _cleanup_staged_artifact_root(
-            staged_artifact_root,
-            prune_stop_at=prune_stop_at,
-        )
+    with staged_root(
+        storage_root=paths.output_root,
+        destination_root=artifact_dir,
+        expected_root_kind=ARTIFACT_ROOT_KIND,
+        purpose="staging",
+        prune_stop_at=artifact_dir.parent.parent,
+    ) as artifact_stage:
         persisted = run_persisted_training(
             history_block_path,
             spec=spec,
-            artifact_dir=staged_artifact_root,
-            state_root_kind=ARTIFACT_ROOT_KIND,
+            artifact_dir=artifact_stage.staged_root,
             on_prepare_complete=lambda prepared: active_reporter.milestone(
                 f"prepare rows={prepared.n_rows_used} samples={prepared.sample_count}"
             ),
@@ -188,17 +105,11 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
                 f"fit early_stop epoch={epoch} best_epoch={best_epoch}"
             ),
         )
-        artifact_root = paths.artifact_root
-        artifact_state_db = paths.artifact_state_db
-        artifact_id = paths.artifact_id
-        if artifact_root is None or artifact_state_db is None or artifact_id is None:
-            raise ConfigResolutionError("training workflow requires artifact output paths")
-        promote_paths_atomic([(artifact_root, staged_artifact_root)])
-        reindex_root(paths.output_root, root_path=artifact_root)
+        artifact_stage.promote()
     active_reporter.result(
         "train",
         training_result_fields(
             persisted.summary,
-            artifact_dir=artifact_root,
+            artifact_dir=artifact_dir,
         ),
     )

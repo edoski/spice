@@ -4,8 +4,16 @@ import numpy as np
 import pytest
 import torch
 
-from spice.evaluation import EvaluatorConfig, compile_evaluator_contract
-from spice.prediction import DecodedOffsets
+from spice.core.errors import ConfigResolutionError
+from spice.evaluation import (
+    CompiledEvaluatorContract,
+    EvaluationRun,
+    EvaluationSummary,
+    EvaluatorConfig,
+    coerce_evaluator_config,
+    compile_evaluator_contract,
+)
+from spice.prediction import DecodedOffsets, MetricDescriptor, MetricSet
 from spice.temporal import (
     coerce_realization_policy_config,
     compile_realization_policy_contract,
@@ -59,12 +67,74 @@ def _current_row_store() -> CompiledProblemStore:
     )
 
 
+def test_evaluator_config_requires_engine_and_dispatches_by_engine() -> None:
+    with pytest.raises(ConfigResolutionError, match="evaluation.engine is required"):
+        coerce_evaluator_config(
+            {
+                "id": "fullset",
+                "sampler": "fullset",
+                "aggregation": {"id": "total_ratio"},
+            }
+        )
+
+    config = coerce_evaluator_config(
+        {
+            "id": "custom_replay_name",
+            "engine": "replay",
+            "sampler": "fullset",
+            "aggregation": {"id": "total_ratio"},
+        }
+    )
+    contract = compile_evaluator_contract(config)
+
+    assert config.id == "custom_replay_name"
+    assert config.engine == "replay"
+    assert contract.evaluation_id == "custom_replay_name"
+
+
+def test_evaluator_compile_requires_concrete_config_for_engine() -> None:
+    with pytest.raises(ConfigResolutionError, match="evaluation config"):
+        compile_evaluator_contract(EvaluatorConfig(id="base", engine="replay"))
+
+
+def test_metric_descriptors_and_evaluator_contract_validate_primary_metric() -> None:
+    def unused_run_fn(
+        _store: object,
+        _realization_policy: object,
+        _decoded_result: object,
+        _sample_indices: object,
+    ) -> EvaluationSummary:
+        return EvaluationSummary(
+            metrics=MetricSet(values={"profit": 0.0}),
+            window_metrics={},
+            total_events=0,
+            runs=[EvaluationRun(n_events=0, metrics={"profit": 0.0}, metadata={})],
+        )
+
+    with pytest.raises(ValueError, match="metric.label must be non-empty"):
+        MetricDescriptor(id="profit", label="", role="primary")
+
+    with pytest.raises(ValueError, match="exactly one primary"):
+        CompiledEvaluatorContract(
+            evaluation_id="bad",
+            metric_descriptors=(
+                MetricDescriptor(id="profit", label="Profit", role="secondary"),
+            ),
+            primary_metric_id="profit",
+            direction="maximize",
+            config_payload={"id": "bad"},
+            accepted_decoded_result_id="offsets",
+            run_fn=unused_run_fn,
+        )
+
+
 def test_evaluator_rejects_incompatible_decoded_result_semantics() -> None:
     store = _store()
     evaluator = compile_evaluator_contract(
-        EvaluatorConfig.model_validate(
+        coerce_evaluator_config(
             {
                 "id": "fullset",
+                "engine": "replay",
                 "sampler": "fullset",
                 "aggregation": {"id": "total_ratio"},
             }
@@ -86,9 +156,10 @@ def test_poisson_replay_handles_non_chronological_sample_indices() -> None:
     forward_offsets = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
     reversed_offsets = DecodedOffsets(forward_offsets.flip(0))
     evaluator = compile_evaluator_contract(
-        EvaluatorConfig.model_validate(
+        coerce_evaluator_config(
             {
                 "id": "poisson_replay_2h_mean",
+                "engine": "replay",
                 "sampler": "poisson_arrivals",
                 "aggregation": {"id": "event_mean"},
                 "window_seconds": 7200,
@@ -121,9 +192,10 @@ def test_replay_total_ratio_uses_fee_sums() -> None:
     store = _store()
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     evaluator = compile_evaluator_contract(
-        EvaluatorConfig.model_validate(
+        coerce_evaluator_config(
             {
                 "id": "fullset",
+                "engine": "replay",
                 "sampler": "fullset",
                 "aggregation": {"id": "total_ratio"},
             }
@@ -158,9 +230,10 @@ def test_replay_event_mean_uses_per_event_ratios() -> None:
     store = _store()
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     evaluator = compile_evaluator_contract(
-        EvaluatorConfig.model_validate(
+        coerce_evaluator_config(
             {
                 "id": "fullset_mean",
+                "engine": "replay",
                 "sampler": "fullset",
                 "aggregation": {"id": "event_mean"},
             }
@@ -197,7 +270,7 @@ def test_replay_event_mean_uses_per_event_ratios() -> None:
 def test_zero_stop_rollout_stops_on_zero_and_truncates_tail_windows() -> None:
     store = _current_row_store()
     evaluator = compile_evaluator_contract(
-        EvaluatorConfig.model_validate(
+        coerce_evaluator_config(
             {
                 "id": "zero_stop_rollout_fullset",
                 "engine": "zero_stop_rollout",
@@ -240,7 +313,7 @@ def test_zero_stop_rollout_stops_on_zero_and_truncates_tail_windows() -> None:
 def test_anchor_basefee_compares_anchor_and_realized_fees() -> None:
     store = _current_row_store()
     evaluator = compile_evaluator_contract(
-        EvaluatorConfig.model_validate(
+        coerce_evaluator_config(
             {
                 "id": "anchor_basefee_fullset",
                 "engine": "anchor_basefee",

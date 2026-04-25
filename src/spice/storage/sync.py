@@ -3,33 +3,31 @@
 from __future__ import annotations
 
 import json
-import shlex
 from collections.abc import Callable
 from dataclasses import fields
 from pathlib import Path
 from typing import Any, TypeVar, cast
-from uuid import uuid4
 
-from ..core.errors import SpiceOperatorError, StateConflictError
-from ..core.files import promote_paths_atomic, remove_path
+from ..core.errors import SpiceOperatorError
 from ..execution.slurm_ssh import (
     ExecutionTarget,
     ensure_execution_success,
     load_execution_target,
-    run_execution_command,
     run_execution_module,
     run_rsync_from_execution_target,
     run_rsync_to_execution_target,
 )
 from .catalog import CatalogArtifactRecord, CatalogDatasetRecord, CatalogStudyRecord
+from .engine import ARTIFACT_ROOT_KIND, DATASET_ROOT_KIND, STUDY_ROOT_KIND, RootKind
+from .layout import artifact_root_path, corpus_root_path, study_root_path
 from .roots import (
     ArtifactSelector,
     DatasetSelector,
     StudySelector,
-    reindex_root,
     resolve_dataset_record,
     resolve_study_record,
 )
+from .staging import cleanup_root_stage, prepare_root_stage, promote_root_stage, staged_root_path
 
 RecordT = TypeVar("RecordT", CatalogDatasetRecord, CatalogStudyRecord)
 RemoteRecordT = TypeVar("RemoteRecordT", CatalogStudyRecord, CatalogArtifactRecord)
@@ -38,6 +36,7 @@ RemoteRecordT = TypeVar("RemoteRecordT", CatalogStudyRecord, CatalogArtifactReco
 def push_dataset_to_cluster(
     *,
     storage_root: Path,
+    target_name: str,
     selector: DatasetSelector,
     replace: bool,
 ) -> CatalogDatasetRecord:
@@ -49,6 +48,8 @@ def push_dataset_to_cluster(
             selector=cast(DatasetSelector, selected),
         ),
         destination_root=_cluster_dataset_root,
+        expected_root_kind=DATASET_ROOT_KIND,
+        target_name=target_name,
         replace=replace,
     )
 
@@ -56,6 +57,7 @@ def push_dataset_to_cluster(
 def push_study_to_cluster(
     *,
     storage_root: Path,
+    target_name: str,
     selector: StudySelector,
     replace: bool,
 ) -> CatalogStudyRecord:
@@ -67,6 +69,8 @@ def push_study_to_cluster(
             selector=cast(StudySelector, selected),
         ),
         destination_root=_cluster_study_root,
+        expected_root_kind=STUDY_ROOT_KIND,
+        target_name=target_name,
         replace=replace,
     )
 
@@ -74,10 +78,11 @@ def push_study_to_cluster(
 def pull_artifact_from_cluster(
     *,
     storage_root: Path,
+    target_name: str,
     selector: ArtifactSelector,
     replace: bool,
 ) -> tuple[CatalogArtifactRecord, bool]:
-    target = load_execution_target()
+    target = load_execution_target(target_name)
     record = _resolve_cluster_artifact_record(target, selector=selector)
     destination_root = _local_artifact_root(storage_root, record)
     _pull_root_from_cluster(
@@ -85,6 +90,7 @@ def pull_artifact_from_cluster(
         cluster_root=record.root_path,
         local_storage_root=storage_root,
         destination_root=destination_root,
+        expected_root_kind=ARTIFACT_ROOT_KIND,
         replace=replace,
     )
     dataset_present = _local_dataset_root(storage_root, record).exists()
@@ -94,16 +100,18 @@ def pull_artifact_from_cluster(
 def pull_study_from_cluster(
     *,
     storage_root: Path,
+    target_name: str,
     selector: StudySelector,
     replace: bool,
 ) -> CatalogStudyRecord:
-    target = load_execution_target()
+    target = load_execution_target(target_name)
     record = _resolve_cluster_study_record(target, selector=selector)
     _pull_root_from_cluster(
         target=target,
         cluster_root=record.root_path,
         local_storage_root=storage_root,
         destination_root=_local_study_root(storage_root, record),
+        expected_root_kind=STUDY_ROOT_KIND,
         replace=replace,
     )
     return record
@@ -114,10 +122,11 @@ def _push_root_to_cluster(
     local_root: Path,
     cluster_storage_root: Path,
     destination_root: Path,
+    expected_root_kind: RootKind,
     replace: bool,
     target: ExecutionTarget,
 ) -> None:
-    staged_root = destination_root.parent / f".{destination_root.name}.incoming.{uuid4().hex}"
+    staged_root = staged_root_path(destination_root, purpose="incoming")
     try:
         _prepare_cluster_stage(
             target,
@@ -135,6 +144,7 @@ def _push_root_to_cluster(
             cluster_storage_root=cluster_storage_root,
             destination_root=destination_root,
             staged_root=staged_root,
+            expected_root_kind=expected_root_kind,
             replace=replace,
         )
     except Exception:
@@ -148,14 +158,17 @@ def _push_record_to_cluster(
     selector: object,
     resolve_record: Callable[[Path, object], RecordT],
     destination_root: Callable[[Path, RecordT], Path],
+    expected_root_kind: RootKind,
+    target_name: str,
     replace: bool,
 ) -> RecordT:
-    target = load_execution_target()
+    target = load_execution_target(target_name)
     record = resolve_record(storage_root, selector)
     _push_root_to_cluster(
         local_root=record.root_path,
         cluster_storage_root=target.spec.paths.storage_root,
         destination_root=destination_root(target.spec.paths.storage_root, record),
+        expected_root_kind=expected_root_kind,
         replace=replace,
         target=target,
     )
@@ -168,24 +181,29 @@ def _pull_root_from_cluster(
     cluster_root: Path,
     local_storage_root: Path,
     destination_root: Path,
+    expected_root_kind: RootKind,
     replace: bool,
 ) -> None:
-    staged_root = destination_root.parent / f".{destination_root.name}.incoming.{uuid4().hex}"
-    if destination_root.exists() and not replace:
-        raise StateConflictError(f"Destination already exists: {destination_root}")
-    staged_root.parent.mkdir(parents=True, exist_ok=True)
-    remove_path(staged_root)
-    staged_root.mkdir(parents=True, exist_ok=True)
+    staged_root = prepare_root_stage(
+        destination_root=destination_root,
+        replace=replace,
+        purpose="incoming",
+    )
     try:
         run_rsync_from_execution_target(
             target,
             source_root=cluster_root,
             destination_root=staged_root,
         )
-        promote_paths_atomic([(destination_root, staged_root)])
-        reindex_root(local_storage_root, root_path=destination_root)
+        promote_root_stage(
+            storage_root=local_storage_root,
+            destination_root=destination_root,
+            staged_root=staged_root,
+            expected_root_kind=expected_root_kind,
+            replace=replace,
+        )
     except Exception:
-        remove_path(staged_root)
+        cleanup_root_stage(staged_root)
         raise
 
 
@@ -219,6 +237,7 @@ def _finalize_cluster_stage(
     cluster_storage_root: Path,
     destination_root: Path,
     staged_root: Path,
+    expected_root_kind: RootKind,
     replace: bool,
 ) -> None:
     ensure_execution_success(
@@ -233,6 +252,8 @@ def _finalize_cluster_stage(
                 str(destination_root),
                 "--staged-root",
                 str(staged_root),
+                "--expected-root-kind",
+                expected_root_kind.value,
                 *(["--replace"] if replace else []),
             ],
         ),
@@ -241,7 +262,14 @@ def _finalize_cluster_stage(
 
 
 def _cleanup_cluster_path(target: ExecutionTarget, path: Path) -> None:
-    run_execution_command(target, f"rm -rf {shlex.quote(path.as_posix())}")
+    ensure_execution_success(
+        run_execution_module(
+            target,
+            "spice.storage.sync_cli",
+            ["cleanup-stage", "--staged-root", str(path)],
+        ),
+        action=f"cleanup stage {path}",
+    )
 
 
 def _resolve_cluster_study_record(
@@ -334,20 +362,32 @@ def _selector_payload(selector: StudySelector | ArtifactSelector) -> dict[str, o
 
 
 def _cluster_dataset_root(cluster_storage_root: Path, record: CatalogDatasetRecord) -> Path:
-    return cluster_storage_root / "corpora" / record.chain_name / record.dataset_id
+    return corpus_root_path(
+        cluster_storage_root,
+        chain_name=record.chain_name,
+        corpus_id=record.dataset_id,
+    )
 
 
 def _cluster_study_root(cluster_storage_root: Path, record: CatalogStudyRecord) -> Path:
-    return cluster_storage_root / "studies" / record.chain_name / record.study_id
+    return study_root_path(
+        cluster_storage_root,
+        chain_name=record.chain_name,
+        study_id=record.study_id,
+    )
 
 
 def _local_study_root(storage_root: Path, record: CatalogStudyRecord) -> Path:
-    return storage_root / "studies" / record.chain_name / record.study_id
+    return study_root_path(storage_root, chain_name=record.chain_name, study_id=record.study_id)
 
 
 def _local_artifact_root(storage_root: Path, record: CatalogArtifactRecord) -> Path:
-    return storage_root / "artifacts" / record.chain_name / record.artifact_id
+    return artifact_root_path(
+        storage_root,
+        chain_name=record.chain_name,
+        artifact_id=record.artifact_id,
+    )
 
 
 def _local_dataset_root(storage_root: Path, record: CatalogArtifactRecord) -> Path:
-    return storage_root / "corpora" / record.chain_name / record.dataset_id
+    return corpus_root_path(storage_root, chain_name=record.chain_name, corpus_id=record.dataset_id)

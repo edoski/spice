@@ -68,7 +68,7 @@ def test_train_workflow_emits_compact_epoch_output(
         lambda _config, **_kwargs: SimpleNamespace(
             training=SimpleNamespace(max_epochs=3),
             prediction_contract=SimpleNamespace(primary_metric_id="profit_over_baseline"),
-            contract=object(),
+            problem_contract=object(),
             feature_contract=object(),
         ),
     )
@@ -96,8 +96,21 @@ def test_train_workflow_emits_compact_epoch_output(
     monkeypatch.setattr(train_workflow, "load_dataset_manifest", lambda *_args: object())
     monkeypatch.setattr(train_workflow, "training_coverage_requirement", lambda *_args: object())
     monkeypatch.setattr(train_workflow, "validate_corpus_coverage", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(train_workflow, "promote_paths_atomic", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(train_workflow, "reindex_root", lambda *_args, **_kwargs: None)
+
+    class FakeStage:
+        staged_root = tmp_path / "stage"
+
+        def __enter__(self):
+            self.staged_root.mkdir(parents=True, exist_ok=True)
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def promote(self) -> None:
+            return None
+
+    monkeypatch.setattr(train_workflow, "staged_root", lambda **_kwargs: FakeStage())
     monkeypatch.setattr(
         train_workflow,
         "training_result_fields",

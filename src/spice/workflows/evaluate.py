@@ -11,15 +11,14 @@ from ..corpus.coverage import evaluation_coverage_requirement, validate_corpus_c
 from ..corpus.io import load_block_frame
 from ..evaluation import compile_evaluator_contract
 from ..modeling.artifacts import load_training_artifact, validate_artifact_semantics
-from ..modeling.inference import predict_with_model
 from ..modeling.pipeline import prepare_inference_dataset
 from ..modeling.results import LoadedEvaluationSummary, build_evaluation_runtime_summary
+from ..modeling.scoring import EvaluationScoringContext, score_evaluation
 from ..modeling.summary import evaluation_result_fields
 from ..modeling.tuning import apply_study_best_params
 from ..prediction import compile_prediction_contract
-from ..storage.artifact import write_evaluation_state
+from ..storage.artifact import upsert_evaluation_state
 from ..storage.corpus import load_dataset_manifest
-from ..storage.engine import ARTIFACT_ROOT_KIND
 from ..storage.layout import resolve_workflow_paths
 from ..temporal.contracts import compile_problem_contract
 
@@ -72,7 +71,7 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
     feature_contract = validated.feature_contract
     history_blocks = load_block_frame(history_block_path)
     evaluation_blocks = load_block_frame(evaluation_block_path)
-    contract = compile_problem_contract(
+    problem_contract = compile_problem_contract(
         problem=active_config.problem,
         feature_contract=feature_contract,
         chain_runtime=active_config.chain.runtime,
@@ -84,7 +83,6 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
     if active_config.evaluation is None:
         raise ConfigResolutionError("evaluation workflow requires evaluation")
     evaluator_contract = compile_evaluator_contract(active_config.evaluation)
-    evaluator_contract.validate_prediction_contract(prediction_contract)
     if active_config.delay_seconds > loaded_artifact.manifest.max_delay_seconds:
         raise ConfigResolutionError(
             "delay_seconds exceeds artifact capability: "
@@ -92,10 +90,10 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
         )
     validate_corpus_coverage(
         load_dataset_manifest(paths.corpus_state_db),
-        contract=contract,
+        contract=problem_contract,
         feature_contract=feature_contract,
         requirement=evaluation_coverage_requirement(
-            contract,
+            problem_contract,
             delay_seconds=active_config.delay_seconds,
         ),
     )
@@ -104,7 +102,7 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
         evaluation_blocks,
         dataset_builder_contract=validated.dataset_builder_contract,
         feature_contract=feature_contract,
-        contract=contract,
+        problem_contract=problem_contract,
         delay_seconds=active_config.delay_seconds,
         builder_runtime_metadata=loaded_artifact.manifest.builder_runtime_metadata,
         scaler=loaded_artifact.manifest.scaler,
@@ -118,20 +116,18 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
         f"evaluation_rows={prepared.n_evaluation_rows} "
         f"samples={prepared.sample_count}"
     )
-    decoded_offsets = predict_with_model(
-        loaded_artifact.model,
-        model_config=loaded_artifact.manifest.model,
-        prediction_contract=prediction_contract,
-        representation_contract=loaded_artifact.representation_contract,
-        store=prepared.store,
-        sample_indices=prepared.sample_indices,
-        batch_size=active_config.training.batch_size,
-    )
-    evaluation = evaluator_contract.run(
-        prepared.store,
-        prepared.realization_policy,
-        decoded_offsets,
-        sample_indices=prepared.sample_indices,
+    evaluation = score_evaluation(
+        EvaluationScoringContext(
+            model=loaded_artifact.model,
+            model_config=loaded_artifact.manifest.model,
+            prediction_contract=prediction_contract,
+            representation_contract=loaded_artifact.representation_contract,
+            evaluator_contract=evaluator_contract,
+            realization_policy=prepared.realization_policy,
+            store=prepared.store,
+            sample_indices=prepared.sample_indices,
+            batch_size=active_config.training.batch_size,
+        )
     )
     runtime_summary = build_evaluation_runtime_summary(
         prepared=prepared,
@@ -141,9 +137,8 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
         evaluation_config=evaluator_contract.config_payload,
         metric_descriptors=evaluator_contract.metric_descriptors,
     )
-    evaluation_id, recorded_at = write_evaluation_state(
+    evaluation_id, recorded_at = upsert_evaluation_state(
         artifact_dir / ".spice" / "state.sqlite",
-        root_kind=ARTIFACT_ROOT_KIND,
         summary=runtime_summary,
     )
     summary = LoadedEvaluationSummary(

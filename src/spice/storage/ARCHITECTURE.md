@@ -1,0 +1,93 @@
+# Storage Architecture
+
+## Purpose
+
+`storage` owns deterministic identity, canonical path layout, root-local SQLite state, catalog records, staging and commit mechanics, inspection, deletion, and remote sync.
+
+ML artifacts need provenance. A model file without its dataset, features, temporal problem, prediction contract, evaluator config, and training config is hard to trust. Spice stores authoritative state inside each root and keeps a separate catalog for discovery.
+
+## Root Layout
+
+```text
+outputs/
+  .spice/catalog.sqlite
+  corpora/<chain>/<corpus_id>/.spice/state.sqlite
+  studies/<chain>/<study_id>/.spice/state.sqlite
+  artifacts/<chain>/<artifact_id>/.spice/state.sqlite
+```
+
+Root-local state is authoritative. The catalog is an index that can be rebuilt by scanning roots.
+
+## Root Kinds
+
+```text
+RootKind.CORPUS    canonical block data
+RootKind.STUDY     tuning/search state
+RootKind.ARTIFACT  trained model and evaluation state
+```
+
+Every state database stores root-kind metadata. Read APIs validate root kind before interpreting a database as a corpus, study, or artifact root. A table name alone is not sufficient proof that a database belongs to the expected domain.
+
+Malformed persisted payloads raise `StateLayoutError`. Missing expected state raises `MissingStateError`.
+
+## Commit Patterns
+
+```text
+train / sync pull complete root
+  write complete staged root
+  -> validate staged root kind
+  -> atomically promote root
+  -> reindex catalog
+
+acquire partial corpus update
+  write staged history/evaluation/state files
+  -> atomically replace selected paths
+  -> reindex corpus root
+
+tune / evaluate existing roots
+  mutate root-local state directly
+  -> reindex only when search records/materialized state change
+```
+
+`PartialRootCommit` always replaces selected paths. Full root staging keeps explicit `replace` behavior because push/pull operations expose overwrite policy.
+
+## Identity Rule
+
+Ids hash provenance, not paths:
+
+```text
+semantic provenance -> canonical payload -> deterministic id
+```
+
+Output location should not change corpus, study, or artifact identity. Run controls that do not affect durable semantics, such as tuning trial limits, should not change study identity.
+
+Catalog `created_at` is stable across upserts. `updated_at` changes when a record is refreshed.
+
+## Module Map
+
+```text
+storage/
+  layout.py          canonical paths
+  identity.py        provenance payload assembly
+  ids.py             deterministic id hashing
+  engine.py          SQLite engine and root-kind metadata
+  schema.py          root-local state schema
+  payloads.py        generic payload stores/codecs
+  corpus.py          corpus-root persistence
+  study_manifest.py  study-root manifest persistence
+  study_models.py    study payload models/codecs
+  study_optuna.py    Optuna storage integration
+  artifact.py        artifact-root persistence
+  roots.py           catalog reindex, selectors, delete cascade
+  staging.py         root staging and partial commits
+  sync.py            local/remote push-pull API
+  sync_cli.py        remote-side sync helper commands
+  inspect*.py        read-only inspection views
+  catalog/           global searchable index
+```
+
+ML result payload codecs live in `modeling.result_codecs` because they understand modeling/evaluation result shapes. Storage calls them at the persistence boundary.
+
+## Remote Sync Boundary
+
+Storage sync APIs require explicit target names. The CLI supplies the default target before calling sync. Remote-side helper commands operate on paths and root kinds, not workflow configs.

@@ -4,26 +4,23 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import overload
+from typing import cast, overload
 
 from ..config.models import (
     EvaluateConfig,
     TrainConfig,
     TuneConfig,
     TunedParameterSet,
-    coerce_feature_set_config,
-    coerce_problem_spec,
+    WorkflowTask,
 )
+from ..config.resolution import hydrate_model_workflow_config
 from ..core.errors import ConfigResolutionError, MissingStateError
 from ..storage.layout import resolve_workflow_paths
 from ..storage.study_manifest import load_study_manifest, validate_tuned_train_request
 from ..storage.study_optuna import load_best_params
-from .dataset_builders import coerce_dataset_builder_config
 from .families.registry import (
     apply_model_tuned_parameters,
-    coerce_model_config,
 )
-from .tuned_config import coerce_tuning_space_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,22 +67,11 @@ def apply_tuned_parameters(
     if params.model is not None:
         tuned_config.model = apply_model_tuned_parameters(tuned_config.model, params.model)
     payload = tuned_config.model_dump(mode="json")
-    payload["problem"] = coerce_problem_spec(payload["problem"])
-    payload["dataset_builder"] = coerce_dataset_builder_config(payload["dataset_builder"])
-    payload["feature_set"] = coerce_feature_set_config(payload["feature_set"])
-    resolved_model = coerce_model_config(payload["model"])
-    payload["model"] = resolved_model
-    if payload.get("tuning_space") is not None:
-        payload["tuning_space"] = coerce_tuning_space_config(
-            payload["tuning_space"],
-            model_config=resolved_model,
-            problem_config=payload["problem"],
-        )
     if isinstance(config, TuneConfig):
-        return TuneConfig.model_validate(payload)
+        return cast(TuneConfig, hydrate_model_workflow_config(WorkflowTask.TUNE, payload))
     if isinstance(config, EvaluateConfig):
-        return EvaluateConfig.model_validate(payload)
-    return TrainConfig.model_validate(payload)
+        return cast(EvaluateConfig, hydrate_model_workflow_config(WorkflowTask.EVALUATE, payload))
+    return cast(TrainConfig, hydrate_model_workflow_config(WorkflowTask.TRAIN, payload))
 
 
 @overload

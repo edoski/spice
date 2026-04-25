@@ -164,6 +164,31 @@ def test_train_submit_rejects_local_storage_override(tmp_path: Path) -> None:
     assert "--storage-root cannot be combined with --submit" in result.output
 
 
+def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_submit(task, *, config, target_name, dependency):
+        del config, dependency
+        captured["task"] = task
+        captured["target_name"] = target_name
+        return ExecutionJobSubmission(
+            task=task,
+            target=SimpleNamespace(spec=SimpleNamespace(follow_by_default=False)),
+            job_id="12345",
+            log_path=Path("/tmp/spice-train-12345.out"),
+        )
+
+    monkeypatch.setattr(
+        "spice.cli.commands.workflows.submit_execution_workflow",
+        fake_submit,
+    )
+
+    result = runner.invoke(app, ["train", "--surface", "same_block_closed", "--submit"])
+
+    assert result.exit_code == 0, result.output
+    assert captured == {"task": WorkflowTask.TRAIN, "target_name": "disi_l40"}
+
+
 def test_acquire_rejects_objective_option() -> None:
     result = runner.invoke(
         app,

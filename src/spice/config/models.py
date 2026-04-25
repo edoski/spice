@@ -174,7 +174,7 @@ class TrainingConfig(ConfigModel):
             return coerce_input_normalization_config(value)
         if isinstance(value, InputNormalizationConfig):
             return coerce_input_normalization_config(value)
-        raise TypeError("training.input_normalization must be a mapping or config model")
+        raise ValueError("training.input_normalization must be a mapping or config model")
 
 
 def _default_input_normalization_config() -> InputNormalizationConfig:

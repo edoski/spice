@@ -1,25 +1,41 @@
-"""Evaluation config and one-engine runtime contracts."""
+"""Evaluation configs, contracts, and registry helpers."""
 
-from .base import (
-    CompiledEvaluatorContract,
+from .config import (
+    AnchorBasefeeEvaluatorConfig,
     EvaluationAggregationConfig,
     EvaluationAggregationId,
-    EvaluationEngine,
-    EvaluationRun,
+    EvaluationConfigModel,
     EvaluationSampler,
-    EvaluationSummary,
     EvaluatorConfig,
+    ReplayEvaluatorConfig,
+    ZeroStopRolloutEvaluatorConfig,
+)
+from .contracts import (
+    CompiledEvaluatorContract,
+    EvaluationRun,
+    EvaluationSummary,
+    IntVector,
+    RunEvaluatorFn,
+)
+from .registry import (
+    coerce_evaluator_config,
     compile_evaluator_contract,
 )
 
 __all__ = [
+    "AnchorBasefeeEvaluatorConfig",
     "CompiledEvaluatorContract",
     "EvaluationAggregationConfig",
     "EvaluationAggregationId",
-    "EvaluationEngine",
-    "EvaluationSampler",
+    "EvaluationConfigModel",
     "EvaluationRun",
+    "EvaluationSampler",
     "EvaluationSummary",
     "EvaluatorConfig",
+    "IntVector",
+    "ReplayEvaluatorConfig",
+    "RunEvaluatorFn",
+    "ZeroStopRolloutEvaluatorConfig",
+    "coerce_evaluator_config",
     "compile_evaluator_contract",
 ]

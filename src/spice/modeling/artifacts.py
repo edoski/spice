@@ -23,7 +23,6 @@ from ..objectives import ObjectiveConfig
 from ..prediction import compile_prediction_contract
 from ..semantics import ArtifactSemantics
 from ..storage.artifact import load_artifact_manifest, write_artifact_manifest
-from ..storage.engine import RootKind
 from .dataset_builders import (
     CompiledDatasetBuilderContract,
     DatasetBuilderConfig,
@@ -133,8 +132,8 @@ def build_training_artifact_manifest(
         scaler=prepared.scaler,
         builder_runtime_metadata=prepared.builder_runtime_metadata,
         semantics=ArtifactSemantics(
-            problem=spec.contract.semantics,
-            realization_policy=spec.contract.realization_policy.semantics,
+            problem=spec.problem_contract.semantics,
+            realization_policy=spec.problem_contract.realization_policy.semantics,
             objective=spec.objective_contract.semantics,
             feature=spec.feature_contract.semantics,
             prediction=spec.prediction_contract.semantics,
@@ -177,14 +176,12 @@ def persist_training_artifact(
     artifact_dir: Path,
     *,
     manifest: TrainingArtifactManifest,
-    root_kind: RootKind,
     model: TemporalModel,
 ) -> None:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     write_artifact_manifest(
         artifact_dir / ".spice" / "state.sqlite",
         manifest=manifest,
-        root_kind=root_kind,
     )
     cpu_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
 

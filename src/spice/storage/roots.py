@@ -52,7 +52,12 @@ from .catalog.store import (
 )
 from .corpus import load_dataset_manifest
 from .engine import RootKind, detect_root_kind, state_db_path
-from .layout import catalog_db_path
+from .layout import (
+    ARTIFACTS_ROOT_NAME,
+    CORPORA_ROOT_NAME,
+    STUDIES_ROOT_NAME,
+    catalog_db_path,
+)
 from .study_manifest import load_study_manifest
 
 T = TypeVar("T")
@@ -274,9 +279,9 @@ def refresh_catalog(storage_root: Path) -> CatalogRefreshSummary:
         ensure_catalog_db(temp_catalog_path)
         counts = {"dataset_roots": 0, "study_roots": 0, "artifact_roots": 0}
         for parent_name, count_key in (
-            ("corpora", "dataset_roots"),
-            ("studies", "study_roots"),
-            ("artifacts", "artifact_roots"),
+            (CORPORA_ROOT_NAME, "dataset_roots"),
+            (STUDIES_ROOT_NAME, "study_roots"),
+            (ARTIFACTS_ROOT_NAME, "artifact_roots"),
         ):
             for root_path in _roots_under(storage_root / parent_name):
                 _reindex_catalog_root(temp_catalog_path, root_path=root_path)
@@ -303,7 +308,7 @@ def _delete_artifact_record(storage_root: Path, record: CatalogArtifactRecord) -
             catalog_path,
             artifact_id=record.artifact_id,
         ),
-        stop_dir_name="artifacts",
+        stop_dir_name=ARTIFACTS_ROOT_NAME,
         expected_root_kind=RootKind.ARTIFACT,
     )
 
@@ -316,7 +321,7 @@ def _delete_study_record(storage_root: Path, record: CatalogStudyRecord) -> None
             catalog_path,
             study_id=record.study_id,
         ),
-        stop_dir_name="studies",
+        stop_dir_name=STUDIES_ROOT_NAME,
         expected_root_kind=RootKind.STUDY,
     )
 
@@ -329,7 +334,7 @@ def _delete_dataset_record(storage_root: Path, record: CatalogDatasetRecord) -> 
             catalog_path,
             dataset_id=record.dataset_id,
         ),
-        stop_dir_name="corpora",
+        stop_dir_name=CORPORA_ROOT_NAME,
         expected_root_kind=RootKind.CORPUS,
     )
 

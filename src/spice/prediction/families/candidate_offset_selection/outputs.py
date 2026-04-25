@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 
 from ...base import PredictionHeadSpec, PredictionOutputSpec
+from ...masking import masked_distribution_logits
 
 CANDIDATE_LOGITS_HEAD_ID = "candidate_logits"
 
@@ -22,4 +23,4 @@ def candidate_logits(outputs) -> torch.Tensor:
 
 
 def masked_candidate_logits(logits: torch.Tensor, candidate_mask: torch.Tensor) -> torch.Tensor:
-    return logits.masked_fill(~candidate_mask, torch.finfo(logits.dtype).min)
+    return masked_distribution_logits(logits, candidate_mask)

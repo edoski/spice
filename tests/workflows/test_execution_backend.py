@@ -158,6 +158,7 @@ def test_submit_execution_workflow_forwards_sbatch_dependency(monkeypatch, tmp_p
             WorkflowTask.TRAIN,
             TrainWorkflowRequest(surface="same_block_closed"),
         ),
+        target_name="disi_l40",
         dependency="afterok:99999",
     )
 

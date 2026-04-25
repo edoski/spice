@@ -10,7 +10,7 @@ from typing import Literal, overload
 from pydantic import Field, ValidationError
 
 from ..core.errors import ConfigResolutionError
-from ..evaluation import EvaluatorConfig
+from ..evaluation import EvaluatorConfig, coerce_evaluator_config
 from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.base import ConfigModel, ModelConfig
 from ..modeling.families.registry import coerce_model_config
@@ -262,6 +262,84 @@ def workflow_request_payload(
     }
 
 
+def hydrate_model_workflow_config(
+    workflow: WorkflowTask,
+    payload: Mapping[str, object],
+) -> WorkflowConfig:
+    try:
+        if workflow not in {WorkflowTask.TRAIN, WorkflowTask.TUNE, WorkflowTask.EVALUATE}:
+            raise ConfigResolutionError(f"Unsupported model workflow: {workflow.value}")
+        resolved_payload = _model_workflow_payload(payload)
+        if workflow is WorkflowTask.TRAIN:
+            return TrainConfig.model_validate(resolved_payload)
+        if workflow is WorkflowTask.TUNE:
+            return TuneConfig.model_validate(resolved_payload)
+        if workflow is WorkflowTask.EVALUATE:
+            return EvaluateConfig.model_validate(resolved_payload)
+    except ConfigResolutionError:
+        raise
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise ConfigResolutionError(str(exc)) from exc
+    raise ConfigResolutionError(f"Unsupported model workflow: {workflow.value}")
+
+
+def _model_workflow_payload(payload: Mapping[str, object]) -> dict[str, object]:
+    raw = dict(payload)
+    problem = coerce_problem_spec(_mapping_field(raw, "problem"))
+    model = coerce_model_config(_mapping_field(raw, "model"))
+    tuning_space_payload = raw.get("tuning_space")
+    tuning_space = (
+        None
+        if tuning_space_payload is None
+        else coerce_tuning_space_config(
+            _mapping_value(tuning_space_payload, label="tuning_space"),
+            model_config=model,
+            problem_config=problem,
+        )
+    )
+    return {
+        **raw,
+        "chain": ChainSpec.model_validate(_mapping_field(raw, "chain")),
+        "dataset": DatasetSpec.model_validate(_mapping_field(raw, "dataset")),
+        "storage": StorageSpec.model_validate(_mapping_field(raw, "storage")),
+        "problem": problem,
+        "model": model,
+        "dataset_builder": coerce_dataset_builder_config(_mapping_field(raw, "dataset_builder")),
+        "feature_set": coerce_feature_set_config(_mapping_field(raw, "feature_set")),
+        "prediction": PredictionConfig.model_validate(_mapping_field(raw, "prediction")),
+        "objective": coerce_objective_config(_mapping_field(raw, "objective")),
+        "evaluation": _optional_evaluation(raw.get("evaluation")),
+        "study": StudyConfig.model_validate(_mapping_field(raw, "study")),
+        "artifact": ArtifactConfig.model_validate(_mapping_field(raw, "artifact")),
+        "split": SplitConfig.model_validate(_mapping_field(raw, "split")),
+        "training": TrainingConfig.model_validate(_mapping_field(raw, "training")),
+        "tuning": _optional_tuning(raw.get("tuning")),
+        "tuning_space": tuning_space,
+    }
+
+
+def _optional_evaluation(payload: object) -> EvaluatorConfig | None:
+    if payload is None:
+        return None
+    return coerce_evaluator_config(_mapping_value(payload, label="evaluation"))
+
+
+def _optional_tuning(payload: object) -> TuningConfig | None:
+    if payload is None:
+        return None
+    return TuningConfig.model_validate(_mapping_value(payload, label="tuning"))
+
+
+def _mapping_field(payload: Mapping[str, object], key: str) -> Mapping[str, object]:
+    return _mapping_value(payload.get(key), label=key)
+
+
+def _mapping_value(payload: object, *, label: str) -> Mapping[str, object]:
+    if not isinstance(payload, Mapping):
+        raise ConfigResolutionError(f"resolved workflow snapshot field {label} must be a mapping")
+    return payload
+
+
 def _resolve_dataset(name: str) -> DatasetSpec:
     return DatasetSpec.model_validate(load_named_group(name, "dataset"))
 
@@ -309,7 +387,7 @@ def _resolve_tuning(name: str) -> TuningConfig:
 def _resolve_evaluation(name: str | None) -> EvaluatorConfig | None:
     if name is None:
         return None
-    return EvaluatorConfig.model_validate(load_named_group(name, "evaluation"))
+    return coerce_evaluator_config(load_named_group(name, "evaluation"))
 
 
 def _resolve_objective(name: str, *, evaluation_name: str | None) -> ObjectiveConfig:

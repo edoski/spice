@@ -27,7 +27,14 @@ from ..modeling.result_codecs import (
     training_summary_from_payload,
     training_summary_payload,
 )
-from .engine import RootKind, create_state_engine, ensure_state_db, table_exists, touch_meta
+from .engine import (
+    ARTIFACT_ROOT_KIND,
+    create_state_engine,
+    ensure_state_db,
+    require_root_kind,
+    table_exists,
+    touch_meta,
+)
 from .payloads import PayloadCodec, SequencePayloadStore, SingletonPayloadStore, mapping_payload
 from .schema import (
     ARTIFACT_TABLES,
@@ -75,16 +82,15 @@ def write_artifact_manifest(
     db_path: Path,
     *,
     manifest: TrainingArtifactManifest,
-    root_kind: RootKind,
 ) -> None:
     """Persist the canonical artifact manifest before any runtime summaries are written."""
 
-    ensure_state_db(db_path, root_kind=root_kind, tables=ARTIFACT_TABLES)
+    ensure_state_db(db_path, root_kind=ARTIFACT_ROOT_KIND, tables=ARTIFACT_TABLES)
     engine = create_state_engine(db_path)
     try:
         with engine.begin() as conn:
             _ARTIFACT_MANIFEST_STORE.upsert(conn, manifest)
-            touch_meta(conn, root_kind=root_kind)
+            touch_meta(conn, root_kind=ARTIFACT_ROOT_KIND)
     finally:
         engine.dispose()
 
@@ -94,6 +100,7 @@ def load_artifact_manifest(db_path: Path) -> TrainingArtifactManifest:
 
     if not db_path.is_file():
         raise MissingStateError(f"Missing artifact manifest: {db_path}")
+    require_root_kind(db_path, ARTIFACT_ROOT_KIND)
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
@@ -108,13 +115,12 @@ def load_artifact_manifest(db_path: Path) -> TrainingArtifactManifest:
 def write_training_state(
     db_path: Path,
     *,
-    root_kind: RootKind,
     summary: TrainingRuntimeSummary,
     epoch_rows: list[TrainingEpochRecord],
 ) -> None:
     """Persist training runtime summary plus ordered epoch history for one artifact root."""
 
-    ensure_state_db(db_path, root_kind=root_kind, tables=ARTIFACT_TABLES)
+    ensure_state_db(db_path, root_kind=ARTIFACT_ROOT_KIND, tables=ARTIFACT_TABLES)
     engine = create_state_engine(db_path)
     try:
         with engine.begin() as conn:
@@ -126,7 +132,7 @@ def write_training_state(
                     for record in epoch_rows
                 ],
             )
-            touch_meta(conn, root_kind=root_kind)
+            touch_meta(conn, root_kind=ARTIFACT_ROOT_KIND)
     finally:
         engine.dispose()
 
@@ -136,6 +142,7 @@ def load_training_summary(db_path: Path) -> LoadedTrainingSummary | None:
 
     if not table_exists(db_path, training_summary.name):
         return None
+    require_root_kind(db_path, ARTIFACT_ROOT_KIND)
     from ..modeling.results import LoadedTrainingSummary
 
     engine = create_state_engine(db_path)
@@ -156,6 +163,7 @@ def load_training_summary(db_path: Path) -> LoadedTrainingSummary | None:
 def list_training_epochs(db_path: Path) -> list[TrainingEpochRecord]:
     if not table_exists(db_path, training_epochs.name):
         return []
+    require_root_kind(db_path, ARTIFACT_ROOT_KIND)
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
@@ -179,15 +187,14 @@ def list_training_epochs(db_path: Path) -> list[TrainingEpochRecord]:
         engine.dispose()
 
 
-def write_evaluation_state(
+def upsert_evaluation_state(
     db_path: Path,
     *,
-    root_kind: RootKind,
     summary: EvaluationRuntimeSummary,
 ) -> tuple[str, int]:
     """Persist evaluation runtime summary plus ordered run rows for one artifact root."""
 
-    ensure_state_db(db_path, root_kind=root_kind, tables=ARTIFACT_TABLES)
+    ensure_state_db(db_path, root_kind=ARTIFACT_ROOT_KIND, tables=ARTIFACT_TABLES)
     evaluation_id = _evaluation_storage_id(summary)
     recorded_at = int(time.time())
     engine = create_state_engine(db_path)
@@ -223,7 +230,7 @@ def write_evaluation_state(
                         for ordinal, run in enumerate(summary.runs, start=1)
                     ],
                 )
-            touch_meta(conn, root_kind=root_kind)
+            touch_meta(conn, root_kind=ARTIFACT_ROOT_KIND)
     finally:
         engine.dispose()
     return evaluation_id, recorded_at
@@ -238,6 +245,7 @@ def load_evaluation_summary(
 
     if not table_exists(db_path, evaluation_summary.name):
         return None
+    require_root_kind(db_path, ARTIFACT_ROOT_KIND)
     summaries = list_evaluation_summaries(db_path) if evaluation_id is None else []
     if evaluation_id is None:
         if not summaries:
@@ -257,6 +265,7 @@ def load_evaluation_summary(
 def list_evaluation_summaries(db_path: Path) -> list[LoadedEvaluationSummary]:
     if not table_exists(db_path, evaluation_summary.name):
         return []
+    require_root_kind(db_path, ARTIFACT_ROOT_KIND)
     from ..modeling.results import LoadedEvaluationSummary
 
     engine = create_state_engine(db_path)
@@ -288,6 +297,8 @@ def list_evaluation_runs(
     *,
     evaluation_id: str | None = None,
 ) -> list[EvaluationRun]:
+    if db_path.is_file():
+        require_root_kind(db_path, ARTIFACT_ROOT_KIND)
     if not table_exists(db_path, evaluation_runs.name):
         return []
     engine = create_state_engine(db_path)

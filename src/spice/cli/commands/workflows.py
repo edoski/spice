@@ -23,22 +23,19 @@ from ...config.resolution import (
 )
 from ...core.errors import SpiceOperatorError
 from ...execution.slurm_ssh import follow_execution_job, submit_execution_workflow
+from ..options import DEFAULT_REMOTE_TARGET, RemoteTargetOption
 
 
 def _selection_option(*param_decls: str, metavar: str, help: str) -> object:
     return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Selection")
 
 
-def _workflow_option(*param_decls: str, metavar: str, help: str) -> object:
+def _execution_option(*param_decls: str, metavar: str, help: str) -> object:
     return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Execution")
 
 
 def _output_option(*param_decls: str, metavar: str, help: str) -> object:
     return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Outputs")
-
-
-def _submission_option(*param_decls: str, metavar: str, help: str) -> object:
-    return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Execution")
 
 
 def _submit_selected_workflow(
@@ -93,14 +90,6 @@ def _validate_submission_flags(
         return
     if dependency is not None or detach:
         raise SpiceOperatorError("--dependency and --detach require --submit")
-
-
-def _target_option() -> object:
-    return _submission_option(
-        "--target",
-        metavar="TARGET",
-        help="Submit to a named execution target.",
-    )
 
 
 def _run_resolved_workflow(
@@ -330,13 +319,13 @@ def train_command(
     ] = False,
     dependency: Annotated[
         str | None,
-        _submission_option(
+        _execution_option(
             "--dependency",
             metavar="DEPENDENCY",
             help="Pass one Slurm dependency spec such as afterok:12345.",
         ),
     ] = None,
-    target: Annotated[str, _target_option()] = "disi_l40",
+    target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     detach: Annotated[
         bool,
         typer.Option(
@@ -482,7 +471,7 @@ def tune_command(
     ] = None,
     trial_count: Annotated[
         int | None,
-        _workflow_option(
+        _execution_option(
             "--trial-count",
             metavar="COUNT",
             help="Override the requested trial count.",
@@ -506,13 +495,13 @@ def tune_command(
     ] = False,
     dependency: Annotated[
         str | None,
-        _submission_option(
+        _execution_option(
             "--dependency",
             metavar="DEPENDENCY",
             help="Pass one Slurm dependency spec such as afterok:12345.",
         ),
     ] = None,
-    target: Annotated[str, _target_option()] = "disi_l40",
+    target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     detach: Annotated[
         bool,
         typer.Option(
@@ -662,7 +651,7 @@ def evaluate_command(
     ] = None,
     delay_seconds: Annotated[
         int | None,
-        _workflow_option(
+        _execution_option(
             "--delay-seconds",
             metavar="SECONDS",
             help="Override the evaluation delay in seconds.",
@@ -686,13 +675,13 @@ def evaluate_command(
     ] = False,
     dependency: Annotated[
         str | None,
-        _submission_option(
+        _execution_option(
             "--dependency",
             metavar="DEPENDENCY",
             help="Pass one Slurm dependency spec such as afterok:12345.",
         ),
     ] = None,
-    target: Annotated[str, _target_option()] = "disi_l40",
+    target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     detach: Annotated[
         bool,
         typer.Option(

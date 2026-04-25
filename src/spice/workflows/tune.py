@@ -144,13 +144,14 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
     spec = _coverage_spec(config, paths=paths)
     validate_corpus_coverage(
         load_dataset_manifest(paths.corpus_state_db),
-        contract=spec.contract,
+        contract=spec.problem_contract,
         feature_contract=spec.feature_contract,
-        requirement=training_coverage_requirement(spec.contract),
+        requirement=training_coverage_requirement(spec.problem_contract),
     )
 
     with _optuna_warning_verbosity():
         study_access = open_tuning_study(study_state_db, config=config)
+        reindex_root(paths.output_root, root_path=study_root)
         study = study_access.study
         if study_access.existing_trial_count:
             active_reporter.milestone(

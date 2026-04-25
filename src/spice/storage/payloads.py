@@ -13,6 +13,8 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.schema import Table
 
+from ..core.errors import StateLayoutError
+
 T = TypeVar("T")
 
 
@@ -72,5 +74,5 @@ class SequencePayloadStore(Generic[T]):
 
 def mapping_payload(payload: object, *, label: str) -> dict[str, object]:
     if not isinstance(payload, dict):
-        raise TypeError(f"{label}.payload must be a mapping")
+        raise StateLayoutError(f"{label}.payload must be a mapping")
     return {str(key): value for key, value in cast(Mapping[object, object], payload).items()}

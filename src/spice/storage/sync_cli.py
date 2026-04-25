@@ -4,20 +4,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from ..core.errors import StateConflictError
-from ..core.files import promote_paths_atomic
+from .engine import RootKind
 from .roots import (
     ArtifactSelector,
     StudySelector,
-    reindex_root,
     resolve_artifact_record,
     resolve_study_record,
 )
+from .staging import cleanup_root_stage, prepare_root_stage, promote_root_stage
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -34,8 +32,13 @@ def main(argv: list[str] | None = None) -> None:
     finalize.add_argument("--storage-root", required=True)
     finalize.add_argument("--destination-root", required=True)
     finalize.add_argument("--staged-root", required=True)
+    finalize.add_argument("--expected-root-kind", required=True)
     finalize.add_argument("--replace", action="store_true")
     finalize.set_defaults(func=_finalize_stage_command)
+
+    cleanup = subparsers.add_parser("cleanup-stage")
+    cleanup.add_argument("--staged-root", required=True)
+    cleanup.set_defaults(func=_cleanup_stage_command)
 
     resolve_study = subparsers.add_parser("resolve-study-record")
     resolve_study.add_argument("--storage-root", required=True)
@@ -52,24 +55,28 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _prepare_stage_command(args: argparse.Namespace) -> None:
-    destination_root = Path(args.destination_root)
-    staged_root = Path(args.staged_root)
-    if destination_root.exists() and not args.replace:
-        raise StateConflictError(f"Destination already exists: {destination_root}")
-    staged_root.parent.mkdir(parents=True, exist_ok=True)
-    if staged_root.exists():
-        shutil.rmtree(staged_root)
-    staged_root.mkdir(parents=True, exist_ok=True)
+    prepare_root_stage(
+        destination_root=Path(args.destination_root),
+        staged_root=Path(args.staged_root),
+        replace=args.replace,
+    )
 
 
 def _finalize_stage_command(args: argparse.Namespace) -> None:
     storage_root = Path(args.storage_root)
     destination_root = Path(args.destination_root)
     staged_root = Path(args.staged_root)
-    if destination_root.exists() and not args.replace:
-        raise StateConflictError(f"Destination already exists: {destination_root}")
-    promote_paths_atomic([(destination_root, staged_root)])
-    reindex_root(storage_root, root_path=destination_root)
+    promote_root_stage(
+        storage_root=storage_root,
+        destination_root=destination_root,
+        staged_root=staged_root,
+        expected_root_kind=RootKind(args.expected_root_kind),
+        replace=args.replace,
+    )
+
+
+def _cleanup_stage_command(args: argparse.Namespace) -> None:
+    cleanup_root_stage(Path(args.staged_root))
 
 
 def _resolve_study_record_command(args: argparse.Namespace) -> None:

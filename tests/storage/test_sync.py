@@ -82,7 +82,7 @@ def test_push_study_to_cluster_uses_canonical_destination_root(tmp_path, monkeyp
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(
-        "spice.storage.sync.load_execution_target", lambda: _target(remote_storage_root)
+        "spice.storage.sync.load_execution_target", lambda _name: _target(remote_storage_root)
     )
     monkeypatch.setattr(
         "spice.storage.sync.resolve_study_record",
@@ -107,6 +107,8 @@ def test_push_study_to_cluster_uses_canonical_destination_root(tmp_path, monkeyp
                     "replace": False,
                 }
             )
+        if args[0] == "finalize-stage":
+            captured["expected_root_kind"] = args[args.index("--expected-root-kind") + 1]
         return subprocess.CompletedProcess(args=[module, *args], returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr("spice.storage.sync.run_execution_module", fake_run_execution_module)
@@ -116,6 +118,7 @@ def test_push_study_to_cluster_uses_canonical_destination_root(tmp_path, monkeyp
 
     pushed = push_study_to_cluster(
         storage_root=local_storage_root,
+        target_name="disi_l40",
         selector=StudySelector(
             chain_name=record.chain_name,
             dataset_name=record.dataset_name,
@@ -137,6 +140,7 @@ def test_push_study_to_cluster_uses_canonical_destination_root(tmp_path, monkeyp
     assert staged_root.parent == remote_storage_root / "studies" / record.chain_name
     assert "incoming" in staged_root.name
     assert captured["replace"] is False
+    assert captured["expected_root_kind"] == "study"
     assert execution_calls == ["prepare-stage", "finalize-stage"]
 
 
@@ -149,7 +153,8 @@ def test_pull_artifact_from_cluster_promotes_and_reindexes(tmp_path, monkeypatch
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(
-        "spice.storage.sync.load_execution_target", lambda: _target(tmp_path / "remote-storage")
+        "spice.storage.sync.load_execution_target",
+        lambda _name: _target(tmp_path / "remote-storage"),
     )
     monkeypatch.setattr(
         "spice.storage.sync.run_execution_module",
@@ -168,15 +173,23 @@ def test_pull_artifact_from_cluster_promotes_and_reindexes(tmp_path, monkeypatch
             dirs_exist_ok=True,
         ),
     )
-    monkeypatch.setattr(
-        "spice.storage.sync.reindex_root",
-        lambda storage_root, *, root_path: captured.update(
-            {"storage_root": storage_root, "root_path": root_path}
-        ),
-    )
+    def fake_promote_root_stage(
+        *,
+        storage_root,
+        destination_root,
+        staged_root,
+        expected_root_kind,
+        replace,
+    ):
+        del expected_root_kind, replace
+        shutil.move(staged_root, destination_root)
+        captured.update({"storage_root": storage_root, "root_path": destination_root})
+
+    monkeypatch.setattr("spice.storage.sync.promote_root_stage", fake_promote_root_stage)
 
     pulled, dataset_present = pull_artifact_from_cluster(
         storage_root=local_storage_root,
+        target_name="disi_l40",
         selector=ArtifactSelector(
             chain_name=record.chain_name,
             dataset_name=record.dataset_name,
@@ -205,7 +218,8 @@ def test_pull_artifact_from_cluster_rejects_existing_destination(tmp_path, monke
     destination_root.mkdir(parents=True)
 
     monkeypatch.setattr(
-        "spice.storage.sync.load_execution_target", lambda: _target(tmp_path / "remote-storage")
+        "spice.storage.sync.load_execution_target",
+        lambda _name: _target(tmp_path / "remote-storage"),
     )
     monkeypatch.setattr(
         "spice.storage.sync.run_execution_module",
@@ -220,6 +234,7 @@ def test_pull_artifact_from_cluster_rejects_existing_destination(tmp_path, monke
     with pytest.raises(StateConflictError, match="Destination already exists"):
         pull_artifact_from_cluster(
             storage_root=tmp_path / "outputs",
+            target_name="disi_l40",
             selector=ArtifactSelector(),
             replace=False,
         )

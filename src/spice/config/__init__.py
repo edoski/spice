@@ -1,6 +1,5 @@
 """Public configuration API."""
 
-from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..objectives import ObjectiveConfig
 from .models import (
     AcquireConfig,
@@ -71,7 +70,6 @@ __all__ = [
     "TuneWorkflowRequest",
     "WorkflowTask",
     "coerce_feature_set_config",
-    "coerce_dataset_builder_config",
     "coerce_problem_spec",
     "resolve_workflow_config",
 ]

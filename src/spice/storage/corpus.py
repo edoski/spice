@@ -9,7 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
-from ..core.errors import MissingStateError
+from ..core.errors import MissingStateError, StateLayoutError
 from ..corpus.metadata import (
     AcquireRunFacts,
     AcquireRunRecord,
@@ -27,7 +27,13 @@ from ..corpus.metadata import (
     ProviderMetadata,
     TimestampRangeMetadata,
 )
-from .engine import DATASET_ROOT_KIND, create_state_engine, ensure_state_db, touch_meta
+from .engine import (
+    DATASET_ROOT_KIND,
+    create_state_engine,
+    ensure_state_db,
+    require_root_kind,
+    touch_meta,
+)
 from .payloads import PayloadCodec, SequencePayloadStore, SingletonPayloadStore, mapping_payload
 from .schema import DATASET_TABLES, acquire_runs, dataset_manifest
 
@@ -71,6 +77,7 @@ def load_dataset_manifest(db_path: Path) -> DatasetManifest:
 
     if not db_path.is_file():
         raise MissingStateError(f"Missing dataset manifest: {db_path}")
+    require_root_kind(db_path, DATASET_ROOT_KIND)
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
@@ -87,6 +94,7 @@ def list_acquire_runs(db_path: Path) -> list[AcquireRunRecord]:
 
     if not db_path.is_file():
         return []
+    require_root_kind(db_path, DATASET_ROOT_KIND)
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
@@ -247,10 +255,10 @@ def _optional_int(value: object) -> int | None:
 
 def _int_value(value: object) -> int:
     if isinstance(value, bool):
-        raise TypeError("Expected integer-like payload")
+        raise StateLayoutError("Expected integer-like payload")
     if isinstance(value, (int, float, str, bytes)):
         return int(value)
-    raise TypeError("Expected integer-like payload")
+    raise StateLayoutError("Expected integer-like payload")
 
 
 def _int_list_value(values: object) -> list[int]:
@@ -259,7 +267,7 @@ def _int_list_value(values: object) -> list[int]:
 
 def _sequence_payload(values: object) -> Sequence[object]:
     if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
-        raise TypeError("Expected list payload")
+        raise StateLayoutError("Expected list payload")
     return cast(Sequence[object], values)
 
 

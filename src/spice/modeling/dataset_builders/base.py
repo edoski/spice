@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import polars as pl
 from pydantic import Field, field_validator, model_validator
 
-from ...core.specs import lookup_local_spec, require_mapping_id
+from ...core.errors import ConfigResolutionError
+from ...core.specs import lookup_local_spec, require_mapping_id, require_spec_config
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import DatasetBuilderSemantics
@@ -125,33 +126,19 @@ def _compile_fixed_context_temporal(
 class DatasetBuilderSpec:
     config_type: type[DatasetBuilderConfig]
     runtime_metadata_type: type[BuilderRuntimeMetadata]
-    compile_contract: Callable[[DatasetBuilderConfig], CompiledDatasetBuilderContract]
-
-
-def _compile_standard_temporal_from_base(
-    config: DatasetBuilderConfig,
-) -> CompiledDatasetBuilderContract:
-    return _compile_standard_temporal(StandardTemporalDatasetBuilderConfig.model_validate(config))
-
-
-def _compile_fixed_context_temporal_from_base(
-    config: DatasetBuilderConfig,
-) -> CompiledDatasetBuilderContract:
-    return _compile_fixed_context_temporal(
-        FixedContextTemporalDatasetBuilderConfig.model_validate(config)
-    )
+    compile_contract: Callable[[Any], CompiledDatasetBuilderContract]
 
 
 _DATASET_BUILDER_SPECS: dict[str, DatasetBuilderSpec] = {
     "standard_temporal": DatasetBuilderSpec(
         config_type=StandardTemporalDatasetBuilderConfig,
         runtime_metadata_type=StandardTemporalBuilderRuntimeMetadata,
-        compile_contract=_compile_standard_temporal_from_base,
+        compile_contract=_compile_standard_temporal,
     ),
     "fixed_context_temporal": DatasetBuilderSpec(
         config_type=FixedContextTemporalDatasetBuilderConfig,
         runtime_metadata_type=FixedContextTemporalBuilderRuntimeMetadata,
-        compile_contract=_compile_fixed_context_temporal_from_base,
+        compile_contract=_compile_fixed_context_temporal,
     ),
 }
 
@@ -211,6 +198,18 @@ def compiler_runtime_metadata_from_builder_payload(
     )
 
 
+def validate_feature_prerequisites(
+    actual,
+    expected,
+) -> None:
+    if actual != expected:
+        raise ValueError(
+            "Resolved feature prerequisites do not match the current feature graph: "
+            f"expected {expected.model_dump(mode='json')}, "
+            f"got {actual.model_dump(mode='json')}"
+        )
+
+
 def coerce_builder_runtime_metadata(
     builder_id: str,
     payload: Mapping[str, object] | BuilderRuntimeMetadata,
@@ -233,11 +232,13 @@ def coerce_dataset_builder_config(
         raw_payload = dict(payload)
         builder_id = require_mapping_id(raw_payload, "dataset_builder.id")
     else:
-        raise TypeError("dataset_builder must be a mapping or config model")
+        raise ConfigResolutionError("dataset_builder must be a mapping or config model")
     return dataset_builder_spec(builder_id).config_type.model_validate(raw_payload)
 
 
 def compile_dataset_builder_contract(
     config: DatasetBuilderConfig,
 ) -> CompiledDatasetBuilderContract:
-    return dataset_builder_spec(config.id).compile_contract(config)
+    spec = dataset_builder_spec(config.id)
+    concrete_config = require_spec_config(config, spec.config_type, "dataset builder config")
+    return spec.compile_contract(concrete_config)

@@ -25,13 +25,17 @@ def write_path_atomic(path: Path, writer: Callable[[Path], None]) -> None:
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise
-def promote_paths_atomic(promotions: list[tuple[Path, Path]]) -> None:
+
+
+def replace_paths_atomic(promotions: list[tuple[Path, Path]], *, replace: bool) -> None:
     backups: list[tuple[Path, Path]] = []
     promoted: list[Path] = []
     try:
         for target, _source in promotions:
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
+                if not replace:
+                    raise FileExistsError(f"Destination already exists: {target}")
                 backup = target.parent / f".{target.name}.backup.{uuid4().hex}"
                 os.replace(target, backup)
                 backups.append((target, backup))
@@ -48,6 +52,10 @@ def promote_paths_atomic(promotions: list[tuple[Path, Path]]) -> None:
     else:
         for _target, backup in backups:
             remove_path(backup)
+
+
+def replace_path_atomic(target: Path, source: Path, *, replace: bool) -> None:
+    replace_paths_atomic([(target, source)], replace=replace)
 
 
 def remove_path(path: Path) -> None:

@@ -15,7 +15,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from ..core.errors import ConfigResolutionError
-from ..evaluation import EvaluatorConfig
+from ..evaluation import coerce_evaluator_config
 from ..execution.models import ExecutionSpec
 from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.registry import coerce_model_config
@@ -170,7 +170,7 @@ _GROUP_SPECS = (
         token=ConfigGroup.EVALUATION.value,
         directory="evaluation",
         seed_name="fullset",
-        validate=EvaluatorConfig.model_validate,
+        validate=coerce_evaluator_config,
         public=True,
     ),
     GroupSpec(
