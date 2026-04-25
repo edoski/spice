@@ -12,6 +12,24 @@ normalized = (feature - mean) / scale
 
 The important boundary is leakage. Statistics must be fit only from training windows. Validation, test, and evaluation data must use the training-fitted scaler.
 
+## Beginner Theory: Standardization And Leakage
+
+Standardization subtracts a training mean and divides by a training standard deviation:
+
+```text
+z = (x - mean_train) / std_train
+```
+
+This gives each feature a similar numeric scale. Without it, a large-valued feature can dominate gradients even if it is not more informative.
+
+Leakage happens when information from validation, test, or evaluation data influences training. Fitting a scaler on all rows leaks future distribution information into the model. The safe pattern is:
+
+```text
+fit scaler on train rows
+transform train rows with that scaler
+transform validation/test/evaluation rows with that same scaler
+```
+
 ## Shared Scaler Behavior
 
 Both current normalizers produce a feature scaler with:
@@ -81,3 +99,7 @@ The transformed feature matrix keeps the same row order and shape.
 
 A new normalizer should clearly define which training rows contribute and with what weights. It should return the same scaler shape and keep inference transform independent from evaluation data.
 
+## Theory References
+
+- scikit-learn `StandardScaler`: https://scikit-learn.org/stable/modules/generated/sklearn.preprocessing.StandardScaler.html
+- scikit-learn data leakage guidance: https://scikit-learn.org/stable/common_pitfalls.html

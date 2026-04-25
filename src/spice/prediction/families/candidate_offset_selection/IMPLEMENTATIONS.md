@@ -51,6 +51,19 @@ loss = mean(sum(policy[action] * relative_fee[action]))
 
 Lower is better. The model is rewarded for putting probability mass on cheaper fee outcomes.
 
+## Beginner Theory: Policy Loss Versus Classification Loss
+
+This family does not ask "which offset is the labeled class?" It asks "what fee would we expect if we sampled from the model's action distribution?" That is why it uses softmax probabilities and candidate fees directly.
+
+```text
+high probability on cheap actions -> lower expected cost
+high probability on expensive actions -> higher expected cost
+```
+
+The baseline-relative fee makes examples comparable across fee regimes. Paying `20` instead of `10` is a 2x cost, while paying `110` instead of `100` is a 1.1x cost. Relative cost captures that distinction.
+
+At decode time, the system does not sample. It chooses the highest-logit valid action with masked argmax so evaluation is deterministic.
+
 ## Metrics
 
 Validation/test metrics decode the argmax offset and compare realized fee against baseline and optimum:
@@ -84,4 +97,3 @@ The decoded offsets are then interpreted by evaluators through the realization p
 | Invalid mask shape | Batch/action dimensions disagree. |
 | Non-positive baseline fee after exponentiation | Economic ratio cannot be computed. |
 | No valid action | Argmax and softmax are undefined. |
-

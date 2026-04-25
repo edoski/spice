@@ -65,6 +65,26 @@ for epoch:
 
 Optimizer is AdamW. Mixed precision uses CUDA support when enabled. Best checkpoint reload happens before final artifact persistence.
 
+## Beginner Theory: Loss, Backpropagation, And Optimization
+
+Training needs one scalar loss. The prediction family computes that loss from model outputs and target batches. Backpropagation differentiates the loss with respect to every trainable weight. The optimizer then changes the weights.
+
+```text
+outputs = model(inputs)
+loss = prediction_family.loss(outputs, targets)
+compute gradients from loss
+clip gradients
+optimizer.step()
+```
+
+AdamW is the current optimizer. Adam keeps moving averages of gradients and squared gradients so each parameter gets an adaptive step size. AdamW applies weight decay separately from those adaptive moments, which makes the regularization effect easier to reason about than coupling it into the gradient update.
+
+Gradient clipping limits the total gradient norm before the optimizer step. This does not change the loss function. It prevents one unusually large batch from producing a very large update that destabilizes training.
+
+Mixed precision stores or computes selected tensors in lower precision on CUDA hardware. The reason is throughput and memory: smaller numeric formats can run faster and fit larger batches. The risk is numerical range, so the implementation uses CUDA-supported precision choices and scaler behavior where needed.
+
+Early stopping is a model-selection rule. If the objective metric stops improving by at least `min_delta` for `patience` epochs, training stops and the best checkpoint is reloaded. This keeps the persisted artifact tied to the best validation objective, not the final epoch by accident.
+
 ## Inference
 
 Inference allocates one decoded result buffer sized to the selected samples. Each batch writes decoded offsets back by sample position.
@@ -127,3 +147,8 @@ Study state stores the study manifest and Optuna tables. Trial user attributes r
 
 New modeling implementations should enter through contracts: model families own architectures, prediction families own output/loss/decode, dataset builders own sample construction, and workflows only orchestrate those pieces.
 
+## Theory References
+
+- AdamW: Loshchilov and Hutter, "Decoupled Weight Decay Regularization": https://arxiv.org/abs/1711.05101
+- PyTorch AdamW behavior: https://docs.pytorch.org/docs/stable/generated/torch.optim.AdamW
+- PyTorch gradient clipping: https://docs.pytorch.org/docs/stable/generated/torch.nn.utils.clip_grad_norm_.html

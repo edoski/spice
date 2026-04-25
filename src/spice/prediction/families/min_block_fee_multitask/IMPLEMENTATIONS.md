@@ -59,6 +59,28 @@ total_loss = classification + 0.5 * regression
 
 The classification head chooses the action. The regression head helps the shared representation learn fee level.
 
+## Beginner Theory: Why Two Tasks Can Help
+
+Multitask learning trains one shared representation with more than one supervision signal. Here, the offset task teaches "which candidate is best," while the scalar fee task teaches "what fee level is expected." These tasks are related: knowing the fee curve shape can help identify the minimum, and identifying the minimum can help learn which fee levels matter.
+
+Cross entropy is the classification loss. It expects unnormalized logits and a target class index. Internally, the useful idea is:
+
+```text
+loss = -log(probability assigned to the correct class)
+```
+
+Class weights matter when optimum offsets are imbalanced. If offset `0` is common and later offsets are rare, an unweighted classifier can look good by favoring common classes. Inverse-frequency weights increase the penalty for missing rare target offsets.
+
+SmoothL1 is the regression loss. It behaves quadratically near zero error and linearly for larger errors. That makes small mistakes smooth to optimize while reducing sensitivity to large outliers compared with pure squared error.
+
+The fee regression target is normalized before SmoothL1:
+
+```text
+normalized_fee = (log_fee - train_mean) / train_std
+```
+
+This keeps the classification and regression components on more comparable numeric scales.
+
 ## Metrics
 
 | Metric | Meaning |
@@ -91,3 +113,7 @@ The evaluator receives only candidate offsets.
 | No valid action | Masked argmax cannot choose. |
 | Fee stats unavailable | Regression target cannot be normalized. |
 
+## Theory References
+
+- PyTorch cross entropy: https://docs.pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html
+- PyTorch SmoothL1 loss: https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.smooth_l1_loss.html

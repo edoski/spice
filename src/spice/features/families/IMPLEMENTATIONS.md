@@ -16,6 +16,22 @@ canonical block rows
 
 Feature contracts validate source columns, output ids, dependencies, row counts, and feature-set fingerprints.
 
+## Beginner Theory: Base Fee, Gas, And Predictive Signals
+
+Ethereum-style base fee is a protocol-set fee per gas unit. Under EIP-1559, the protocol adjusts the base fee according to how full recent blocks are compared with a target. High gas usage signals congestion, and congestion pushes future base fees upward. Low usage can push them down.
+
+SPICE tries to learn when waiting a few blocks is economically useful. The feature families therefore emphasize:
+
+| Signal | Why it can matter |
+| --- | --- |
+| Current base fee | Starting point for the decision. |
+| Gas used and gas ratio | Proxy for demand pressure. |
+| Recent fee deltas | Short-term momentum or reversal. |
+| Rolling statistics | Smoothed context over noisy blocks. |
+| Calendar time | Repeating demand patterns by hour or day. |
+
+Feature engineering is the step where domain knowledge becomes numeric model input. The model does not know what "congestion" means unless the inputs expose useful measurements.
+
 ## Shared Helpers
 
 All families use shared helper mechanics:
@@ -30,6 +46,39 @@ All families use shared helper mechanics:
 | Calendar sin/cos | Encodes cyclic time without discontinuity at midnight or week boundary. |
 
 Rolling block windows use fixed row counts. Timestamp windows use elapsed seconds and `searchsorted`.
+
+### Why Log Transforms
+
+Fees and gas quantities are positive and can be heavy-tailed. A raw fee jump from `10` to `20` has the same absolute size as `100` to `110`, but economically the first is a doubling and the second is a 10% increase. Logs make multiplicative changes more additive:
+
+```text
+log(20) - log(10)  = log(2)
+log(110) - log(100) = log(1.1)
+```
+
+That gives the model a scale where relative changes are easier to learn.
+
+### Why Cyclic Time Uses Sine And Cosine
+
+Hour `23` and hour `0` are adjacent in real time, but numerically they look far apart if encoded as plain integers. Sine and cosine place cyclic values on a circle:
+
+```text
+hour -> sin(2*pi*hour/24), cos(2*pi*hour/24)
+```
+
+The pair keeps midnight close to 23:00 and 01:00.
+
+### Why Rolling Windows
+
+One block can be noisy. Rolling windows summarize recent history:
+
+```text
+last 10 rows  -> local short-term signal
+last 50 rows  -> medium context
+last 200 rows -> broader regime
+```
+
+Timestamp windows ask the same question in seconds instead of row counts, which matters when block intervals vary.
 
 ## `same_block_closed`
 
@@ -115,3 +164,7 @@ Presets select concrete output lists from the families:
 
 A new family should define feature specs, source columns, prerequisites, and output functions in its own module. Keep leakage policy explicit: state what is known at the decision point, then encode only those values.
 
+## Theory References
+
+- EIP-1559 base-fee mechanism: https://eips.ethereum.org/EIPS/eip-1559
+- Ethereum gas and fees overview: https://ethereum.org/en/developers/docs/gas/
