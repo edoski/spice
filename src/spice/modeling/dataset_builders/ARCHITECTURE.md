@@ -33,7 +33,7 @@ Frame preparation is intentionally local to each builder. A generic helper with 
 ## Registry Dispatch
 
 ```text
-coerce_dataset_builder_config(payload)
+dataset builder payload
   -> dataset_builder.id
   -> local spec config_type
   -> concrete DatasetBuilderConfig

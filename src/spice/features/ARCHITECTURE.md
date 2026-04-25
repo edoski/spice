@@ -15,7 +15,7 @@ FeatureSetConfig
   outputs: [...]
         |
         v
-coerce_feature_family_config()
+feature-family config resolution
         |
         v
 compile_feature_contract()
@@ -27,7 +27,7 @@ CompiledFeatureContract.build_table(blocks)
 ResolvedFeatureTable
 ```
 
-The public API is the contract path. The concrete `feature_family()` registry lookup stays internal to the features package.
+The public API is the contract path. Concrete family registry lookup stays internal to the features package.
 
 ## Why Feature Prerequisites Matter
 

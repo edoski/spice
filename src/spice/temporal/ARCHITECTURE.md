@@ -9,7 +9,7 @@ Many time-series ML bugs are leakage bugs. Leakage happens when training example
 ## Core Row Concepts
 
 ```text
-context_start        anchor / candidate_start        candidate_end
+context_start        anchor / candidate_start        candidate window end
      |                         |                         |
      v                         v                         v
 -----+-------------------------+-------------------------+---- time
@@ -29,7 +29,7 @@ timestamps
 context_start_rows
 anchor_rows
 candidate_start_rows
-candidate_end_rows
+candidate window end row array
 max_candidate_slots
 ```
 

@@ -1,0 +1,136 @@
+# Concrete Storage Implementation
+
+Storage keeps datasets, trained artifacts, tuning studies, and derived catalog indexes on disk. It uses typed roots: each root has one purpose and one SQLite state DB.
+
+## Mental Model
+
+There are three root kinds:
+
+```text
+corpus root   -> acquired history/evaluation block data
+study root    -> tuning manifest + Optuna state
+artifact root -> trained model + manifest + training/evaluation state
+```
+
+The catalog is an index over roots. Root manifests and state DBs are the source of truth.
+
+## On-Disk Layout
+
+```text
+outputs/
+  .spice/catalog.sqlite
+  corpora/{chain}/{corpus_id}/
+    history/
+    evaluation/
+    .spice/state.sqlite
+  studies/{chain}/{study_id}/
+    .spice/state.sqlite
+  artifacts/{chain}/{artifact_id}/
+    model.pt
+    checkpoints/
+    .spice/state.sqlite
+```
+
+Each root DB has `spice_meta` recording its root kind.
+
+## SQLite State Engine
+
+The engine creates the expected tables for a root kind and validates table shape. Column order is part of the state contract.
+
+| Root kind | Main tables |
+| --- | --- |
+| corpus | `dataset_manifest`, `acquire_runs` |
+| artifact | `artifact_manifest`, `training_summary`, `training_epochs`, `evaluation_summary`, `evaluation_runs` |
+| study | `study_manifest` plus Optuna tables |
+
+SQLite connections enable foreign keys, WAL, and busy timeout.
+
+## Deterministic IDs
+
+IDs are content-derived:
+
+| ID | Source |
+| --- | --- |
+| Corpus id | Chain, dataset name, evaluation date. |
+| Study id | Canonical study identity payload. |
+| Artifact id | Canonical artifact identity payload. |
+
+Hashes make storage paths stable for identical experiment identities.
+
+## Corpus State
+
+Corpus state stores one dataset manifest plus acquire-run history. The manifest records requested windows, covered windows, validation reports, dataset id, dataset name, chain name, and chain id.
+
+Acquire-run rows store provider identity, endpoint fingerprint, sizing facts, acquisition config snapshot, and RPC controller counters.
+
+## Artifact State
+
+Artifact state stores exact training provenance:
+
+```text
+artifact manifest
+  -> exact configs
+  -> feature graph fingerprint
+  -> scaler
+  -> builder runtime metadata
+  -> semantics
+  -> split/training/model/prediction/objective
+```
+
+Training state stores one summary and ordered epoch rows. Evaluation state stores multiple summaries keyed by an evaluation id derived from evaluator config and delay.
+
+## Study State
+
+Study state stores a SPICE study manifest and Optuna's RDB tables in the same SQLite file. The study manifest validates that resumed tuning belongs to the same request. Trial attributes store sampled params and best epoch.
+
+## Staging And Commit
+
+Full-root commits use hidden staged roots:
+
+```text
+write staged root
+  -> validate root kind
+  -> atomically promote over destination
+  -> reindex catalog
+```
+
+Partial commits promote selected paths inside an existing root. Acquire uses partial commit because history, evaluation, and state paths are assembled as parts of a corpus root.
+
+## Sync
+
+Supported transfer directions:
+
+| Command | Direction |
+| --- | --- |
+| Push dataset | local corpus root to cluster. |
+| Push study | local study root to cluster. |
+| Pull study | cluster study root to local. |
+| Pull artifact | cluster artifact root to local. |
+
+Sync prepares a remote or local stage, uses `rsync`, validates root kind, finalizes the stage, and reindexes.
+
+## Invariants
+
+| Rule | Why |
+| --- | --- |
+| Root kind must match operation. | Prevents reading a corpus DB as an artifact DB. |
+| Table shape must match expected schema. | State payload decoders depend on columns. |
+| Manifest is source of truth. | Catalog can be rebuilt. |
+| Study contains exactly one Optuna study. | Trial identity stays unambiguous. |
+| Artifact delay cannot exceed trained capability. | Prediction head width and problem geometry must align. |
+
+## Failure Modes
+
+| Failure | Meaning |
+| --- | --- |
+| Missing state DB | Root was not materialized. |
+| Root-kind mismatch | Wrong storage path passed to an operation. |
+| Schema mismatch | State DB does not match expected tables. |
+| Multiple selector matches | CLI/storage resolver needs a unique root. |
+| Delete blocked by dependents | Dataset or study still has linked children. |
+| Missing best params | Tuned artifact requested before study has a best trial. |
+
+## Extension Pattern
+
+New persisted state should be rooted in a manifest first, then indexed into the catalog. Keep catalog rows derivable from root state.
+
