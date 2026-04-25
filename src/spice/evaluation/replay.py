@@ -8,7 +8,8 @@ from ..core.errors import SpiceOperatorError
 from ..prediction.contracts import DecodedPredictionResult, require_decoded_offsets
 from ..temporal.problem_store import CompiledProblemStore
 from ..temporal.realization import CompiledRealizationPolicyContract
-from .config import EvaluationAggregationId, EvaluatorConfig
+from .aggregation import ReplayAggregationSpec, replay_aggregation_spec
+from .config import EvaluatorConfig
 from .contracts import EvaluationSummary, IntVector
 from .shared import (
     chronological_sample_view,
@@ -25,7 +26,7 @@ def run_fullset(
     decoded_result: DecodedPredictionResult,
     sample_indices: IntVector,
     *,
-    aggregation: EvaluationAggregationId,
+    aggregation: ReplayAggregationSpec,
 ) -> EvaluationSummary:
     decoded_offsets = require_decoded_offsets(decoded_result)
     if sample_indices.size == 0:
@@ -51,7 +52,7 @@ def run_poisson_arrivals(
     config: EvaluatorConfig,
 ) -> EvaluationSummary:
     decoded_offsets = require_decoded_offsets(decoded_result)
-    aggregation = _aggregation(config)
+    aggregation = replay_aggregation_spec(config.aggregation_id)
     window_seconds = _required_int(config.window_seconds, "evaluation.window_seconds")
     repetitions = _required_int(config.repetitions, "evaluation.repetitions")
     seed = _required_int(config.seed, "evaluation.seed")
@@ -118,12 +119,6 @@ def _required_int(value: int | None, label: str) -> int:
     if value is None:
         raise ValueError(f"Missing required field: {label}")
     return value
-
-
-def _aggregation(config: EvaluatorConfig) -> EvaluationAggregationId:
-    if config.aggregation is None:
-        raise ValueError("Missing required field: evaluation.aggregation")
-    return config.aggregation.id
 
 
 def _required_float(value: float | None, label: str) -> float:

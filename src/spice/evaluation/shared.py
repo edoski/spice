@@ -11,7 +11,14 @@ from ..prediction.base import MetricSet, WindowMetricSummary
 from ..prediction.contracts import DecodedPredictionResult, require_decoded_offsets
 from ..temporal.problem_store import CompiledProblemStore
 from ..temporal.realization import CompiledRealizationPolicyContract
-from .config import EvaluationAggregationId
+from .aggregation import (
+    BASELINE_COST_OVER_OPTIMUM,
+    COST_OVER_OPTIMUM,
+    PROFIT_OVER_BASELINE,
+    REPLAY_RATIO_METRIC_IDS,
+    ReplayAggregationSpec,
+    ReplayCostSummary,
+)
 from .contracts import EvaluationMetadataValue, EvaluationRun, EvaluationSummary, IntVector
 
 
@@ -128,7 +135,7 @@ def summarize_selected_costs(
     sample_indices: IntVector,
     selected_positions: IntVector,
     *,
-    aggregation: EvaluationAggregationId,
+    aggregation: ReplayAggregationSpec,
     metadata: dict[str, str | int | float],
 ) -> EvaluationRun:
     decoded_offsets = require_decoded_offsets(decoded_result)
@@ -165,41 +172,39 @@ def summarize_selected_costs(
     profit_values = (baseline_fees - realized_fees) / baseline_fees
     cost_values = (realized_fees - optimum_fees) / optimum_fees
     baseline_cost_values = (baseline_fees - optimum_fees) / optimum_fees
-    if aggregation is EvaluationAggregationId.EVENT_MEAN:
-        profit_over_baseline = float(profit_values.mean())
-        cost_over_optimum = float(cost_values.mean())
-        baseline_cost_over_optimum = float(baseline_cost_values.mean())
-    else:
-        profit_over_baseline = (baseline_total - realized_total) / baseline_total
-        cost_over_optimum = (realized_total - optimum_total) / optimum_total
-        baseline_cost_over_optimum = (baseline_total - optimum_total) / optimum_total
+    costs = ReplayCostSummary(
+        n_events=int(selected_positions.shape[0]),
+        realized_fee_sum=realized_total,
+        baseline_fee_sum=baseline_total,
+        optimum_fee_sum=optimum_total,
+        event_metric_sums={
+            PROFIT_OVER_BASELINE: float(profit_values.sum()),
+            COST_OVER_OPTIMUM: float(cost_values.sum()),
+            BASELINE_COST_OVER_OPTIMUM: float(baseline_cost_values.sum()),
+        },
+    )
+    aggregated_metrics = aggregation.run_metrics(costs)
 
     return EvaluationRun(
-        n_events=int(selected_positions.shape[0]),
+        n_events=costs.n_events,
         metrics={
-            "profit_over_baseline": profit_over_baseline,
-            "cost_over_optimum": cost_over_optimum,
-            "baseline_cost_over_optimum": baseline_cost_over_optimum,
-            "realized_fee_sum": realized_total,
-            "baseline_fee_sum": baseline_total,
-            "optimum_fee_sum": optimum_total,
+            **aggregated_metrics,
+            "realized_fee_sum": costs.realized_fee_sum,
+            "baseline_fee_sum": costs.baseline_fee_sum,
+            "optimum_fee_sum": costs.optimum_fee_sum,
         },
         metadata={
             **dict(metadata),
             "overflow_count": int(realized.overflow_mask.sum()),
         },
-        event_metric_sums={
-            "profit_over_baseline": float(profit_values.sum()),
-            "cost_over_optimum": float(cost_values.sum()),
-            "baseline_cost_over_optimum": float(baseline_cost_values.sum()),
-        },
+        event_metric_sums=costs.event_metric_sums,
     )
 
 
 def summarize_runs(
     runs: list[EvaluationRun],
     *,
-    aggregation: EvaluationAggregationId,
+    aggregation: ReplayAggregationSpec,
 ) -> EvaluationSummary:
     if not runs:
         raise ValueError("evaluation produced no runs")
@@ -212,24 +217,21 @@ def summarize_runs(
     if optimum_fee_sum <= 0.0:
         raise ValueError("optimum fee sum must be positive")
     total_events = sum(run.n_events for run in runs)
-    if aggregation is EvaluationAggregationId.EVENT_MEAN:
-        profit_over_baseline = _event_metric_mean(runs, "profit_over_baseline", total_events)
-        cost_over_optimum = _event_metric_mean(runs, "cost_over_optimum", total_events)
-        baseline_cost_over_optimum = _event_metric_mean(
-            runs,
-            "baseline_cost_over_optimum",
-            total_events,
-        )
-    else:
-        profit_over_baseline = (baseline_fee_sum - realized_fee_sum) / baseline_fee_sum
-        cost_over_optimum = (realized_fee_sum - optimum_fee_sum) / optimum_fee_sum
-        baseline_cost_over_optimum = (baseline_fee_sum - optimum_fee_sum) / optimum_fee_sum
+    costs = ReplayCostSummary(
+        n_events=total_events,
+        realized_fee_sum=realized_fee_sum,
+        baseline_fee_sum=baseline_fee_sum,
+        optimum_fee_sum=optimum_fee_sum,
+        event_metric_sums={
+            metric_id: sum(run.event_metric_sums[metric_id] for run in runs)
+            for metric_id in REPLAY_RATIO_METRIC_IDS
+        },
+    )
+    aggregated_metrics = aggregation.summary_metrics(costs)
     return EvaluationSummary(
         metrics=MetricSet(
             values={
-                "profit_over_baseline": profit_over_baseline,
-                "cost_over_optimum": cost_over_optimum,
-                "baseline_cost_over_optimum": baseline_cost_over_optimum,
+                **aggregated_metrics,
                 "realized_fee_sum": realized_fee_sum,
                 "baseline_fee_sum": baseline_fee_sum,
                 "optimum_fee_sum": optimum_fee_sum,
@@ -251,16 +253,6 @@ def summarize_runs(
         total_events=total_events,
         runs=runs,
     )
-
-
-def _event_metric_mean(
-    runs: list[EvaluationRun],
-    metric_id: str,
-    total_events: int,
-) -> float:
-    if total_events <= 0:
-        raise ValueError("evaluation event count must be positive")
-    return sum(run.event_metric_sums[metric_id] for run in runs) / total_events
 
 
 def _summarize_window_metric(values: list[float]) -> WindowMetricSummary:

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal
 import polars as pl
 from pydantic import Field, field_validator, model_validator
 
+from ...core.specs import lookup_local_spec, require_mapping_id
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import DatasetBuilderSemantics
@@ -120,6 +121,45 @@ def _compile_fixed_context_temporal(
     return compile_dataset_builder(config)
 
 
+@dataclass(frozen=True, slots=True)
+class DatasetBuilderSpec:
+    config_type: type[DatasetBuilderConfig]
+    runtime_metadata_type: type[BuilderRuntimeMetadata]
+    compile_contract: Callable[[DatasetBuilderConfig], CompiledDatasetBuilderContract]
+
+
+def _compile_standard_temporal_from_base(
+    config: DatasetBuilderConfig,
+) -> CompiledDatasetBuilderContract:
+    return _compile_standard_temporal(StandardTemporalDatasetBuilderConfig.model_validate(config))
+
+
+def _compile_fixed_context_temporal_from_base(
+    config: DatasetBuilderConfig,
+) -> CompiledDatasetBuilderContract:
+    return _compile_fixed_context_temporal(
+        FixedContextTemporalDatasetBuilderConfig.model_validate(config)
+    )
+
+
+_DATASET_BUILDER_SPECS: dict[str, DatasetBuilderSpec] = {
+    "standard_temporal": DatasetBuilderSpec(
+        config_type=StandardTemporalDatasetBuilderConfig,
+        runtime_metadata_type=StandardTemporalBuilderRuntimeMetadata,
+        compile_contract=_compile_standard_temporal_from_base,
+    ),
+    "fixed_context_temporal": DatasetBuilderSpec(
+        config_type=FixedContextTemporalDatasetBuilderConfig,
+        runtime_metadata_type=FixedContextTemporalBuilderRuntimeMetadata,
+        compile_contract=_compile_fixed_context_temporal_from_base,
+    ),
+}
+
+
+def dataset_builder_spec(builder_id: str) -> DatasetBuilderSpec:
+    return lookup_local_spec(_DATASET_BUILDER_SPECS, builder_id, "dataset_builder.id")
+
+
 def standard_temporal_runtime_metadata(
     *,
     compiler_id: str,
@@ -180,13 +220,7 @@ def coerce_builder_runtime_metadata(
         if isinstance(payload, BuilderRuntimeMetadata)
         else dict(payload)
     )
-    if builder_id == "standard_temporal":
-        return StandardTemporalBuilderRuntimeMetadata.model_validate(raw_payload)
-    if builder_id == "fixed_context_temporal":
-        return FixedContextTemporalBuilderRuntimeMetadata.model_validate(raw_payload)
-    raise ValueError(
-        "dataset_builder.id must be one of: standard_temporal, fixed_context_temporal"
-    )
+    return dataset_builder_spec(builder_id).runtime_metadata_type.model_validate(raw_payload)
 
 
 def coerce_dataset_builder_config(
@@ -197,29 +231,13 @@ def coerce_dataset_builder_config(
         builder_id = payload.id
     elif isinstance(payload, Mapping):
         raw_payload = dict(payload)
-        builder_id = raw_payload.get("id")
+        builder_id = require_mapping_id(raw_payload, "dataset_builder.id")
     else:
         raise TypeError("dataset_builder must be a mapping or config model")
-    if builder_id == "standard_temporal":
-        return StandardTemporalDatasetBuilderConfig.model_validate(raw_payload)
-    if builder_id == "fixed_context_temporal":
-        return FixedContextTemporalDatasetBuilderConfig.model_validate(raw_payload)
-    raise ValueError(
-        "dataset_builder.id must be one of: standard_temporal, fixed_context_temporal"
-    )
+    return dataset_builder_spec(builder_id).config_type.model_validate(raw_payload)
 
 
 def compile_dataset_builder_contract(
     config: DatasetBuilderConfig,
 ) -> CompiledDatasetBuilderContract:
-    if config.id == "standard_temporal":
-        return _compile_standard_temporal(
-            StandardTemporalDatasetBuilderConfig.model_validate(config)
-        )
-    if config.id == "fixed_context_temporal":
-        return _compile_fixed_context_temporal(
-            FixedContextTemporalDatasetBuilderConfig.model_validate(config)
-        )
-    raise ValueError(
-        "dataset_builder.id must be one of: standard_temporal, fixed_context_temporal"
-    )
+    return dataset_builder_spec(config.id).compile_contract(config)

@@ -1,21 +1,51 @@
-"""Direct prediction-family dispatch for the fixed in-repo families."""
+"""Prediction-family specs for the fixed in-repo families."""
 
 from __future__ import annotations
 
-from ..core.errors import ConfigResolutionError
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from ..core.specs import lookup_local_spec
 from .contracts import CompiledPredictionContract
 
-_KNOWN_PREDICTION_FAMILY_IDS = frozenset(
-    {"candidate_offset_selection", "min_block_fee_multitask"}
-)
+
+@dataclass(frozen=True, slots=True)
+class PredictionFamilySpec:
+    compile_contract: Callable[[str], CompiledPredictionContract]
+
+
+def _compile_candidate_offset_selection(prediction_id: str) -> CompiledPredictionContract:
+    from .families.candidate_offset_selection import compile_prediction_family
+
+    return compile_prediction_family(prediction_id)
+
+
+def _compile_min_block_fee_multitask(prediction_id: str) -> CompiledPredictionContract:
+    from .families.min_block_fee_multitask import compile_prediction_family
+
+    return compile_prediction_family(prediction_id)
+
+
+_PREDICTION_FAMILY_SPECS: dict[str, PredictionFamilySpec] = {
+    "candidate_offset_selection": PredictionFamilySpec(
+        compile_contract=_compile_candidate_offset_selection,
+    ),
+    "min_block_fee_multitask": PredictionFamilySpec(
+        compile_contract=_compile_min_block_fee_multitask,
+    ),
+}
+
+
+def prediction_family_spec(family_id: str) -> PredictionFamilySpec:
+    return lookup_local_spec(
+        _PREDICTION_FAMILY_SPECS,
+        family_id,
+        "prediction.family_id",
+    )
 
 
 def validate_prediction_family_id(family_id: str) -> str:
-    if family_id not in _KNOWN_PREDICTION_FAMILY_IDS:
-        known = ", ".join(sorted(_KNOWN_PREDICTION_FAMILY_IDS))
-        raise ConfigResolutionError(
-            f"Unknown prediction.family_id: {family_id}. Known values: {known}"
-        )
+    prediction_family_spec(family_id)
     return family_id
 
 
@@ -24,12 +54,4 @@ def compile_prediction_contract(
     prediction_id: str,
     family_id: str,
 ) -> CompiledPredictionContract:
-    validate_prediction_family_id(family_id)
-    if family_id == "candidate_offset_selection":
-        from .families.candidate_offset_selection import compile_prediction_family
-
-        return compile_prediction_family(prediction_id)
-    assert family_id == "min_block_fee_multitask"
-    from .families.min_block_fee_multitask import compile_prediction_family
-
-    return compile_prediction_family(prediction_id)
+    return prediction_family_spec(family_id).compile_contract(prediction_id)

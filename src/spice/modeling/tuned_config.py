@@ -16,6 +16,7 @@ from ..config.models import (
     TuningTrainingSearchSpace,
 )
 from ..core.errors import ConfigResolutionError
+from ..core.specs import require_mapping_id
 from .families.registry import model_spec
 
 
@@ -35,7 +36,7 @@ def coerce_tuning_space_config(
     raw_model_payload = raw_payload["model"]
     if not isinstance(raw_model_payload, Mapping):
         raise ConfigResolutionError("tuning_space.model must be a mapping")
-    model_id = _mapping_id(raw_model_payload, field_name="tuning_space.model.id")
+    model_id = require_mapping_id(raw_model_payload, "tuning_space.model.id")
     spec = model_spec(model_id)
     training_payload = raw_payload.get("training")
     problem_payload = raw_payload.get("problem")
@@ -80,7 +81,7 @@ def coerce_tuned_parameter_set(
     if model_payload is not None:
         if not isinstance(model_payload, Mapping):
             raise ConfigResolutionError("tuned model params must be a mapping")
-        resolved_model_id = _mapping_id(model_payload, field_name="model.id")
+        resolved_model_id = require_mapping_id(model_payload, "model.id")
         spec = model_spec(resolved_model_id)
         model = spec.tuned_params_type.model_validate(dict(model_payload))
         if model_id is not None and resolved_model_id != model_id:
@@ -151,9 +152,3 @@ def _coerce_problem_tuning_space(
         )
     return TuningProblemSearchSpace.model_validate(payload)
 
-
-def _mapping_id(payload: Mapping[str, object], *, field_name: str) -> str:
-    value = payload.get("id")
-    if not isinstance(value, str):
-        raise ConfigResolutionError(f"{field_name} is required")
-    return value

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
 from pydantic import field_validator
 
+from ...core.specs import lookup_local_spec, require_mapping_id
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import InputNormalizationSemantics
@@ -58,50 +59,73 @@ class CompiledInputNormalizationContract:
             context_start_rows=context_start_rows,
             anchor_rows=anchor_rows,
             sample_indices=sample_indices,
-        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class InputNormalizationSpec:
+    config_type: type[InputNormalizationConfig]
+    compile_contract: Callable[[InputNormalizationConfig], CompiledInputNormalizationContract]
+
+
+def _compile_row_standard(
+    config: InputNormalizationConfig,
+) -> CompiledInputNormalizationContract:
+    from .row_standard import RowStandardConfig, compile_input_normalization
+
+    return compile_input_normalization(RowStandardConfig.model_validate(config))
+
+
+def _compile_window_weighted_standard(
+    config: InputNormalizationConfig,
+) -> CompiledInputNormalizationContract:
+    from .window_weighted_standard import (
+        WindowWeightedStandardConfig,
+        compile_input_normalization,
+    )
+
+    return compile_input_normalization(WindowWeightedStandardConfig.model_validate(config))
+
+
+def _input_normalization_specs() -> dict[str, InputNormalizationSpec]:
+    from .row_standard import RowStandardConfig
+    from .window_weighted_standard import WindowWeightedStandardConfig
+
+    return {
+        "row_standard": InputNormalizationSpec(
+            config_type=RowStandardConfig,
+            compile_contract=_compile_row_standard,
+        ),
+        "window_weighted_standard": InputNormalizationSpec(
+            config_type=WindowWeightedStandardConfig,
+            compile_contract=_compile_window_weighted_standard,
+        ),
+    }
+
+
+def input_normalization_spec(normalization_id: str) -> InputNormalizationSpec:
+    return lookup_local_spec(
+        _input_normalization_specs(),
+        normalization_id,
+        "training.input_normalization.id",
+    )
 
 
 def coerce_input_normalization_config(
     payload: Mapping[str, object] | InputNormalizationConfig,
 ) -> InputNormalizationConfig:
-    from .row_standard import RowStandardConfig
-    from .window_weighted_standard import WindowWeightedStandardConfig
-
     if isinstance(payload, InputNormalizationConfig):
         raw_payload = payload.model_dump(mode="json")
         normalization_id = payload.id
     elif isinstance(payload, Mapping):
         raw_payload = dict(payload)
-        normalization_id = raw_payload.get("id")
+        normalization_id = require_mapping_id(raw_payload, "training.input_normalization.id")
     else:
         raise TypeError("training.input_normalization must be a mapping or config model")
-    if normalization_id == "row_standard":
-        return RowStandardConfig.model_validate(raw_payload)
-    if normalization_id == "window_weighted_standard":
-        return WindowWeightedStandardConfig.model_validate(raw_payload)
-    raise ValueError(
-        "training.input_normalization.id must be one of: row_standard, window_weighted_standard"
-    )
+    return input_normalization_spec(normalization_id).config_type.model_validate(raw_payload)
 
 
 def compile_input_normalization_contract(
     config: InputNormalizationConfig,
 ) -> CompiledInputNormalizationContract:
-    from .row_standard import RowStandardConfig
-    from .row_standard import compile_input_normalization as compile_row_standard
-    from .window_weighted_standard import (
-        WindowWeightedStandardConfig,
-    )
-    from .window_weighted_standard import (
-        compile_input_normalization as compile_window_weighted_standard,
-    )
-
-    if config.id == "row_standard":
-        return compile_row_standard(RowStandardConfig.model_validate(config))
-    if config.id == "window_weighted_standard":
-        return compile_window_weighted_standard(
-            WindowWeightedStandardConfig.model_validate(config)
-        )
-    raise ValueError(
-        "training.input_normalization.id must be one of: row_standard, window_weighted_standard"
-    )
+    return input_normalization_spec(config.id).compile_contract(config)

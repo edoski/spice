@@ -54,45 +54,6 @@ def resolve_runtime_interval_seconds(
     return nominal_block_time_seconds
 
 
-def resolve_interval_estimator_seconds(
-    *,
-    estimator: object,
-    feature_table: ResolvedFeatureTable,
-    nominal_block_time_seconds: float | None,
-    compiler_label: str,
-    interval_label: str,
-) -> float:
-    estimator_id = _enum_value(getattr(estimator, "id", estimator))
-    if estimator_id == "nominal":
-        if nominal_block_time_seconds is None or nominal_block_time_seconds <= 0:
-            raise ValueError(
-                f"{compiler_label} requires nominal block time "
-                f"for {interval_label} interval resolution"
-            )
-        return nominal_block_time_seconds
-    if estimator_id != "recent_deltas":
-        raise ValueError(f"Unsupported {compiler_label} interval estimator: {estimator_id}")
-    return summarize_positive_timestamp_delta_seconds(
-        feature_table,
-        statistic="median",
-        empty_error=f"{compiler_label} requires positive timestamp deltas",
-    )
-
-
-def resolve_bootstrap_interval_seconds(
-    *,
-    estimator: object,
-    recent_block_interval_seconds: float | None,
-    nominal_block_time_seconds: float | None,
-) -> float | None:
-    estimator_id = _enum_value(getattr(estimator, "id", estimator))
-    if estimator_id == "nominal":
-        return nominal_block_time_seconds
-    if recent_block_interval_seconds is None or recent_block_interval_seconds <= 0:
-        return None
-    return recent_block_interval_seconds
-
-
 def build_timestamp_window_store(
     feature_table: ResolvedFeatureTable,
     *,

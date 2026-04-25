@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
-
-import polars as pl
 
 from spice.config import EvaluateConfig, TrainConfig, TuneConfig
 from spice.features import compile_feature_contract
@@ -85,47 +82,3 @@ def make_history_rows(config: ModelWorkflowConfig) -> list[dict[str, int]]:
         chain_id=config.chain.runtime.chain_id,
         block_interval_seconds=block_interval_seconds,
     )
-
-
-def make_evaluation_rows(
-    config: EvaluateConfig,
-    *,
-    count: int | None = None,
-    start_block: int = 10_001,
-) -> list[dict[str, int]]:
-    resolved_count = count
-    if resolved_count is None:
-        feature_contract = compile_feature_contract(feature_set=config.feature_set)
-        contract = compile_problem_contract(
-            problem=config.problem,
-            feature_contract=feature_contract,
-            chain_runtime=config.chain.runtime,
-        )
-        block_interval_seconds = synthetic_block_interval_seconds(config.chain.name)
-        resolved_count = max(
-            64,
-            math.ceil(
-                (
-                    contract.required_history_seconds
-                    + config.delay_seconds
-                    + block_interval_seconds
-                )
-                / block_interval_seconds
-            )
-            + contract.warmup_rows
-            + 8,
-        )
-    return make_block_rows(
-        resolved_count,
-        start_block=start_block,
-        start_timestamp=config.evaluation_window_start_timestamp,
-        chain_id=config.chain.runtime.chain_id,
-        block_interval_seconds=synthetic_block_interval_seconds(config.chain.name),
-    )
-
-
-def write_dataset_dir(dataset_dir: Path, rows: list[dict[str, int]]) -> Path:
-    dataset_dir.mkdir(parents=True, exist_ok=True)
-    path = dataset_dir / "blocks.parquet"
-    pl.DataFrame(rows).write_parquet(path)
-    return path

@@ -20,6 +20,33 @@ SPICE keeps six strong seams:
 
 Everything else exists to resolve config, derive storage identity and layout, and drive workflows around those seams.
 
+## Local Spec Dispatch
+
+Concrete implementation families use local typed spec tables:
+
+```text
+id -> local spec -> concrete hooks
+```
+
+The shared helper in [src/spice/core/specs.py](src/spice/core/specs.py)
+only normalizes `id` lookup and raises `ConfigResolutionError` with the known
+local ids. It is intentionally not a global registry. Each package owns its own
+spec type, its local table, and the hooks that make sense for that seam.
+
+Small seams use the same fundamental shape as larger seams, just with fewer
+hooks. For example, prediction specs compile prediction contracts; input
+normalization specs own config type plus scaler compilation; realization-policy
+specs own config type plus policy compilation; dataset-builder specs add
+runtime metadata type; temporal-compiler specs add metadata encode/decode hooks.
+Model families and feature families are richer versions of the same pattern:
+the local spec maps an id to a concrete implementation contract and any extra
+hooks needed by that domain.
+
+Specs may compile behavior and own codec hooks for typed metadata payloads.
+They must not write SQLite. Persistence remains centralized in storage,
+result-codec, and workflow summary boundaries so the catalog stays flat,
+searchable, and backed by authoritative root-local SQLite state.
+
 ## Core Model
 
 Canonical domain truth is:

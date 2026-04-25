@@ -49,6 +49,12 @@ class EvaluatorConfig(EvaluationConfigModel):
     def validate_id(cls, value: str) -> str:
         return validate_path_segment(value, label="evaluation.id")
 
+    @property
+    def aggregation_id(self) -> EvaluationAggregationId:
+        if self.aggregation is None:
+            raise ValueError("Missing required field: evaluation.aggregation")
+        return self.aggregation.id
+
     @model_validator(mode="after")
     def validate_sampler_fields(self) -> Self:
         if self.engine is not EvaluationEngine.REPLAY:

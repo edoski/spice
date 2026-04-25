@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from ..prediction import DecodedOffsets
-from .config import EvaluationAggregationId, EvaluationEngine, EvaluationSampler, EvaluatorConfig
+from .aggregation import replay_aggregation_spec
+from .config import EvaluationEngine, EvaluationSampler, EvaluatorConfig
 from .contracts import CompiledEvaluatorContract, RunEvaluatorFn
 from .mechanical import run_anchor_basefee_fullset, run_zero_stop_rollout_fullset
 from .metrics import (
@@ -37,6 +38,7 @@ def compile_evaluator_contract(
             accepted_decoded_result_id=DecodedOffsets.decoded_result_id,
             run_fn=run_anchor_basefee_fullset,
         )
+    aggregation = replay_aggregation_spec(evaluator_config.aggregation_id)
     if evaluator_config.sampler is EvaluationSampler.FULLSET:
         def run_fn(
             store,
@@ -49,7 +51,7 @@ def compile_evaluator_contract(
                 realization_policy,
                 decoded_result,
                 sample_indices,
-                aggregation=_aggregation(evaluator_config),
+                aggregation=aggregation,
             )
 
     elif evaluator_config.sampler is EvaluationSampler.POISSON_ARRIVALS:
@@ -80,9 +82,3 @@ def compile_evaluator_contract(
         accepted_decoded_result_id=DecodedOffsets.decoded_result_id,
         run_fn=resolved_run_fn,
     )
-
-
-def _aggregation(config: EvaluatorConfig) -> EvaluationAggregationId:
-    if config.aggregation is None:
-        raise ValueError("Missing required field: evaluation.aggregation")
-    return config.aggregation.id
