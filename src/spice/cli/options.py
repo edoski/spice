@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -58,6 +59,8 @@ def resolve_storage_root(storage_root: Path | None) -> Path:
 def print_sections(
     title: str,
     sections: list[tuple[str, list[tuple[str, str]]]],
+    *,
+    err: bool = False,
 ) -> None:
-    reporter = Reporter()
+    reporter = Reporter(stream=sys.stderr if err else None)
     reporter.sections(title, sections)

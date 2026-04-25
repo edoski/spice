@@ -27,7 +27,8 @@ def test_reporter_renders_header_milestone_and_result() -> None:
 
 def test_reporter_renders_warnings_and_sections() -> None:
     output = StringIO()
-    reporter = Reporter(stream=output)
+    errors = StringIO()
+    reporter = Reporter(stream=output, error_stream=errors)
 
     reporter.milestone("train cancelled; partial outputs removed", level="warning")
     reporter.sections(
@@ -36,7 +37,7 @@ def test_reporter_renders_warnings_and_sections() -> None:
     )
 
     rendered = output.getvalue()
-    assert "warning: train cancelled; partial outputs removed" in rendered
     assert "artifact summary" in rendered
     assert "training:" in rendered
     assert "  best epoch: 6" in rendered
+    assert errors.getvalue() == "warning: train cancelled; partial outputs removed\n"

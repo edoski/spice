@@ -12,10 +12,16 @@ RenderableValue = str | int | float | Path
 
 
 class Reporter:
-    """One concrete stdout reporter for human-facing CLI output."""
+    """Human-facing CLI reporter with separate result and diagnostic streams."""
 
-    def __init__(self, *, stream: TextIOBase | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        stream: TextIOBase | None = None,
+        error_stream: TextIOBase | None = None,
+    ) -> None:
         self._stream = stream or sys.stdout
+        self._error_stream = error_stream or sys.stderr
 
     def header(
         self,
@@ -26,11 +32,14 @@ class Reporter:
 
     def milestone(self, message: str, *, level: str = "info") -> None:
         prefix = ""
+        stream = self._stream
         if level == "warning":
             prefix = "warning: "
+            stream = self._error_stream
         elif level == "error":
             prefix = "error: "
-        self._emit(f"{prefix}{message}")
+            stream = self._error_stream
+        self._emit(f"{prefix}{message}", stream=stream)
 
     def result(
         self,
@@ -54,9 +63,10 @@ class Reporter:
             for label, value in rows:
                 self._emit(f"  {label}: {_stringify(value)}")
 
-    def _emit(self, line: str) -> None:
-        print(line, file=self._stream)
-        self._stream.flush()
+    def _emit(self, line: str, *, stream: TextIOBase | None = None) -> None:
+        target = stream or self._stream
+        print(line, file=target)
+        target.flush()
 
 
 def _stringify(value: RenderableValue) -> str:

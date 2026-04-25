@@ -157,7 +157,11 @@ def load_training_artifact(artifact_dir: Path) -> LoadedTrainingArtifact:
         prediction_contract.build_output_spec(manifest.max_candidate_slots),
         manifest.model,
     )
-    state_dict = torch.load(artifact_dir / MODEL_STATE_FILENAME, map_location="cpu")
+    state_dict = torch.load(
+        artifact_dir / MODEL_STATE_FILENAME,
+        map_location="cpu",
+        weights_only=True,
+    )
     model.load_state_dict(state_dict)
     model.eval()
     validate_representation_id(manifest.representation_id)

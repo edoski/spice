@@ -179,7 +179,8 @@ def test_acquire_cancellation_during_planning_logs_warning(
     )
     paths = resolve_workflow_paths(config)
     output = StringIO()
-    reporter = Reporter(stream=output)
+    errors = StringIO()
+    reporter = Reporter(stream=output, error_stream=errors)
 
     class FakeAcquireClient:
         def __init__(self, rpc_endpoint, chain) -> None:
@@ -215,7 +216,7 @@ def test_acquire_cancellation_during_planning_logs_warning(
 
     rendered = output.getvalue()
     assert "acquire dataset=" in rendered
-    assert "warning: acquire cancelled; partial download removed" in rendered
+    assert errors.getvalue() == "warning: acquire cancelled; partial download removed\n"
     assert paths.corpus_state_db.exists() is False
 
 

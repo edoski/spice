@@ -170,7 +170,8 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
         requirement=training_coverage_requirement(spec.contract),
     )
 
-    study_access = open_tuning_study(study_state_db, config=config)
+    with _optuna_warning_logging(active_reporter):
+        study_access = open_tuning_study(study_state_db, config=config)
     study = study_access.study
     if study_access.existing_trial_count:
         active_reporter.milestone(

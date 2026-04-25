@@ -150,7 +150,7 @@ def _show_records(
     if not records:
         raise SpiceOperatorError(f"No {kind} matches found")
     if detail is not None and len(records) != 1:
-        print_sections(f"{kind} matches", list_sections(records))
+        print_sections(f"{kind} matches", list_sections(records), err=True)
         raise SpiceOperatorError(
             f"--detail requires exactly one {kind} match"
             f"{_narrowing_guidance(kind, records, selector=selector)}"
@@ -171,7 +171,7 @@ def _handle_selector_error(
     selector: object,
 ) -> NoReturn:
     if error.records:
-        print_sections(f"{error.kind} matches", list_sections(list(error.records)))
+        print_sections(f"{error.kind} matches", list_sections(list(error.records)), err=True)
     raise SpiceOperatorError(
         f"{error}{_narrowing_guidance(error.kind, error.records, selector=selector)}"
     )
@@ -193,9 +193,17 @@ def _narrowing_guidance(kind: str, records: Sequence[object], *, selector: objec
 
 def _handle_delete_blocked(error: DeleteBlockedError) -> NoReturn:
     if error.artifact_records:
-        print_sections("artifact matches", artifact_list_sections(list(error.artifact_records)))
+        print_sections(
+            "artifact matches",
+            artifact_list_sections(list(error.artifact_records)),
+            err=True,
+        )
     if error.study_records:
-        print_sections("study matches", study_list_sections(list(error.study_records)))
+        print_sections(
+            "study matches",
+            study_list_sections(list(error.study_records)),
+            err=True,
+        )
     raise SpiceOperatorError(str(error))
 
 

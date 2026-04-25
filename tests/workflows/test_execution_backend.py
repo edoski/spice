@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from subprocess import CompletedProcess
 from types import SimpleNamespace
@@ -68,9 +69,10 @@ def test_follow_execution_job_uses_quoted_tail_command(monkeypatch, tmp_path: Pa
     captured: dict[str, object] = {}
 
     class FakePopen:
-        def __init__(self, args, *, text):
+        def __init__(self, args, *, text, stdout):
             captured["args"] = args
             captured["text"] = text
+            captured["stdout"] = stdout
 
         def poll(self):
             return 0
@@ -106,6 +108,7 @@ def test_follow_execution_job_uses_quoted_tail_command(monkeypatch, tmp_path: Pa
     assert str(submission.log_path) in argv[-1]
     assert "tail -n +1 -F" in argv[-1]
     assert captured["text"] is True
+    assert captured["stdout"] is sys.stderr
 
 
 def test_submit_execution_workflow_forwards_sbatch_dependency(monkeypatch, tmp_path: Path) -> None:

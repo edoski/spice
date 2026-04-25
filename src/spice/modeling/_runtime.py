@@ -272,6 +272,7 @@ def _available_system_memory_bytes() -> int:
             output = subprocess.check_output(
                 ["sysctl", "-n", "hw.memsize"],
                 text=True,
+                stderr=subprocess.DEVNULL,
             ).strip()
             return int(output)
         except (OSError, ValueError, subprocess.CalledProcessError):

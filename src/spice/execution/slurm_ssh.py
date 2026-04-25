@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -213,6 +214,7 @@ def follow_execution_job(submission: ExecutionJobSubmission) -> str | None:
             ),
         ),
         text=True,
+        stdout=sys.stderr,
     )
     try:
         while True:

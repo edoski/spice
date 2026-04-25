@@ -65,7 +65,7 @@ def test_train_workflow_emits_compact_epoch_output(
     monkeypatch.setattr(
         train_workflow,
         "build_training_spec",
-        lambda _config: SimpleNamespace(
+        lambda _config, **_kwargs: SimpleNamespace(
             training=SimpleNamespace(max_epochs=3),
             prediction_contract=SimpleNamespace(primary_metric_id="profit_over_baseline"),
             contract=object(),
