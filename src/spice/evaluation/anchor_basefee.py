@@ -6,8 +6,8 @@ import numpy as np
 
 from ..prediction import DecodedOffsets
 from ..prediction.contracts import DecodedPredictionResult, require_decoded_offsets
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
-from ..temporal.realization import CompiledRealizationPolicyContract
 from .config import AnchorBasefeeEvaluatorConfig
 from .contracts import CompiledEvaluatorContract, EvaluationSummary, IntVector
 from .metrics import ANCHOR_BASEFEE_METRIC_DESCRIPTORS
@@ -16,7 +16,7 @@ from .summary import single_run_summary
 
 def run_anchor_basefee_fullset(
     store: CompiledProblemStore,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     decoded_result: DecodedPredictionResult,
     sample_indices: IntVector,
 ) -> EvaluationSummary:
@@ -24,7 +24,7 @@ def run_anchor_basefee_fullset(
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
     selected_positions = np.arange(sample_indices.shape[0], dtype=np.int64)
-    realized = realization_policy.realize_selections(
+    realized = execution_policy.realize_selections(
         store,
         decoded_offsets,
         sample_indices,

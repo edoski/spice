@@ -15,8 +15,8 @@ from spice.evaluation import (
 )
 from spice.prediction import DecodedOffsets, MetricDescriptor, MetricSet
 from spice.temporal import (
-    coerce_realization_policy_config,
-    compile_realization_policy_contract,
+    coerce_execution_policy_config,
+    compile_execution_policy_contract,
 )
 from spice.temporal.problem_store import CompiledProblemStore
 
@@ -46,9 +46,9 @@ def _store() -> CompiledProblemStore:
     )
 
 
-def _realization_policy():
-    return compile_realization_policy_contract(
-        coerce_realization_policy_config({"id": "strict_deadline_miss"})
+def _execution_policy():
+    return compile_execution_policy_contract(
+        coerce_execution_policy_config({"id": "strict_deadline_miss"})
     )
 
 
@@ -100,7 +100,7 @@ def test_evaluator_compile_requires_concrete_config_for_engine() -> None:
 def test_metric_descriptors_and_evaluator_contract_validate_primary_metric() -> None:
     def unused_run_fn(
         _store: object,
-        _realization_policy: object,
+        _execution_policy: object,
         _decoded_result: object,
         _sample_indices: object,
     ) -> EvaluationSummary:
@@ -144,7 +144,7 @@ def test_evaluator_rejects_incompatible_decoded_result_semantics() -> None:
     with pytest.raises(TypeError, match="decoded-result requirement"):
         evaluator.run(
             store,
-            _realization_policy(),
+            _execution_policy(),
             _OtherDecodedResult(),
             np.arange(store.n_samples, dtype=np.int64),
         )
@@ -172,13 +172,13 @@ def test_poisson_replay_handles_non_chronological_sample_indices() -> None:
 
     summary = evaluator.run(
         store,
-        _realization_policy(),
+        _execution_policy(),
         DecodedOffsets(forward_offsets),
         forward_indices,
     )
     reversed_summary = evaluator.run(
         store,
-        _realization_policy(),
+        _execution_policy(),
         reversed_offsets,
         reversed_indices,
     )
@@ -204,7 +204,7 @@ def test_replay_total_ratio_uses_fee_sums() -> None:
 
     summary = evaluator.run(
         store,
-        _realization_policy(),
+        _execution_policy(),
         DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64)),
         sample_indices,
     )
@@ -242,7 +242,7 @@ def test_replay_event_mean_uses_per_event_ratios() -> None:
 
     summary = evaluator.run(
         store,
-        _realization_policy(),
+        _execution_policy(),
         DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64)),
         sample_indices,
     )
@@ -279,7 +279,7 @@ def test_zero_stop_rollout_stops_on_zero_and_truncates_tail_windows() -> None:
     )
     summary = evaluator.run(
         store,
-        _realization_policy(),
+        _execution_policy(),
         DecodedOffsets(torch.tensor([1, 0, 1, 1], dtype=torch.int64)),
         np.arange(store.n_samples, dtype=np.int64),
     )
@@ -310,6 +310,93 @@ def test_zero_stop_rollout_stops_on_zero_and_truncates_tail_windows() -> None:
     )
 
 
+def test_zero_stop_rollout_rejects_invalid_decoded_offsets() -> None:
+    store = _current_row_store()
+    evaluator = compile_evaluator_contract(
+        coerce_evaluator_config(
+            {
+                "id": "zero_stop_rollout_fullset",
+                "engine": "zero_stop_rollout",
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="non-negative"):
+        evaluator.run(
+            store,
+            _execution_policy(),
+            DecodedOffsets(torch.tensor([-1, 0, 1, 1], dtype=torch.int64)),
+            np.arange(store.n_samples, dtype=np.int64),
+        )
+
+    with pytest.raises(ValueError, match="max_candidate_slots"):
+        evaluator.run(
+            store,
+            _execution_policy(),
+            DecodedOffsets(torch.tensor([store.max_candidate_slots, 0, 1, 1], dtype=torch.int64)),
+            np.arange(store.n_samples, dtype=np.int64),
+        )
+
+
+def test_zero_stop_rollout_rejects_misaligned_decoded_offsets() -> None:
+    store = _current_row_store()
+    evaluator = compile_evaluator_contract(
+        coerce_evaluator_config(
+            {
+                "id": "zero_stop_rollout_fullset",
+                "engine": "zero_stop_rollout",
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="align with sample_indices"):
+        evaluator.run(
+            store,
+            _execution_policy(),
+            DecodedOffsets(torch.tensor([0, 1, 0], dtype=torch.int64)),
+            np.arange(store.n_samples, dtype=np.int64),
+        )
+
+
+def test_zero_stop_rollout_scores_reachable_optimum_only() -> None:
+    store = CompiledProblemStore(
+        feature_matrix=np.zeros((6, 1), dtype=np.float32),
+        log_base_fees=np.log(
+            np.array([100, 90, 80, 70, 60, 1], dtype=np.float32)
+        ).astype(np.float32, copy=False),
+        timestamps=(np.arange(6, dtype=np.int64) * 12).astype(np.int64, copy=False),
+        anchor_rows=np.array([1, 2, 3, 4, 5], dtype=np.int64),
+        context_start_rows=np.array([0, 1, 2, 3, 4], dtype=np.int64),
+        candidate_start_rows=np.array([1, 2, 3, 4, 5], dtype=np.int64),
+        candidate_end_rows=np.array([6, 6, 6, 6, 6], dtype=np.int64),
+        max_candidate_slots=2,
+    )
+    evaluator = compile_evaluator_contract(
+        coerce_evaluator_config(
+            {
+                "id": "zero_stop_rollout_fullset",
+                "engine": "zero_stop_rollout",
+            }
+        )
+    )
+
+    summary = evaluator.run(
+        store,
+        _execution_policy(),
+        DecodedOffsets(torch.ones(store.n_samples, dtype=torch.int64)),
+        np.arange(store.n_samples, dtype=np.int64),
+    )
+
+    assert summary.runs[0].metadata["terminal_without_zero_count"] == store.n_samples
+    assert summary.runs[0].metadata["truncated_window_count"] == 0
+    assert summary.metrics.values["optimum_fee_sum"] == pytest.approx(
+        80.0 + 70.0 + 60.0 + 1.0 + 1.0
+    )
+    assert summary.metrics.values["realized_fee_sum"] == pytest.approx(
+        80.0 + 70.0 + 60.0 + 1.0 + 1.0
+    )
+
+
 def test_anchor_basefee_compares_anchor_and_realized_fees() -> None:
     store = _current_row_store()
     evaluator = compile_evaluator_contract(
@@ -322,7 +409,7 @@ def test_anchor_basefee_compares_anchor_and_realized_fees() -> None:
     )
     summary = evaluator.run(
         store,
-        _realization_policy(),
+        _execution_policy(),
         DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64)),
         np.arange(store.n_samples, dtype=np.int64),
     )

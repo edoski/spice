@@ -24,7 +24,7 @@ The artifact manifest records exact configs, semantic fingerprints, scaler, data
 Training starts by compiling all contracts:
 
 ```text
-feature_set config      -> feature contract
+features config      -> feature contract
 problem config          -> temporal problem contract
 prediction config       -> prediction contract
 objective config        -> objective contract
@@ -106,7 +106,7 @@ sample_indices
 ```text
 validate evaluator accepts prediction contract
   -> predict_with_model
-  -> evaluator.run(store, realization_policy, decoded_offsets)
+  -> evaluator.run(store, execution_policy, decoded_offsets)
 ```
 
 This keeps evaluation scoring independent from training-loop details.

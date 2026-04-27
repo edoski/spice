@@ -35,7 +35,7 @@ class CompiledTrainingContext:
 
 
 def compile_training_context(config: TrainConfig | TuneConfig) -> CompiledTrainingContext:
-    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    feature_contract = compile_feature_contract(features=config.features)
     return CompiledTrainingContext(
         feature_contract=feature_contract,
         problem_contract=compile_problem_contract(

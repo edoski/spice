@@ -19,7 +19,7 @@ from pydantic import (
 from ..core.errors import ConfigResolutionError
 from ..core.validation import validate_path_segment
 from ..evaluation import EvaluatorConfig
-from ..features import FeatureFamilyConfig, validate_feature_selection
+from ..features import validate_feature_selection
 from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import (
     ConfigModel,
@@ -30,8 +30,8 @@ from ..modeling.families.base import (
 from ..objectives import ObjectiveConfig
 from ..prediction import validate_prediction_family_id
 from ..temporal.compilers import ProblemCompilerConfig
+from ..temporal.execution_policy import ExecutionPolicyConfig
 from ..temporal.input_normalization import InputNormalizationConfig
-from ..temporal.realization import RealizationPolicyConfig
 
 
 class WorkflowTask(StrEnum):
@@ -93,7 +93,7 @@ class ProblemSpec(ConfigModel):
     sample_count: int = Field(gt=0)
     max_delay_seconds: int = Field(gt=0)
     compiler: SerializeAsAny[ProblemCompilerConfig]
-    realization_policy: SerializeAsAny[RealizationPolicyConfig]
+    execution_policy: SerializeAsAny[ExecutionPolicyConfig]
 
     @field_validator("id")
     @classmethod
@@ -115,18 +115,18 @@ def coerce_problem_spec(payload: Mapping[str, object] | ProblemSpec) -> ProblemS
         ProblemCompilerConfig,
     ):
         raise ConfigResolutionError("problem.compiler must be a mapping")
-    raw_realization_policy = raw_payload.get("realization_policy")
-    if raw_realization_policy is None:
-        raise ConfigResolutionError("problem.realization_policy is required")
-    if not isinstance(raw_realization_policy, Mapping) and not isinstance(
-        raw_realization_policy,
-        RealizationPolicyConfig,
+    raw_execution_policy = raw_payload.get("execution_policy")
+    if raw_execution_policy is None:
+        raise ConfigResolutionError("problem.execution_policy is required")
+    if not isinstance(raw_execution_policy, Mapping) and not isinstance(
+        raw_execution_policy,
+        ExecutionPolicyConfig,
     ):
-        raise ConfigResolutionError("problem.realization_policy must be a mapping")
-    from ..temporal.realization import coerce_realization_policy_config
+        raise ConfigResolutionError("problem.execution_policy must be a mapping")
+    from ..temporal.execution_policy import coerce_execution_policy_config
 
     raw_payload["compiler"] = coerce_problem_compiler_config(raw_compiler)
-    raw_payload["realization_policy"] = coerce_realization_policy_config(raw_realization_policy)
+    raw_payload["execution_policy"] = coerce_execution_policy_config(raw_execution_policy)
     return ProblemSpec.model_validate(raw_payload)
 
 
@@ -210,40 +210,33 @@ class AcquisitionConfig(ConfigModel):
     rpc: AcquisitionRpcConfig
 
 
-class FeatureSetConfig(ConfigModel):
+class FeaturesConfig(ConfigModel):
     id: str
-    family: SerializeAsAny[FeatureFamilyConfig]
     outputs: list[str] = Field(min_length=1)
 
     @field_validator("id")
     @classmethod
     def validate_id(cls, value: str) -> str:
-        return validate_path_segment(value, label="feature_set.id")
+        return validate_path_segment(value, label="features.id")
 
     @field_validator("outputs")
     @classmethod
     def validate_outputs(cls, value: list[str]) -> list[str]:
         if len(set(value)) != len(value):
-            raise ValueError("feature_set.outputs must not contain duplicates")
+            raise ValueError("features.outputs must not contain duplicates")
         return value
 
     @model_validator(mode="after")
     def validate_feature_selection(self) -> Self:
-        validate_feature_selection(self.id, self.family.id, tuple(self.outputs))
+        validate_feature_selection(self.id, tuple(self.outputs))
         return self
-def coerce_feature_set_config(payload: Mapping[str, object] | FeatureSetConfig) -> FeatureSetConfig:
-    from ..features import coerce_feature_family_config
 
+
+def coerce_features_config(payload: Mapping[str, object] | FeaturesConfig) -> FeaturesConfig:
     raw_payload = (
-        payload.model_dump(mode="json") if isinstance(payload, FeatureSetConfig) else dict(payload)
+        payload.model_dump(mode="json") if isinstance(payload, FeaturesConfig) else dict(payload)
     )
-    raw_family = raw_payload.get("family")
-    if raw_family is None:
-        raise ConfigResolutionError("feature_set.family is required")
-    if not isinstance(raw_family, Mapping) and not isinstance(raw_family, FeatureFamilyConfig):
-        raise ConfigResolutionError("feature_set.family must be a mapping")
-    raw_payload["family"] = coerce_feature_family_config(raw_family)
-    return FeatureSetConfig.model_validate(raw_payload)
+    return FeaturesConfig.model_validate(raw_payload)
 
 
 class PredictionConfig(ConfigModel):
@@ -492,7 +485,7 @@ class WorkflowConfig(ConfigModel):
 class AcquireConfig(WorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.ACQUIRE
     problem: ProblemSpec
-    feature_set: FeatureSetConfig
+    features: FeaturesConfig
     rpc_endpoint: ResolvedRpcEndpointConfig
     acquisition: AcquisitionConfig
 
@@ -501,7 +494,7 @@ class ModelWorkflowConfig(WorkflowConfig):
     problem: ProblemSpec
     model: SerializeAsAny[ModelConfig]
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
-    feature_set: FeatureSetConfig
+    features: FeaturesConfig
     prediction: PredictionConfig
     study: StudyConfig = Field(default_factory=StudyConfig)
     artifact: ArtifactConfig = Field(default_factory=ArtifactConfig)

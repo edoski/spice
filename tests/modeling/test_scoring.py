@@ -27,8 +27,8 @@ def test_score_evaluation_validates_predicts_and_runs_evaluator(monkeypatch) -> 
         def validate_prediction_contract(self, prediction_contract) -> None:
             calls.append(f"validate:{prediction_contract.decoded_result_id}")
 
-        def run(self, store, realization_policy, decoded_result, *, sample_indices):
-            del store, realization_policy
+        def run(self, store, execution_policy, decoded_result, *, sample_indices):
+            del store, execution_policy
             calls.append(f"run:{decoded_result.decoded_result_id}:{sample_indices.tolist()}")
             return summary
 
@@ -41,7 +41,7 @@ def test_score_evaluation_validates_predicts_and_runs_evaluator(monkeypatch) -> 
             prediction_contract=SimpleNamespace(decoded_result_id="offsets"),
             representation_contract=SimpleNamespace(),
             evaluator_contract=FakeEvaluator(),
-            realization_policy=SimpleNamespace(),
+            execution_policy=SimpleNamespace(),
             store=SimpleNamespace(),
             sample_indices=np.array([2, 4], dtype=np.int64),
             batch_size=8,

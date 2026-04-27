@@ -11,7 +11,7 @@ import polars as pl
 from ..config.models import (
     ArtifactVariant,
     ChainSpec,
-    FeatureSetConfig,
+    FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
     SplitConfig,
@@ -27,13 +27,13 @@ from ..prediction import CompiledPredictionContract
 from ..semantics import FeatureSemantics
 from ..storage.layout import WorkflowPaths
 from ..temporal.contracts import CompiledProblemContract
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.input_normalization import CompiledInputNormalizationContract
 from ..temporal.problem_store import (
     CompiledProblemStore,
     DatasetSplitIndices,
     IntVector,
 )
-from ..temporal.realization import CompiledRealizationPolicyContract
 from ..temporal.scaling import ScalerStats
 from ._training_context import compile_training_context
 from .dataset_builders import (
@@ -64,7 +64,7 @@ class TrainingSpec:
     dataset_builder_contract: CompiledDatasetBuilderContract
     feature_contract: CompiledFeatureContract
     problem_contract: CompiledProblemContract
-    feature_set: FeatureSetConfig
+    features: FeaturesConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
     prediction_contract: CompiledPredictionContract
@@ -108,7 +108,7 @@ def build_training_spec(config: TrainConfig | TuneConfig, *, paths: WorkflowPath
         dataset_builder_contract=context.dataset_builder_contract,
         feature_contract=context.feature_contract,
         problem_contract=context.problem_contract,
-        feature_set=config.feature_set,
+        features=config.features,
         prediction=config.prediction,
         objective=config.objective,
         prediction_contract=context.prediction_contract,
@@ -130,7 +130,7 @@ class PreparedTrainingDataset:
     n_rows_used: int
     sample_count: int
     feature: FeatureSemantics
-    realization_policy: CompiledRealizationPolicyContract
+    execution_policy: CompiledExecutionPolicyContract
     store: CompiledProblemStore
     split_indices: DatasetSplitIndices
     scaler: ScalerStats
@@ -151,7 +151,7 @@ class PreparedInferenceDataset:
     n_evaluation_rows: int
     sample_count: int
     feature: FeatureSemantics
-    realization_policy: CompiledRealizationPolicyContract
+    execution_policy: CompiledExecutionPolicyContract
     store: CompiledProblemStore
     sample_indices: IntVector
 
@@ -242,7 +242,7 @@ def run_training(
         model_config=spec.model,
         prediction_contract=spec.prediction_contract,
         objective_contract=spec.objective_contract,
-        realization_policy=prepared.realization_policy,
+        execution_policy=prepared.execution_policy,
         representation_contract=spec.representation_contract,
         store=prepared.store,
         train_sample_indices=prepared.split_indices.train,

@@ -15,8 +15,8 @@ from torch.utils.data import DataLoader, Dataset, Sampler
 
 from ..prediction import CompiledPredictionContract
 from ..prediction.contracts import ModelInputBatch, PredictionBatch, PreparedPredictionTargets
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
-from ..temporal.realization import CompiledRealizationPolicyContract
 from .representations import (
     CompiledRepresentationContract,
     PreparedRepresentation,
@@ -237,7 +237,7 @@ def build_prediction_batch_source(
     *,
     representation_contract: CompiledRepresentationContract,
     prediction_contract: CompiledPredictionContract,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     runtime_context: RepresentationRuntimeContext,
     resolved_device: torch.device,
     seed: int,
@@ -252,7 +252,7 @@ def build_prediction_batch_source(
     targets = prediction_contract.prepare_targets(
         store,
         sample_indices,
-        realization_policy=realization_policy,
+        execution_policy=execution_policy,
     )
     return _build_source(
         _PreparedPredictionBatches(prepared=prepared, targets=targets),

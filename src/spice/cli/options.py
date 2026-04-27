@@ -20,9 +20,9 @@ DatasetFilterOption = Annotated[
     str | None,
     typer.Option("--dataset", metavar="DATASET", help="Filter by dataset name."),
 ]
-FeatureSetFilterOption = Annotated[
+FeaturesFilterOption = Annotated[
     str | None,
-    typer.Option("--feature-set", metavar="FEATURE_SET", help="Filter by feature set."),
+    typer.Option("--features", metavar="FEATURES", help="Filter by features."),
 ]
 PredictionFilterOption = Annotated[
     str | None,

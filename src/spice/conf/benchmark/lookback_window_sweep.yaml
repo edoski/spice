@@ -1,18 +1,16 @@
 cases:
   - id: lookback_window_sweep
     base:
+      surface: current_row_fee_dynamics
       training: default
       split: default
       tuning: extensive
       study: lookback_window_sweep
     dimensions:
       data:
-        - set: {surface: same_block_closed, chain: ethereum}
-        - set: {surface: same_block_closed, chain: polygon}
-        - set: {surface: same_block_closed, chain: avalanche}
-        - set: {surface: block_open_lagged, chain: ethereum}
-        - set: {surface: block_open_lagged, chain: polygon}
-        - set: {surface: block_open_lagged, chain: avalanche}
+        - set: {chain: ethereum}
+        - set: {chain: polygon}
+        - set: {chain: avalanche}
       models:
         - set:
             model: lstm
@@ -25,7 +23,7 @@ cases:
             tuning_space: transformer_lstm_large_capacity
       problems:
         - grid:
-            base: current_row_nominal_window
+            base: current_row_nominal
             fields:
               lookback_seconds: [600, 900, 1200]
     steps:

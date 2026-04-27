@@ -33,7 +33,7 @@ def _write_surface(conf_root, name: str, payload: dict[str, object]) -> None:
 
 
 def _base_surface(conf_root) -> dict[str, object]:
-    return load_named_group("same_block_closed", "surface")
+    return load_named_group("current_row_fee_dynamics", "surface")
 
 
 def _updated_surface(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
@@ -105,11 +105,11 @@ def test_study_id_uses_full_resolved_identity(
 ) -> None:
     conf_root = isolate_conf_root()
     name = "study_identity_change"
-    override = {"tuning_space": "lstm_extensive_calibrated"}
+    override = {"tuning": {"id": "default", "space": "lstm_extensive_calibrated"}}
     payload = _updated_surface(_base_surface(conf_root), override)
     _write_surface(conf_root, name, payload)
 
-    base = _tune_paths(tmp_path, surface="same_block_closed")
+    base = _tune_paths(tmp_path, surface="current_row_fee_dynamics")
     changed = _tune_paths(tmp_path, surface=name)
 
     assert base.study_id is not None
@@ -123,8 +123,8 @@ def test_study_id_ignores_tuning_run_limits(
 ) -> None:
     isolate_conf_root()
 
-    base = _tune_paths(tmp_path, surface="same_block_closed")
-    changed = _tune_paths(tmp_path, surface="same_block_closed", trial_count=40)
+    base = _tune_paths(tmp_path, surface="current_row_fee_dynamics")
+    changed = _tune_paths(tmp_path, surface="current_row_fee_dynamics", trial_count=40)
 
     assert base.study_id is not None
     assert changed.study_id == base.study_id
@@ -135,12 +135,12 @@ def test_study_and_artifact_ids_ignore_surface_name(
     isolate_conf_root,
 ) -> None:
     conf_root = isolate_conf_root()
-    clone_name = "same_block_closed_clone"
+    clone_name = "current_row_fee_dynamics_clone"
     _write_surface(conf_root, clone_name, _base_surface(conf_root))
 
-    base_tune = _tune_paths(tmp_path, surface="same_block_closed")
+    base_tune = _tune_paths(tmp_path, surface="current_row_fee_dynamics")
     clone_tune = _tune_paths(tmp_path, surface=clone_name)
-    base_train = _train_paths(tmp_path, surface="same_block_closed")
+    base_train = _train_paths(tmp_path, surface="current_row_fee_dynamics")
     clone_train = _train_paths(tmp_path, surface=clone_name)
 
     assert base_tune.study_id == clone_tune.study_id
@@ -153,10 +153,10 @@ def test_study_id_uses_objective_request_override(
 ) -> None:
     isolate_conf_root()
 
-    base = _tune_paths(tmp_path, surface="same_block_closed")
+    base = _tune_paths(tmp_path, surface="current_row_fee_dynamics")
     changed = _tune_paths(
         tmp_path,
-        surface="same_block_closed",
+        surface="current_row_fee_dynamics",
         objective="validation_total_loss",
     )
 
@@ -171,11 +171,11 @@ def test_artifact_id_uses_full_resolved_identity(
 ) -> None:
     conf_root = isolate_conf_root()
     name = "artifact_identity_change"
-    override = {"feature_set": "same_block_closed_no_time_since_start"}
+    override = {"problem": "current_row_recent_median"}
     payload = _updated_surface(_base_surface(conf_root), override)
     _write_surface(conf_root, name, payload)
 
-    base = _train_paths(tmp_path, surface="same_block_closed")
+    base = _train_paths(tmp_path, surface="current_row_fee_dynamics")
     changed = _train_paths(tmp_path, surface=name)
 
     assert base.artifact_id is not None
@@ -189,16 +189,16 @@ def test_artifact_id_uses_objective_request_override(
 ) -> None:
     isolate_conf_root()
 
-    base_train = _train_paths(tmp_path, surface="same_block_closed")
+    base_train = _train_paths(tmp_path, surface="current_row_fee_dynamics")
     changed_train = _train_paths(
         tmp_path,
-        surface="same_block_closed",
+        surface="current_row_fee_dynamics",
         objective="validation_total_loss",
     )
-    base_evaluate = _evaluate_paths(tmp_path, surface="same_block_closed")
+    base_evaluate = _evaluate_paths(tmp_path, surface="current_row_fee_dynamics")
     changed_evaluate = _evaluate_paths(
         tmp_path,
-        surface="same_block_closed",
+        surface="current_row_fee_dynamics",
         objective="validation_total_loss",
     )
 
@@ -215,14 +215,14 @@ def test_storage_root_does_not_affect_ids(tmp_path, isolate_conf_root) -> None:
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(surface="same_block_closed", storage_root=tmp_path / "one"),
+            TrainWorkflowRequest(surface="current_row_fee_dynamics", storage_root=tmp_path / "one"),
         ),
     )
     second = cast(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(surface="same_block_closed", storage_root=tmp_path / "two"),
+            TrainWorkflowRequest(surface="current_row_fee_dynamics", storage_root=tmp_path / "two"),
         ),
     )
 
@@ -243,7 +243,10 @@ def test_tuned_request_identity_matches_stored_study_manifest(
         TuneConfig,
         resolve_workflow_config(
             WorkflowTask.TUNE,
-            TuneWorkflowRequest(surface="same_block_closed", storage_root=tmp_path / "outputs"),
+            TuneWorkflowRequest(
+                surface="current_row_fee_dynamics",
+                storage_root=tmp_path / "outputs",
+            ),
         ),
     )
     train_config = cast(
@@ -251,7 +254,7 @@ def test_tuned_request_identity_matches_stored_study_manifest(
         resolve_workflow_config(
             WorkflowTask.TRAIN,
             TrainWorkflowRequest(
-                surface="same_block_closed",
+                surface="current_row_fee_dynamics",
                 variant="tuned",
                 storage_root=tmp_path / "outputs",
             ),
@@ -273,14 +276,14 @@ def test_tuned_request_identity_matches_stored_study_manifest(
 
 def test_corpus_id_uses_dataset_evaluation_date(tmp_path, isolate_conf_root) -> None:
     conf_root = isolate_conf_root()
-    base = _train_paths(tmp_path, surface="same_block_closed")
+    base = _train_paths(tmp_path, surface="current_row_fee_dynamics")
     changed_dataset = dict(load_named_group("icdcs_2026", "dataset"))
     changed_dataset["evaluation_date"] = "2025-11-10"
     (conf_root / "dataset" / "icdcs_2026.yaml").write_text(
         yaml.safe_dump(changed_dataset, sort_keys=False),
         encoding="utf-8",
     )
-    changed = _train_paths(tmp_path, surface="same_block_closed")
+    changed = _train_paths(tmp_path, surface="current_row_fee_dynamics")
 
     assert changed.corpus_id != base.corpus_id
 
@@ -292,7 +295,7 @@ def test_tuned_training_spec_uses_resolved_workflow_paths(tmp_path, isolate_conf
         resolve_workflow_config(
             WorkflowTask.TRAIN,
             TrainWorkflowRequest(
-                surface="same_block_closed",
+                surface="current_row_fee_dynamics",
                 variant="tuned",
                 storage_root=tmp_path / "outputs",
             ),

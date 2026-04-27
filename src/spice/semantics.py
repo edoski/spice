@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from .features.families.base import FeaturePrerequisites
+    from .features import FeaturePrerequisites
     from .prediction.base import MetricDescriptor
 
 
@@ -16,8 +16,7 @@ if TYPE_CHECKING:
 class FeatureSemantics:
     """Normalized feature provenance derived once from the compiled feature contract."""
 
-    feature_set_id: str
-    feature_family_id: str
+    features_id: str
     feature_names: tuple[str, ...]
     feature_graph_fingerprint: str
     feature_prerequisites: FeaturePrerequisites
@@ -35,10 +34,10 @@ class ProblemSemantics:
 
 
 @dataclass(frozen=True, slots=True)
-class RealizationPolicySemantics:
-    """Resolved realization-policy identity for persisted provenance."""
+class ExecutionPolicySemantics:
+    """Resolved execution-policy identity for persisted provenance."""
 
-    realization_policy_id: str
+    execution_policy_id: str
     baseline_row_mode: Literal["first_candidate"]
 
 
@@ -89,7 +88,7 @@ class StudySemantics:
     """Canonical study provenance bundled from the compiled architectural seams."""
 
     problem: ProblemSemantics
-    realization_policy: RealizationPolicySemantics
+    execution_policy: ExecutionPolicySemantics
     objective: ObjectiveSemantics
     feature: FeatureSemantics
     prediction: PredictionSemantics
@@ -103,7 +102,7 @@ class ArtifactSemantics:
     """Canonical artifact provenance bundled from the compiled architectural seams."""
 
     problem: ProblemSemantics
-    realization_policy: RealizationPolicySemantics
+    execution_policy: ExecutionPolicySemantics
     objective: ObjectiveSemantics
     feature: FeatureSemantics
     prediction: PredictionSemantics

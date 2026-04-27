@@ -1,0 +1,25 @@
+id: core_fee_dynamics_elapsed_position
+outputs:
+  - log_base_fee_per_gas
+  - log_prev_gas_used
+  - log_prev_gas_limit
+  - prev_gas_utilization
+  - prev_eip1559_pressure
+  - log_prev_tx_count
+  - seconds_since_previous_block
+  - hour_sin
+  - hour_cos
+  - dow_sin
+  - dow_cos
+  - roll25_mean_logfee
+  - roll25_std_logfee
+  - roll25_min_logfee
+  - roll100_mean_logfee
+  - roll100_std_logfee
+  - roll100_min_logfee
+  - prev_priority_fee_p10
+  - prev_priority_fee_p50
+  - prev_priority_fee_p90
+  - prev_priority_fee_spread
+  - prev_fee_history_gas_used_ratio
+  - elapsed_seconds

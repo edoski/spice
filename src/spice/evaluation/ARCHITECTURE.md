@@ -47,7 +47,7 @@ decoded result id
     +--> evaluator contract checks accepted decoded-result id
              |
              v
-        evaluator.run(store, realization_policy, decoded_result, sample_indices)
+        evaluator.run(store, execution_policy, decoded_result, sample_indices)
              |
              v
         EvaluationSummary

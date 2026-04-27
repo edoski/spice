@@ -27,7 +27,7 @@ from spice.config.registry import (
     named_group_keys,
     normalize_group_name,
 )
-from spice.config.resolution import workflow_request_type
+from spice.config.resolution import WorkflowConfigRequest, workflow_request_type
 from spice.config.surfaces import SurfaceFrame
 
 _CONF_ROOT = Path(__file__).resolve().parents[1] / "src" / "spice" / "conf"
@@ -46,7 +46,7 @@ _IDENTITY_FIELDS = {
     "dataset_builder": "id",
     "execution": "id",
     "evaluation": "id",
-    "feature_set": "id",
+    "features": "id",
     "model": "id",
     "prediction": "id",
     "problem": "id",
@@ -82,6 +82,19 @@ def _spec_name_for_payload(group: str, default_name: str, payload: Mapping[str, 
     return identity_value if isinstance(identity_value, str) else default_name
 
 
+def _set_surface_evaluation_delay(
+    surface_payload: dict[str, object],
+    delay_seconds: object,
+) -> None:
+    if delay_seconds is None:
+        return
+    evaluation = surface_payload.get("evaluation")
+    if isinstance(evaluation, Mapping):
+        surface_payload["evaluation"] = {**evaluation, "delay_seconds": delay_seconds}
+    else:
+        surface_payload["evaluation"] = {"id": evaluation, "delay_seconds": delay_seconds}
+
+
 @pytest.fixture
 def model_workflow_override():
     def _override(
@@ -91,7 +104,7 @@ def model_workflow_override():
         max_delay_seconds: int = 36,
         delay_seconds: int | None = None,
     ) -> dict[str, object]:
-        problem = _named_group_copy("current_row_nominal_window", "problem")
+        problem = _named_group_copy("current_row_nominal", "problem")
         problem["id"] = "test_problem"
         problem["lookback_seconds"] = lookback_seconds
         problem["sample_count"] = sample_count
@@ -102,10 +115,9 @@ def model_workflow_override():
         return {
             "chain": "ethereum",
             "model": "lstm",
-            "feature_set": "same_block_closed_full",
+            "features": "core_fee_dynamics",
             "dataset": dataset,
             "problem": problem,
-            "delay_seconds": max_delay_seconds if delay_seconds is None else delay_seconds,
             "training": {
                 "learning_rate": 0.0003,
                 "weight_decay": 0.01,
@@ -130,6 +142,7 @@ def model_workflow_override():
                 "arrival_rate_per_second": 0.02,
                 "repetitions": 3,
                 "seed": 2026,
+                "delay_seconds": max_delay_seconds if delay_seconds is None else delay_seconds,
             },
             "tuning": {
                 "trial_count": 2,
@@ -170,7 +183,7 @@ def acquire_override():
         lookback_seconds: int = 24,
         max_delay_seconds: int = 12,
     ) -> dict[str, object]:
-        problem = _named_group_copy("current_row_nominal_window", "problem")
+        problem = _named_group_copy("current_row_nominal", "problem")
         problem["id"] = "acquire_test_problem"
         problem["lookback_seconds"] = lookback_seconds
         problem["sample_count"] = sample_count
@@ -216,7 +229,7 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
         workflow: WorkflowTask,
         *,
         workspace: Path | None = None,
-        surface: str = "same_block_closed",
+        surface: str = "current_row_fee_dynamics",
         override: Mapping[str, object] | None = None,
         chain: str | None = None,
         study: str | None = None,
@@ -245,19 +258,26 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
                 if value is not None
             }
         )
+        workflow_fields = frozenset(workflow_request_type(workflow).model_fields)
         for key, value in override_payload.items():
-            if key in _SELECTION_GROUP_KEYS:
+            if key in _SELECTION_GROUP_KEYS and key in workflow_fields:
                 if isinstance(value, Mapping):
+                    payload = dict(value)
+                    if key == "evaluation":
+                        _set_surface_evaluation_delay(
+                            surface_payload,
+                            payload.pop("delay_seconds", None),
+                        )
                     spec_name = _spec_name_for_payload(
                         key,
                         f"test_{workflow.value}_{key}",
-                        value,
+                        payload,
                     )
                     _write_named_spec(
                         conf_root,
                         group=key,
                         name=spec_name,
-                        payload=dict(value),
+                        payload=payload,
                     )
                     selection_values[key] = spec_name
                     continue
@@ -283,15 +303,21 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
                     continue
                 surface_payload[key] = value
                 continue
-            if key in _REQUEST_FIELD_NAMES and not isinstance(value, Mapping):
+            if key in workflow_fields and not isinstance(value, Mapping):
                 selection_values[key] = value
                 continue
+            if key in _REQUEST_FIELD_NAMES:
+                raise ValueError(
+                    f"Override key {key!r} is not valid for {workflow.value} workflow"
+                )
             raise ValueError(f"Unsupported test workflow override key: {key}")
         _write_named_spec(conf_root, group="surface", name=surface_name, payload=surface_payload)
         selection_values["surface"] = surface_name
         request_type = workflow_request_type(workflow)
+        request = cast(WorkflowConfigRequest, request_type.model_validate(selection_values))
         return resolve_workflow_config(
-            workflow, request_type.model_validate(selection_values)
+            workflow,
+            request,
         )
 
     return _load

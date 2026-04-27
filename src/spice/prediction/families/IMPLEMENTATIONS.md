@@ -7,7 +7,7 @@ Prediction families define the supervised task on top of a temporal problem. The
 The model produces tensors. The prediction family gives those tensors meaning.
 
 ```text
-problem store + realization policy
+problem store + execution policy
   -> target batch
 
 model outputs + target batch

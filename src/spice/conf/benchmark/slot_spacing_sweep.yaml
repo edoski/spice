@@ -1,0 +1,55 @@
+cases:
+  - id: slot_spacing_sweep
+    base:
+      surface: current_row_fee_dynamics
+      training: default
+      split: default
+      tuning: extensive
+      study: slot_spacing_sweep
+    dimensions:
+      data:
+        - set: {chain: ethereum}
+        - set: {chain: polygon}
+        - set: {chain: avalanche}
+      models:
+        - set:
+            model: lstm
+            tuning_space: lstm_large_capacity
+        - set:
+            model: transformer
+            tuning_space: transformer_large_capacity
+        - set:
+            model: transformer_lstm
+            tuning_space: transformer_lstm_large_capacity
+      problems:
+        - ref: current_row_nominal
+        - ref: current_row_recent_median
+    steps:
+      - id: tune
+        workflow: tune
+        set:
+          objective: validation_total_loss
+          evaluation: fullset
+          trial_count: 120
+      - id: train_tuned
+        workflow: train
+        after: [tune]
+        set:
+          objective: validation_total_loss
+          evaluation: fullset
+          variant: tuned
+      - id: evaluate_tuned
+        workflow: evaluate
+        after: [train_tuned]
+        dimensions:
+          scoring:
+            - set:
+                objective: profit_poisson_replay_2h_mean
+                evaluation: poisson_replay_2h_mean
+            - set:
+                objective: profit_poisson_replay_2h_total
+                evaluation: poisson_replay_2h_total
+          runtime:
+            - set:
+                variant: tuned
+                delay_seconds: 36

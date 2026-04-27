@@ -24,7 +24,7 @@ from .models import (
     DatasetBuilderConfig,
     DatasetSpec,
     EvaluateConfig,
-    FeatureSetConfig,
+    FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
     ProviderSpec,
@@ -38,7 +38,7 @@ from .models import (
     TuningConfig,
     TuningSpaceConfig,
     WorkflowTask,
-    coerce_feature_set_config,
+    coerce_features_config,
     coerce_problem_spec,
 )
 from .registry import load_named_group
@@ -54,7 +54,7 @@ class WorkflowRequestBase(ConfigModel):
     surface: str | None = None
     chain: str | None = None
     problem: str | None = None
-    feature_set: str | None = None
+    features: str | None = None
     storage_root: Path | None = None
 
 
@@ -103,7 +103,7 @@ class ModelWorkflowBase:
     problem: ProblemSpec
     model: ModelConfig[str]
     dataset_builder: DatasetBuilderConfig
-    feature_set: FeatureSetConfig
+    features: FeaturesConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
     evaluation: EvaluatorConfig | None
@@ -184,7 +184,7 @@ def resolve_workflow_config(
             load_surface_frame(request.surface),
             chain=request.chain,
             problem=request.problem,
-            feature_set=request.feature_set,
+            features=request.features,
             objective=getattr(request, "objective", None),
             evaluation=getattr(request, "evaluation", None),
             model=getattr(request, "model", None),
@@ -320,7 +320,7 @@ def _model_workflow_payload(payload: Mapping[str, object]) -> dict[str, object]:
         "problem": problem,
         "model": model,
         "dataset_builder": coerce_dataset_builder_config(_mapping_field(raw, "dataset_builder")),
-        "feature_set": coerce_feature_set_config(_mapping_field(raw, "feature_set")),
+        "features": coerce_features_config(_mapping_field(raw, "features")),
         "prediction": PredictionConfig.model_validate(_mapping_field(raw, "prediction")),
         "objective": coerce_objective_config(_mapping_field(raw, "objective")),
         "evaluation": _optional_evaluation(raw.get("evaluation")),
@@ -369,8 +369,8 @@ def _resolve_problem(name: str | ProblemSpec) -> ProblemSpec:
     return coerce_problem_spec(load_named_group(name, "problem"))
 
 
-def _resolve_feature_set(name: str) -> FeatureSetConfig:
-    return coerce_feature_set_config(load_named_group(name, "feature_set"))
+def _resolve_features(name: str) -> FeaturesConfig:
+    return coerce_features_config(load_named_group(name, "features"))
 
 
 def _resolve_dataset_builder(name: str) -> DatasetBuilderConfig:
@@ -471,13 +471,13 @@ def _resolve_model_workflow_base(
     problem = _resolve_problem(frame.problem)
     model = _resolve_model(_required(frame.model, "model"))
     dataset_builder = _resolve_dataset_builder(frame.dataset_builder)
-    feature_set = _resolve_feature_set(_required(frame.feature_set, "feature_set"))
+    features = _resolve_features(_required(frame.features, "features"))
     prediction = _resolve_prediction(frame.prediction)
     objective = _resolve_objective(
         _required(frame.objective, "objective"),
-        evaluation_name=frame.evaluation if validate_objective_benchmark else None,
+        evaluation_name=frame.evaluation_id if validate_objective_benchmark else None,
     )
-    evaluation = _resolve_evaluation(frame.evaluation)
+    evaluation = _resolve_evaluation(frame.evaluation_id)
     study = _resolve_study(frame.study)
     artifact = _resolve_artifact(frame.artifact)
     return ModelWorkflowBase(
@@ -487,7 +487,7 @@ def _resolve_model_workflow_base(
         problem=problem,
         model=model,
         dataset_builder=dataset_builder,
-        feature_set=feature_set,
+        features=features,
         prediction=prediction,
         objective=objective,
         evaluation=evaluation,
@@ -504,13 +504,13 @@ def _resolve_model_workflow_spine(
     require_tuning: bool,
     allow_tuned_variant: bool,
 ) -> ModelWorkflowSpine:
-    training = _resolve_training(frame.training)
+    training = _resolve_training(frame.training_id)
     split = _resolve_split(frame.split)
     artifact = _resolve_artifact(frame.artifact)
     if require_tuning or (allow_tuned_variant and artifact.variant.value == "tuned"):
-        tuning = _resolve_tuning(frame.tuning)
+        tuning = _resolve_tuning(frame.tuning_id)
         tuning_space = load_named_tuning_space(
-            _required(frame.tuning_space, "tuning_space"),
+            _required(frame.tuning_space_id, "tuning.space"),
             model_config=model,
             problem_config=problem,
         )
@@ -534,8 +534,8 @@ def _resolve_acquire_config(frame: SurfaceFrame, *, dry_run: bool | None) -> Acq
     storage = _resolve_storage(frame.storage)
     problem = _resolve_problem(frame.problem)
     rpc_endpoint = _resolve_rpc_endpoint(frame.provider, chain=chain)
-    feature_set = _resolve_feature_set(_required(frame.feature_set, "feature_set"))
-    acquisition = _resolve_acquisition(frame.acquisition)
+    features = _resolve_features(_required(frame.features, "features"))
+    acquisition = _resolve_acquisition(frame.acquisition_id)
     if dry_run is not None:
         acquisition = AcquisitionConfig.model_validate(
             {**acquisition.model_dump(mode="json"), "dry_run": dry_run}
@@ -545,7 +545,7 @@ def _resolve_acquire_config(frame: SurfaceFrame, *, dry_run: bool | None) -> Acq
         dataset=dataset,
         storage=storage,
         problem=problem,
-        feature_set=feature_set,
+        features=features,
         rpc_endpoint=rpc_endpoint,
         acquisition=acquisition,
     )
@@ -567,7 +567,7 @@ def _resolve_train_config(frame: SurfaceFrame) -> TrainConfig:
         problem=base.problem,
         model=base.model,
         dataset_builder=base.dataset_builder,
-        feature_set=base.feature_set,
+        features=base.features,
         prediction=base.prediction,
         objective=base.objective,
         evaluation=base.evaluation,
@@ -603,7 +603,7 @@ def _resolve_tune_config(frame: SurfaceFrame, *, trial_count: int | None) -> Tun
         problem=base.problem,
         model=base.model,
         dataset_builder=base.dataset_builder,
-        feature_set=base.feature_set,
+        features=base.features,
         prediction=base.prediction,
         objective=base.objective,
         evaluation=base.evaluation,
@@ -625,6 +625,7 @@ def _resolve_evaluate_config(frame: SurfaceFrame) -> EvaluateConfig:
         require_tuning=False,
         allow_tuned_variant=True,
     )
+    delay_seconds = frame.delay_seconds or base.problem.max_delay_seconds
     return EvaluateConfig(
         chain=base.chain,
         dataset=base.dataset,
@@ -632,7 +633,7 @@ def _resolve_evaluate_config(frame: SurfaceFrame) -> EvaluateConfig:
         problem=base.problem,
         model=base.model,
         dataset_builder=base.dataset_builder,
-        feature_set=base.feature_set,
+        features=base.features,
         prediction=base.prediction,
         objective=base.objective,
         evaluation=base.evaluation,
@@ -640,19 +641,13 @@ def _resolve_evaluate_config(frame: SurfaceFrame) -> EvaluateConfig:
         artifact=base.artifact,
         training=spine.training,
         split=spine.split,
-        delay_seconds=_required_int(frame.delay_seconds, "delay_seconds"),
+        delay_seconds=delay_seconds,
         tuning=spine.tuning,
         tuning_space=spine.tuning_space,
     )
 
 
 def _required(value: str | None, label: str) -> str:
-    if value is None:
-        raise ConfigResolutionError(f"{label} is required")
-    return value
-
-
-def _required_int(value: int | None, label: str) -> int:
     if value is None:
         raise ConfigResolutionError(f"{label} is required")
     return value

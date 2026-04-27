@@ -30,7 +30,7 @@ def study_list_sections(
                     (
                         f"chain={record.chain_name} "
                         f"dataset={record.dataset_name} "
-                        f"feature_set={record.feature_set_id} "
+                        f"features={record.features_id} "
                         f"prediction={record.prediction_id} "
                         f"model={record.model_id} "
                         f"problem={record.problem_id} "
@@ -68,7 +68,7 @@ def study_sections(
                 ("dataset", manifest.dataset_name),
                 ("dataset id", manifest.dataset_id),
                 ("problem", manifest.problem_id),
-                ("feature set", manifest.feature_set_id),
+                ("features", manifest.features_id),
                 ("model", manifest.model_id),
                 ("sampler", f"{manifest.sampler_name} seed={manifest.sampler_seed}"),
                 ("pruner", manifest.pruner_name),
@@ -93,8 +93,8 @@ def study_sections(
             [
                 ("problem config", mapping_fields(manifest.problem.model_dump(mode="json"))),
                 (
-                    "feature set config",
-                    mapping_fields(manifest.feature_set.model_dump(mode="json")),
+                    "features config",
+                    mapping_fields(manifest.features.model_dump(mode="json")),
                 ),
                 ("prediction config", mapping_fields(manifest.prediction.model_dump(mode="json"))),
                 (

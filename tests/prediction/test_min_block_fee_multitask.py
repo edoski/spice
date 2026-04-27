@@ -17,8 +17,8 @@ from spice.prediction.families.min_block_fee_multitask.outputs import (
     OFFSET_LOGITS_HEAD_ID,
 )
 from spice.temporal import (
-    coerce_realization_policy_config,
-    compile_realization_policy_contract,
+    coerce_execution_policy_config,
+    compile_execution_policy_contract,
 )
 from spice.temporal.problem_store import CompiledProblemStore
 
@@ -59,7 +59,7 @@ def _build_store() -> CompiledProblemStore:
 def _contract():
     prediction = PredictionConfig.model_validate(
         {
-            "id": "same_block_closed",
+            "id": "current_row_fee_dynamics",
             "family_id": "min_block_fee_multitask",
         }
     )
@@ -69,9 +69,9 @@ def _contract():
     )
 
 
-def _realization_policy():
-    return compile_realization_policy_contract(
-        coerce_realization_policy_config({"id": "strict_deadline_miss"})
+def _execution_policy():
+    return compile_execution_policy_contract(
+        coerce_execution_policy_config({"id": "strict_deadline_miss"})
     )
 
 
@@ -83,7 +83,7 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     prepared_targets = contract.prepare_targets(
         store,
         sample_indices,
-        realization_policy=_realization_policy(),
+        execution_policy=_execution_policy(),
     )
     batch = prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64))
 
@@ -97,7 +97,7 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     training_state = contract.fit_training_state(
         store,
         sample_indices,
-        realization_policy=_realization_policy(),
+        execution_policy=_execution_policy(),
     )
     assert isinstance(training_state, MinBlockFeeTrainingState)
     class_weights = training_state.class_weights.cpu().numpy()
@@ -152,7 +152,7 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     )
 
 
-def test_min_block_fee_multitask_uses_realization_policy_targets() -> None:
+def test_min_block_fee_multitask_uses_execution_policy_targets() -> None:
     store = CompiledProblemStore(
         feature_matrix=np.zeros((8, 1), dtype=np.float32),
         log_base_fees=np.log(
@@ -171,7 +171,7 @@ def test_min_block_fee_multitask_uses_realization_policy_targets() -> None:
     prepared_targets = contract.prepare_targets(
         store,
         sample_indices,
-        realization_policy=_realization_policy(),
+        execution_policy=_execution_policy(),
     )
     batch = prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64))
 
@@ -212,7 +212,7 @@ def test_min_block_fee_multitask_uses_full_action_mask_for_fixed_ex_ante_windows
     prepared_targets = contract.prepare_targets(
         store,
         sample_indices,
-        realization_policy=_realization_policy(),
+        execution_policy=_execution_policy(),
     )
     batch = prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64))
 

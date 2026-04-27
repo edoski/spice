@@ -29,7 +29,7 @@ def _write_surface(conf_root: Path, name: str, payload: dict[str, object]) -> No
 
 
 def _base_surface(conf_root: Path) -> dict[str, object]:
-    return load_named_group("same_block_closed", "surface")
+    return load_named_group("current_row_fee_dynamics", "surface")
 
 
 def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root) -> None:
@@ -43,12 +43,10 @@ def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root)
                 "sample_count": 400000,
                 "max_delay_seconds": 36,
                 "compiler": {
-                    "id": "estimated_block",
-                    "lookback_interval_source": "nominal_chain_runtime",
-                    "candidate_interval_source": "calibrated",
-                    "calibrated_interval_statistic": "mean",
+                    "id": "observed_time_window",
+                    "slot_spacing": {"id": "nominal"},
                 },
-                "realization_policy": {"id": "strict_deadline_miss"},
+                "execution_policy": {"id": "strict_deadline_miss"},
             },
             sort_keys=False,
         ),
@@ -70,7 +68,6 @@ def test_surface_refs_and_request_defaults_resolve(
     child_root = tmp_path / "child_outputs"
     payload = _base_surface(conf_root)
     payload["objective"] = "profit_poisson_replay_2h_mean"
-    payload["evaluation"] = "poisson_replay_2h_mean"
     (conf_root / "training" / "child_training.yaml").write_text(
         yaml.safe_dump(
             {
@@ -98,8 +95,7 @@ def test_surface_refs_and_request_defaults_resolve(
         ),
         encoding="utf-8",
     )
-    payload["training"] = "child_training"
-    payload["split"] = "child_split"
+    payload["training"] = {"id": "child_training", "split": "child_split"}
     payload["storage"] = {"root": str(child_root)}
     payload["study"] = {"name": "child-study"}
     payload["artifact"] = {"variant": "baseline"}
@@ -133,7 +129,7 @@ def test_acquire_resolution_resolves_one_chain_specific_rpc_endpoint(
         resolve_workflow_config(
             WorkflowTask.ACQUIRE,
             AcquireWorkflowRequest(
-                surface="same_block_closed",
+                surface="current_row_fee_dynamics",
                 chain="avalanche",
                 storage_root=tmp_path / "outputs",
             ),
@@ -170,7 +166,7 @@ def test_acquire_resolution_fails_when_provider_lacks_chain_endpoint(
         encoding="utf-8",
     )
     payload = _base_surface(conf_root)
-    payload["provider"] = "eth_only"
+    payload["acquisition"] = {"provider": "eth_only", "id": "default"}
     _write_surface(conf_root, "eth_only_acquire", payload)
 
     with pytest.raises(
@@ -194,10 +190,24 @@ def test_acquire_rejects_objective_override(
     isolate_conf_root()
 
     with pytest.raises(ValidationError, match="objective"):
-        AcquireWorkflowRequest(
-            surface="same_block_closed",
-            objective="validation_total_loss",
-            storage_root=tmp_path / "outputs",
+        AcquireWorkflowRequest.model_validate(
+            {
+                "surface": "current_row_fee_dynamics",
+                "objective": "validation_total_loss",
+                "storage_root": tmp_path / "outputs",
+            }
+        )
+
+
+def test_test_workflow_loader_rejects_invalid_request_override(
+    tmp_path: Path,
+    load_workflow_config,
+) -> None:
+    with pytest.raises(ValueError, match="not valid for acquire workflow"):
+        load_workflow_config(
+            WorkflowTask.ACQUIRE,
+            workspace=tmp_path,
+            override={"trial_count": 3},
         )
 
 
@@ -233,7 +243,7 @@ def test_benchmark_objective_requires_matching_evaluation(
     conf_root = isolate_conf_root()
     payload = _base_surface(conf_root)
     payload["objective"] = "profit_poisson_replay_2h_mean"
-    payload["evaluation"] = "fullset"
+    payload["evaluation"] = {"id": "fullset", "delay_seconds": 36}
     _write_surface(conf_root, "mismatch", payload)
 
     with pytest.raises(
@@ -256,20 +266,24 @@ def test_evaluate_allows_diagnostic_evaluation_to_differ_from_objective_benchmar
     conf_root = isolate_conf_root()
     payload = _base_surface(conf_root)
     payload["objective"] = "profit_poisson_replay_2h_mean"
-    payload["evaluation"] = "fullset"
+    payload["evaluation"] = {"id": "fullset", "delay_seconds": 36}
     _write_surface(conf_root, "diagnostic", payload)
 
-    config = resolve_workflow_config(
-        WorkflowTask.EVALUATE,
-        EvaluateWorkflowRequest(surface="diagnostic", storage_root=tmp_path / "outputs"),
+    config = cast(
+        EvaluateConfig,
+        resolve_workflow_config(
+            WorkflowTask.EVALUATE,
+            EvaluateWorkflowRequest(surface="diagnostic", storage_root=tmp_path / "outputs"),
+        ),
     )
 
     assert config.objective.id == "evaluation"
     assert config.objective.benchmark_id == "poisson_replay_2h_mean"
+    assert config.evaluation is not None
     assert config.evaluation.id == "fullset"
 
 
-def test_request_overrides_allow_problem_feature_set_and_evaluation_selection(
+def test_request_overrides_allow_problem_features_and_evaluation_selection(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
@@ -280,22 +294,22 @@ def test_request_overrides_allow_problem_feature_set_and_evaluation_selection(
         resolve_workflow_config(
             WorkflowTask.TRAIN,
             TrainWorkflowRequest(
-                surface="block_open_lagged",
-                problem="current_row_recent_delta_window",
-                feature_set="block_open_lagged_no_time_since_start",
+                surface="current_row_fee_dynamics",
+                problem="current_row_recent_median",
+                features="core_fee_dynamics",
                 storage_root=tmp_path / "train_outputs",
             ),
         ),
     )
-    assert train_config.problem.id == "current_row_recent_delta_window"
-    assert train_config.feature_set.id == "block_open_lagged_no_time_since_start"
+    assert train_config.problem.id == "current_row_recent_median"
+    assert train_config.features.id == "core_fee_dynamics"
     assert train_config.evaluation is not None
     assert train_config.evaluation.id == "poisson_replay_2h_mean"
 
     evaluate_config = resolve_workflow_config(
         WorkflowTask.EVALUATE,
         EvaluateWorkflowRequest(
-            surface="same_block_closed",
+            surface="current_row_fee_dynamics",
             evaluation="anchor_basefee_fullset",
             storage_root=tmp_path / "eval_outputs",
         ),
@@ -315,7 +329,7 @@ def test_request_overrides_allow_objective_selection(
         resolve_workflow_config(
             WorkflowTask.TRAIN,
             TrainWorkflowRequest(
-                surface="same_block_closed",
+                surface="current_row_fee_dynamics",
                 objective="validation_total_loss",
                 storage_root=tmp_path / "train_outputs",
             ),
@@ -330,7 +344,7 @@ def test_request_overrides_allow_objective_selection(
         resolve_workflow_config(
             WorkflowTask.TUNE,
             TuneWorkflowRequest(
-                surface="same_block_closed",
+                surface="current_row_fee_dynamics",
                 objective="validation_total_loss",
                 storage_root=tmp_path / "tune_outputs",
             ),
@@ -344,7 +358,7 @@ def test_request_overrides_allow_objective_selection(
         resolve_workflow_config(
             WorkflowTask.EVALUATE,
             EvaluateWorkflowRequest(
-                surface="same_block_closed",
+                surface="current_row_fee_dynamics",
                 objective="validation_total_loss",
                 storage_root=tmp_path / "eval_outputs",
             ),
@@ -366,7 +380,7 @@ def test_request_overrides_allow_model_and_tuning_space_selection(
         resolve_workflow_config(
             WorkflowTask.TUNE,
             TuneWorkflowRequest(
-                surface="same_block_closed",
+                surface="current_row_fee_dynamics",
                 model="transformer",
                 tuning_space="transformer_default",
                 storage_root=tmp_path / "outputs",
@@ -399,7 +413,7 @@ def test_large_capacity_tuning_spaces_resolve(
         resolve_workflow_config(
             WorkflowTask.TUNE,
             TuneWorkflowRequest(
-                surface="same_block_closed",
+                surface="current_row_fee_dynamics",
                 model=model,
                 tuning_space=tuning_space,
                 storage_root=tmp_path / "outputs",

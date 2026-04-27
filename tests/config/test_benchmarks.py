@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 import yaml
 
 from spice.config.benchmarks import plan_benchmark
+from spice.config.models import ModelWorkflowConfig
 from spice.core.errors import ConfigResolutionError
 
 
@@ -22,7 +25,7 @@ def test_benchmark_dimensions_expand_resolved_plan(isolate_conf_root) -> None:
                 {
                     "id": "window_sweep",
                     "base": {
-                        "surface": "block_open_lagged",
+                        "surface": "current_row_fee_dynamics",
                         "training": "default",
                         "split": "default",
                         "tuning": "extensive",
@@ -39,10 +42,10 @@ def test_benchmark_dimensions_expand_resolved_plan(isolate_conf_root) -> None:
                             },
                         ],
                         "problems": [
-                            {"ref": "current_row_recent_delta_window"},
+                            {"ref": "current_row_recent_median"},
                             {
                                 "grid": {
-                                    "base": "current_row_nominal_window",
+                                    "base": "current_row_nominal",
                                     "fields": {
                                         "lookback_seconds": [600, 900],
                                         "sample_count": [1000000, 2000000],
@@ -97,21 +100,44 @@ def test_benchmark_dimensions_expand_resolved_plan(isolate_conf_root) -> None:
     tuned_problems = {
         entry.config.problem.id
         for entry in plan
-        if entry.config.problem.id.startswith("current_row_nominal_window__")
+        if entry.config.problem.id.startswith("current_row_nominal__")
     }
     assert (
-        "current_row_nominal_window__lookback_seconds-600__sample_count-1000000"
+        "current_row_nominal__lookback_seconds-600__sample_count-1000000"
         in tuned_problems
     )
     assert all(
-        entry.config.model.id == "lstm"
+        cast(ModelWorkflowConfig, entry.config).model.id == "lstm"
         for entry in plan
         if "models-model-lstm__tuning_space-lstm_large_capacity" in entry.run_id
     )
     evaluate_entries = [entry for entry in plan if entry.step_id == "evaluate"]
     assert evaluate_entries
     assert all(len(entry.depends_on) == 1 for entry in evaluate_entries)
-    assert all(entry.config.artifact.variant.value == "tuned" for entry in evaluate_entries)
+    assert all(
+        cast(ModelWorkflowConfig, entry.config).artifact.variant.value == "tuned"
+        for entry in evaluate_entries
+    )
+
+
+def test_sample_count_sweep_routes_3m_cells_to_3m_dataset() -> None:
+    plan = plan_benchmark("sample_count_sweep")
+    three_m_entries = [
+        entry
+        for entry in plan
+        if entry.config.problem.sample_count == 3_000_000
+    ]
+
+    assert len(plan) == 108
+    assert three_m_entries
+    assert all(
+        entry.selection["surface"] == "current_row_fee_dynamics_3m"
+        for entry in three_m_entries
+    )
+    assert all(
+        cast(ModelWorkflowConfig, entry.config).dataset.name == "icdcs_2026_3m"
+        for entry in three_m_entries
+    )
 
 
 def test_benchmark_rejects_invalid_problem_grid(isolate_conf_root) -> None:
@@ -123,12 +149,12 @@ def test_benchmark_rejects_invalid_problem_grid(isolate_conf_root) -> None:
             "cases": [
                 {
                     "id": "bad",
-                    "base": {"surface": "same_block_closed"},
+                    "base": {"surface": "current_row_fee_dynamics"},
                     "dimensions": {
                         "problems": [
                             {
                                 "grid": {
-                                    "base": "current_row_nominal_window",
+                                    "base": "current_row_nominal",
                                     "fields": {"sample_count": [0]},
                                 }
                             }
@@ -153,7 +179,7 @@ def test_benchmark_rejects_step_dependency_cycles(isolate_conf_root) -> None:
             "cases": [
                 {
                     "id": "bad",
-                    "base": {"surface": "same_block_closed"},
+                    "base": {"surface": "current_row_fee_dynamics"},
                     "steps": [
                         {"id": "train", "workflow": "train", "after": ["evaluate"]},
                         {"id": "evaluate", "workflow": "evaluate", "after": ["train"]},

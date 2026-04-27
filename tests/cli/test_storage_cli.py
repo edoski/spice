@@ -19,7 +19,7 @@ def _write_artifact_record(storage_root: Path, artifact_id: str) -> None:
         dataset_id="cor_1",
         dataset_name="dataset",
         chain_name="ethereum",
-        feature_set_id="features",
+        features_id="features",
         prediction_id="prediction",
         model_id="model",
         problem_id="problem",

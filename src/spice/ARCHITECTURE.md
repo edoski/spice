@@ -34,7 +34,7 @@ Every arrow preserves or changes meaning. The architecture exists to keep those 
 config       named YAML + CLI overrides -> typed configs
 corpus       canonical block data and coverage
 features     observable feature columns and prerequisites
-temporal     anchors, context rows, candidate windows, realization policies
+temporal     anchors, context rows, candidate windows, execution policies
 modeling     tensorization, training, inference, scoring bridge
 prediction   targets, losses, metrics, decoded-result kinds
 evaluation   decision-quality scoring over decoded results
@@ -105,7 +105,7 @@ Spice expands each piece because blockchain fee decisions are temporal:
 
 ```text
 data        corpus + features
-examples    temporal compilers + realization policies
+examples    temporal compilers + execution policies
 model       dataset builders + model families
 loss        prediction families + objectives
 evaluation  evaluator contracts + storage summaries

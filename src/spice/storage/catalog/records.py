@@ -22,7 +22,7 @@ class CatalogStudyRecord:
     dataset_id: str
     dataset_name: str
     chain_name: str
-    feature_set_id: str
+    features_id: str
     prediction_id: str
     model_id: str
     problem_id: str
@@ -36,7 +36,7 @@ class CatalogArtifactRecord:
     dataset_id: str
     dataset_name: str
     chain_name: str
-    feature_set_id: str
+    features_id: str
     prediction_id: str
     model_id: str
     problem_id: str

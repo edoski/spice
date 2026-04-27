@@ -10,32 +10,32 @@ The resolver uses PyYAML plus Pydantic models; there is no Hydra or OmegaConf la
 ```yaml
 chain: ethereum
 dataset: icdcs_2026
-provider: publicnode
-problem: current_row_nominal_window
-dataset_builder: fixed_context_temporal
-prediction: icdcs_2026
-acquisition: default
-training: default
-split: default
-tuning: default
+features: core_fee_dynamics
+problem: current_row_nominal
+dataset_builder: fixed_sequence_temporal
 model: lstm
-tuning_space: lstm_fixed_context
-feature_set: same_block_closed_full
+prediction: icdcs_2026
 objective: profit_poisson_replay_2h_mean
-evaluation: poisson_replay_2h_mean
-delay_seconds: 36
+
+acquisition:
+  provider: publicnode
+  id: default
+training:
+  id: default
+  split: default
+tuning:
+  id: default
+  space: lstm_fixed_context
+evaluation:
+  id: poisson_replay_2h_mean
+  delay_seconds: 36
 ```
 
-Canonical mechanism surfaces:
-
-- `same_block_closed`: paper-faithful unsafe same-block closed path.
-- `block_open_lagged`: safe current-row sibling with lagged finalized block facts.
-
-`model`, `feature_set`, `objective`, `evaluation`, `tuning_space`, `delay_seconds`, `study`, `variant`, and `trial_count` may be supplied by benchmark cases or CLI overrides when a surface leaves variation to the run request.
+The default runnable surface is `current_row_fee_dynamics`. `model`, `features`, `objective`, `evaluation`, `tuning_space`, `delay_seconds`, `study`, `variant`, and `trial_count` may be supplied by benchmark cases or CLI overrides when a surface leaves variation to the run request.
 
 ## Workflow Refs
 
-Workflow sections are named refs, not inline blocks:
+Workflow sections inside a surface point to named refs:
 
 - `acquisition/default.yaml`
 - `training/default.yaml`
@@ -48,7 +48,7 @@ Add a new named ref only when behavior differs. Small run variation should norma
 
 Workflow commands use `--surface`. `--preset` is intentionally unsupported.
 
-Common selectors include `--chain`, `--problem`, `--feature-set`, `--objective`, `--evaluation`, `--model`, `--tuning-space`, `--training`, `--split`, `--tuning`, `--study`, `--variant`, `--delay-seconds`, and `--trial-count`. `acquire` also accepts `--acquisition` and `--dry-run`.
+Shared model-workflow selectors include `--chain`, `--problem`, `--features`, `--objective`, `--evaluation`, `--model`, `--tuning-space`, `--training`, `--split`, `--tuning`, and `--study`. `train` and `evaluate` accept `--variant`; `evaluate` accepts `--delay-seconds`; `tune` accepts `--trial-count`. `acquire` accepts `--chain`, `--problem`, `--features`, `--acquisition`, `--dry-run`, and `--storage-root`.
 
 Resolution order:
 
@@ -58,7 +58,7 @@ Resolution order:
 4. validate the final workflow config
 5. derive storage identity from the resolved config
 
-Storage identity does not include the surface or benchmark name. It changes when resolved semantic payloads such as model, objective, feature set, problem, training, split, tuning, or tuning space change.
+Storage identity does not include the surface or benchmark name. It changes when resolved semantic payloads such as model, objective, features, problem, training, split, tuning, or tuning space change.
 
 ## Benchmarks
 
@@ -71,29 +71,38 @@ Slurm dependencies during remote submission.
 cases:
   - id: lookback_window_sweep
     base:
-      surface: block_open_lagged
+      surface: current_row_fee_dynamics
       training: default
       split: default
       tuning: extensive
       study: lookback_window_sweep
     dimensions:
+      data:
+        - set: {chain: ethereum}
+        - set: {chain: polygon}
+        - set: {chain: avalanche}
       models:
         - set:
             model: lstm
             tuning_space: lstm_large_capacity
+        - set:
+            model: transformer
+            tuning_space: transformer_large_capacity
+        - set:
+            model: transformer_lstm
+            tuning_space: transformer_lstm_large_capacity
       problems:
         - grid:
-            base: current_row_nominal_window
+            base: current_row_nominal
             fields:
               lookback_seconds: [600, 900, 1200]
-              sample_count: [1000000]
     steps:
       - id: tune
         workflow: tune
         set:
           objective: validation_total_loss
           evaluation: fullset
-          trial_count: 100
+          trial_count: 120
       - id: train_tuned
         workflow: train
         after: [tune]
@@ -101,14 +110,21 @@ cases:
           objective: validation_total_loss
           evaluation: fullset
           variant: tuned
-      - id: evaluate
+      - id: evaluate_tuned
         workflow: evaluate
         after: [train_tuned]
-        set:
-          objective: profit_poisson_replay_2h_mean
-          evaluation: poisson_replay_2h_mean
-          variant: tuned
-          delay_seconds: 36
+        dimensions:
+          scoring:
+            - set:
+                objective: profit_poisson_replay_2h_mean
+                evaluation: poisson_replay_2h_mean
+            - set:
+                objective: profit_poisson_replay_2h_total
+                evaluation: poisson_replay_2h_total
+          runtime:
+            - set:
+                variant: tuned
+                delay_seconds: 36
 ```
 
 Planning validates every row before printing anything:

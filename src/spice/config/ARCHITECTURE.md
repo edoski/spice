@@ -40,7 +40,7 @@ evaluation.engine        -> evaluation config type
 dataset_builder.id       -> dataset-builder config type
 model.id                 -> model-family config type
 problem.compiler.id      -> problem compiler config type
-problem.realization.id   -> realization-policy config type
+problem.execution_policy.id   -> execution-policy config type
 ```
 
 So config hydration calls owner coercers. This keeps all implementation-selection knowledge in the owning domain.
@@ -69,7 +69,7 @@ owner coercers reconstruct concrete nested configs
 
 ## Public API Boundary
 
-`spice.config` exports resolved config types, workflow request types, `resolve_workflow_config()`, and config-owned coercers such as `coerce_problem_spec()` and `coerce_feature_set_config()`.
+`spice.config` exports resolved config types, workflow request types, `resolve_workflow_config()`, and config-owned coercers such as `coerce_problem_spec()` and `coerce_features_config()`.
 
 It does not re-export dataset-builder coercion. Dataset-builder config coercion belongs to `spice.modeling.dataset_builders`.
 

@@ -12,7 +12,7 @@ EXPECTED_HEADER = [
     "chain",
     "dataset",
     "surface",
-    "feature_set",
+    "features",
     "model",
     "problem",
     "prediction",

@@ -35,7 +35,7 @@ from ...storage.roots import (
 from ..options import (
     ChainFilterOption,
     DatasetFilterOption,
-    FeatureSetFilterOption,
+    FeaturesFilterOption,
     ModelFilterOption,
     PredictionFilterOption,
     ProblemFilterOption,
@@ -109,7 +109,7 @@ _SELECTOR_FLAGS: dict[str, dict[str, str]] = {
     "study": {
         "chain_name": "--chain",
         "dataset_name": "--dataset",
-        "feature_set_id": "--feature-set",
+        "features_id": "--features",
         "prediction_id": "--prediction",
         "model_id": "--model",
         "problem_id": "--problem",
@@ -118,7 +118,7 @@ _SELECTOR_FLAGS: dict[str, dict[str, str]] = {
     "artifact": {
         "chain_name": "--chain",
         "dataset_name": "--dataset",
-        "feature_set_id": "--feature-set",
+        "features_id": "--features",
         "prediction_id": "--prediction",
         "model_id": "--model",
         "problem_id": "--problem",
@@ -253,7 +253,7 @@ def show_dataset_command(
 def show_study_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
-    feature_set: FeatureSetFilterOption = None,
+    features: FeaturesFilterOption = None,
     prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
@@ -265,7 +265,7 @@ def show_study_command(
     selector = StudySelector(
         chain_name=chain,
         dataset_name=dataset,
-        feature_set_id=feature_set,
+        features_id=features,
         prediction_id=prediction,
         model_id=model,
         problem_id=problem,
@@ -280,7 +280,7 @@ def show_study_command(
         records=records,
         has_filters=any(
             value is not None
-            for value in (chain, dataset, feature_set, prediction, model, problem, study)
+            for value in (chain, dataset, features, prediction, model, problem, study)
         ),
         detail=None if detail is None else detail.value,
         list_sections=study_list_sections,
@@ -296,7 +296,7 @@ def show_study_command(
 def show_artifact_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
-    feature_set: FeatureSetFilterOption = None,
+    features: FeaturesFilterOption = None,
     prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
@@ -309,7 +309,7 @@ def show_artifact_command(
     selector = ArtifactSelector(
         chain_name=chain,
         dataset_name=dataset,
-        feature_set_id=feature_set,
+        features_id=features,
         prediction_id=prediction,
         model_id=model,
         problem_id=problem,
@@ -325,7 +325,7 @@ def show_artifact_command(
         records=records,
         has_filters=any(
             value is not None
-            for value in (chain, dataset, feature_set, prediction, model, problem, variant, study)
+            for value in (chain, dataset, features, prediction, model, problem, variant, study)
         ),
         detail=None if detail is None else detail.value,
         list_sections=artifact_list_sections,
@@ -341,7 +341,7 @@ def show_artifact_command(
 def delete_artifact_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
-    feature_set: FeatureSetFilterOption = None,
+    features: FeaturesFilterOption = None,
     prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
@@ -353,7 +353,7 @@ def delete_artifact_command(
     selector = ArtifactSelector(
         chain_name=chain,
         dataset_name=dataset,
-        feature_set_id=feature_set,
+        features_id=features,
         prediction_id=prediction,
         model_id=model,
         problem_id=problem,
@@ -375,7 +375,7 @@ def delete_artifact_command(
 def delete_study_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
-    feature_set: FeatureSetFilterOption = None,
+    features: FeaturesFilterOption = None,
     prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
@@ -390,7 +390,7 @@ def delete_study_command(
     selector = StudySelector(
         chain_name=chain,
         dataset_name=dataset,
-        feature_set_id=feature_set,
+        features_id=features,
         prediction_id=prediction,
         model_id=model,
         problem_id=problem,

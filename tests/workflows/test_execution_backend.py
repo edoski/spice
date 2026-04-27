@@ -156,7 +156,7 @@ def test_submit_execution_workflow_forwards_sbatch_dependency(monkeypatch, tmp_p
         WorkflowTask.TRAIN,
         config=resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(surface="same_block_closed"),
+            TrainWorkflowRequest(surface="current_row_fee_dynamics"),
         ),
         target_name="disi_l40",
         dependency="afterok:99999",
@@ -183,7 +183,7 @@ def test_remote_runner_rehydrates_resolved_workflow_snapshots(
 ) -> None:
     config = resolve_workflow_config(
         task,
-        workflow_request_type(task).model_validate({"surface": "same_block_closed"}),
+        workflow_request_type(task).model_validate({"surface": "current_row_fee_dynamics"}),
     )
 
     restored = workflow_config_from_json(

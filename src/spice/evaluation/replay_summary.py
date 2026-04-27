@@ -8,8 +8,8 @@ import numpy as np
 
 from ..prediction import DecodedOffsets
 from ..prediction.base import MetricSet, WindowMetricSummary
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
-from ..temporal.realization import CompiledRealizationPolicyContract
 from .aggregation import (
     BASELINE_COST_OVER_OPTIMUM,
     COST_OVER_OPTIMUM,
@@ -29,7 +29,7 @@ class ReplayRun:
 
 def summarize_selected_costs(
     store: CompiledProblemStore,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     decoded_offsets: DecodedOffsets,
     sample_indices: IntVector,
     selected_positions: IntVector,
@@ -42,7 +42,7 @@ def summarize_selected_costs(
     if selected_positions.size == 0:
         raise ValueError("selected_positions must be non-empty")
 
-    realized = realization_policy.realize_selections(
+    realized = execution_policy.realize_selections(
         store,
         decoded_offsets,
         sample_indices,

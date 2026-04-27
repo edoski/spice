@@ -9,7 +9,7 @@ from .models import (
     DatasetBuilderConfig,
     DatasetSpec,
     EvaluateConfig,
-    FeatureSetConfig,
+    FeaturesConfig,
     ModelConfig,
     PredictionConfig,
     ProblemSpec,
@@ -27,7 +27,7 @@ from .models import (
     TuningConfig,
     TuningSpaceConfig,
     WorkflowTask,
-    coerce_feature_set_config,
+    coerce_features_config,
     coerce_problem_spec,
 )
 from .resolution import (
@@ -46,7 +46,7 @@ __all__ = [
     "DatasetSpec",
     "DatasetBuilderConfig",
     "EvaluateConfig",
-    "FeatureSetConfig",
+    "FeaturesConfig",
     "ModelConfig",
     "ObjectiveConfig",
     "PredictionConfig",
@@ -69,7 +69,7 @@ __all__ = [
     "TrainWorkflowRequest",
     "TuneWorkflowRequest",
     "WorkflowTask",
-    "coerce_feature_set_config",
+    "coerce_features_config",
     "coerce_problem_spec",
     "resolve_workflow_config",
 ]

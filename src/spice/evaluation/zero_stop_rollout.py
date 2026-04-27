@@ -6,8 +6,8 @@ import numpy as np
 
 from ..prediction import DecodedOffsets
 from ..prediction.contracts import DecodedPredictionResult, require_decoded_offsets
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
-from ..temporal.realization import CompiledRealizationPolicyContract
 from .config import ZeroStopRolloutEvaluatorConfig
 from .contracts import CompiledEvaluatorContract, EvaluationSummary, IntVector
 from .metrics import ZERO_STOP_ROLLOUT_METRIC_DESCRIPTORS
@@ -17,11 +17,11 @@ from .windows import candidate_window_summary
 
 def run_zero_stop_rollout_fullset(
     store: CompiledProblemStore,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     decoded_result: DecodedPredictionResult,
     sample_indices: IntVector,
 ) -> EvaluationSummary:
-    del realization_policy
+    del execution_policy
     decoded_offsets = require_decoded_offsets(decoded_result)
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
@@ -29,7 +29,13 @@ def run_zero_stop_rollout_fullset(
     if not np.array_equal(window_summary.anchor_rows, window_summary.baseline_rows):
         raise ValueError("zero_stop_rollout_fullset requires current-row candidate windows")
 
+    if len(decoded_offsets) != int(sample_indices.shape[0]):
+        raise ValueError("decoded_offsets must align with sample_indices")
     offsets = decoded_offsets.select(np.arange(sample_indices.shape[0], dtype=np.int64))
+    if np.any(offsets < 0):
+        raise ValueError("decoded_offsets must be non-negative")
+    if np.any(offsets >= int(store.max_candidate_slots)):
+        raise ValueError("decoded_offsets must be smaller than max_candidate_slots")
     row_to_position = np.full(store.n_rows, -1, dtype=np.int64)
     row_to_position[window_summary.anchor_rows] = np.arange(
         sample_indices.shape[0],

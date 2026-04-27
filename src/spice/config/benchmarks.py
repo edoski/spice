@@ -38,7 +38,7 @@ _STANDARD_DIMENSIONS = frozenset(
 )
 _DIMENSION_FIELDS = {
     "data": frozenset({"surface", "chain"}),
-    "features": frozenset({"feature_set", "surface"}),
+    "features": frozenset({"features", "surface"}),
     "models": frozenset({"model", "tuning_space"}),
     "scoring": frozenset({"objective", "evaluation"}),
     "runtime": frozenset(
@@ -349,7 +349,7 @@ def _resolve_expanded_step(expanded: _ExpandedStep) -> WorkflowConfig:
             load_surface_frame(request.surface),
             chain=request.chain,
             problem=request.problem,
-            feature_set=request.feature_set,
+            features=request.features,
             objective=getattr(request, "objective", None),
             evaluation=getattr(request, "evaluation", None),
             model=getattr(request, "model", None),

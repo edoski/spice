@@ -74,7 +74,7 @@ class StudySelector:
     study_id: str | None = None
     chain_name: str | None = None
     dataset_name: str | None = None
-    feature_set_id: str | None = None
+    features_id: str | None = None
     prediction_id: str | None = None
     model_id: str | None = None
     problem_id: str | None = None
@@ -86,7 +86,7 @@ class ArtifactSelector:
     artifact_id: str | None = None
     chain_name: str | None = None
     dataset_name: str | None = None
-    feature_set_id: str | None = None
+    features_id: str | None = None
     prediction_id: str | None = None
     model_id: str | None = None
     problem_id: str | None = None
@@ -462,7 +462,7 @@ def _upsert_study_root(catalog_path: Path, *, root_path: Path, db_path: Path) ->
         dataset_id=manifest.dataset_id,
         dataset_name=manifest.dataset_name,
         chain_name=manifest.chain_name,
-        feature_set_id=manifest.feature_set.id,
+        features_id=manifest.features.id,
         prediction_id=manifest.prediction.id,
         model_id=manifest.model.id,
         problem_id=manifest.problem.id,
@@ -479,7 +479,7 @@ def _upsert_artifact_root(catalog_path: Path, *, root_path: Path, db_path: Path)
         dataset_id=manifest.dataset_id,
         dataset_name=manifest.dataset_name,
         chain_name=manifest.chain_name,
-        feature_set_id=manifest.feature_set_id,
+        features_id=manifest.features_id,
         prediction_id=manifest.prediction_id,
         model_id=manifest.model.id,
         problem_id=manifest.problem_id,

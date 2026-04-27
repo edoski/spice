@@ -7,16 +7,16 @@ from dataclasses import dataclass, field
 import numpy as np
 import torch
 
+from ....temporal.execution_policy import CompiledExecutionPolicyContract
 from ....temporal.problem_store import CompiledProblemStore
-from ....temporal.realization import CompiledRealizationPolicyContract
 
 
 def materialize_min_block_fee_targets(
     store: CompiledProblemStore,
     sample_indices: np.ndarray,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
 ) -> PreparedMinBlockFeeTargets:
-    supervised = realization_policy.prepare_supervised_targets(
+    supervised = execution_policy.prepare_supervised_targets(
         store,
         sample_indices.astype(np.int64, copy=False),
     )

@@ -77,7 +77,7 @@ async def pull_block_range(
                 if request.start >= next_request_start:
                     next_request_start = request.end
                 task = asyncio.create_task(
-                    block_client.get_block_rows(list(range(request.start, request.end)))
+                    block_client.get_block_rows(request.start, request.end)
                 )
                 in_flight[task] = request
 

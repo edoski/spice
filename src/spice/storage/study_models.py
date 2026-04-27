@@ -10,7 +10,7 @@ import optuna
 from optuna.trial import FrozenTrial, TrialState
 
 from ..config.models import (
-    FeatureSetConfig,
+    FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
     SplitConfig,
@@ -48,7 +48,7 @@ class StudyManifest:
     dataset_id: str
     dataset_name: str
     problem: ProblemSpec
-    feature_set: FeatureSetConfig
+    features: FeaturesConfig
     model: ModelConfig
     split: SplitConfig
     training: TrainingConfig
@@ -66,16 +66,16 @@ class StudyManifest:
         return self.semantics.problem.problem_id
 
     @property
-    def feature_set_id(self) -> str:
-        return self.semantics.feature.feature_set_id
+    def features_id(self) -> str:
+        return self.semantics.feature.features_id
 
     @property
     def dataset_builder_id(self) -> str:
         return self.semantics.dataset_builder.dataset_builder_id
 
     @property
-    def realization_policy_id(self) -> str:
-        return self.semantics.realization_policy.realization_policy_id
+    def execution_policy_id(self) -> str:
+        return self.semantics.execution_policy.execution_policy_id
 
     @property
     def prediction_id(self) -> str:

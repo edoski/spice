@@ -25,7 +25,7 @@ def _load_test_train_config(
         load_workflow_config(
             WorkflowTask.TRAIN,
             workspace=tmp_path,
-            surface="same_block_closed",
+            surface="current_row_fee_dynamics",
             override=override,
         ),
     )
@@ -42,7 +42,7 @@ def _load_test_tune_config(
         load_workflow_config(
             WorkflowTask.TUNE,
             workspace=tmp_path,
-            surface="same_block_closed",
+            surface="current_row_fee_dynamics",
             override=override,
         ),
     )

@@ -17,9 +17,9 @@ canonical rows
 
 The builder must preserve temporal ordering. Random train/test splitting would leak future data into training.
 
-## `standard_temporal`
+## `variable_sequence_temporal`
 
-`standard_temporal` builds the full feature/problem store first, then selects the last `sample_count` valid samples.
+`variable_sequence_temporal` builds the full feature/problem store first, then selects the last `sample_count` valid samples.
 
 Training flow:
 
@@ -36,9 +36,9 @@ The split is chronological over selected samples. Earlier samples train the mode
 
 Inference flow concatenates sorted history and optional evaluation rows, rebuilds the delay store from persisted compiler metadata, and filters anchors to the requested evaluation timestamp window.
 
-## `fixed_context_temporal`
+## `fixed_sequence_temporal`
 
-`fixed_context_temporal` derives a fixed sequence length from training data and stores it in runtime metadata.
+`fixed_sequence_temporal` derives a fixed sequence length from training data and stores it in runtime metadata.
 
 Training preparation:
 
@@ -46,27 +46,31 @@ Training preparation:
 sort by timestamp
   -> dedupe block_number
   -> sort by block_number
-  -> tail raw rows by sample_count
   -> compile feature/problem store
-  -> derive sequence length from train segment
+  -> take tail valid samples
+  -> chronological split
+  -> derive sequence length from train sample row span
+  -> apply fixed context length
+  -> reselect tail valid samples
+  -> chronological split
 ```
 
 Sequence length:
 
 ```text
-median_dt = median positive timestamp delta in train segment
+median_dt = median positive timestamp delta in train sample row span
 raw_length = round(lookback_seconds / median_dt)
 sequence_length = clip(raw_length, min_sequence_length, max_sequence_length)
 ```
 
-The builder then applies fixed context length to samples. Runtime metadata stores sequence length, median delta, row bounds, and compiler metadata. Inference requires this metadata and reuses the trained sequence length.
+The calibration span is derived from selected training samples, not the raw corpus tail. Runtime metadata stores sequence length, median delta, and compiler metadata. Inference requires this metadata and reuses the trained sequence length.
 
 ## Comparison
 
 | Builder | Selection unit | Context length | Runtime metadata |
 | --- | --- | --- | --- |
-| `standard_temporal` | Tail valid samples | Variable by compiler geometry | Compiler metadata. |
-| `fixed_context_temporal` | Tail raw rows before compile | Fixed from train median delta | Sequence length plus compiler metadata. |
+| `variable_sequence_temporal` | Tail valid samples | Variable by compiler geometry | Compiler metadata. |
+| `fixed_sequence_temporal` | Tail valid samples | Fixed from train sample median delta | Sequence length plus compiler metadata. |
 
 ## Scaler Ownership
 
@@ -95,4 +99,3 @@ Inference must recreate the same sample geometry used during training. The artif
 ## Extension Pattern
 
 A new builder should own all sample selection and runtime metadata for its strategy. Model families should receive only batch tensors, not builder-specific logic.
-

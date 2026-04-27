@@ -36,7 +36,7 @@ def _workflow_facts(config: TuneConfig) -> list[tuple[str, str]]:
         ("dataset", config.dataset.name),
         ("chain", config.chain.name),
         ("problem", config.problem.id),
-        ("feature_set", config.feature_set.id),
+        ("features", config.features.id),
         ("prediction", config.prediction.id),
         ("model", config.model.id),
         ("study", config.study.name),

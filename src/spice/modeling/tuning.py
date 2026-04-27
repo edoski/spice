@@ -91,7 +91,7 @@ def apply_study_best_params(config: TrainConfig | EvaluateConfig) -> AppliedStud
         manifest = load_study_manifest(path)
     except MissingStateError as exc:
         raise ConfigResolutionError(
-            "Configured tuned study does not match the current problem, feature set, "
+            "Configured tuned study does not match the current problem, features, "
             "model, or study selection"
         ) from exc
     validate_tuned_train_request(config, manifest=manifest)

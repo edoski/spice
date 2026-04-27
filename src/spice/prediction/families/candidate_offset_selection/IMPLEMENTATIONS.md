@@ -27,7 +27,7 @@ Logits are not probabilities. Softmax converts them into a probability distribut
 
 ## Target Batch
 
-Targets come from the temporal realization policy:
+Targets come from the temporal execution policy:
 
 | Field | Meaning |
 | --- | --- |
@@ -87,7 +87,7 @@ candidate_logits + action_mask
   -> DecodedOffsets
 ```
 
-The decoded offsets are then interpreted by evaluators through the realization policy.
+The decoded offsets are then interpreted by evaluators through the execution policy.
 
 ## Failure Modes
 

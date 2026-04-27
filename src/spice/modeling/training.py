@@ -16,8 +16,8 @@ from ..core.files import write_path_atomic
 from ..objectives import CompiledObjectiveContract, ObjectiveEvaluationContext
 from ..prediction import CompiledPredictionContract, MetricSet
 from ..prediction.contracts import PredictionBatch
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
-from ..temporal.realization import CompiledRealizationPolicyContract
 from ._runtime import (
     autocast_context,
     build_cuda_modeling_runtime,
@@ -176,7 +176,7 @@ def _planned_training_runtime_context(
     model: TemporalModel,
     *,
     prediction_contract: CompiledPredictionContract,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
     train_sample_indices: IntVector,
@@ -191,7 +191,7 @@ def _planned_training_runtime_context(
         train_sample_indices,
         representation_contract=representation_contract,
         prediction_contract=prediction_contract,
-        realization_policy=realization_policy,
+        execution_policy=execution_policy,
         runtime_context=warmup_context,
         resolved_device=resolved_device,
         seed=training_config.seed,
@@ -210,7 +210,7 @@ def _planned_training_runtime_context(
     warmup_prediction_state = prediction_contract.fit_training_state(
         store,
         train_sample_indices,
-        realization_policy=realization_policy,
+        execution_policy=execution_policy,
     )
     baseline_memory = snapshot_cuda_memory(resolved_device)
     reset_cuda_peak_memory(resolved_device)
@@ -294,7 +294,7 @@ def train_model(
     model_config: ModelConfig,
     prediction_contract: CompiledPredictionContract,
     objective_contract: CompiledObjectiveContract,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
     train_sample_indices: IntVector,
@@ -334,7 +334,7 @@ def train_model(
         planned_runtime_context = _planned_training_runtime_context(
             fit_model,
             prediction_contract=prediction_contract,
-            realization_policy=realization_policy,
+            execution_policy=execution_policy,
             representation_contract=representation_contract,
             store=store,
             train_sample_indices=train_sample_indices,
@@ -348,7 +348,7 @@ def train_model(
             train_sample_indices,
             representation_contract=representation_contract,
             prediction_contract=prediction_contract,
-            realization_policy=realization_policy,
+            execution_policy=execution_policy,
             runtime_context=planned_runtime_context,
             resolved_device=runtime.resolved_device,
             seed=training_config.seed,
@@ -359,7 +359,7 @@ def train_model(
             validation_sample_indices,
             representation_contract=representation_contract,
             prediction_contract=prediction_contract,
-            realization_policy=realization_policy,
+            execution_policy=execution_policy,
             runtime_context=planned_runtime_context,
             resolved_device=runtime.resolved_device,
             seed=training_config.seed,
@@ -368,7 +368,7 @@ def train_model(
         prediction_training_state = prediction_contract.fit_training_state(
             store,
             train_sample_indices,
-            realization_policy=realization_policy,
+            execution_policy=execution_policy,
         )
         optimizer = torch.optim.AdamW(
             fit_model.parameters(),
@@ -413,7 +413,7 @@ def train_model(
                     model_config=model_config,
                     prediction_contract=prediction_contract,
                     representation_contract=representation_contract,
-                    realization_policy=realization_policy,
+                    execution_policy=execution_policy,
                     store=store,
                     sample_indices=validation_sample_indices,
                     batch_size=training_config.batch_size,
@@ -509,7 +509,7 @@ def evaluate_model(
     *,
     model_config: ModelConfig,
     prediction_contract: CompiledPredictionContract,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
     sample_indices: IntVector,
@@ -543,7 +543,7 @@ def evaluate_model(
             sample_indices,
             representation_contract=representation_contract,
             prediction_contract=prediction_contract,
-            realization_policy=realization_policy,
+            execution_policy=execution_policy,
             runtime_context=_host_streaming_runtime_context(runtime.representation_runtime_context),
             resolved_device=runtime.resolved_device,
             seed=training_config.seed,
@@ -561,7 +561,7 @@ def evaluate_model(
             sample_indices,
             representation_contract=representation_contract,
             prediction_contract=prediction_contract,
-            realization_policy=realization_policy,
+            execution_policy=execution_policy,
             runtime_context=planned_runtime_context,
             resolved_device=runtime.resolved_device,
             seed=training_config.seed,

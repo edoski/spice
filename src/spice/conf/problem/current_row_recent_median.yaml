@@ -1,0 +1,10 @@
+id: current_row_recent_median
+lookback_seconds: 600
+sample_count: 400000
+max_delay_seconds: 36
+compiler:
+  id: observed_time_window
+  slot_spacing:
+    id: recent_median
+execution_policy:
+  id: strict_deadline_miss

@@ -9,7 +9,7 @@ from ..config.models import (
     ChainSpec,
     DatasetSpec,
     EvaluateConfig,
-    FeatureSetConfig,
+    FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
     SplitConfig,
@@ -37,7 +37,7 @@ class StudyStorageIdentity(IdentityModel):
     dataset: DatasetSpec
     corpus_id: str
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
-    feature_set: FeatureSetConfig
+    features: FeaturesConfig
     model: SerializeAsAny[ModelConfig]
     problem: ProblemSpec
     prediction: PredictionConfig
@@ -54,7 +54,7 @@ class ArtifactStorageIdentity(IdentityModel):
     dataset: DatasetSpec
     corpus_id: str
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
-    feature_set: FeatureSetConfig
+    features: FeaturesConfig
     model: SerializeAsAny[ModelConfig]
     problem: ProblemSpec
     prediction: PredictionConfig
@@ -76,7 +76,7 @@ class StudyRequestIdentity(IdentityModel):
     prediction: PredictionConfig
     objective: ObjectiveConfig
     problem: ProblemSpec
-    feature_set: FeatureSetConfig
+    features: FeaturesConfig
     model: SerializeAsAny[ModelConfig]
     split: SplitConfig
     training: TrainingConfig
@@ -105,7 +105,7 @@ def study_storage_identity(
     dataset: DatasetSpec,
     corpus_id: str,
     dataset_builder: DatasetBuilderConfig,
-    feature_set: FeatureSetConfig,
+    features: FeaturesConfig,
     model: ModelConfig,
     problem: ProblemSpec,
     prediction: PredictionConfig,
@@ -121,7 +121,7 @@ def study_storage_identity(
         dataset=dataset,
         corpus_id=corpus_id,
         dataset_builder=dataset_builder,
-        feature_set=feature_set,
+        features=features,
         model=model,
         problem=problem,
         prediction=prediction,
@@ -145,7 +145,7 @@ def study_storage_identity_from_config(
         dataset=config.dataset,
         corpus_id=corpus_id,
         dataset_builder=config.dataset_builder,
-        feature_set=config.feature_set,
+        features=config.features,
         model=config.model,
         problem=config.problem,
         prediction=config.prediction,
@@ -171,7 +171,7 @@ def artifact_storage_identity_from_config(
         dataset=config.dataset,
         corpus_id=corpus_id,
         dataset_builder=config.dataset_builder,
-        feature_set=config.feature_set,
+        features=config.features,
         model=config.model,
         problem=config.problem,
         prediction=config.prediction,
@@ -195,7 +195,7 @@ def study_request_identity(
     prediction: PredictionConfig,
     objective: ObjectiveConfig,
     problem: ProblemSpec,
-    feature_set: FeatureSetConfig,
+    features: FeaturesConfig,
     model: ModelConfig,
     split: SplitConfig,
     training: TrainingConfig,
@@ -212,7 +212,7 @@ def study_request_identity(
         prediction=prediction,
         objective=objective,
         problem=problem,
-        feature_set=feature_set,
+        features=features,
         model=model,
         split=split,
         training=training,
@@ -232,7 +232,7 @@ def study_request_identity_from_manifest(manifest: StudyManifest) -> StudyReques
         prediction=manifest.prediction,
         objective=manifest.objective,
         problem=manifest.problem,
-        feature_set=manifest.feature_set,
+        features=manifest.features,
         model=manifest.model,
         split=manifest.split,
         training=manifest.training,
@@ -261,7 +261,7 @@ def study_request_identity_from_tuned_config(
         prediction=config.prediction,
         objective=config.objective,
         problem=config.problem,
-        feature_set=config.feature_set,
+        features=config.features,
         model=config.model,
         split=config.split,
         training=config.training,

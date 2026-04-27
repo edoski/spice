@@ -6,23 +6,18 @@ from .contracts import (
 )
 from .core import (
     CanonicalBlockSeries,
+    FeaturePrerequisites,
     ResolvedFeatureTable,
     build_feature_table,
 )
-from .families import (
-    FeatureFamilyConfig,
-    FeaturePrerequisites,
-)
-from .registry import coerce_feature_family_config, validate_feature_selection
+from .registry import validate_feature_selection
 
 __all__ = [
     "CanonicalBlockSeries",
     "CompiledFeatureContract",
-    "FeatureFamilyConfig",
     "FeaturePrerequisites",
     "ResolvedFeatureTable",
     "build_feature_table",
     "compile_feature_contract",
-    "coerce_feature_family_config",
     "validate_feature_selection",
 ]

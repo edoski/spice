@@ -44,9 +44,9 @@ features
 
 Read:
 
-1. [Feature family implementations](src/spice/features/families/IMPLEMENTATIONS.md)
+1. [Feature implementations](src/spice/features/ARCHITECTURE.md)
 2. [Temporal compiler implementations](src/spice/temporal/compilers/IMPLEMENTATIONS.md)
-3. [Realization policy implementation](src/spice/temporal/realization/IMPLEMENTATIONS.md)
+3. [Execution policy implementation](src/spice/temporal/execution_policy/IMPLEMENTATIONS.md)
 4. [Input normalization implementations](src/spice/temporal/input_normalization/IMPLEMENTATIONS.md)
 5. [Dataset builder implementations](src/spice/modeling/dataset_builders/IMPLEMENTATIONS.md)
 6. [Model family implementations](src/spice/modeling/families/IMPLEMENTATIONS.md)
@@ -140,7 +140,7 @@ surface name + overrides
 | Context rows | Past rows the model may observe. |
 | Candidate window | Future row interval the model may choose from. |
 | Candidate offset | Integer action relative to the candidate-window start. |
-| Realization policy | Rule that maps decoded offsets to actual outcome rows. |
+| Execution policy | Rule that maps decoded offsets to actual outcome rows. |
 | DecodedOffsets | Current decoded prediction ABI consumed by evaluators. |
 | Artifact | Persisted trained model plus exact manifest and runtime state. |
 | Study | Persisted tuning state and Optuna trial database. |
@@ -182,18 +182,18 @@ This pushes the branch to both `origin` and `giano-sync`.
 Local workflows:
 
 ```bash
-spice acquire --surface same_block_closed
-spice train --surface same_block_closed --variant baseline
-spice tune --surface same_block_closed --trial-count 20
-spice evaluate --surface same_block_closed --variant baseline
+spice acquire --surface current_row_fee_dynamics
+spice train --surface current_row_fee_dynamics --variant baseline
+spice tune --surface current_row_fee_dynamics --trial-count 20
+spice evaluate --surface current_row_fee_dynamics --variant baseline
 ```
 
 Remote train/tune/evaluate submission:
 
 ```bash
-spice train --surface same_block_closed --variant baseline --submit
-spice tune --surface same_block_closed --trial-count 20 --submit
-spice evaluate --surface same_block_closed --variant baseline --submit
+spice train --surface current_row_fee_dynamics --variant baseline --submit
+spice tune --surface current_row_fee_dynamics --trial-count 20 --submit
+spice evaluate --surface current_row_fee_dynamics --variant baseline --submit
 ```
 
 The CLI owns the default remote target, `disi_l40`. Execution and sync APIs receive explicit targets below the CLI layer.
@@ -203,11 +203,11 @@ Config and storage inspection:
 ```bash
 spice config list provider
 spice config show dataset icdcs_2026
-spice config edit problem current_row_nominal_window
+spice config edit problem current_row_nominal
 
 spice show dataset
-spice show artifact --chain ethereum --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
-spice delete artifact --chain ethereum --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
+spice show artifact --chain ethereum --dataset icdcs_2026 --features core_fee_dynamics --prediction icdcs_2026 --model lstm --problem current_row_nominal --variant baseline --study default
+spice delete artifact --chain ethereum --dataset icdcs_2026 --features core_fee_dynamics --prediction icdcs_2026 --model lstm --problem current_row_nominal --variant baseline --study default
 spice refresh catalog
 ```
 
@@ -215,20 +215,20 @@ Transfer:
 
 ```bash
 spice push dataset --chain ethereum --dataset icdcs_2026
-spice push study --chain ethereum --dataset icdcs_2026 --model lstm --problem current_row_nominal_window
-spice pull study --chain ethereum --dataset icdcs_2026 --model lstm --problem current_row_nominal_window
-spice pull artifact --chain ethereum --dataset icdcs_2026 --model lstm --problem current_row_nominal_window --variant baseline
+spice push study --chain ethereum --dataset icdcs_2026 --features core_fee_dynamics --prediction icdcs_2026 --model lstm --problem current_row_nominal --study default
+spice pull study --chain ethereum --dataset icdcs_2026 --features core_fee_dynamics --prediction icdcs_2026 --model lstm --problem current_row_nominal --study default
+spice pull artifact --chain ethereum --dataset icdcs_2026 --features core_fee_dynamics --prediction icdcs_2026 --model lstm --problem current_row_nominal --variant baseline --study default
 ```
 
 ## Current Concrete IDs
 
 | Seam | Current ids |
 | --- | --- |
-| Feature families | `same_block_closed`, `block_open_lagged`, `timestamp_features` |
-| Temporal compilers | `timestamp_future_window`, `estimated_block` |
-| Realization policies | `strict_deadline_miss` |
+| Features | `core_fee_dynamics` |
+| Temporal compilers | `observed_time_window` |
+| Execution policies | `strict_deadline_miss` |
 | Input normalization | `row_standard`, `window_weighted_standard` |
-| Dataset builders | `standard_temporal`, `fixed_context_temporal` |
+| Dataset builders | `variable_sequence_temporal`, `fixed_sequence_temporal` |
 | Model families | `lstm`, `transformer`, `transformer_lstm` |
 | Prediction families | `candidate_offset_selection`, `min_block_fee_multitask` |
 | Evaluator engines | `replay`, `zero_stop_rollout`, `anchor_basefee` |

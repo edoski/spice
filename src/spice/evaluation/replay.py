@@ -7,8 +7,8 @@ import numpy as np
 from ..core.errors import SpiceOperatorError
 from ..prediction import DecodedOffsets
 from ..prediction.contracts import DecodedPredictionResult, require_decoded_offsets
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
-from ..temporal.realization import CompiledRealizationPolicyContract
 from .aggregation import ReplayAggregationSpec, replay_aggregation_spec
 from .config import EvaluationSampler, ReplayEvaluatorConfig
 from .contracts import CompiledEvaluatorContract, EvaluationSummary, IntVector, RunEvaluatorFn
@@ -23,7 +23,7 @@ from .sampling import (
 
 def run_fullset(
     store: CompiledProblemStore,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     decoded_result: DecodedPredictionResult,
     sample_indices: IntVector,
     *,
@@ -34,7 +34,7 @@ def run_fullset(
         raise ValueError("sample_indices must be non-empty")
     run = summarize_selected_costs(
         store,
-        realization_policy,
+        execution_policy,
         decoded_offsets,
         sample_indices,
         np.arange(sample_indices.shape[0], dtype=np.int64),
@@ -46,7 +46,7 @@ def run_fullset(
 
 def run_poisson_arrivals(
     store: CompiledProblemStore,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     decoded_result: DecodedPredictionResult,
     sample_indices: IntVector,
     *,
@@ -95,7 +95,7 @@ def run_poisson_arrivals(
         runs.append(
             summarize_selected_costs(
                 store,
-                realization_policy,
+                execution_policy,
                 decoded_offsets,
                 sample_indices,
                 selected_positions,
@@ -130,13 +130,13 @@ def compile_replay_evaluator_contract(
 
         def run_fn(
             store,
-            realization_policy,
+            execution_policy,
             decoded_result,
             sample_indices,
         ):
             return run_fullset(
                 store,
-                realization_policy,
+                execution_policy,
                 decoded_result,
                 sample_indices,
                 aggregation=aggregation,
@@ -146,13 +146,13 @@ def compile_replay_evaluator_contract(
 
         def run_fn(
             store,
-            realization_policy,
+            execution_policy,
             decoded_result,
             sample_indices,
         ):
             return run_poisson_arrivals(
                 store,
-                realization_policy,
+                execution_policy,
                 decoded_result,
                 sample_indices,
                 config=config,

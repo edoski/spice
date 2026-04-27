@@ -4,11 +4,12 @@ import pytest
 
 from spice.config import (
     ArtifactVariant,
+    ChainSpec,
     PredictionConfig,
     SplitConfig,
     StudyConfig,
     TrainingConfig,
-    coerce_feature_set_config,
+    coerce_features_config,
     coerce_problem_spec,
 )
 from spice.core.errors import StateLayoutError
@@ -16,7 +17,7 @@ from spice.evaluation import EvaluationRun
 from spice.features import compile_feature_contract
 from spice.modeling.dataset_builders import (
     coerce_dataset_builder_config,
-    standard_temporal_runtime_metadata,
+    variable_sequence_temporal_runtime_metadata,
 )
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.representations import sequence_input_contract
@@ -52,7 +53,7 @@ from spice.storage.artifact import (
 )
 from spice.storage.engine import DATASET_ROOT_KIND, ensure_state_db
 from spice.storage.schema import DATASET_TABLES
-from spice.temporal.compilers.estimated_block import EstimatedBlockRuntimeMetadata
+from spice.temporal.compilers.observed_time_window import ObservedTimeWindowRuntimeMetadata
 from spice.temporal.contracts import compile_problem_contract
 from spice.temporal.scaling import ScalerStats
 
@@ -74,21 +75,20 @@ def _prediction_contract():
     )
 
 
-def _feature_set_config():
-    return coerce_feature_set_config(
+def _features_config():
+    return coerce_features_config(
         {
-            "id": "timestamp_features_baseline",
-            "family": {"id": "timestamp_features"},
+            "id": "core_fee_dynamics",
             "outputs": [
-                "seconds_since_previous_block",
-                "elapsed_seconds",
+                "log_base_fee_per_gas",
+                "log_prev_gas_used",
             ],
         }
     )
 
 
 def _dataset_builder_config():
-    return coerce_dataset_builder_config({"id": "standard_temporal"})
+    return coerce_dataset_builder_config({"id": "variable_sequence_temporal"})
 
 
 def _objective_config():
@@ -108,8 +108,11 @@ def _problem_config():
             "lookback_seconds": 120,
             "sample_count": 24,
             "max_delay_seconds": 36,
-            "compiler": {"id": "estimated_block"},
-            "realization_policy": {"id": "strict_deadline_miss"},
+            "compiler": {
+                "id": "observed_time_window",
+                "slot_spacing": {"id": "nominal"},
+            },
+            "execution_policy": {"id": "strict_deadline_miss"},
         }
     )
 
@@ -152,12 +155,22 @@ def _manifest(
 ) -> TrainingArtifactManifest:
     prediction = prediction_factory()
     prediction_contract = prediction_contract_factory()
-    feature_set = _feature_set_config()
-    feature_contract = compile_feature_contract(feature_set=feature_set)
+    features = _features_config()
+    feature_contract = compile_feature_contract(features=features)
     problem = _problem_config()
     problem_contract = compile_problem_contract(
         problem=problem,
         feature_contract=feature_contract,
+        chain_runtime=ChainSpec.model_validate(
+            {
+                "name": "ethereum",
+                "runtime": {
+                    "chain_id": 1,
+                    "uses_poa_extra_data": False,
+                    "nominal_block_time_seconds": 12.0,
+                },
+            }
+        ).runtime,
     )
     model = _model_config()
     representation_contract = sequence_input_contract()
@@ -167,30 +180,28 @@ def _manifest(
         prediction=prediction,
         objective=_objective_config(),
         chain_name="ethereum",
-        dataset_id="same_block_closed",
-        dataset_name="same_block_closed",
+        dataset_id="current_row_fee_dynamics",
+        dataset_name="current_row_fee_dynamics",
         problem=problem,
         variant=ArtifactVariant.BASELINE,
         study=StudyConfig(name="default"),
         study_id=None,
-        feature_set=feature_set,
+        features=features,
         model=model,
         split=_split_config(),
         training=_training_config(),
         scaler=ScalerStats(means=[0.0, 1.0], scales=[1.0, 1.0]),
-        builder_runtime_metadata=standard_temporal_runtime_metadata(
+        builder_runtime_metadata=variable_sequence_temporal_runtime_metadata(
             compiler_id=problem_contract.compiler_id,
-            compiler_runtime_metadata=EstimatedBlockRuntimeMetadata(
-                calibrated_interval_seconds=12.0,
-                lookback_interval_seconds=12.0,
-                candidate_interval_seconds=12.0,
-                lookback_steps=10,
-                capability_candidate_count=4,
+            compiler_runtime_metadata=ObservedTimeWindowRuntimeMetadata(
+                slot_spacing_id="nominal",
+                slot_spacing_seconds=12.0,
+                capability_action_count=4,
             ),
         ),
         semantics=ArtifactSemantics(
             problem=problem_contract.semantics,
-            realization_policy=problem_contract.realization_policy.semantics,
+            execution_policy=problem_contract.execution_policy.semantics,
             objective=ObjectiveSemantics(
                 objective_id="validation",
                 metric_id="total_loss",
@@ -203,7 +214,7 @@ def _manifest(
                 input_normalization_id="window_weighted_standard"
             ),
             representation=representation_contract.semantics,
-            dataset_builder=DatasetBuilderSemantics(dataset_builder_id="standard_temporal"),
+            dataset_builder=DatasetBuilderSemantics(dataset_builder_id="variable_sequence_temporal"),
             max_candidate_slots=2,
         ),
     )

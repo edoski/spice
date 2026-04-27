@@ -17,7 +17,7 @@ YAML is user-facing. Pydantic models are the internal boundary. Compiled contrac
 
 ## Local Specs
 
-Local specs are small named configs such as `model/lstm.yaml`, `problem/current_row_nominal_window.yaml`, or `evaluation/poisson_replay_2h_mean.yaml`.
+Local specs are small named configs such as `model/lstm.yaml`, `problem/current_row_nominal.yaml`, or `evaluation/poisson_replay_2h_mean.yaml`.
 
 Resolution uses the same pattern across registries:
 
@@ -35,14 +35,14 @@ This gives concrete implementations one owner. For example, the evaluation packa
 A surface is a named bundle of config choices. It resolves into a complete workflow frame:
 
 ```text
-surface: same_block_closed
+surface: current_row_fee_dynamics
 overrides: model=lstm_icdcs_2026, delay_seconds=36
 
         surface YAML
              |
              v
   chain/dataset/provider/problem
-  feature_set/model/prediction
+  features/model/prediction
   objective/evaluation/training/split
              |
              v
@@ -53,9 +53,9 @@ Overrides replace selected surface fields before final hydration. The result is 
 
 ## Workflow Hydration
 
-Acquire configs contain corpus acquisition fields: chain, dataset, provider, acquisition, feature set, and problem.
+Acquire configs contain corpus acquisition fields: chain, dataset, provider, acquisition, features, and problem.
 
-Model workflow configs contain training/evaluation fields: chain, dataset, problem, model, dataset builder, feature set, prediction, objective, optional evaluation, storage, artifact, split, training, study, tuning, and tuning space depending on workflow.
+Model workflow configs contain training/evaluation fields: chain, dataset, problem, model, dataset builder, features, prediction, objective, optional evaluation, storage, artifact, split, training, study, tuning, and tuning space depending on workflow.
 
 Evaluation date expands into concrete UTC windows:
 

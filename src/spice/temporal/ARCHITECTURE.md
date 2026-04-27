@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`temporal` lowers feature tables into supervised temporal problem stores. It owns problem compilers, realization policies, input-normalization contracts, problem-store shapes, and temporal semantics.
+`temporal` lowers feature tables into supervised temporal problem stores. It owns problem compilers, execution policies, input-normalization contracts, problem-store shapes, and temporal semantics.
 
 Many time-series ML bugs are leakage bugs. Leakage happens when training examples include future information. Temporal contracts make time explicit.
 
@@ -16,7 +16,7 @@ context_start        anchor / candidate_start        candidate window end
      <---- model context -----> <---- candidate window --->
 ```
 
-For current-row style problems, the anchor and candidate start may be the same row. The model may use context and anchor-available features. Prediction chooses an offset inside the candidate window. Realization maps that offset to an outcome row and compares it to baseline or optimum behavior.
+For current-row style problems, the anchor and candidate start may be the same row. The model may use context and anchor-available features. Prediction chooses an offset inside the candidate window. The execution policy maps that offset to an outcome row and compares it to baseline or optimum behavior.
 
 ## Problem Store
 
@@ -38,7 +38,7 @@ Prediction and evaluation consume this generic shape instead of compiler-specifi
 ## Compiler Flow
 
 ```text
-ProblemSpec + FeatureContract + RealizationPolicyContract
+ProblemSpec + FeatureContract + ExecutionPolicyContract
         |
         v
 problem compiler
@@ -53,15 +53,15 @@ CompiledProblemContract
 
 Compilers publish feature prerequisites and runtime metadata codecs. Dataset builders and workflows call compiler contracts; they should not inspect concrete compiler classes.
 
-## Realization Policy
+## Execution Policy
 
-Prediction chooses an action. Realization defines what that action means in the problem:
+Prediction chooses an action. Execution policy defines what that action means in the problem:
 
 ```text
 decoded offsets + sample positions
         |
         v
-realize selected rows
+execute selected rows
         |
         +--> realized rows
         +--> baseline rows
@@ -69,8 +69,8 @@ realize selected rows
         +--> overflow mask
 ```
 
-Evaluators receive a realization contract, not a policy id string.
+Evaluators receive an execution-policy contract, not a policy id string.
 
 ## Extension Points
 
-Add a compiler when example construction changes. Add a realization policy when outcome semantics change. Add input normalization when scaler fitting policy changes. Keep runtime metadata typed and routed through owner registries.
+Add a compiler when example construction changes. Add a execution policy when outcome semantics change. Add input normalization when scaler fitting policy changes. Keep runtime metadata typed and routed through owner registries.

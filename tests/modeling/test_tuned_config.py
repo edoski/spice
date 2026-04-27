@@ -37,10 +37,10 @@ def _problem():
             "sample_count": 1024,
             "max_delay_seconds": 36,
             "compiler": {
-                "id": "timestamp_future_window",
-                "action_interval_estimator": {"id": "nominal"},
+                "id": "observed_time_window",
+                "slot_spacing": {"id": "nominal"},
             },
-            "realization_policy": {"id": "strict_deadline_miss"},
+            "execution_policy": {"id": "strict_deadline_miss"},
         }
     )
 
@@ -99,7 +99,7 @@ def test_apply_transformer_tuned_params_updates_model_config(tmp_path) -> None:
     config = resolve_workflow_config(
         WorkflowTask.TRAIN,
         TrainWorkflowRequest(
-            surface="same_block_closed",
+            surface="current_row_fee_dynamics",
             model="transformer",
             variant="baseline",
             storage_root=tmp_path / "outputs",

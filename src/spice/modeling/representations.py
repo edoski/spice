@@ -1,4 +1,4 @@
-"""Internal model-input representation realization helpers."""
+"""Internal model-input representation execution helpers."""
 
 from __future__ import annotations
 

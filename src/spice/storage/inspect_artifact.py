@@ -39,7 +39,7 @@ def artifact_list_sections(
                     (
                         f"chain={record.chain_name} "
                         f"dataset={record.dataset_name} "
-                        f"feature_set={record.feature_set_id} "
+                        f"features={record.features_id} "
                         f"prediction={record.prediction_id} "
                         f"model={record.model_id} "
                         f"problem={record.problem_id} "
@@ -89,10 +89,9 @@ def artifact_sections(
                 ("dataset id", manifest.dataset_id),
                 ("chain", manifest.chain_name),
                 ("problem", manifest.problem_id),
-                ("realization", manifest.semantics.realization_policy.realization_policy_id),
+                ("execution policy", manifest.semantics.execution_policy.execution_policy_id),
                 ("dataset builder", manifest.dataset_builder_id),
-                ("feature set", manifest.feature_set_id),
-                ("feature family", manifest.feature_family_id),
+                ("features", manifest.features_id),
                 ("model", manifest.model.id),
                 ("variant", manifest.variant.value),
                 ("study", manifest.study.name if manifest.study is not None else "n/a"),
@@ -171,8 +170,8 @@ def artifact_sections(
                         ("requested", f"{runtime.delay_seconds}s"),
                         ("evaluation", runtime.evaluation_id),
                         (
-                            "realization",
-                            evaluation.manifest.semantics.realization_policy.realization_policy_id,
+                            "execution policy",
+                            evaluation.manifest.semantics.execution_policy.execution_policy_id,
                         ),
                         ("events", str(runtime.total_events)),
                         (

@@ -34,7 +34,7 @@ def _load_test_acquire_config(
         load_workflow_config(
             WorkflowTask.ACQUIRE,
             workspace=tmp_path,
-            surface="same_block_closed",
+            surface="current_row_fee_dynamics",
             override=override,
             chain=chain,
         ),
@@ -127,12 +127,12 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
             self._planned_windows.append(plan)
             return plan
 
-        async def get_block_rows(self, block_numbers: list[int]):
-            first_block = block_numbers[0]
+        async def get_block_rows(self, start: int, end: int):
+            first_block = start
             for plan in reversed(self._planned_windows):
                 if plan.block_range.start <= first_block < plan.block_range.end:
                     return make_block_rows(
-                        len(block_numbers),
+                        end - start,
                         start_block=first_block,
                         start_timestamp=(
                             plan.window.start + (first_block - plan.block_range.start) * 12
@@ -362,9 +362,9 @@ def _exercise_short_history_refill(
                 expected_files=max(1, math.ceil(block_range.count / chunk_size)),
             )
 
-        async def get_block_rows(self, block_numbers: list[int]):
-            first_block = block_numbers[0]
-            end_block = block_numbers[-1] + 1
+        async def get_block_rows(self, start: int, end: int):
+            first_block = start
+            end_block = end
             requested_ranges.append((first_block, end_block))
             if first_block >= evaluation_plan.block_range.start:
                 plan = evaluation_plan
@@ -375,7 +375,7 @@ def _exercise_short_history_refill(
                     else history_plans[1]
                 )
             return make_block_rows(
-                len(block_numbers),
+                end - start,
                 start_block=first_block,
                 start_timestamp=plan.window.start + (first_block - plan.block_range.start) * 12,
                 chain_id=config.chain.runtime.chain_id,

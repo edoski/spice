@@ -30,7 +30,7 @@ def test_acquire_cli_resolves_request_surface(tmp_path, monkeypatch) -> None:
         [
             "acquire",
             "--surface",
-            "same_block_closed",
+            "current_row_fee_dynamics",
             "--chain",
             "avalanche",
             "--storage-root",
@@ -86,7 +86,7 @@ def test_model_workflow_cli_resolves_local_request_surface(
         [
             command,
             "--surface",
-            "same_block_closed",
+            "current_row_fee_dynamics",
             *args,
             "--storage-root",
             str(tmp_path / "outputs"),
@@ -110,7 +110,7 @@ def test_config_public_commands_only(isolate_conf_root) -> None:
 
     list_result = runner.invoke(app, ["config", "list", "surface"])
     assert list_result.exit_code == 0, list_result.stdout
-    assert "same_block_closed" in list_result.stdout.splitlines()
+    assert "current_row_fee_dynamics" in list_result.stdout.splitlines()
 
     show_result = runner.invoke(app, ["config", "show", "dataset", "icdcs_2026"])
     assert show_result.exit_code == 0, show_result.stdout
@@ -183,7 +183,7 @@ def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
         fake_submit,
     )
 
-    result = runner.invoke(app, ["train", "--surface", "same_block_closed", "--submit"])
+    result = runner.invoke(app, ["train", "--surface", "current_row_fee_dynamics", "--submit"])
 
     assert result.exit_code == 0, result.output
     assert captured == {"task": WorkflowTask.TRAIN, "target_name": "disi_l40"}
@@ -192,7 +192,13 @@ def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
 def test_acquire_rejects_objective_option() -> None:
     result = runner.invoke(
         app,
-        ["acquire", "--surface", "same_block_closed", "--objective", "validation_total_loss"],
+        [
+            "acquire",
+            "--surface",
+            "current_row_fee_dynamics",
+            "--objective",
+            "validation_total_loss",
+        ],
     )
 
     assert result.exit_code != 0
@@ -200,8 +206,11 @@ def test_acquire_rejects_objective_option() -> None:
 
 
 def test_surface_option_replaces_preset_option() -> None:
-    surface_result = runner.invoke(app, ["train", "--surface", "same_block_closed", "--help"])
-    preset_result = runner.invoke(app, ["train", "--preset", "same_block_closed"])
+    surface_result = runner.invoke(
+        app,
+        ["train", "--surface", "current_row_fee_dynamics", "--help"],
+    )
+    preset_result = runner.invoke(app, ["train", "--preset", "current_row_fee_dynamics"])
 
     assert surface_result.exit_code == 0, surface_result.output
     assert preset_result.exit_code != 0
@@ -245,7 +254,7 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
         [
             "train",
             "--surface",
-            "same_block_closed",
+            "current_row_fee_dynamics",
             "--submit",
             "--study",
             "default",

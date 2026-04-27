@@ -17,7 +17,7 @@ from ..options import (
     DEFAULT_REMOTE_TARGET,
     ChainFilterOption,
     DatasetFilterOption,
-    FeatureSetFilterOption,
+    FeaturesFilterOption,
     ModelFilterOption,
     PredictionFilterOption,
     ProblemFilterOption,
@@ -64,7 +64,7 @@ def push_dataset_command(
 def push_study_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
-    feature_set: FeatureSetFilterOption = None,
+    features: FeaturesFilterOption = None,
     prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
@@ -80,7 +80,7 @@ def push_study_command(
         selector=StudySelector(
             chain_name=chain,
             dataset_name=dataset,
-            feature_set_id=feature_set,
+            features_id=features,
             prediction_id=prediction,
             model_id=model,
             problem_id=problem,
@@ -95,7 +95,7 @@ def push_study_command(
 def pull_artifact_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
-    feature_set: FeatureSetFilterOption = None,
+    features: FeaturesFilterOption = None,
     prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
@@ -112,7 +112,7 @@ def pull_artifact_command(
         selector=ArtifactSelector(
             chain_name=chain,
             dataset_name=dataset,
-            feature_set_id=feature_set,
+            features_id=features,
             prediction_id=prediction,
             model_id=model,
             problem_id=problem,
@@ -136,7 +136,7 @@ def pull_artifact_command(
 def pull_study_command(
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
-    feature_set: FeatureSetFilterOption = None,
+    features: FeaturesFilterOption = None,
     prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
     problem: ProblemFilterOption = None,
@@ -152,7 +152,7 @@ def pull_study_command(
         selector=StudySelector(
             chain_name=chain,
             dataset_name=dataset,
-            feature_set_id=feature_set,
+            features_id=features,
             prediction_id=prediction,
             model_id=model,
             problem_id=problem,

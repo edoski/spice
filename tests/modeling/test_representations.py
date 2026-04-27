@@ -11,8 +11,8 @@ from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.representations import RepresentationRuntimeContext, sequence_input_contract
 from spice.prediction import compile_prediction_contract
 from spice.temporal import (
-    coerce_realization_policy_config,
-    compile_realization_policy_contract,
+    coerce_execution_policy_config,
+    compile_execution_policy_contract,
 )
 from spice.temporal.problem_store import CompiledProblemStore
 
@@ -71,9 +71,9 @@ def _model_config() -> LstmModelConfig:
     )
 
 
-def _realization_policy():
-    return compile_realization_policy_contract(
-        coerce_realization_policy_config({"id": "strict_deadline_miss"})
+def _execution_policy():
+    return compile_execution_policy_contract(
+        coerce_execution_policy_config({"id": "strict_deadline_miss"})
     )
 
 
@@ -121,7 +121,7 @@ def test_prediction_batch_source_binds_current_family_targets() -> None:
         sample_indices,
         representation_contract=representation_contract,
         prediction_contract=_prediction_contract(),
-        realization_policy=_realization_policy(),
+        execution_policy=_execution_policy(),
         runtime_context=RepresentationRuntimeContext(
             batch_size=2,
             available_host_memory_bytes=10**12,

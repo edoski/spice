@@ -91,7 +91,7 @@ def test_training_checkpoint_state_and_best_epoch_ignore_sub_delta_best(
         prediction_contract=prediction_contract,
         representation_contract=SimpleNamespace(),
         objective_contract=objective_contract,
-        realization_policy=SimpleNamespace(),
+        execution_policy=SimpleNamespace(),
         store=SimpleNamespace(),
         train_sample_indices=np.array([0], dtype=np.int64),
         validation_sample_indices=np.array([0], dtype=np.int64),

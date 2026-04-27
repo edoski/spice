@@ -19,7 +19,7 @@ def test_study_manifest_round_trips_through_canonical_request_payload(
         load_workflow_config(
             WorkflowTask.TUNE,
             workspace=tmp_path,
-            surface="same_block_closed",
+            surface="current_row_fee_dynamics",
             study="roundtrip_probe",
         ),
     )

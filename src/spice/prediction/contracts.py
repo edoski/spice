@@ -11,8 +11,8 @@ import torch
 from numpy.typing import NDArray
 
 from ..semantics import PredictionSemantics
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
-from ..temporal.realization import CompiledRealizationPolicyContract
 from .base import (
     MetricDescriptor,
     MetricSet,
@@ -157,11 +157,11 @@ class EpochMetricAccumulator(Protocol):
 
 BuildOutputSpecFn = Callable[[int], PredictionOutputSpec]
 FitTrainingStateFn = Callable[
-    [CompiledProblemStore, IntVector, CompiledRealizationPolicyContract],
+    [CompiledProblemStore, IntVector, CompiledExecutionPolicyContract],
     object | None,
 ]
 PrepareTargetsFn = Callable[
-    [CompiledProblemStore, IntVector, CompiledRealizationPolicyContract],
+    [CompiledProblemStore, IntVector, CompiledExecutionPolicyContract],
     PreparedPredictionTargets,
 ]
 ComputeBatchLossAndStateFn = Callable[
@@ -278,20 +278,20 @@ class CompiledPredictionContract:
         store: CompiledProblemStore,
         train_sample_indices: IntVector,
         *,
-        realization_policy: CompiledRealizationPolicyContract,
+        execution_policy: CompiledExecutionPolicyContract,
     ) -> object | None:
         if self.fit_training_state_fn is None:
             return None
-        return self.fit_training_state_fn(store, train_sample_indices, realization_policy)
+        return self.fit_training_state_fn(store, train_sample_indices, execution_policy)
 
     def prepare_targets(
         self,
         store: CompiledProblemStore,
         sample_indices: IntVector,
         *,
-        realization_policy: CompiledRealizationPolicyContract,
+        execution_policy: CompiledExecutionPolicyContract,
     ) -> PreparedPredictionTargets:
-        return self.prepare_targets_fn(store, sample_indices, realization_policy)
+        return self.prepare_targets_fn(store, sample_indices, execution_policy)
 
     def compute_batch_loss_and_state(
         self,

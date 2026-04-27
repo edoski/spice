@@ -26,7 +26,7 @@ conf/
   chain/            chain identity and timing assumptions
   dataset/          dataset date/window identity
   provider/         RPC endpoint/provider specs
-  feature_set/      requested feature compositions
+  features/      requested feature compositions
   problem/          temporal problem specs
   dataset_builder/  tensorization strategy specs
   prediction/       prediction-family configs

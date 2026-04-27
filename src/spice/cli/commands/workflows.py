@@ -121,7 +121,7 @@ def _model_request_payload(
     surface: str | None,
     chain: str | None,
     problem: str | None = None,
-    feature_set: str | None = None,
+    features: str | None = None,
     objective: str | None = None,
     evaluation: str | None = None,
     model: str | None = None,
@@ -140,7 +140,7 @@ def _model_request_payload(
         surface=surface,
         chain=chain,
         problem=problem,
-        feature_set=feature_set,
+        features=features,
         objective=objective,
         evaluation=evaluation,
         model=model,
@@ -173,12 +173,12 @@ def acquire_command(
         str | None,
         _selection_option("--problem", metavar="PROBLEM", help="Override the problem spec."),
     ] = None,
-    feature_set: Annotated[
+    features: Annotated[
         str | None,
         _selection_option(
-            "--feature-set",
-            metavar="FEATURE_SET",
-            help="Override the feature-set spec.",
+            "--features",
+            metavar="FEATURES",
+            help="Override the features spec.",
         ),
     ] = None,
     acquisition: Annotated[
@@ -215,7 +215,7 @@ def acquire_command(
                 surface=surface,
                 chain=chain,
                 problem=problem,
-                feature_set=feature_set,
+                features=features,
                 acquisition=acquisition,
                 storage_root=storage_root,
                 dry_run=dry_run,
@@ -241,12 +241,12 @@ def train_command(
         str | None,
         _selection_option("--problem", metavar="PROBLEM", help="Override the problem spec."),
     ] = None,
-    feature_set: Annotated[
+    features: Annotated[
         str | None,
         _selection_option(
-            "--feature-set",
-            metavar="FEATURE_SET",
-            help="Override the feature-set spec.",
+            "--features",
+            metavar="FEATURES",
+            help="Override the features spec.",
         ),
     ] = None,
     objective: Annotated[
@@ -349,7 +349,7 @@ def train_command(
             surface=surface,
             chain=chain,
             problem=problem,
-            feature_set=feature_set,
+            features=features,
             objective=objective,
             evaluation=evaluation,
             model=model,
@@ -376,7 +376,7 @@ def train_command(
             surface=surface,
             chain=chain,
             problem=problem,
-            feature_set=feature_set,
+            features=features,
             objective=objective,
             evaluation=evaluation,
             model=model,
@@ -413,12 +413,12 @@ def tune_command(
         str | None,
         _selection_option("--problem", metavar="PROBLEM", help="Override the problem spec."),
     ] = None,
-    feature_set: Annotated[
+    features: Annotated[
         str | None,
         _selection_option(
-            "--feature-set",
-            metavar="FEATURE_SET",
-            help="Override the feature-set spec.",
+            "--features",
+            metavar="FEATURES",
+            help="Override the features spec.",
         ),
     ] = None,
     objective: Annotated[
@@ -525,7 +525,7 @@ def tune_command(
             surface=surface,
             chain=chain,
             problem=problem,
-            feature_set=feature_set,
+            features=features,
             objective=objective,
             evaluation=evaluation,
             model=model,
@@ -552,7 +552,7 @@ def tune_command(
             surface=surface,
             chain=chain,
             problem=problem,
-            feature_set=feature_set,
+            features=features,
             objective=objective,
             evaluation=evaluation,
             model=model,
@@ -589,12 +589,12 @@ def evaluate_command(
         str | None,
         _selection_option("--problem", metavar="PROBLEM", help="Override the problem spec."),
     ] = None,
-    feature_set: Annotated[
+    features: Annotated[
         str | None,
         _selection_option(
-            "--feature-set",
-            metavar="FEATURE_SET",
-            help="Override the feature-set spec.",
+            "--features",
+            metavar="FEATURES",
+            help="Override the features spec.",
         ),
     ] = None,
     objective: Annotated[
@@ -705,7 +705,7 @@ def evaluate_command(
             surface=surface,
             chain=chain,
             problem=problem,
-            feature_set=feature_set,
+            features=features,
             objective=objective,
             evaluation=evaluation,
             model=model,
@@ -733,7 +733,7 @@ def evaluate_command(
             surface=surface,
             chain=chain,
             problem=problem,
-            feature_set=feature_set,
+            features=features,
             objective=objective,
             evaluation=evaluation,
             model=model,

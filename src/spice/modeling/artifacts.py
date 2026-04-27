@@ -9,7 +9,7 @@ import torch
 from pydantic import BaseModel
 
 from ..config.models import (
-    FeatureSetConfig,
+    FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
     SplitConfig,
@@ -59,7 +59,7 @@ def validate_artifact_semantics(
     *,
     problem: ProblemSpec,
     dataset_builder: DatasetBuilderConfig,
-    feature_set: FeatureSetConfig,
+    features: FeaturesConfig,
     prediction: PredictionConfig,
     objective: ObjectiveConfig,
     model: ModelConfig,
@@ -72,7 +72,7 @@ def validate_artifact_semantics(
         ("prediction", manifest.prediction, prediction),
         ("objective", manifest.objective, objective),
         ("model", manifest.model, model),
-        ("feature_set", manifest.feature_set, feature_set),
+        ("features", manifest.features, features),
         ("split", manifest.split, split),
         ("training", manifest.training, training),
     ):
@@ -81,7 +81,7 @@ def validate_artifact_semantics(
             stored_value=stored_value,
             configured_value=configured_value,
         )
-    feature_contract = compile_feature_contract(feature_set=feature_set)
+    feature_contract = compile_feature_contract(features=features)
     if feature_contract.feature_graph_fingerprint != manifest.feature_graph_fingerprint:
         raise ConfigResolutionError(
             "Current feature graph does not match the trained artifact manifest"
@@ -125,7 +125,7 @@ def build_training_artifact_manifest(
         variant=spec.variant,
         study=spec.study,
         study_id=spec.study_id,
-        feature_set=spec.feature_set,
+        features=spec.features,
         model=spec.model,
         split=spec.split,
         training=spec.training,
@@ -133,7 +133,7 @@ def build_training_artifact_manifest(
         builder_runtime_metadata=prepared.builder_runtime_metadata,
         semantics=ArtifactSemantics(
             problem=spec.problem_contract.semantics,
-            realization_policy=spec.problem_contract.realization_policy.semantics,
+            execution_policy=spec.problem_contract.execution_policy.semantics,
             objective=spec.objective_contract.semantics,
             feature=spec.feature_contract.semantics,
             prediction=spec.prediction_contract.semantics,

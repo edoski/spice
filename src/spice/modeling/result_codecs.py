@@ -13,7 +13,7 @@ from ..config.models import (
     SplitConfig,
     StudyConfig,
     TrainingConfig,
-    coerce_feature_set_config,
+    coerce_features_config,
     coerce_problem_spec,
 )
 from ..core.errors import StateLayoutError
@@ -116,7 +116,7 @@ class ArtifactManifestPayload(CodecPayloadModel):
     variant: str
     study_id: str | None
     study_name: str | None
-    feature_set: dict[str, object]
+    features: dict[str, object]
     model: dict[str, object]
     split: dict[str, object]
     training: dict[str, object]
@@ -138,7 +138,7 @@ class ArtifactManifestPayload(CodecPayloadModel):
             variant=manifest.variant.value,
             study_id=manifest.study_id,
             study_name=None if manifest.study is None else manifest.study.name,
-            feature_set=manifest.feature_set.model_dump(mode="json", exclude_none=True),
+            features=manifest.features.model_dump(mode="json", exclude_none=True),
             model=manifest.model.model_dump(mode="json", exclude_none=True),
             split=manifest.split.model_dump(mode="json"),
             training=manifest.training.model_dump(mode="json"),
@@ -163,7 +163,7 @@ class ArtifactManifestPayload(CodecPayloadModel):
             variant=ArtifactVariant(self.variant),
             study=_study_config_from_name(self.study_name),
             study_id=self.study_id,
-            feature_set=coerce_feature_set_config(self.feature_set),
+            features=coerce_features_config(self.features),
             model=coerce_model_config(self.model),
             split=SplitConfig.model_validate(self.split),
             training=TrainingConfig.model_validate(self.training),

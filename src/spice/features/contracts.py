@@ -9,22 +9,21 @@ import polars as pl
 
 from ..semantics import FeatureSemantics
 from .core import (
+    FeaturePrerequisites,
     ResolvedFeatureTable,
     build_feature_table,
     feature_graph_fingerprint,
     feature_prerequisites,
 )
-from .families.base import FeaturePrerequisites
-from .registry import feature_family
+from .registry import feature_entry
 
 if TYPE_CHECKING:
-    from ..config.models import FeatureSetConfig
+    from ..config.models import FeaturesConfig
 
 
 @dataclass(frozen=True, slots=True)
 class CompiledFeatureContract:
-    feature_set_id: str
-    feature_family_id: str
+    features_id: str
     feature_names: tuple[str, ...]
     feature_graph_fingerprint: str
     feature_prerequisites: FeaturePrerequisites
@@ -32,35 +31,34 @@ class CompiledFeatureContract:
     @property
     def semantics(self) -> FeatureSemantics:
         return FeatureSemantics(
-            feature_set_id=self.feature_set_id,
-            feature_family_id=self.feature_family_id,
+            features_id=self.features_id,
             feature_names=self.feature_names,
             feature_graph_fingerprint=self.feature_graph_fingerprint,
             feature_prerequisites=self.feature_prerequisites,
         )
 
     def build_table(self, blocks: pl.DataFrame) -> ResolvedFeatureTable:
-        family = feature_family(self.feature_family_id)
+        entry = feature_entry(self.features_id)
         return build_feature_table(
             blocks,
-            feature_set_id=self.feature_set_id,
-            feature_family_id=self.feature_family_id,
-            family=family,
+            features_id=self.features_id,
+            catalog=entry.catalog,
             feature_names=self.feature_names,
+            allowed_feature_names=entry.allowed_outputs,
         )
 
 
-def compile_feature_contract(*, feature_set: FeatureSetConfig) -> CompiledFeatureContract:
-    family = feature_family(feature_set.family.id)
-    feature_names = tuple(feature_set.outputs)
+def compile_feature_contract(*, features: FeaturesConfig) -> CompiledFeatureContract:
+    entry = feature_entry(features.id)
+    catalog = entry.catalog
+    feature_names = tuple(features.outputs)
     return CompiledFeatureContract(
-        feature_set_id=feature_set.id,
-        feature_family_id=feature_set.family.id,
+        features_id=features.id,
         feature_names=feature_names,
         feature_graph_fingerprint=feature_graph_fingerprint(
-            feature_set.family.id,
+            features.id,
             feature_names,
-            fingerprint_sources=family.fingerprint_sources,
+            fingerprint_sources=catalog.fingerprint_sources,
         ),
-        feature_prerequisites=feature_prerequisites(family, feature_names),
+        feature_prerequisites=feature_prerequisites(catalog, feature_names),
     )

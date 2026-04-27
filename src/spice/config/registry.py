@@ -29,7 +29,7 @@ from .models import (
     SplitConfig,
     TrainingConfig,
     TuningConfig,
-    coerce_feature_set_config,
+    coerce_features_config,
     coerce_problem_spec,
 )
 
@@ -45,7 +45,7 @@ class ConfigGroup(StrEnum):
     DATASET_BUILDER = "dataset-builder"
     EVALUATION = "evaluation"
     EXECUTION = "execution"
-    FEATURE_SET = "feature-set"
+    FEATURES = "features"
     MODEL = "model"
     OBJECTIVE = "objective"
     PREDICTION = "prediction"
@@ -82,7 +82,7 @@ _GROUP_SPECS = (
     GroupSpec(
         token=ConfigGroup.SURFACE.value,
         directory="surface",
-        seed_name="same_block_closed",
+        seed_name="current_row_fee_dynamics",
         validate=_validate_surface_frame,
         public=True,
     ),
@@ -142,7 +142,7 @@ _GROUP_SPECS = (
     GroupSpec(
         token=ConfigGroup.PROBLEM.value,
         directory="problem",
-        seed_name="current_row_nominal_window",
+        seed_name="current_row_nominal",
         validate=coerce_problem_spec,
         identity_field="id",
         seed_from_requested_name=True,
@@ -160,7 +160,7 @@ _GROUP_SPECS = (
     GroupSpec(
         token=ConfigGroup.DATASET_BUILDER.value,
         directory="dataset_builder",
-        seed_name="standard_temporal",
+        seed_name="variable_sequence_temporal",
         validate=coerce_dataset_builder_config,
         identity_field="id",
         seed_from_requested_name=True,
@@ -183,10 +183,10 @@ _GROUP_SPECS = (
         public=True,
     ),
     GroupSpec(
-        token=ConfigGroup.FEATURE_SET.value,
-        directory="feature_set",
-        seed_name="same_block_closed_full",
-        validate=coerce_feature_set_config,
+        token=ConfigGroup.FEATURES.value,
+        directory="features",
+        seed_name="core_fee_dynamics",
+        validate=coerce_features_config,
         identity_field="id",
         seed_from_requested_name=True,
         public=True,

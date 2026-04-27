@@ -7,6 +7,7 @@ from spice.features import compile_feature_contract
 from spice.temporal.contracts import compile_problem_contract
 
 ModelWorkflowConfig = TrainConfig | TuneConfig | EvaluateConfig
+BlockRowValue = int | float | None
 
 
 def synthetic_block_interval_seconds(chain_name: str) -> int:
@@ -18,7 +19,7 @@ def synthetic_block_interval_seconds(chain_name: str) -> int:
 
 
 def required_dataset_blocks(config: ModelWorkflowConfig) -> int:
-    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    feature_contract = compile_feature_contract(features=config.features)
     contract = compile_problem_contract(
         problem=config.problem,
         feature_contract=feature_contract,
@@ -48,8 +49,8 @@ def make_block_rows(
     start_timestamp: int,
     chain_id: int = 1,
     block_interval_seconds: int = 12,
-) -> list[dict[str, int]]:
-    rows: list[dict[str, int]] = []
+) -> list[dict[str, BlockRowValue]]:
+    rows: list[dict[str, BlockRowValue]] = []
     for offset in range(count):
         block_number = start_block + offset
         timestamp = start_timestamp + offset * block_interval_seconds
@@ -66,13 +67,22 @@ def make_block_rows(
                 "base_fee_per_gas": max(base_fee, 1),
                 "gas_used": int(18_000_000 + 2_000_000 * math.sin(block_number / 5.0)),
                 "gas_limit": 30_000_000,
+                "tx_count": 128,
+                "block_size_bytes": None,
+                "blob_gas_used": None,
+                "excess_blob_gas": None,
+                "priority_fee_p10": 1_000_000,
+                "priority_fee_p50": 2_000_000,
+                "priority_fee_p90": 4_000_000,
+                "priority_fee_spread": 3_000_000,
+                "fee_history_gas_used_ratio": 0.6,
                 "chain_id": chain_id,
             }
         )
     return rows
 
 
-def make_history_rows(config: ModelWorkflowConfig) -> list[dict[str, int]]:
+def make_history_rows(config: ModelWorkflowConfig) -> list[dict[str, BlockRowValue]]:
     block_interval_seconds = synthetic_block_interval_seconds(config.chain.name)
     count = required_dataset_blocks(config)
     return make_block_rows(

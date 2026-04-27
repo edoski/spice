@@ -1,7 +1,7 @@
 cases:
   - id: large_capacity_ethereum_transformer
     base:
-      surface: block_open_lagged
+      surface: current_row_fee_dynamics
       chain: ethereum
       training: default
       split: default
@@ -13,7 +13,7 @@ cases:
             model: transformer
             tuning_space: transformer_large_capacity
       problems:
-        - ref: current_row_nominal_window
+        - ref: current_row_nominal
     steps:
       - id: tune
         workflow: tune
@@ -46,7 +46,7 @@ cases:
 
   - id: large_capacity_ethereum_transformer_lstm
     base:
-      surface: block_open_lagged
+      surface: current_row_fee_dynamics
       chain: ethereum
       training: default
       split: default
@@ -58,7 +58,7 @@ cases:
             model: transformer_lstm
             tuning_space: transformer_lstm_large_capacity
       problems:
-        - ref: current_row_nominal_window
+        - ref: current_row_nominal
     steps:
       - id: tune
         workflow: tune
@@ -91,7 +91,7 @@ cases:
 
   - id: large_capacity_avalanche_transformer_lstm
     base:
-      surface: block_open_lagged
+      surface: current_row_fee_dynamics
       chain: avalanche
       training: default
       split: default
@@ -103,7 +103,7 @@ cases:
             model: transformer_lstm
             tuning_space: transformer_lstm_large_capacity
       problems:
-        - ref: current_row_nominal_window
+        - ref: current_row_nominal
     steps:
       - id: tune
         workflow: tune
@@ -136,7 +136,7 @@ cases:
 
   - id: large_capacity_avalanche_transformer
     base:
-      surface: block_open_lagged
+      surface: current_row_fee_dynamics
       chain: avalanche
       training: default
       split: default
@@ -148,7 +148,7 @@ cases:
             model: transformer
             tuning_space: transformer_large_capacity
       problems:
-        - ref: current_row_nominal_window
+        - ref: current_row_nominal
     steps:
       - id: tune
         workflow: tune

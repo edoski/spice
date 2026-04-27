@@ -11,8 +11,8 @@ from numpy.typing import NDArray
 
 from ..prediction.base import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..prediction.contracts import DecodedPredictionResult
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
-from ..temporal.realization import CompiledRealizationPolicyContract
 
 if TYPE_CHECKING:
     from ..prediction import CompiledPredictionContract
@@ -39,7 +39,7 @@ class EvaluationSummary:
 RunEvaluatorFn = Callable[
     [
         CompiledProblemStore,
-        CompiledRealizationPolicyContract,
+        CompiledExecutionPolicyContract,
         DecodedPredictionResult,
         IntVector,
     ],
@@ -74,7 +74,7 @@ class CompiledEvaluatorContract:
     def run(
         self,
         store: CompiledProblemStore,
-        realization_policy: CompiledRealizationPolicyContract,
+        execution_policy: CompiledExecutionPolicyContract,
         decoded_result: DecodedPredictionResult,
         sample_indices: IntVector,
     ) -> EvaluationSummary:
@@ -85,7 +85,7 @@ class CompiledEvaluatorContract:
             )
         return self.run_fn(
             store,
-            realization_policy,
+            execution_policy,
             decoded_result,
             sample_indices,
         )

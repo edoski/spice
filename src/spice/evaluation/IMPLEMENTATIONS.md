@@ -14,7 +14,7 @@ model outputs
   -> EvaluationSummary
 ```
 
-Current evaluators accept `DecodedOffsets`. They interpret offsets through temporal rows and, usually, the realization policy.
+Current evaluators accept `DecodedOffsets`. They interpret offsets through temporal rows and, usually, the execution policy.
 
 ## Evaluation Contract
 
@@ -47,7 +47,7 @@ The replay engine realizes selected offsets for historical samples and compares 
 ```text
 sample positions
   -> decoded offsets
-  -> realization policy
+  -> execution policy
   -> realized rows
   -> fee ratios
 ```
@@ -99,7 +99,7 @@ If no zero appears before the effective terminal row, the rollout realizes the t
 
 ## Anchor-Basefee Evaluator
 
-`anchor_basefee` realizes every decoded offset through the realization policy, then compares realized fee against the anchor-row base fee.
+`anchor_basefee` realizes every decoded offset through the execution policy, then compares realized fee against the anchor-row base fee.
 
 Primary metric:
 

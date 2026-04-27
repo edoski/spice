@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ...config.models import ChainRuntimeSpec, ProblemSpec
     from ...features import CompiledFeatureContract
     from ..contracts import CompiledProblemContract
-    from ..realization import CompiledRealizationPolicyContract
+    from ..execution_policy import CompiledExecutionPolicyContract
 
 
 class CompileProblemFn(Protocol):
@@ -21,7 +21,7 @@ class CompileProblemFn(Protocol):
         self,
         problem: ProblemSpec,
         feature_contract: CompiledFeatureContract,
-        realization_policy: CompiledRealizationPolicyContract,
+        execution_policy: CompiledExecutionPolicyContract,
         chain_runtime: ChainRuntimeSpec | None,
     ) -> CompiledProblemContract: ...
 
@@ -34,80 +34,45 @@ class ProblemCompilerSpec:
     runtime_metadata_from_payload: Callable[[Mapping[str, object]], object]
 
 
-def _compile_timestamp_future_window(
+def _compile_observed_time_window(
     problem: ProblemSpec,
     feature_contract: CompiledFeatureContract,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     chain_runtime: ChainRuntimeSpec | None,
 ) -> CompiledProblemContract:
-    from .timestamp_future_window import compile_problem
+    from .observed_time_window import compile_problem
 
     return compile_problem(
         problem,
         feature_contract,
-        realization_policy,
+        execution_policy,
         chain_runtime,
     )
 
 
-def _compile_estimated_block(
-    problem: ProblemSpec,
-    feature_contract: CompiledFeatureContract,
-    realization_policy: CompiledRealizationPolicyContract,
-    chain_runtime: ChainRuntimeSpec | None,
-) -> CompiledProblemContract:
-    from .estimated_block import compile_problem
-
-    return compile_problem(
-        problem,
-        feature_contract,
-        realization_policy,
-        chain_runtime,
-    )
-
-
-def _timestamp_future_window_runtime_metadata_payload(metadata: object) -> dict[str, object]:
-    from .timestamp_future_window import runtime_metadata_payload
+def _observed_time_window_runtime_metadata_payload(metadata: object) -> dict[str, object]:
+    from .observed_time_window import runtime_metadata_payload
 
     return runtime_metadata_payload(metadata)
 
 
-def _estimated_block_runtime_metadata_payload(metadata: object) -> dict[str, object]:
-    from .estimated_block import runtime_metadata_payload
-
-    return runtime_metadata_payload(metadata)
-
-
-def _timestamp_future_window_runtime_metadata_from_payload(
+def _observed_time_window_runtime_metadata_from_payload(
     payload: Mapping[str, object],
 ) -> object:
-    from .timestamp_future_window import runtime_metadata_from_payload
-
-    return runtime_metadata_from_payload(payload)
-
-
-def _estimated_block_runtime_metadata_from_payload(payload: Mapping[str, object]) -> object:
-    from .estimated_block import runtime_metadata_from_payload
+    from .observed_time_window import runtime_metadata_from_payload
 
     return runtime_metadata_from_payload(payload)
 
 
 def _problem_compiler_specs() -> dict[str, ProblemCompilerSpec]:
-    from .estimated_block import EstimatedBlockCompilerConfig
-    from .timestamp_future_window import TimestampFutureWindowCompilerConfig
+    from .observed_time_window import ObservedTimeWindowCompilerConfig
 
     return {
-        "timestamp_future_window": ProblemCompilerSpec(
-            config_type=TimestampFutureWindowCompilerConfig,
-            compile_problem=_compile_timestamp_future_window,
-            runtime_metadata_payload=_timestamp_future_window_runtime_metadata_payload,
-            runtime_metadata_from_payload=_timestamp_future_window_runtime_metadata_from_payload,
-        ),
-        "estimated_block": ProblemCompilerSpec(
-            config_type=EstimatedBlockCompilerConfig,
-            compile_problem=_compile_estimated_block,
-            runtime_metadata_payload=_estimated_block_runtime_metadata_payload,
-            runtime_metadata_from_payload=_estimated_block_runtime_metadata_from_payload,
+        "observed_time_window": ProblemCompilerSpec(
+            config_type=ObservedTimeWindowCompilerConfig,
+            compile_problem=_compile_observed_time_window,
+            runtime_metadata_payload=_observed_time_window_runtime_metadata_payload,
+            runtime_metadata_from_payload=_observed_time_window_runtime_metadata_from_payload,
         ),
     }
 
@@ -135,14 +100,14 @@ def coerce_problem_compiler_config(
 def compile_problem(
     problem: ProblemSpec,
     feature_contract: CompiledFeatureContract,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
     chain_runtime: ChainRuntimeSpec | None,
 ) -> CompiledProblemContract:
     compiler_id = problem.compiler.id
     return problem_compiler_spec(compiler_id).compile_problem(
         problem,
         feature_contract,
-        realization_policy,
+        execution_policy,
         chain_runtime,
     )
 

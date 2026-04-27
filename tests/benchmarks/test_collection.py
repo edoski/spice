@@ -27,7 +27,7 @@ def _write_evaluate_run(run_dir: Path, config) -> None:
         depends_on=(),
         external_dependencies=(),
         selection={
-            "surface": "same_block_closed",
+            "surface": "current_row_fee_dynamics",
             "objective": "profit_poisson_replay_2h_mean",
         },
         config=config,
@@ -55,7 +55,7 @@ def _loaded_summary(config):
             artifact_id="artifact-1",
             chain_name=config.chain.name,
             dataset_name=config.dataset.name,
-            feature_set_id=config.feature_set.id,
+            features_id=config.features.id,
             model=SimpleNamespace(id=config.model.id),
             problem_id=config.problem.id,
             prediction_id=config.prediction.id,
@@ -87,7 +87,7 @@ def test_benchmark_collect_writes_and_skips_duplicate_rows(
     config = load_workflow_config(
         WorkflowTask.EVALUATE,
         workspace=tmp_path,
-        surface="same_block_closed",
+        surface="current_row_fee_dynamics",
         variant="baseline",
         delay_seconds=36,
     )
@@ -142,7 +142,7 @@ def test_benchmark_collect_writes_and_skips_duplicate_rows(
     assert len(rows) == 1
     assert rows[0]["git_commit"] == "abc123"
     assert rows[0]["execution_ref"] == "slurm:57549"
-    assert rows[0]["surface"] == "same_block_closed"
+    assert rows[0]["surface"] == "current_row_fee_dynamics"
     assert rows[0]["objective"] == "profit_poisson_replay_2h_mean"
     assert rows[0]["profit_over_baseline"] == "0.12"
     assert rows[0]["total_loss"] == "0.3"
@@ -158,7 +158,7 @@ def test_benchmark_collect_refuses_partial_ledger_write(
     config = load_workflow_config(
         WorkflowTask.EVALUATE,
         workspace=tmp_path,
-        surface="same_block_closed",
+        surface="current_row_fee_dynamics",
         variant="baseline",
         delay_seconds=36,
     )

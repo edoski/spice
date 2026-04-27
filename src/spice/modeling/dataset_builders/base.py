@@ -33,17 +33,17 @@ class DatasetBuilderConfig(ConfigModel):
         return validate_path_segment(value, label="dataset_builder.id")
 
 
-class StandardTemporalDatasetBuilderConfig(DatasetBuilderConfig):
-    id: str = "standard_temporal"
+class VariableSequenceTemporalDatasetBuilderConfig(DatasetBuilderConfig):
+    id: str = "variable_sequence_temporal"
 
 
-class FixedContextTemporalDatasetBuilderConfig(DatasetBuilderConfig):
-    id: str = "fixed_context_temporal"
+class FixedSequenceTemporalDatasetBuilderConfig(DatasetBuilderConfig):
+    id: str = "fixed_sequence_temporal"
     min_sequence_length: int = Field(default=64, gt=0)
     max_sequence_length: int = Field(default=4096, gt=0)
 
     @model_validator(mode="after")
-    def validate_sequence_bounds(self) -> FixedContextTemporalDatasetBuilderConfig:
+    def validate_sequence_bounds(self) -> FixedSequenceTemporalDatasetBuilderConfig:
         if self.max_sequence_length < self.min_sequence_length:
             raise ValueError("max_sequence_length must be >= min_sequence_length")
         return self
@@ -53,11 +53,11 @@ class BuilderRuntimeMetadata(ConfigModel):
     compiler_runtime_metadata: dict[str, object]
 
 
-class StandardTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
+class VariableSequenceTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
     pass
 
 
-class FixedContextTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
+class FixedSequenceTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
     sequence_length: int = Field(gt=0)
     median_dt_seconds: float = Field(gt=0.0)
     min_sequence_length: int = Field(gt=0)
@@ -65,7 +65,7 @@ class FixedContextTemporalBuilderRuntimeMetadata(BuilderRuntimeMetadata):
     split_strategy: Literal["global_feature_table"] = "global_feature_table"
 
     @model_validator(mode="after")
-    def validate_sequence_bounds(self) -> FixedContextTemporalBuilderRuntimeMetadata:
+    def validate_sequence_bounds(self) -> FixedSequenceTemporalBuilderRuntimeMetadata:
         if self.max_sequence_length < self.min_sequence_length:
             raise ValueError("max_sequence_length must be >= min_sequence_length")
         return self
@@ -106,18 +106,18 @@ class CompiledDatasetBuilderContract:
         return self.prepare_inference_fn(history_blocks, evaluation_blocks, spec)
 
 
-def _compile_standard_temporal(
-    config: StandardTemporalDatasetBuilderConfig,
+def _compile_variable_sequence_temporal(
+    config: VariableSequenceTemporalDatasetBuilderConfig,
 ) -> CompiledDatasetBuilderContract:
-    from .standard_temporal import compile_dataset_builder
+    from .variable_sequence_temporal import compile_dataset_builder
 
     return compile_dataset_builder(config)
 
 
-def _compile_fixed_context_temporal(
-    config: FixedContextTemporalDatasetBuilderConfig,
+def _compile_fixed_sequence_temporal(
+    config: FixedSequenceTemporalDatasetBuilderConfig,
 ) -> CompiledDatasetBuilderContract:
-    from .fixed_context_temporal import compile_dataset_builder
+    from .fixed_sequence_temporal import compile_dataset_builder
 
     return compile_dataset_builder(config)
 
@@ -130,15 +130,15 @@ class DatasetBuilderSpec:
 
 
 _DATASET_BUILDER_SPECS: dict[str, DatasetBuilderSpec] = {
-    "standard_temporal": DatasetBuilderSpec(
-        config_type=StandardTemporalDatasetBuilderConfig,
-        runtime_metadata_type=StandardTemporalBuilderRuntimeMetadata,
-        compile_contract=_compile_standard_temporal,
+    "variable_sequence_temporal": DatasetBuilderSpec(
+        config_type=VariableSequenceTemporalDatasetBuilderConfig,
+        runtime_metadata_type=VariableSequenceTemporalBuilderRuntimeMetadata,
+        compile_contract=_compile_variable_sequence_temporal,
     ),
-    "fixed_context_temporal": DatasetBuilderSpec(
-        config_type=FixedContextTemporalDatasetBuilderConfig,
-        runtime_metadata_type=FixedContextTemporalBuilderRuntimeMetadata,
-        compile_contract=_compile_fixed_context_temporal,
+    "fixed_sequence_temporal": DatasetBuilderSpec(
+        config_type=FixedSequenceTemporalDatasetBuilderConfig,
+        runtime_metadata_type=FixedSequenceTemporalBuilderRuntimeMetadata,
+        compile_contract=_compile_fixed_sequence_temporal,
     ),
 }
 
@@ -147,14 +147,14 @@ def dataset_builder_spec(builder_id: str) -> DatasetBuilderSpec:
     return lookup_local_spec(_DATASET_BUILDER_SPECS, builder_id, "dataset_builder.id")
 
 
-def standard_temporal_runtime_metadata(
+def variable_sequence_temporal_runtime_metadata(
     *,
     compiler_id: str,
     compiler_runtime_metadata: object,
-) -> StandardTemporalBuilderRuntimeMetadata:
+) -> VariableSequenceTemporalBuilderRuntimeMetadata:
     from ...temporal.contracts import problem_runtime_metadata_payload
 
-    return StandardTemporalBuilderRuntimeMetadata(
+    return VariableSequenceTemporalBuilderRuntimeMetadata(
         compiler_runtime_metadata=problem_runtime_metadata_payload(
             compiler_id,
             compiler_runtime_metadata,
@@ -162,7 +162,7 @@ def standard_temporal_runtime_metadata(
     )
 
 
-def fixed_context_temporal_runtime_metadata(
+def fixed_sequence_temporal_runtime_metadata(
     *,
     compiler_id: str,
     compiler_runtime_metadata: object,
@@ -170,10 +170,10 @@ def fixed_context_temporal_runtime_metadata(
     median_dt_seconds: float,
     min_sequence_length: int,
     max_sequence_length: int,
-) -> FixedContextTemporalBuilderRuntimeMetadata:
+) -> FixedSequenceTemporalBuilderRuntimeMetadata:
     from ...temporal.contracts import problem_runtime_metadata_payload
 
-    return FixedContextTemporalBuilderRuntimeMetadata(
+    return FixedSequenceTemporalBuilderRuntimeMetadata(
         compiler_runtime_metadata=problem_runtime_metadata_payload(
             compiler_id,
             compiler_runtime_metadata,

@@ -161,7 +161,7 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
     evaluation_dir = paths.evaluation_dir
     state_db_path = paths.corpus_state_db
     rpc_controller = RpcController.from_config(config.acquisition)
-    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    feature_contract = compile_feature_contract(features=config.features)
     contract = compile_problem_contract(
         problem=config.problem,
         feature_contract=feature_contract,
@@ -181,9 +181,9 @@ async def _run_async(config: AcquireConfig, *, reporter: Reporter | None = None)
             evaluation_window,
             chunk_size=config.acquisition.chunk_size,
         )
-        estimated_block_interval_seconds = await block_client.estimate_recent_block_interval()
+        recent_block_interval_seconds = await block_client.estimate_recent_block_interval()
         bootstrap_history_window_seconds = contract.initial_history_window_seconds(
-            estimated_block_interval_seconds,
+            recent_block_interval_seconds,
         )
         requested_history_window_seconds = _with_cushion(
             bootstrap_history_window_seconds,

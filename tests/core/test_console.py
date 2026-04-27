@@ -11,7 +11,7 @@ def test_reporter_renders_header_milestone_and_result() -> None:
 
     reporter.header(
         "train",
-        [("dataset", "same_block_closed"), ("chain", "ethereum"), ("model", "lstm")],
+        [("dataset", "current_row_fee_dynamics"), ("chain", "ethereum"), ("model", "lstm")],
     )
     reporter.milestone("fit epoch=1/10 objective.total_loss=1.2300 best_epoch=1")
     reporter.result(
@@ -20,7 +20,7 @@ def test_reporter_renders_header_milestone_and_result() -> None:
     )
 
     rendered = output.getvalue()
-    assert "train dataset=same_block_closed chain=ethereum model=lstm" in rendered
+    assert "train dataset=current_row_fee_dynamics chain=ethereum model=lstm" in rendered
     assert "fit epoch=1/10 objective.total_loss=1.2300 best_epoch=1" in rendered
     assert "train complete artifact=/tmp/artifact best_epoch=6 test.total_loss=0.1200" in rendered
 

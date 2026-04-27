@@ -28,7 +28,7 @@ def test_benchmark_plan_outputs_jsonl(isolate_conf_root) -> None:
                 {
                     "id": "single",
                     "base": {
-                        "surface": "same_block_closed",
+                        "surface": "current_row_fee_dynamics",
                         "study": "single",
                     },
                     "steps": [
@@ -63,7 +63,7 @@ def test_benchmark_submit_uses_existing_remote_submitter(isolate_conf_root, monk
                 {
                     "id": "single",
                     "base": {
-                        "surface": "same_block_closed",
+                        "surface": "current_row_fee_dynamics",
                         "study": "single",
                     },
                     "steps": [

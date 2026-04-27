@@ -5,8 +5,8 @@ from __future__ import annotations
 import torch
 
 from ....modeling.models import ModelOutputs
+from ....temporal.execution_policy import CompiledExecutionPolicyContract
 from ....temporal.problem_store import CompiledProblemStore
-from ....temporal.realization import CompiledRealizationPolicyContract
 from ...contracts import (
     ActionSpaceDecodeContext,
     CompiledPredictionContract,
@@ -38,12 +38,12 @@ from .outputs import (
 def _fit_training_state(
     store: CompiledProblemStore,
     train_sample_indices: IntVector,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
 ) -> MinBlockFeeTrainingState:
     targets = materialize_min_block_fee_targets(
         store,
         train_sample_indices,
-        realization_policy=realization_policy,
+        execution_policy=execution_policy,
     )
     class_weights = inverse_frequency_class_weights(
         targets.min_block_offsets,
@@ -62,12 +62,12 @@ def _fit_training_state(
 def _prepare_targets(
     store: CompiledProblemStore,
     sample_indices: IntVector,
-    realization_policy: CompiledRealizationPolicyContract,
+    execution_policy: CompiledExecutionPolicyContract,
 ) -> PreparedPredictionTargets:
     return materialize_min_block_fee_targets(
         store,
         sample_indices,
-        realization_policy=realization_policy,
+        execution_policy=execution_policy,
     )
 
 

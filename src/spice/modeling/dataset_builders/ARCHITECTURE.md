@@ -4,7 +4,7 @@
 
 `modeling.dataset_builders` turns feature tables and temporal problem contracts into prepared datasets for training and inference. This is the tensorization seam.
 
-Tensorization matters because the same temporal problem can be represented as independent rows, fixed-context sequences, or another model input shape without changing feature semantics or evaluator behavior.
+Tensorization matters because the same temporal problem can be represented as independent rows, fixed-sequence sequences, or another model input shape without changing feature semantics or evaluator behavior.
 
 ## Generic Flow
 
@@ -58,7 +58,7 @@ training prepare
   -> reconstruct same assumptions
 ```
 
-Fixed-context inference explicitly requires `FixedContextTemporalBuilderRuntimeMetadata`. The check lives near the fixed-context use site because the requirement is builder-specific, not a generic base helper.
+Fixed-context inference explicitly requires `FixedSequenceTemporalBuilderRuntimeMetadata`. The check lives near the fixed-sequence use site because the requirement is builder-specific, not a generic base helper.
 
 ## Invariants
 

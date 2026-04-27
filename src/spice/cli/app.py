@@ -18,7 +18,7 @@ from .commands.workflows import (
 app = typer.Typer(
     name="spice",
     help="SPICE workflow CLI.",
-    epilog="Example:\n  spice acquire --surface same_block_closed",
+    epilog="Example:\n  spice acquire --surface current_row_fee_dynamics",
     no_args_is_help=True,
     add_completion=True,
 )
@@ -36,7 +36,7 @@ app.command(
     help="Acquire canonical history and evaluation block datasets.",
     epilog=(
         "Example:\n"
-        "  spice acquire --surface same_block_closed --chain avalanche"
+        "  spice acquire --surface current_row_fee_dynamics --chain avalanche"
     ),
 )(acquire_command)
 app.command(
@@ -45,14 +45,14 @@ app.command(
     help="Train one artifact from a materialized history corpus.",
     epilog=(
         "Example:\n"
-        "  spice train --surface same_block_closed --study default --variant baseline"
+        "  spice train --surface current_row_fee_dynamics --study default --variant baseline"
     ),
 )(train_command)
 app.command(
     "tune",
     short_help="Tune a model artifact.",
     help="Tune one artifact with Optuna.",
-    epilog="Example:\n  spice tune --surface same_block_closed --trial-count 20",
+    epilog="Example:\n  spice tune --surface current_row_fee_dynamics --trial-count 20",
 )(tune_command)
 app.command(
     "evaluate",
@@ -60,7 +60,7 @@ app.command(
     help="Evaluate one trained artifact on historical evaluation data.",
     epilog=(
         "Example:\n"
-        "  spice evaluate --surface same_block_closed --study default --variant baseline"
+        "  spice evaluate --surface current_row_fee_dynamics --study default --variant baseline"
     ),
 )(evaluate_command)
 

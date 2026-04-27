@@ -1,4 +1,4 @@
-"""Explicit temporal geometry semantics shared by compilers, stores, and realization."""
+"""Explicit temporal geometry semantics shared by compilers, stores, and execution."""
 
 from __future__ import annotations
 

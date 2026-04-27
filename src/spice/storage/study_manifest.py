@@ -16,7 +16,7 @@ from ..config.models import (
     TuneConfig,
     TuningSearchConfig,
     TuningSpaceConfig,
-    coerce_feature_set_config,
+    coerce_features_config,
     coerce_problem_spec,
 )
 from ..core.errors import (
@@ -75,7 +75,7 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
         dataset_id=paths.corpus_id,
         dataset_name=config.dataset.name,
         problem=config.problem,
-        feature_set=config.feature_set,
+        features=config.features,
         model=config.model,
         split=config.split,
         training=config.training,
@@ -87,7 +87,7 @@ def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
         tuning_space=config.tuning_space,
         semantics=StudySemantics(
             problem=context.problem_contract.semantics,
-            realization_policy=context.problem_contract.realization_policy.semantics,
+            execution_policy=context.problem_contract.execution_policy.semantics,
             objective=context.objective_contract.semantics,
             feature=context.feature_contract.semantics,
             prediction=context.prediction_contract.semantics,
@@ -244,8 +244,8 @@ def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
         dataset_id=str(request["dataset_id"]),
         dataset_name=str(request["dataset_name"]),
         problem=problem,
-        feature_set=coerce_feature_set_config(
-            mapping_payload(request["feature_set"], label="study.request.feature_set")
+        features=coerce_features_config(
+            mapping_payload(request["features"], label="study.request.features")
         ),
         model=model,
         split=SplitConfig.model_validate(

@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 from ..evaluation import CompiledEvaluatorContract, EvaluationSummary
 from ..prediction import CompiledPredictionContract
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore, IntVector
-from ..temporal.realization import CompiledRealizationPolicyContract
 from .families.base import ModelConfig
 from .inference import predict_with_model
 from .models import TemporalModel
@@ -21,7 +21,7 @@ class EvaluationScoringContext:
     prediction_contract: CompiledPredictionContract
     representation_contract: CompiledRepresentationContract
     evaluator_contract: CompiledEvaluatorContract
-    realization_policy: CompiledRealizationPolicyContract
+    execution_policy: CompiledExecutionPolicyContract
     store: CompiledProblemStore
     sample_indices: IntVector
     batch_size: int
@@ -40,7 +40,7 @@ def score_evaluation(context: EvaluationScoringContext) -> EvaluationSummary:
     )
     return context.evaluator_contract.run(
         context.store,
-        context.realization_policy,
+        context.execution_policy,
         decoded_offsets,
         sample_indices=context.sample_indices,
     )

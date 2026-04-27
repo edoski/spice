@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from ..config.models import (
     ArtifactVariant,
-    FeatureSetConfig,
+    FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
     SplitConfig,
@@ -41,7 +41,7 @@ class TrainingArtifactManifest:
     variant: ArtifactVariant
     study: StudyConfig | None
     study_id: str | None
-    feature_set: FeatureSetConfig
+    features: FeaturesConfig
     model: ModelConfig[str]
     split: SplitConfig
     training: TrainingConfig
@@ -62,12 +62,8 @@ class TrainingArtifactManifest:
         return self.semantics.prediction.prediction_family_id
 
     @property
-    def feature_set_id(self) -> str:
-        return self.semantics.feature.feature_set_id
-
-    @property
-    def feature_family_id(self) -> str:
-        return self.semantics.feature.feature_family_id
+    def features_id(self) -> str:
+        return self.semantics.feature.features_id
 
     @property
     def feature_names(self) -> tuple[str, ...]:

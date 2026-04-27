@@ -29,12 +29,18 @@ def candidate_window_summary(
     candidate_counts = (candidate_end_rows - baseline_rows).astype(np.int64, copy=False)
     if np.any(candidate_counts <= 0):
         raise ValueError("evaluation requires at least one candidate row per sample")
-    last_candidate_rows = (candidate_end_rows - 1).astype(np.int64, copy=False)
+    reachable_end_rows = np.minimum(
+        candidate_end_rows,
+        baseline_rows + int(store.max_candidate_slots),
+    ).astype(np.int64, copy=False)
+    last_candidate_rows = (reachable_end_rows - 1).astype(np.int64, copy=False)
     optimum_rows = np.empty(resolved_indices.shape[0], dtype=np.int64)
     for row, (start_row, end_row) in enumerate(
-        zip(baseline_rows, candidate_end_rows, strict=True)
+        zip(baseline_rows, reachable_end_rows, strict=True)
     ):
-        optimum_rows[row] = int(start_row + np.argmin(store.log_base_fees[start_row:end_row]))
+        optimum_rows[row] = int(
+            start_row + np.argmin(store.log_base_fees[start_row:end_row])
+        )
     return CandidateWindowSummary(
         anchor_rows=anchor_rows,
         baseline_rows=baseline_rows,

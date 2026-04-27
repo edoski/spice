@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     from ..modeling.models import TemporalModel
     from ..modeling.representations import CompiledRepresentationContract
     from ..prediction import CompiledPredictionContract
+    from ..temporal.execution_policy import CompiledExecutionPolicyContract
     from ..temporal.problem_store import CompiledProblemStore, IntVector
-    from ..temporal.realization import CompiledRealizationPolicyContract
 
 
 class ObjectiveDirection(StrEnum):
@@ -73,7 +73,7 @@ class ObjectiveEvaluationContext:
     model_config: ModelConfig
     prediction_contract: CompiledPredictionContract
     representation_contract: CompiledRepresentationContract
-    realization_policy: CompiledRealizationPolicyContract
+    execution_policy: CompiledExecutionPolicyContract
     store: CompiledProblemStore
     sample_indices: IntVector
     batch_size: int
@@ -162,7 +162,7 @@ def compile_objective_contract(
                 prediction_contract=context.prediction_contract,
                 representation_contract=context.representation_contract,
                 evaluator_contract=evaluator_contract,
-                realization_policy=context.realization_policy,
+                execution_policy=context.execution_policy,
                 store=context.store,
                 sample_indices=context.sample_indices,
                 batch_size=context.batch_size,

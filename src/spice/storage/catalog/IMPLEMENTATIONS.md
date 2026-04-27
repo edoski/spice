@@ -48,8 +48,8 @@ Selectors filter by human-facing fields:
 | Root | Main selector fields |
 | --- | --- |
 | Dataset | chain, dataset. |
-| Study | chain, dataset, feature set, prediction, model, problem, study name. |
-| Artifact | chain, dataset, feature set, prediction, model, problem, variant, study. |
+| Study | chain, dataset, features, prediction, model, problem, study name. |
+| Artifact | chain, dataset, features, prediction, model, problem, variant, study. |
 
 Operations that mutate or show detailed state require exactly one match.
 

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from ..config.models import ChainRuntimeSpec, ProblemSpec
 from ..features import CompiledFeatureContract, FeaturePrerequisites
 from ..semantics import ProblemSemantics
-from .realization import CompiledRealizationPolicyContract, compile_realization_policy_contract
+from .execution_policy import CompiledExecutionPolicyContract, compile_execution_policy_contract
 
 if TYPE_CHECKING:
     from ..features import ResolvedFeatureTable
@@ -20,13 +20,12 @@ if TYPE_CHECKING:
 class CompiledProblemContract:
     compiler_id: str
     problem_id: str
-    feature_set_id: str
-    feature_family_id: str
+    features_id: str
     lookback_seconds: int
     sample_count: int
     max_delay_seconds: int
     feature_prerequisites: FeaturePrerequisites
-    realization_policy: CompiledRealizationPolicyContract
+    execution_policy: CompiledExecutionPolicyContract
 
     @property
     def semantics(self) -> ProblemSemantics:
@@ -77,11 +76,11 @@ def compile_problem_contract(
 ) -> CompiledProblemContract:
     from .compilers import compile_problem
 
-    realization_policy = compile_realization_policy_contract(problem.realization_policy)
+    execution_policy = compile_execution_policy_contract(problem.execution_policy)
     return compile_problem(
         problem,
         feature_contract,
-        realization_policy,
+        execution_policy,
         chain_runtime,
     )
 

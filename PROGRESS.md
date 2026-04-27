@@ -6,9 +6,11 @@ _Last verified: 2026-04-27 04:22 CEST_
 
 Local `main` is ahead of the remote experiment branch. That split is intentional: the just-completed remote wave ran on `codex/temporal-parity` with older config/evaluator names. Preserve the remote evidence before updating that checkout.
 
-The current local architecture names are `same_block_closed`, `block_open_lagged`, `current_row_nominal_window`, `poisson_replay_2h_mean`, and `poisson_replay_2h_total`. Remote benchmark logs still use older preset and evaluator names such as `icdcs_2026_oracle_intermediate`, `icdcs_2026_professor_block_open_*`, and `paper_replay_2h`.
+The current local architecture is safe-only. The runnable defaults are surface `current_row_fee_dynamics`, features `core_fee_dynamics`, problem `current_row_nominal`, compiler `observed_time_window`, execution policy `strict_deadline_miss`, evaluator `poisson_replay_2h_mean`, and diagnostic evaluator `poisson_replay_2h_total`.
 
-`safe_best` is a historical benchmark role, not a local runnable config. It means the best family-specific safe block-open choices found before the current cleanup: LSTM with no broad time features, Transformer without `time_since_start`, and Transformer-LSTM with calendar-only time plus `recent_deltas`.
+Remote benchmark logs still use older historical preset and evaluator names such as `same_block_closed`, `block_open_lagged`, `estimated_block`, `icdcs_2026_oracle_intermediate`, `icdcs_2026_professor_block_open_*`, and `paper_replay_2h`. Those names are historical evidence only in the current codebase. The removed runnable paths are documented in `ARCHIVE.md`.
+
+`safe_best` is a historical benchmark role, not a local runnable config. It means the best family-specific safe block-open choices found before the current cleanup: LSTM with no broad time features, Transformer without `time_since_start`, and Transformer-LSTM with calendar-only time plus `recent_median`.
 
 As of this verification, the delay-sensitivity sweep, checkpoint-selection parity, and targeted `safe_best` HPO wave are complete. The next step is to preserve this historical evidence, then reconcile local and remote code before launching any new current-semantics benchmark sweep.
 
@@ -16,13 +18,17 @@ As of this verification, the delay-sensitivity sweep, checkpoint-selection parit
 
 ### Current Benchmark Context
 
-- Unsafe reference surface: `same_block_closed`.
-- Safe current-block surface: `block_open_lagged`.
-- Current-row problem family: `current_row_nominal_window`.
-- Explicit paper-style nominal-grid compiler path: `estimated_block`.
-- Primary current evaluator: `poisson_replay_2h_mean`, reporting mean per-prediction `profit_over_baseline` and `cost_over_optimum`.
+- Runnable surface: `current_row_fee_dynamics`.
+- Runnable features: `core_fee_dynamics`.
+- Default problem: `current_row_nominal`.
+- Slot-spacing comparison problem: `current_row_recent_median`.
+- Compiler: `observed_time_window`.
+- Execution policy: `strict_deadline_miss`.
+- Primary evaluator: `poisson_replay_2h_mean`, reporting mean per-prediction `profit_over_baseline` and `cost_over_optimum`.
 - Diagnostic total-ratio evaluator: `poisson_replay_2h_total`.
 - Diagnostic fullset evaluators: `zero_stop_rollout_fullset` and `anchor_basefee_fullset`.
+
+Historical remote results below use removed runnable paths such as `same_block_closed`, `block_open_lagged`, and `estimated_block`. They remain useful as thesis evidence, not as current config targets.
 
 Historical remote results below use the older `paper_replay_2h` total-ratio style unless stated otherwise. Do not silently compare those numbers against current `poisson_replay_2h_mean` output.
 
@@ -85,12 +91,45 @@ Distilled historical conclusions:
 
 - Preserve the completed remote HPO wave as historical `paper_replay_2h` total-ratio evidence; do not append it to `benchmarks/results.csv` unless rerun or re-evaluated under current evaluator semantics.
 - Reconcile local and remote code before launching the next sweep.
-- Keep the unsafe same-block reference frozen as the professor-like comparator until the experimental surface is explicitly redefined.
-- Do not promote `safe_best` to default architecture without an explicit decision.
+- Preserve the unsafe same-block reference as archived professor-like evidence; do not keep it runnable in local architecture.
+- Treat `safe_best` as a historical role. Do not promote it to default architecture without rerunning under current safe-only configs.
 
 ### Planned Benchmark Sweeps
 
-Large-capacity HPO remains planned after the active remote HPO wave finishes and local/remote configs are reconciled. Purpose: test whether remaining safe-path gaps are capacity or optimization limits rather than temporal-surface or feature-contract limits.
+First post-refactor ablation: `elapsed_seconds` / corpus-position signal.
+
+Purpose: decide whether the old elapsed-time-style feature deserves to survive as an explicit experimental feature, or whether it should be removed from the current runnable feature implementation and docs. Historical evidence says full time features were not the best old safe-path choice and dropping `time_since_start` was neutral-to-helpful often enough to define `safe_best`, but that is not a current-semantics proof. The post-refactor ablation should answer the question under the clean safe architecture.
+
+Required setup:
+
+- Regenerate ETH/AVAX/POL corpora with the expanded current RPC schema before running this ablation. Existing local corpora are pre-refactor and do not contain the full canonical fields required by `core_fee_dynamics`.
+- Train new artifacts from current configs only. Do not use old block-open, same-block, estimated-block, feature-family, or old-schema compatibility paths.
+- Keep `core_fee_dynamics` as the baseline feature catalog.
+- Use the explicit experimental features config `core_fee_dynamics_elapsed_position`, identical to `core_fee_dynamics` except for adding `elapsed_seconds`.
+- Treat `elapsed_seconds` as a corpus-position feature: timestamp minus the first timestamp in the materialized feature table. It is not direct future leakage, but it can let models key on dataset position, long-term regime, or split-specific trends rather than reusable fee dynamics.
+
+Minimal smoke pass:
+
+- Run Polygon + LSTM first, same seed, same current surface/problem/evaluator, two variants: baseline `core_fee_dynamics` and experimental `core_fee_dynamics_elapsed_position`.
+- Use the smoke pass only to decide whether a full cluster ablation is worth spending. Do not treat it as proof.
+
+Proof-quality grid:
+
+- Chains: Ethereum, Polygon, Avalanche.
+- Models: LSTM, Transformer, Transformer-LSTM.
+- Problem: `current_row_nominal`.
+- Surface: `current_row_fee_dynamics`, with only the `features` selection varied.
+- Primary evaluator: `poisson_replay_2h_mean`.
+- Diagnostic evaluator: `poisson_replay_2h_total`.
+- Compare held-out evaluation results, not just training loss or HPO validation objective.
+- Prefer repeated seeds if the single-seed deltas are small or inconsistent.
+
+Decision rule:
+
+- If `elapsed_seconds` does not materially and consistently improve held-out evaluation across chains/model families, remove it from the current runnable feature implementation and current docs. Preserve only the historical note that paper/professor-lineage code used an elapsed-time-style signal.
+- If it helps materially and consistently, keep it out of the default until there is an explicit architecture decision about whether corpus-position signals are acceptable. It should remain an experimental features config, not part of `core_fee_dynamics`.
+
+Large-capacity HPO remains planned after the active remote HPO wave finishes and local/remote configs are reconciled. Purpose: test whether remaining safe-path gaps are capacity or optimization limits rather than temporal or feature limits.
 
 Target cells:
 
@@ -151,10 +190,10 @@ Benchmark sweep operator flow:
 
 Configured sweep specs awaiting launch decisions:
 
-- Re-run lookback-window sweeps for modern `same_block_closed` and `block_open_lagged`, including `900s` and longer windows. Earlier lookback evidence was mostly on estimated-block paths.
-- Compare `current_row_nominal_window` against `current_row_recent_delta_window` using one simple median-of-training-deltas policy.
-- Sweep sample counts such as `400k`, `1m`, and `3m` to separate data-volume gains from regime-drift costs.
-- Sweep fixed `estimated_block` against modern current-row timestamp paths, keeping its paper-style nominal block grid while mapping offset `0` to the current row.
+- `large_capacity_hpo`: four preserved large-capacity cells on `current_row_fee_dynamics`.
+- `lookback_window_sweep`: `current_row_fee_dynamics` across ETH/POL/AVAX, LSTM/Transformer/Transformer-LSTM, and `600s`/`900s`/`1200s` lookbacks.
+- `sample_count_sweep`: `current_row_fee_dynamics` across ETH/POL/AVAX, LSTM/Transformer/Transformer-LSTM, and `400k`/`1m` sample counts; `3m` cells use `current_row_fee_dynamics_3m` so they resolve to `icdcs_2026_3m`.
+- `slot_spacing_sweep`: compare `current_row_nominal` against `current_row_recent_median` across the same current safe grid.
 
 ### Benchmarking Rules
 
@@ -166,17 +205,27 @@ Configured sweep specs awaiting launch decisions:
 
 ## Feature And Architecture Progress
 
-### Current Surfaces
+### Current Safe Architecture
+
+`current_row_fee_dynamics` is the primary current runnable surface. It composes `core_fee_dynamics`, `current_row_nominal`, `fixed_sequence_temporal`, `lstm`, `icdcs_2026`, `profit_poisson_replay_2h_mean`, and `poisson_replay_2h_mean` by default. `current_row_fee_dynamics_3m` is the matching 3m-dataset surface used for the 3m cells in `sample_count_sweep`.
+
+`core_fee_dynamics` is safe by construction. The source layer allows current `base_fee_per_gas[t]` because EIP-1559 base fee for block `t` is deterministic from parent state before block `t` execution. Finalized current-block facts such as gas used, gas limit, transaction count, and fee-history priority-fee summaries are lagged to `t-1`.
+
+The feature matrix invariant is finite `float32` only. Pre-warmup placeholders may exist only to keep arrays aligned; invalid pre-warmup anchors are excluded before splitting. Required selected sources must be finite after warmup or matrix construction fails.
+
+### Archived Historical Surfaces
 
 `same_block_closed` is the frozen unsafe same-block reference. It uses the current-block action space, fixed ex-ante classes, current-row pricing, and post-block features. It is unsafe because the model can act on the same block row whose finalized block facts it already sees.
 
 `block_open_lagged` is the safe current-block surface. It keeps current base fee available but lags finalized current-block facts. It is the clean causal sibling of the unsafe reference.
 
+Both names are historical evidence only after the safe refactor. Current runnable work uses `current_row_fee_dynamics`.
+
 `safe_best` is not a surface. It is a historical benchmark role combining per-family safe block-open feature and interval choices:
 
-- LSTM: block-open, no broad time features, `recent_deltas`.
+- LSTM: block-open, no broad time features, `recent_median`.
 - Transformer: block-open, no `time_since_start`, nominal interval.
-- Transformer-LSTM: block-open, calendar-only time, `recent_deltas`.
+- Transformer-LSTM: block-open, calendar-only time, `recent_median`.
 
 ### Current Evaluators
 
@@ -186,12 +235,13 @@ Replay is a one-shot decoded-offset benchmark: the model commits to one decoded 
 
 ### Feature Work
 
-Completed feature findings kept for current relevance:
+Completed historical feature findings kept for current relevance:
 
-- Full time features were not the best safe-path choice for any family in the completed Ethereum ablation.
-- Dropping `time_since_start` was neutral-to-helpful often enough to justify the family-specific `safe_best` role.
-- `recent_deltas` helped some family/surface combinations but was not universal.
-- Do not collapse safe-path feature choices to one uniform feature set only to reduce config count.
+- Full time features were not the best old safe-path choice for any family in the completed Ethereum ablation.
+- Dropping `time_since_start` was neutral-to-helpful often enough to justify recording the historical `safe_best` role.
+- The old recent-delta interval estimate helped some family/surface combinations but was not universal.
+
+Current runnable feature work intentionally starts from one lean safe catalog, `core_fee_dynamics`. New feature ideas should enter as explicit catalog outputs or future catalogs only after they have a clear source policy, warmup/null policy, and benchmark reason.
 
 ### Architecture Cleanup
 
@@ -204,12 +254,17 @@ Completed feature findings kept for current relevance:
 
 Internship 1 baseline replication is economically supported on this benchmark context: the unsafe professor-like reference reproduces or exceeds reported paper gains. This is not a perfect clone claim because professor preprocessing, split construction, model selection, and evaluator semantics are not fully identical.
 
-Internship 1 optimization is partially supported by time-feature ablations, interval-estimator experiments, and the current HPO wave. Lookback sweeps, sample-count sweeps, problem-family sweeps, and larger model-capacity searches remain to run.
+Internship 1 optimization is partially supported by time-feature ablations, interval-estimator experiments, and the current HPO wave. Lookback sweeps, sample-count sweeps, slot-spacing sweeps, and larger model-capacity searches remain to run.
 
 Thesis / Internship 2 direction remains aligned with uncertainty quantification and dynamic prediction-window sizing. Thesis-scale expansion should record completed current benchmark results in `benchmarks/results.csv`.
 
 ### Candidate Ideas
 
+- Binance market data: defer spot/futures market-source ingestion. Candidate features include ETH/AVAX/POL spot returns over short windows, BTC market return, token-vs-BTC relative return, realized volatility, traded volume, taker imbalance, futures premium, and funding-rate state. Compute these on market time first, then as-of join by `available_at`, not raw market timestamp. For klines, `available_at` must be close time plus publication lag because open time alone leaks close/high/low/volume.
+- Receipts/log aggregates: defer receipt/log-derived activity features. Candidate outputs include failed transaction ratio, effective gas price percentiles, receipt gas-used summaries, log count, contract-call density, and simple ERC20/DEX activity proxies. These need a separate ingestion cost decision because they require receipt/log pulls beyond block headers and `eth_feeHistory`.
+- Producer/author metadata: defer proposer/miner/author features. Potential value is validator/proposer behavior or builder/producer-specific fee dynamics, but cross-chain semantics are unclear and raw identifiers risk memorization. Any future version should require a source policy, hashing/grouping policy, minimum support threshold, and explicit ablation.
+- Blob and block-size experiments: keep canonical nullable fields for `block_size_bytes`, `blob_gas_used`, and `excess_blob_gas`, but do not select these features by default. Future experiments should treat support as chain/date dependent and require finite selected values after warmup.
+- Slot-spacing sweep: compare `current_row_nominal` and `current_row_recent_median` after current jobs are archived/synced. `recent_median` is scoped only to `observed_time_window.slot_spacing`; do not reuse that name for feature concepts.
 - Range and quantile position features: encode whether the current fee is near a recent local min, median, or high quantile rather than only exposing raw level and rolling means.
 - Regime-spread and persistence features: encode short-vs-long pressure shifts, sustained rising/falling fee streaks, and whether congestion relief appears persistent.
 - Cadence and opportunity-density features: encode recent inter-block timing, block-count density inside fixed time windows, and uncertainty in how many opportunities fit within the delay budget.

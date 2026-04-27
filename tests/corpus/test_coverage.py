@@ -69,7 +69,7 @@ def test_training_corpus_coverage_accepts_compiled_requirement(
             override=model_workflow_override(sample_count=4, lookback_seconds=24),
         ),
     )
-    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    feature_contract = compile_feature_contract(features=config.features)
     contract = compile_problem_contract(
         problem=config.problem,
         feature_contract=feature_contract,
@@ -101,7 +101,7 @@ def test_training_corpus_coverage_rejects_short_history(
             override=model_workflow_override(sample_count=4, lookback_seconds=24),
         ),
     )
-    feature_contract = compile_feature_contract(feature_set=config.feature_set)
+    feature_contract = compile_feature_contract(features=config.features)
     contract = compile_problem_contract(
         problem=config.problem,
         feature_contract=feature_contract,
