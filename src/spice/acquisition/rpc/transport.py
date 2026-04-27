@@ -15,6 +15,11 @@ from web3.types import RPCEndpoint, RPCResponse
 
 from ...config.models import ChainSpec, ResolvedRpcEndpointConfig
 
+RPC_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:125.0) "
+    "Gecko/20100101 Firefox/125.0"
+)
+
 
 def _retry_configuration(rpc_endpoint: ResolvedRpcEndpointConfig) -> ExceptionRetryConfiguration:
     return ExceptionRetryConfiguration(
@@ -75,7 +80,11 @@ class ManagedAsyncHTTPProvider(AsyncHTTPProvider):
         self._request_session_manager = _ManagedAsyncSessionManager()
 
     def _request_kwargs_mapping(self) -> dict[str, Any]:
-        return dict(self.get_request_kwargs())
+        kwargs = dict(self.get_request_kwargs())
+        headers = dict(kwargs.get("headers") or {})
+        headers["User-Agent"] = RPC_USER_AGENT
+        kwargs["headers"] = headers
+        return kwargs
 
     def _endpoint_uri(self) -> str:
         endpoint_uri = self.endpoint_uri

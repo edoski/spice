@@ -5,7 +5,7 @@ import asyncio
 import aiohttp
 from web3.providers.rpc.utils import ExceptionRetryConfiguration
 
-from spice.acquisition.rpc.transport import ManagedAsyncHTTPProvider
+from spice.acquisition.rpc.transport import RPC_USER_AGENT, ManagedAsyncHTTPProvider
 
 
 def test_managed_async_http_provider_retries_batch_transport_errors(monkeypatch) -> None:
@@ -38,3 +38,20 @@ def test_managed_async_http_provider_retries_batch_transport_errors(monkeypatch)
 
     assert attempts == 2
     assert response == [{"jsonrpc": "2.0", "id": 1, "result": "ok"}]
+
+
+def test_managed_async_http_provider_sets_user_agent_header() -> None:
+    provider = ManagedAsyncHTTPProvider("http://localhost:8545")
+
+    assert provider._request_kwargs_mapping()["headers"]["User-Agent"] == RPC_USER_AGENT
+
+
+def test_managed_async_http_provider_preserves_existing_headers() -> None:
+    provider = ManagedAsyncHTTPProvider(
+        "http://localhost:8545",
+        request_kwargs={"headers": {"X-Test": "1"}},
+    )
+
+    headers = provider._request_kwargs_mapping()["headers"]
+    assert headers["User-Agent"] == RPC_USER_AGENT
+    assert headers["X-Test"] == "1"
