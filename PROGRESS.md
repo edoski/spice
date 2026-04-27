@@ -1,16 +1,16 @@
 # Progress
 
-_Last verified: 2026-04-25 19:47 CEST_
+_Last verified: 2026-04-27 04:22 CEST_
 
 ## Status Snapshot
 
-Local `main` is ahead of the remote experiment branch. That split is intentional: remote jobs are still running on `codex/temporal-parity`, so local cleanup commits should not be pushed into that environment until the current remote wave finishes.
+Local `main` is ahead of the remote experiment branch. That split is intentional: the just-completed remote wave ran on `codex/temporal-parity` with older config/evaluator names. Preserve the remote evidence before updating that checkout.
 
 The current local architecture names are `same_block_closed`, `block_open_lagged`, `current_row_nominal_window`, `poisson_replay_2h_mean`, and `poisson_replay_2h_total`. Remote benchmark logs still use older preset and evaluator names such as `icdcs_2026_oracle_intermediate`, `icdcs_2026_professor_block_open_*`, and `paper_replay_2h`.
 
 `safe_best` is a historical benchmark role, not a local runnable config. It means the best family-specific safe block-open choices found before the current cleanup: LSTM with no broad time features, Transformer without `time_since_start`, and Transformer-LSTM with calendar-only time plus `recent_deltas`.
 
-As of this verification, the fully completed baseline evidence is the delay-sensitivity sweep plus checkpoint-selection parity. The targeted `safe_best` HPO wave is not complete until Avalanche Transformer-LSTM job `57549` finishes and its dependent train/eval jobs `57550` and `57551` complete.
+As of this verification, the delay-sensitivity sweep, checkpoint-selection parity, and targeted `safe_best` HPO wave are complete. The next step is to preserve this historical evidence, then reconcile local and remote code before launching any new current-semantics benchmark sweep.
 
 ## Benchmarking
 
@@ -30,23 +30,21 @@ Historical remote results below use the older `paper_replay_2h` total-ratio styl
 
 Remote host: `edoardo.galli3@giano.cs.unibo.it`, storage root `/scratch.hpc/edoardo.galli3/spice/outputs`, log root `/scratch.hpc/edoardo.galli3/slurm`.
 
-| Job | State | Role | Evidence |
-| --- | --- | --- | --- |
-| `57549` | Running | Avalanche Transformer-LSTM `safe_best` HPO to 40 trials | `spice-tune-57549.out`, best so far `0.0236` at trial 17 |
-| `57550` | Pending | Train tuned Avalanche Transformer-LSTM after `57549` | dependency `afterok:57549` |
-| `57551` | Pending | Evaluate tuned Avalanche Transformer-LSTM after `57550` | dependency `afterok:57550` |
+No active `safe_best` HPO jobs remain.
 
 Completed targeted HPO chains:
 
-| Cell | HPO Result | Tuned Eval |
-| --- | --- | --- |
-| Ethereum LSTM | best `0.0140` | `0.0112` |
-| Ethereum Transformer | best `0.0137` | `0.0112` |
-| Ethereum Transformer-LSTM | best `0.0141` | `0.0115` |
-| Avalanche Transformer | best `0.0224` | `0.0122` |
-| Avalanche Transformer-LSTM | running, best so far `0.0236` | pending |
+| Cell | HPO Result | Tuned Eval | Notes |
+| --- | --- | --- | --- |
+| Ethereum LSTM | best `0.0140` | `0.0112` | materialized below HPO best and below safe pre-HPO `0.0124` |
+| Ethereum Transformer | best `0.0137` | `0.0112` | materialized below HPO best and near safe pre-HPO `0.0115` |
+| Ethereum Transformer-LSTM | best `0.0141` | `0.0115` | materialized below HPO best and near safe pre-HPO `0.0119` |
+| Avalanche Transformer | best `0.0224` | `0.0122` | materialized below HPO best, above safe pre-HPO `0.0074`, below unsafe `0.0160` |
+| Avalanche Transformer-LSTM | best `0.0236` | `0.0133` | materialized below HPO best, above safe pre-HPO `0.0005`, above same-family unsafe `0.0117` |
 
 The HPO values are tuning/validation objective values. The tuned eval values are held-out `paper_replay_2h` results at `36s`.
+
+Avalanche Transformer-LSTM durable run references: tune job `57549`, train job `57550`, eval job `57551`; tune best trial `17`; tune best value `0.0236`; tune best params `training.learning_rate=0.0001`, `training.weight_decay=0.05`, `model.hidden_size=128`, `model.d_model=256`, `model.dropout=0.1`; train artifact `/scratch.hpc/edoardo.galli3/spice/outputs/artifacts/avalanche/art_b994d827efd0878aa4d8`; train selected epoch `13`; train objective `0.0219`; evaluation id `paper_replay_2h-36s-124a240ff5442623`; eval events `17867`; final eval `profit_over_baseline=0.0133`.
 
 ### Last Verified Results
 
@@ -79,13 +77,14 @@ Distilled historical conclusions:
 - The unsafe same-block reference remains the strongest professor-like comparator.
 - `safe_best` improved the old safe baseline on all 9 chain-family cells in the cross-chain confirmation wave.
 - `safe_best` is not a uniform paper-beating replacement for the unsafe reference.
-- Ethereum safe-path HPO evals completed so far do not beat their `safe_best` baselines.
-- Avalanche Transformer HPO improves over the weak safe baseline, but the wave remains incomplete until Avalanche Transformer-LSTM finishes.
+- Ethereum safe-path HPO evals did not beat their `safe_best` baselines.
+- Avalanche HPO improved the weak safe Transformer and Transformer-LSTM baselines after materialization, but both show a large HPO-to-final-eval gap.
+- Avalanche Transformer-LSTM is the strongest materialized tuned safe cell in this wave and beats its same-family unsafe reference, but it still does not close the broader unsafe-reference gap across all Avalanche model families.
 
 ### Open Benchmark Decisions
 
-- Wait for jobs `57549`, `57550`, and `57551` before judging the targeted HPO wave.
-- After the current HPO wave completes, decide whether tuned artifacts change the `safe_best` conclusion or only confirm that larger capacity/search is needed.
+- Preserve the completed remote HPO wave as historical `paper_replay_2h` total-ratio evidence; do not append it to `benchmarks/results.csv` unless rerun or re-evaluated under current evaluator semantics.
+- Reconcile local and remote code before launching the next sweep.
 - Keep the unsafe same-block reference frozen as the professor-like comparator until the experimental surface is explicitly redefined.
 - Do not promote `safe_best` to default architecture without an explicit decision.
 
