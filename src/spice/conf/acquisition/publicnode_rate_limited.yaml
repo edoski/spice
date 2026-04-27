@@ -1,11 +1,13 @@
 dry_run: false
 chunk_size: 4096
 rpc:
-  batch_size: 128
-  concurrency: 6
+  batch_size: 192
+  concurrency: 12
   min_batch_size: 32
   concurrency_rungs:
   - 1
   - 2
   - 4
   - 6
+  - 8
+  - 12
