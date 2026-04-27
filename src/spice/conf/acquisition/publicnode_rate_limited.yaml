@@ -1,0 +1,9 @@
+dry_run: false
+chunk_size: 2048
+rpc:
+  batch_size: 64
+  concurrency: 2
+  min_batch_size: 16
+  concurrency_rungs:
+  - 1
+  - 2
