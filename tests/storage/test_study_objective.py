@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import cast
 
 from spice.config import TuneConfig, WorkflowTask
-from spice.storage.layout import resolve_workflow_paths
 from spice.storage.study_optuna import open_tuning_study
+from spice.storage.workflow_paths import resolve_workflow_paths
 
 
 def test_tuning_objective_controls_study_direction(

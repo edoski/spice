@@ -87,7 +87,7 @@ Evaluate writes into the existing artifact state DB. It does not stage or replac
 
 ## Remote Submission Boundary
 
-Workflow functions require resolved configs. CLI submission chooses the target and execution backend. Downstream workflow code receives explicit storage roots and does not choose remote targets.
+Workflow functions require resolved configs. CLI submission chooses the target and opens the **Execution Session**. Downstream workflow code receives explicit storage roots and does not choose remote targets.
 
 ## Failure Modes
 
@@ -101,4 +101,3 @@ Workflow functions require resolved configs. CLI submission chooses the target a
 ## Extension Pattern
 
 A new workflow should orchestrate existing package contracts and commit one clear storage effect. Put reusable algorithms in owner packages, not workflow files.
-

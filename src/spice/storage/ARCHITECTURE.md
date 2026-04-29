@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`storage` owns deterministic identity, canonical path layout, root-local SQLite state, catalog records, staging and commit mechanics, inspection, deletion, and remote sync.
+`storage` owns deterministic identity, canonical path layout, root-local SQLite state, catalog records, root lifecycle mechanics, inspection, deletion, and the remote-side sync helper.
 
 ML artifacts need provenance. A model file without its dataset, features, temporal problem, prediction contract, evaluator config, and training config is hard to trust. Spice stores authoritative state inside each root and keeps a separate catalog for discovery.
 
@@ -33,7 +33,7 @@ Malformed persisted payloads raise `StateLayoutError`. Missing expected state ra
 ## Commit Patterns
 
 ```text
-train / sync pull complete root
+train / transfer pull complete root
   write complete staged root
   -> validate staged root kind
   -> atomically promote root
@@ -72,22 +72,22 @@ storage/
   ids.py             deterministic id hashing
   engine.py          SQLite engine and root-kind metadata
   schema.py          root-local state schema
+  selectors.py       typed catalog selectors
   payloads.py        generic payload stores/codecs
   corpus.py          corpus-root persistence
   study_manifest.py  study-root manifest persistence
   study_models.py    study payload models/codecs
   study_optuna.py    Optuna storage integration
   artifact.py        artifact-root persistence
-  roots.py           catalog reindex, selectors, delete cascade
-  staging.py         root staging and partial commits
-  sync.py            local/remote push-pull API
-  sync_cli.py        remote-side sync helper commands
+  workflow_paths.py  workflow config to storage-path resolution
+  lifecycle.py       staging, promotion, partial commit, delete cascade
+  sync_cli.py        remote-side path/root-kind helper commands
   inspect*.py        read-only inspection views
-  catalog/           global searchable index
+  catalog/           global searchable index and refresh service
 ```
 
 ML result payload codecs live in `modeling.result_codecs` because they understand modeling/evaluation result shapes. Storage calls them at the persistence boundary.
 
-## Remote Sync Boundary
+## Remote Transfer Boundary
 
-Storage sync APIs require explicit target names. The CLI supplies the default target before calling sync. Remote-side helper commands operate on paths and root kinds, not workflow configs.
+Remote SSH and rsync orchestration lives in `execution.transfer`. Storage only exposes local lifecycle/catalog operations and `storage.sync_cli`, the helper module executed on the remote machine for path and root-kind operations.

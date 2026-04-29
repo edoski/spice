@@ -12,9 +12,6 @@ from ...temporal.problem_store import (
     CompiledProblemStore,
     DatasetSplitIndices,
     chronological_split_indices,
-    filter_sample_indices_by_timestamp_window,
-    tail_sample_indices,
-    with_fixed_context_length,
 )
 from ...temporal.scaling import transform_feature_matrix
 from ..pipeline import (
@@ -22,13 +19,11 @@ from ..pipeline import (
     PreparedInferenceDataset,
     PreparedTrainingDataset,
     TrainingSpec,
-    selected_row_span,
 )
 from .base import (
     CompiledDatasetBuilderContract,
     FixedSequenceTemporalBuilderRuntimeMetadata,
     FixedSequenceTemporalDatasetBuilderConfig,
-    compiler_runtime_metadata_from_builder_payload,
     fixed_sequence_temporal_runtime_metadata,
     validate_feature_prerequisites,
 )
@@ -82,10 +77,9 @@ def _training_calibration_timestamps(
 ) -> np.ndarray:
     if train_sample_indices.size == 0:
         raise ValueError("fixed-sequence builder requires training samples")
-    context_starts = store.context_start_rows[train_sample_indices].astype(np.int64, copy=False)
-    anchor_rows = store.anchor_rows[train_sample_indices].astype(np.int64, copy=False)
-    start_row = int(context_starts.min())
-    stop_row = int(anchor_rows.max()) + 1
+    context = store.context_windows(train_sample_indices)
+    start_row = int(context.context_start_rows.min())
+    stop_row = int(context.anchor_rows.max()) + 1
     return store.timestamps[start_row:stop_row].astype(np.int64, copy=False)
 
 
@@ -140,8 +134,7 @@ def prepare_training_dataset(blocks: pl.DataFrame, spec: TrainingSpec) -> Prepar
             f"need at least {spec.problem.sample_count} rows, got {sorted_blocks.height}"
         )
     store_raw, compiler_runtime_metadata = _build_selected_store(sorted_blocks, spec=spec)
-    raw_selected_sample_indices = tail_sample_indices(
-        store_raw,
+    raw_selected_sample_indices = store_raw.tail_sample_indices(
         sample_count=spec.problem.sample_count,
     )
     raw_split_indices = _split_store_indices(
@@ -156,14 +149,12 @@ def prepare_training_dataset(blocks: pl.DataFrame, spec: TrainingSpec) -> Prepar
     )
     history_seconds = spec.problem_contract.feature_prerequisites.history_seconds
     warmup_rows = spec.problem_contract.feature_prerequisites.warmup_rows
-    store = with_fixed_context_length(
-        store_raw,
+    store = store_raw.with_fixed_context_length(
         context_length=seq_len,
         history_seconds=history_seconds,
         warmup_rows=warmup_rows,
     )
-    selected_sample_indices = tail_sample_indices(
-        store,
+    selected_sample_indices = store.tail_sample_indices(
         sample_count=spec.problem.sample_count,
     )
     split_indices = _split_store_indices(
@@ -176,7 +167,7 @@ def prepare_training_dataset(blocks: pl.DataFrame, spec: TrainingSpec) -> Prepar
         train_sample_indices=split_indices.train,
     )
     scaled_store = _scale_store(store, scaler=scaler)
-    used_start, used_end = selected_row_span(store, selected_sample_indices)
+    used_start, used_end = store.selected_row_span(selected_sample_indices)
     return PreparedTrainingDataset(
         n_rows_available=sorted_blocks.height,
         n_rows_used=used_end - used_start,
@@ -203,10 +194,6 @@ def prepare_inference_dataset(
     spec: InferencePreparationSpec,
 ) -> PreparedInferenceDataset:
     combined_blocks = _prepare_blocks(pl.concat([history_blocks, evaluation_blocks]))
-    compiler_runtime_metadata = compiler_runtime_metadata_from_builder_payload(
-        spec.builder_runtime_metadata,
-        compiler_id=spec.problem_contract.compiler_id,
-    )
     if not isinstance(spec.builder_runtime_metadata, FixedSequenceTemporalBuilderRuntimeMetadata):
         raise ConfigResolutionError(
             "fixed_sequence_temporal builder requires fixed_sequence_temporal runtime metadata"
@@ -216,17 +203,15 @@ def prepare_inference_dataset(
     store = spec.problem_contract.build_delay_store(
         feature_table,
         spec.delay_seconds,
-        compiler_runtime_metadata=compiler_runtime_metadata,
+        compiler_runtime_metadata=spec.compiler_runtime_metadata,
         max_candidate_slots=spec.max_candidate_slots,
     )
-    store = with_fixed_context_length(
-        store,
+    store = store.with_fixed_context_length(
         context_length=runtime_metadata.sequence_length,
         history_seconds=spec.problem_contract.feature_prerequisites.history_seconds,
         warmup_rows=spec.problem_contract.feature_prerequisites.warmup_rows,
     )
-    sample_indices = filter_sample_indices_by_timestamp_window(
-        store,
+    sample_indices = store.sample_indices_by_timestamp_window(
         start_timestamp=spec.window_start_timestamp,
         end_timestamp=spec.window_end_timestamp,
     )

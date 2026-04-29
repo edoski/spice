@@ -20,7 +20,12 @@ from .results import (
     build_training_runtime_summary,
     iter_epoch_records,
 )
-from .training import EarlyStopCallback, EpochEndCallback, evaluate_model
+from .training_runner import (
+    EarlyStopCallback,
+    EpochEndCallback,
+    TrainingMetricEvaluationSpec,
+    evaluate_training_metrics,
+)
 
 
 @dataclass(slots=True)
@@ -39,27 +44,31 @@ def _evaluate_split_metrics(
     model,
 ) -> tuple[MetricSet, MetricSet]:
     prepared = training_run.prepared
-    best_validation_metrics = evaluate_model(
-        model,
-        model_config=spec.model,
-        prediction_contract=spec.prediction_contract,
-        execution_policy=prepared.execution_policy,
-        representation_contract=spec.representation_contract,
-        store=prepared.store,
-        sample_indices=prepared.split_indices.validation,
-        prediction_training_state=training_run.prediction_training_state,
-        training_config=spec.training,
+    best_validation_metrics = evaluate_training_metrics(
+        TrainingMetricEvaluationSpec(
+            model=model,
+            model_config=spec.model,
+            prediction_contract=spec.prediction_contract,
+            execution_policy=prepared.execution_policy,
+            representation_contract=spec.representation_contract,
+            store=prepared.store,
+            sample_indices=prepared.split_indices.validation,
+            prediction_training_state=training_run.prediction_training_state,
+            training_config=spec.training,
+        )
     )
-    test_metrics = evaluate_model(
-        model,
-        model_config=spec.model,
-        prediction_contract=spec.prediction_contract,
-        execution_policy=prepared.execution_policy,
-        representation_contract=spec.representation_contract,
-        store=prepared.store,
-        sample_indices=prepared.split_indices.test,
-        prediction_training_state=training_run.prediction_training_state,
-        training_config=spec.training,
+    test_metrics = evaluate_training_metrics(
+        TrainingMetricEvaluationSpec(
+            model=model,
+            model_config=spec.model,
+            prediction_contract=spec.prediction_contract,
+            execution_policy=prepared.execution_policy,
+            representation_contract=spec.representation_contract,
+            store=prepared.store,
+            sample_indices=prepared.split_indices.test,
+            prediction_training_state=training_run.prediction_training_state,
+            training_config=spec.training,
+        )
     )
     return best_validation_metrics, test_metrics
 

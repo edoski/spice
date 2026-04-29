@@ -1,5 +1,0 @@
-id: fullset
-engine: replay
-sampler: fullset
-aggregation:
-  id: total_ratio

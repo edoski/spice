@@ -6,10 +6,12 @@ from typing import cast
 
 from optuna.trial import TrialState
 
-from spice.config import TrainConfig, TuneConfig, WorkflowTask
+from spice.config import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.core.reporting import Reporter
-from spice.modeling.training import TrainingEpochProgress
-from spice.prediction import MetricSet
+from spice.evaluation import EvaluationSummary
+from spice.modeling.training_runner import TrainingEpochProgress
+from spice.prediction import MetricDescriptor, MetricSet
+from spice.workflows import evaluate as evaluate_workflow
 from spice.workflows import train as train_workflow
 from spice.workflows import tune as tune_workflow
 
@@ -46,6 +48,97 @@ def _load_test_tune_config(
             override=override,
         ),
     )
+
+
+def _load_test_evaluate_config(
+    load_workflow_config,
+    tmp_path,
+    *,
+    override: dict[str, object] | None = None,
+) -> EvaluateConfig:
+    return cast(
+        EvaluateConfig,
+        load_workflow_config(
+            WorkflowTask.EVALUATE,
+            workspace=tmp_path,
+            surface="current_row_fee_dynamics",
+            override=override,
+        ),
+    )
+
+
+def test_evaluate_workflow_delegates_artifact_inference_preparation(
+    tmp_path,
+    monkeypatch,
+    load_workflow_config,
+    model_workflow_override,
+) -> None:
+    config = _load_test_evaluate_config(
+        load_workflow_config,
+        tmp_path,
+        override=model_workflow_override(),
+    )
+    output = StringIO()
+    reporter = Reporter(stream=output)
+    calls: list[str] = []
+    prepared = SimpleNamespace(n_history_rows=10, n_evaluation_rows=5, sample_count=2)
+    evaluator_contract = SimpleNamespace(
+        evaluation_id="poisson_replay_2h",
+        config_payload={"id": "poisson_replay_2h"},
+        metric_descriptors=(
+            MetricDescriptor(
+                id="profit_over_baseline",
+                label="profit over baseline",
+                role="primary",
+            ),
+        ),
+    )
+    context = SimpleNamespace(
+        loaded_artifact=SimpleNamespace(manifest=object()),
+        prepared=prepared,
+        evaluator_contract=evaluator_contract,
+        scoring_context=object(),
+    )
+    evaluation = EvaluationSummary(
+        metrics=MetricSet(values={"profit_over_baseline": 0.25}),
+        window_metrics={},
+        total_events=2,
+        runs=[],
+    )
+
+    def fake_prepare(active_config, *, paths):
+        calls.append(f"prepare:{active_config.delay_seconds}:{paths.artifact_root.name}")
+        return context
+
+    def fake_score(scoring_context):
+        calls.append(f"score:{scoring_context is context.scoring_context}")
+        return evaluation
+
+    monkeypatch.setattr(
+        evaluate_workflow,
+        "prepare_artifact_inference_context",
+        fake_prepare,
+    )
+    monkeypatch.setattr(evaluate_workflow, "score_evaluation", fake_score)
+    monkeypatch.setattr(
+        evaluate_workflow,
+        "upsert_evaluation_state",
+        lambda _path, **_kwargs: ("poisson_replay_2h-36s-test", 123),
+    )
+    monkeypatch.setattr(
+        evaluate_workflow,
+        "evaluation_result_fields",
+        lambda _summary: [("evaluation", "poisson_replay_2h"), ("events", "2")],
+    )
+
+    evaluate_workflow.run(config, reporter=reporter)
+
+    assert calls[0].startswith(f"prepare:{config.delay_seconds}:")
+    assert calls[1:] == ["score:True"]
+    rendered = output.getvalue()
+    assert "evaluate dataset=" in rendered
+    assert "prepare history_rows=10 evaluation_rows=5 samples=2" in rendered
+    assert "evaluate complete evaluation=poisson_replay_2h events=2" in rendered
 
 
 def test_train_workflow_emits_compact_epoch_output(

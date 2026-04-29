@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
-from ..acquisition.rpc import BlockPullPlan
+from ..acquisition import BlockPullPlan
 from ..config.models import AcquireConfig
-from ..corpus.builders import DatasetBuildOutcome
-from ..temporal.contracts import CompiledProblemContract
+from .assembly import CorpusSplitOutcome
 
 
 def acquire_dry_run_fields(
     config: AcquireConfig,
     *,
-    contract: CompiledProblemContract,
     history_window_seconds: int,
     history_plan: BlockPullPlan,
     evaluation_plan: BlockPullPlan,
 ) -> list[tuple[str, str]]:
-    del config, contract
+    del config
     return [
         ("history_window", f"{history_window_seconds}s"),
         ("history_blocks", str(history_plan.expected_rows)),
@@ -26,9 +24,9 @@ def acquire_dry_run_fields(
 
 def acquisition_result_fields(
     *,
-    history_outcome: DatasetBuildOutcome,
+    history_outcome: CorpusSplitOutcome,
     history_row_count: int,
-    evaluation_outcome: DatasetBuildOutcome,
+    evaluation_outcome: CorpusSplitOutcome,
     evaluation_row_count: int,
 ) -> list[tuple[str, str]]:
     return [

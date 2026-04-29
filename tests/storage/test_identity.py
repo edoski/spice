@@ -6,12 +6,12 @@ import yaml
 
 from spice.config import (
     EvaluateConfig,
-    EvaluateWorkflowRequest,
+    EvaluateWorkflowSelection,
     TrainConfig,
-    TrainWorkflowRequest,
+    TrainWorkflowSelection,
     TuneConfig,
     TunedParameterSet,
-    TuneWorkflowRequest,
+    TuneWorkflowSelection,
     WorkflowTask,
     resolve_workflow_config,
 )
@@ -20,11 +20,11 @@ from spice.config.registry import load_named_group
 from spice.modeling.pipeline import build_training_spec
 from spice.modeling.tuning import apply_tuned_parameters
 from spice.storage.identity import (
-    study_request_identity_from_manifest,
-    study_request_identity_from_tuned_config,
+    study_definition_identity_from_manifest,
+    study_definition_identity_from_tuned_config,
 )
-from spice.storage.layout import resolve_workflow_paths
 from spice.storage.study_manifest import manifest_from_tune_config
+from spice.storage.workflow_paths import resolve_workflow_paths
 
 
 def _write_surface(conf_root, name: str, payload: dict[str, object]) -> None:
@@ -51,7 +51,7 @@ def _train_paths(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(
+            TrainWorkflowSelection(
                 surface=surface,
                 variant=variant,
                 objective=objective,
@@ -73,7 +73,7 @@ def _tune_paths(
         TuneConfig,
         resolve_workflow_config(
             WorkflowTask.TUNE,
-            TuneWorkflowRequest(
+            TuneWorkflowSelection(
                 surface=surface,
                 objective=objective,
                 trial_count=trial_count,
@@ -89,7 +89,7 @@ def _evaluate_paths(tmp_path, *, surface: str, objective: str | None = None):
         EvaluateConfig,
         resolve_workflow_config(
             WorkflowTask.EVALUATE,
-            EvaluateWorkflowRequest(
+            EvaluateWorkflowSelection(
                 surface=surface,
                 objective=objective,
                 storage_root=tmp_path / "outputs",
@@ -147,7 +147,7 @@ def test_study_and_artifact_ids_ignore_surface_name(
     assert base_train.artifact_id == clone_train.artifact_id
 
 
-def test_study_id_uses_objective_request_override(
+def test_study_id_uses_objective_selection_override(
     tmp_path,
     isolate_conf_root,
 ) -> None:
@@ -183,7 +183,7 @@ def test_artifact_id_uses_full_resolved_identity(
     assert changed.artifact_id != base.artifact_id
 
 
-def test_artifact_id_uses_objective_request_override(
+def test_artifact_id_uses_objective_selection_override(
     tmp_path,
     isolate_conf_root,
 ) -> None:
@@ -215,14 +215,20 @@ def test_storage_root_does_not_affect_ids(tmp_path, isolate_conf_root) -> None:
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(surface="current_row_fee_dynamics", storage_root=tmp_path / "one"),
+            TrainWorkflowSelection(
+                surface="current_row_fee_dynamics",
+                storage_root=tmp_path / "one",
+            ),
         ),
     )
     second = cast(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(surface="current_row_fee_dynamics", storage_root=tmp_path / "two"),
+            TrainWorkflowSelection(
+                surface="current_row_fee_dynamics",
+                storage_root=tmp_path / "two",
+            ),
         ),
     )
 
@@ -234,7 +240,7 @@ def test_storage_root_does_not_affect_ids(tmp_path, isolate_conf_root) -> None:
     assert first_paths.output_root != second_paths.output_root
 
 
-def test_tuned_request_identity_matches_stored_study_manifest(
+def test_tuned_definition_identity_matches_stored_study_manifest(
     tmp_path,
     isolate_conf_root,
 ) -> None:
@@ -243,7 +249,7 @@ def test_tuned_request_identity_matches_stored_study_manifest(
         TuneConfig,
         resolve_workflow_config(
             WorkflowTask.TUNE,
-            TuneWorkflowRequest(
+            TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 storage_root=tmp_path / "outputs",
             ),
@@ -253,7 +259,7 @@ def test_tuned_request_identity_matches_stored_study_manifest(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(
+            TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 variant="tuned",
                 storage_root=tmp_path / "outputs",
@@ -265,8 +271,8 @@ def test_tuned_request_identity_matches_stored_study_manifest(
     manifest = manifest_from_tune_config(tune_config)
 
     assert tune_paths.study_id is not None
-    assert study_request_identity_from_manifest(manifest) == (
-        study_request_identity_from_tuned_config(
+    assert study_definition_identity_from_manifest(manifest) == (
+        study_definition_identity_from_tuned_config(
             train_config,
             study_id=tune_paths.study_id,
             dataset_id=tune_paths.corpus_id,
@@ -294,7 +300,7 @@ def test_tuned_training_spec_uses_resolved_workflow_paths(tmp_path, isolate_conf
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(
+            TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 variant="tuned",
                 storage_root=tmp_path / "outputs",

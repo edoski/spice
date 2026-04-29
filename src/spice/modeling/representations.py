@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 
 from ..prediction import ModelInputBatch
 from ..semantics import RepresentationSemantics
-from ..temporal.problem_store import CompiledProblemStore, build_action_mask
+from ..temporal.problem_store import CompiledProblemStore
 
 IntVector = NDArray[np.int64]
 _MAX_AUTOMATIC_MATERIALIZATION_BYTES = 8 * 1024**3
@@ -143,9 +143,8 @@ def build_sequence_input_batch(
     if sample_indices.size == 0:
         raise ValueError("Sequence batches require at least one sample")
     sample_indices = sample_indices.astype(np.int64, copy=False)
-    anchor_rows = store.anchor_rows[sample_indices]
-    context_starts = store.context_start_rows[sample_indices]
-    input_lengths = anchor_rows - context_starts + 1
+    context = store.context_windows(sample_indices)
+    input_lengths = context.context_lengths
     batch_size = int(sample_indices.shape[0])
     if sample_positions is None:
         resolved_positions = np.arange(batch_size, dtype=np.int64)
@@ -163,10 +162,12 @@ def build_sequence_input_batch(
 
     inputs = np.zeros((batch_size, resolved_max_context, store.n_features), dtype=np.float32)
     input_mask = np.zeros((batch_size, resolved_max_context), dtype=np.bool_)
-    action_mask = build_action_mask(store, sample_indices)
-    for row, sample_index in enumerate(sample_indices):
-        anchor_row = int(store.anchor_rows[sample_index])
-        context_start = int(store.context_start_rows[sample_index])
+    action_mask = store.action_mask(sample_indices)
+    for row, (anchor_row, context_start) in enumerate(
+        zip(context.anchor_rows, context.context_start_rows, strict=True)
+    ):
+        anchor_row = int(anchor_row)
+        context_start = int(context_start)
         sequence = store.feature_matrix[context_start : anchor_row + 1]
         inputs[row, : sequence.shape[0], :] = sequence
         input_mask[row, : sequence.shape[0]] = True
@@ -324,13 +325,11 @@ def _sequence_input_layout(
     if sample_indices.size == 0:
         raise ValueError("Prepared representations require at least one sample")
     resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
-    anchor_rows = store.anchor_rows[resolved_sample_indices]
-    context_starts = store.context_start_rows[resolved_sample_indices]
-    context_lengths = (anchor_rows - context_starts + 1).astype(np.int64, copy=False)
+    context = store.context_windows(resolved_sample_indices)
     return _SequenceInputLayout(
         sample_indices=resolved_sample_indices,
-        context_lengths=context_lengths,
-        max_context_length=int(context_lengths.max()),
+        context_lengths=context.context_lengths,
+        max_context_length=int(context.context_lengths.max()),
     )
 
 
@@ -470,10 +469,14 @@ def _fill_dense_sequence_input_rows(
     input_mask: np.ndarray,
     action_mask: np.ndarray,
 ) -> None:
-    action_mask[:, :] = build_action_mask(store, layout.sample_indices[row_start:row_stop])
-    for output_row, sample_index in enumerate(layout.sample_indices[row_start:row_stop]):
-        anchor_row = int(store.anchor_rows[sample_index])
-        context_start = int(store.context_start_rows[sample_index])
+    sample_indices = layout.sample_indices[row_start:row_stop]
+    context = store.context_windows(sample_indices)
+    action_mask[:, :] = store.action_mask(sample_indices)
+    for output_row, (anchor_row, context_start) in enumerate(
+        zip(context.anchor_rows, context.context_start_rows, strict=True)
+    ):
+        anchor_row = int(anchor_row)
+        context_start = int(context_start)
         sequence = store.feature_matrix[context_start : anchor_row + 1]
         inputs[output_row, : sequence.shape[0], :] = sequence
         input_mask[output_row, : sequence.shape[0]] = True

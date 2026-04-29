@@ -17,7 +17,7 @@ model outputs + action mask
   -> DecodedOffsets
 ```
 
-Current evaluators accept `DecodedOffsets`, so both current prediction families decode to candidate offsets.
+Current evaluators accept the candidate-offset decoded result ABI, so current prediction families decode to `DecodedOffsets`.
 
 ## Shared ABI
 

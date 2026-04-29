@@ -81,7 +81,7 @@ Training state stores one summary and ordered epoch rows. Evaluation state store
 
 ## Study State
 
-Study state stores a SPICE study manifest and Optuna's RDB tables in the same SQLite file. The study manifest validates that resumed tuning belongs to the same request. Trial attributes store sampled params and best epoch.
+Study state stores a SPICE study manifest and Optuna's RDB tables in the same SQLite file. The study manifest validates that resumed tuning belongs to the same study definition. Trial attributes store sampled params and best epoch.
 
 ## Staging And Commit
 
@@ -96,7 +96,7 @@ write staged root
 
 Partial commits promote selected paths inside an existing root. Acquire uses partial commit because history, evaluation, and state paths are assembled as parts of a corpus root.
 
-## Sync
+## Transfer Support
 
 Supported transfer directions:
 
@@ -107,7 +107,7 @@ Supported transfer directions:
 | Pull study | cluster study root to local. |
 | Pull artifact | cluster artifact root to local. |
 
-Sync prepares a remote or local stage, uses `rsync`, validates root kind, finalizes the stage, and reindexes.
+`execution.transfer` prepares a remote or local stage, uses `rsync`, validates root kind through lifecycle operations, finalizes the stage, and reindexes. `storage.sync_cli` is the remote-side helper for path and root-kind commands.
 
 ## Invariants
 
@@ -133,4 +133,3 @@ Sync prepares a remote or local stage, uses `rsync`, validates root kind, finali
 ## Extension Pattern
 
 New persisted state should be rooted in a manifest first, then indexed into the catalog. Keep catalog rows derivable from root state.
-

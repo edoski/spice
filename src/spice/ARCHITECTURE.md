@@ -31,7 +31,7 @@ Every arrow preserves or changes meaning. The architecture exists to keep those 
 ## Domain Responsibilities
 
 ```text
-config       named YAML + CLI overrides -> typed configs
+config       named YAML + workflow selections -> typed configs
 corpus       canonical block data and coverage
 features     observable feature columns and prerequisites
 temporal     anchors, context rows, candidate windows, execution policies
@@ -39,8 +39,9 @@ modeling     tensorization, training, inference, scoring bridge
 prediction   targets, losses, metrics, decoded-result kinds
 evaluation   decision-quality scoring over decoded results
 objectives   scalar metrics for training/tuning decisions
-storage      identities, roots, SQLite state, staging, sync, catalog
-execution    explicit remote targets and resolved workflow execution
+benchmarks   benchmark specs, workflow-selection plans, run state, collection
+storage      identities, roots, SQLite state, lifecycle, catalog
+execution    explicit remote targets, resolved workflow execution, transfer
 workflows    task orchestration
 cli          operator-facing command edge
 ```
@@ -76,19 +77,20 @@ Checked-in YAML configs are validated through package-owned coercers. Runtime ar
 
 ```text
 spice/
-  acquisition/      raw block acquisition backends
+  acquisition/      raw block acquisition adapters
+  benchmarks/       benchmark schema, planning, run state, collection
   cli/              command-line adapter
   conf/             checked-in YAML specs
   config/           config registry, surfaces, hydration
   core/             shared primitives and errors
   corpus/           canonical block data and validation
   evaluation/       decoded decision scoring
-  execution/        remote execution and Slurm submission
+  execution/        remote execution, transfer, and Slurm submission
   features/         observable feature construction
   modeling/         datasets, models, training, inference
   objectives/       train/tune objective contracts
   prediction/       target/loss/decode semantics
-  storage/          identities, roots, SQLite state, catalog, sync
+  storage/          identities, roots, SQLite state, catalog, lifecycle
   temporal/         time-window problem construction
   workflows/        application task orchestration
 ```

@@ -6,19 +6,29 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..prediction import DecodedOffsets
 from ..prediction.base import MetricSet, WindowMetricSummary
+from ..prediction.decoded_offsets import DecodedOffsets
 from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
-from .aggregation import (
-    BASELINE_COST_OVER_OPTIMUM,
-    COST_OVER_OPTIMUM,
-    PROFIT_OVER_BASELINE,
-    REPLAY_RATIO_METRIC_IDS,
-    ReplayAggregationSpec,
-    ReplayCostSummary,
-)
 from .contracts import EvaluationRun, EvaluationSummary, IntVector
+
+PROFIT_OVER_BASELINE = "profit_over_baseline"
+COST_OVER_OPTIMUM = "cost_over_optimum"
+BASELINE_COST_OVER_OPTIMUM = "baseline_cost_over_optimum"
+_REPLAY_RATIO_METRIC_IDS = (
+    PROFIT_OVER_BASELINE,
+    COST_OVER_OPTIMUM,
+    BASELINE_COST_OVER_OPTIMUM,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _ReplayCostSummary:
+    n_events: int
+    realized_fee_sum: float
+    baseline_fee_sum: float
+    optimum_fee_sum: float
+    event_metric_sums: dict[str, float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +44,6 @@ def summarize_selected_costs(
     sample_indices: IntVector,
     selected_positions: IntVector,
     *,
-    aggregation: ReplayAggregationSpec,
     metadata: dict[str, str | int | float],
 ) -> ReplayRun:
     if len(decoded_offsets) != int(sample_indices.shape[0]):
@@ -70,7 +79,7 @@ def summarize_selected_costs(
     profit_values = (baseline_fees - realized_fees) / baseline_fees
     cost_values = (realized_fees - optimum_fees) / optimum_fees
     baseline_cost_values = (baseline_fees - optimum_fees) / optimum_fees
-    costs = ReplayCostSummary(
+    costs = _ReplayCostSummary(
         n_events=int(selected_positions.shape[0]),
         realized_fee_sum=realized_total,
         baseline_fee_sum=baseline_total,
@@ -81,7 +90,7 @@ def summarize_selected_costs(
             BASELINE_COST_OVER_OPTIMUM: float(baseline_cost_values.sum()),
         },
     )
-    aggregated_metrics = aggregation.run_metrics(costs)
+    aggregated_metrics = _event_mean_metrics(costs)
     run = EvaluationRun(
         n_events=costs.n_events,
         metrics={
@@ -100,8 +109,6 @@ def summarize_selected_costs(
 
 def summarize_runs(
     runs: list[ReplayRun],
-    *,
-    aggregation: ReplayAggregationSpec,
 ) -> EvaluationSummary:
     if not runs:
         raise ValueError("evaluation produced no runs")
@@ -115,17 +122,17 @@ def summarize_runs(
     if optimum_fee_sum <= 0.0:
         raise ValueError("optimum fee sum must be positive")
     total_events = sum(run.n_events for run in public_runs)
-    costs = ReplayCostSummary(
+    costs = _ReplayCostSummary(
         n_events=total_events,
         realized_fee_sum=realized_fee_sum,
         baseline_fee_sum=baseline_fee_sum,
         optimum_fee_sum=optimum_fee_sum,
         event_metric_sums={
             metric_id: sum(run.event_metric_sums[metric_id] for run in runs)
-            for metric_id in REPLAY_RATIO_METRIC_IDS
+            for metric_id in _REPLAY_RATIO_METRIC_IDS
         },
     )
-    aggregated_metrics = aggregation.summary_metrics(costs)
+    aggregated_metrics = _event_mean_metrics(costs)
     return EvaluationSummary(
         metrics=MetricSet(
             values={
@@ -158,3 +165,33 @@ def _summarize_window_metric(values: list[float]) -> WindowMetricSummary:
         mean=float(np.mean(values)),
         std=float(np.std(values)),
     )
+
+
+def _event_mean_metrics(costs: _ReplayCostSummary) -> dict[str, float]:
+    return {
+        PROFIT_OVER_BASELINE: _event_metric_mean(
+            costs.event_metric_sums,
+            PROFIT_OVER_BASELINE,
+            costs.n_events,
+        ),
+        COST_OVER_OPTIMUM: _event_metric_mean(
+            costs.event_metric_sums,
+            COST_OVER_OPTIMUM,
+            costs.n_events,
+        ),
+        BASELINE_COST_OVER_OPTIMUM: _event_metric_mean(
+            costs.event_metric_sums,
+            BASELINE_COST_OVER_OPTIMUM,
+            costs.n_events,
+        ),
+    }
+
+
+def _event_metric_mean(
+    event_metric_sums: dict[str, float],
+    metric_id: str,
+    n_events: int,
+) -> float:
+    if n_events <= 0:
+        raise ValueError("evaluation event count must be positive")
+    return event_metric_sums[metric_id] / n_events

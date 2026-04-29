@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`acquisition` owns data collection mechanics. It turns an acquisition plan into canonical block rows that the rest of the system can treat as raw corpus data.
+`acquisition` owns data collection mechanics. It turns block-window intent into canonical block rows that Corpus Assembly can materialize as raw corpus data.
 
 ## Theory
 
@@ -10,15 +10,15 @@ Training quality begins with data provenance. Raw acquisition must keep enough m
 
 ## Boundaries
 
-Acquisition does not define ML targets, train models, or score predictions. It gathers canonical data and reports runtime facts. The acquire workflow decides when to commit acquired data into storage.
+Acquisition does not define ML targets, train models, score predictions, or publish corpus roots. It gathers canonical data and reports runtime facts. Corpus Assembly decides how fetched rows become a corpus root.
 
 ## Invariants
 
-Raw block rows must be canonical before persistence. Provider-specific transport details stay in provider-specific modules. Storage commit mechanics stay in storage staging primitives and the acquire workflow.
+Raw block rows must be canonical before persistence. Provider-specific transport details stay in provider-specific modules. Storage commit mechanics stay behind Corpus Assembly and storage lifecycle primitives.
 
 ## Extension Points
 
-Add a new acquisition backend by keeping transport, provider client, and canonical row conversion separate. Preserve the same corpus contract so features and temporal compilers remain unchanged.
+Add a new acquisition Adapter by keeping transport, provider client, and canonical row conversion separate. Preserve the same corpus contract so features and temporal compilers remain unchanged.
 
 ## Data Flow
 
@@ -32,13 +32,13 @@ provider/chain endpoint
 block range plans
     |
     v
-backend fetch
+block source fetch
     |
     v
 canonical block rows
     |
     v
-corpus builders and storage commit
+Corpus Assembly
 ```
 
 ## Beginner Context
@@ -47,4 +47,4 @@ The model eventually trains on examples, but examples are only as trustworthy as
 
 ## Separation From Workflows
 
-The acquisition package should answer "how do I fetch and canonicalize blocks?" The acquire workflow answers "which windows do I fetch, how do I validate them, and how do I commit the result?" This keeps backend mechanics reusable.
+The acquisition package should answer "how do I fetch and canonicalize blocks?" Corpus Assembly answers "which windows do I fetch, how do I validate them, and how do I commit the result?" The acquire workflow stays a thin caller.

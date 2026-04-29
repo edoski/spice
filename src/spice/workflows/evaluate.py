@@ -7,20 +7,13 @@ from typing import cast
 from ..config.models import EvaluateConfig
 from ..core.errors import ConfigResolutionError
 from ..core.reporting import Reporter
-from ..corpus.coverage import evaluation_coverage_requirement, validate_corpus_coverage
-from ..corpus.io import load_block_frame
-from ..evaluation import compile_evaluator_contract
-from ..modeling.artifacts import load_training_artifact, validate_artifact_semantics
-from ..modeling.pipeline import prepare_inference_dataset
+from ..modeling.artifact_inference import prepare_artifact_inference_context
 from ..modeling.results import LoadedEvaluationSummary, build_evaluation_runtime_summary
-from ..modeling.scoring import EvaluationScoringContext, score_evaluation
+from ..modeling.scoring import score_evaluation
 from ..modeling.summary import evaluation_result_fields
 from ..modeling.tuning import apply_study_best_params
-from ..prediction import compile_prediction_contract
 from ..storage.artifact import upsert_evaluation_state
-from ..storage.corpus import load_dataset_manifest
-from ..storage.layout import resolve_workflow_paths
-from ..temporal.contracts import compile_problem_contract
+from ..storage.workflow_paths import resolve_workflow_paths
 
 
 def _workflow_facts(config: EvaluateConfig) -> list[tuple[str, str]]:
@@ -49,94 +42,30 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
         active_config = cast(EvaluateConfig, applied.config)
         study_id = applied.study_id
     paths = resolve_workflow_paths(active_config, study_id=study_id)
-    artifact_dir = paths.artifact_root
-    history_block_path = paths.history_dir
-    evaluation_block_path = paths.evaluation_dir
-    if artifact_dir is None:
-        raise ConfigResolutionError("evaluation workflow requires artifact output paths")
     active_reporter = reporter or Reporter()
     active_reporter.header("evaluate", _workflow_facts(active_config))
-    loaded_artifact = load_training_artifact(artifact_dir)
-    validated = validate_artifact_semantics(
-        loaded_artifact.manifest,
-        problem=active_config.problem,
-        dataset_builder=active_config.dataset_builder,
-        features=active_config.features,
-        prediction=active_config.prediction,
-        objective=active_config.objective,
-        model=active_config.model,
-        split=active_config.split,
-        training=active_config.training,
+    inference_context = prepare_artifact_inference_context(
+        active_config,
+        paths=paths,
     )
-    feature_contract = validated.feature_contract
-    history_blocks = load_block_frame(history_block_path)
-    evaluation_blocks = load_block_frame(evaluation_block_path)
-    problem_contract = compile_problem_contract(
-        problem=active_config.problem,
-        feature_contract=feature_contract,
-        chain_runtime=active_config.chain.runtime,
-    )
-    prediction_contract = compile_prediction_contract(
-        prediction_id=active_config.prediction.id,
-        family_id=active_config.prediction.family_id,
-    )
-    if active_config.evaluation is None:
-        raise ConfigResolutionError("evaluation workflow requires evaluation")
-    evaluator_contract = compile_evaluator_contract(active_config.evaluation)
-    if active_config.delay_seconds > loaded_artifact.manifest.max_delay_seconds:
-        raise ConfigResolutionError(
-            "delay_seconds exceeds artifact capability: "
-            f"{active_config.delay_seconds} > {loaded_artifact.manifest.max_delay_seconds}"
-        )
-    validate_corpus_coverage(
-        load_dataset_manifest(paths.corpus_state_db),
-        contract=problem_contract,
-        feature_contract=feature_contract,
-        requirement=evaluation_coverage_requirement(
-            problem_contract,
-            delay_seconds=active_config.delay_seconds,
-        ),
-    )
-    prepared = prepare_inference_dataset(
-        history_blocks,
-        evaluation_blocks,
-        dataset_builder_contract=validated.dataset_builder_contract,
-        feature_contract=feature_contract,
-        problem_contract=problem_contract,
-        delay_seconds=active_config.delay_seconds,
-        builder_runtime_metadata=loaded_artifact.manifest.builder_runtime_metadata,
-        scaler=loaded_artifact.manifest.scaler,
-        max_candidate_slots=loaded_artifact.manifest.max_candidate_slots,
-        window_start_timestamp=active_config.evaluation_window_start_timestamp,
-        window_end_timestamp=active_config.evaluation_window_end_timestamp,
-    )
+    prepared = inference_context.prepared
     active_reporter.milestone(
         "prepare "
         f"history_rows={prepared.n_history_rows} "
         f"evaluation_rows={prepared.n_evaluation_rows} "
         f"samples={prepared.sample_count}"
     )
-    evaluation = score_evaluation(
-        EvaluationScoringContext(
-            model=loaded_artifact.model,
-            model_config=loaded_artifact.manifest.model,
-            prediction_contract=prediction_contract,
-            representation_contract=loaded_artifact.representation_contract,
-            evaluator_contract=evaluator_contract,
-            execution_policy=prepared.execution_policy,
-            store=prepared.store,
-            sample_indices=prepared.sample_indices,
-            batch_size=active_config.training.batch_size,
-        )
-    )
+    evaluation = score_evaluation(inference_context.scoring_context)
     runtime_summary = build_evaluation_runtime_summary(
         prepared=prepared,
         evaluation=evaluation,
         delay_seconds=active_config.delay_seconds,
-        evaluation_id=evaluator_contract.evaluation_id,
-        evaluation_config=evaluator_contract.config_payload,
-        metric_descriptors=evaluator_contract.metric_descriptors,
+        evaluation_id=inference_context.evaluator_contract.evaluation_id,
+        evaluation_config=inference_context.evaluator_contract.config_payload,
+        metric_descriptors=inference_context.evaluator_contract.metric_descriptors,
     )
+    artifact_dir = paths.artifact_root
+    assert artifact_dir is not None
     evaluation_id, recorded_at = upsert_evaluation_state(
         artifact_dir / ".spice" / "state.sqlite",
         summary=runtime_summary,
@@ -144,7 +73,7 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
     summary = LoadedEvaluationSummary(
         evaluation_id=evaluation_id,
         recorded_at=recorded_at,
-        manifest=loaded_artifact.manifest,
+        manifest=inference_context.loaded_artifact.manifest,
         runtime=runtime_summary,
     )
     active_reporter.result("evaluate", evaluation_result_fields(summary))

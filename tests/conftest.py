@@ -11,13 +11,13 @@ import pytest
 
 from spice.config import (
     AcquireConfig,
-    AcquireWorkflowRequest,
+    AcquireWorkflowSelection,
     EvaluateConfig,
-    EvaluateWorkflowRequest,
+    EvaluateWorkflowSelection,
     TrainConfig,
-    TrainWorkflowRequest,
+    TrainWorkflowSelection,
     TuneConfig,
-    TuneWorkflowRequest,
+    TuneWorkflowSelection,
     WorkflowTask,
     resolve_workflow_config,
 )
@@ -27,17 +27,17 @@ from spice.config.registry import (
     named_group_keys,
     normalize_group_name,
 )
-from spice.config.resolution import WorkflowConfigRequest, workflow_request_type
+from spice.config.selections import WorkflowSelection, workflow_selection_type
 from spice.config.surfaces import SurfaceFrame
 
 _CONF_ROOT = Path(__file__).resolve().parents[1] / "src" / "spice" / "conf"
-_REQUEST_FIELD_NAMES = frozenset().union(
-    AcquireWorkflowRequest.model_fields,
-    TrainWorkflowRequest.model_fields,
-    TuneWorkflowRequest.model_fields,
-    EvaluateWorkflowRequest.model_fields,
+_SELECTION_FIELD_NAMES = frozenset().union(
+    AcquireWorkflowSelection.model_fields,
+    TrainWorkflowSelection.model_fields,
+    TuneWorkflowSelection.model_fields,
+    EvaluateWorkflowSelection.model_fields,
 )
-_SELECTION_GROUP_KEYS = _REQUEST_FIELD_NAMES & frozenset(named_group_keys())
+_SELECTION_GROUP_KEYS = _SELECTION_FIELD_NAMES & frozenset(named_group_keys())
 _SURFACE_FIELDS = frozenset(SurfaceFrame.model_fields)
 TEST_EVALUATION_DATE = date(2025, 11, 9)
 _IDENTITY_FIELDS = {
@@ -134,10 +134,7 @@ def model_workflow_override():
                 "input_normalization": {"id": "row_standard"},
             },
             "evaluation": {
-                "id": "poisson_replay_2h_mean",
-                "engine": "replay",
-                "sampler": "poisson_arrivals",
-                "aggregation": {"id": "event_mean"},
+                "id": "poisson_replay_2h",
                 "window_seconds": 600,
                 "arrival_rate_per_second": 0.02,
                 "repetitions": 3,
@@ -258,7 +255,7 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
                 if value is not None
             }
         )
-        workflow_fields = frozenset(workflow_request_type(workflow).model_fields)
+        workflow_fields = frozenset(workflow_selection_type(workflow).model_fields)
         for key, value in override_payload.items():
             if key in _SELECTION_GROUP_KEYS and key in workflow_fields:
                 if isinstance(value, Mapping):
@@ -318,18 +315,18 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
             if key in workflow_fields and not isinstance(value, Mapping):
                 selection_values[key] = value
                 continue
-            if key in _REQUEST_FIELD_NAMES:
+            if key in _SELECTION_FIELD_NAMES:
                 raise ValueError(
                     f"Override key {key!r} is not valid for {workflow.value} workflow"
                 )
             raise ValueError(f"Unsupported test workflow override key: {key}")
         _write_named_spec(conf_root, group="surface", name=surface_name, payload=surface_payload)
         selection_values["surface"] = surface_name
-        request_type = workflow_request_type(workflow)
-        request = cast(WorkflowConfigRequest, request_type.model_validate(selection_values))
+        selection_type = workflow_selection_type(workflow)
+        selection = cast(WorkflowSelection, selection_type.model_validate(selection_values))
         return resolve_workflow_config(
             workflow,
-            request,
+            selection,
         )
 
     return _load

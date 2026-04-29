@@ -160,7 +160,7 @@ _GROUP_SPECS = (
     GroupSpec(
         token=ConfigGroup.EVALUATION.value,
         directory="evaluation",
-        seed_name="fullset",
+        seed_name="poisson_replay_2h",
         validate=coerce_evaluator_config,
         public=True,
     ),

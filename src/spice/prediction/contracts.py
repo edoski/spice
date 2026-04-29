@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 import numpy as np
 import torch
@@ -18,101 +18,12 @@ from .base import (
     MetricSet,
     PredictionOutputSpec,
 )
+from .decoding import ActionSpaceDecodeContext, DecodedPredictionResult
 
 if TYPE_CHECKING:
     from ..modeling.models import ModelOutputs
 
 IntVector = NDArray[np.int64]
-BoolMatrix = NDArray[np.bool_]
-OFFSET_DECODED_RESULT_ID = "candidate_offsets"
-
-
-def _coerce_cpu_int64_vector(
-    values: torch.Tensor | IntVector,
-    *,
-    label: str,
-) -> torch.Tensor:
-    if isinstance(values, np.ndarray):
-        if values.ndim != 1:
-            raise ValueError(f"{label} must be one-dimensional")
-        return torch.from_numpy(values.astype(np.int64, copy=False))
-    if values.ndim != 1:
-        raise ValueError(f"{label} must be one-dimensional")
-    return values.detach().to(device="cpu", dtype=torch.int64)
-
-
-def _coerce_bool_matrix(
-    values: torch.Tensor | BoolMatrix,
-    *,
-    label: str,
-) -> torch.Tensor:
-    if isinstance(values, np.ndarray):
-        if values.ndim != 2:
-            raise ValueError(f"{label} must be two-dimensional")
-        return torch.from_numpy(values.astype(np.bool_, copy=False))
-    if values.ndim != 2:
-        raise ValueError(f"{label} must be two-dimensional")
-    return values.detach().to(dtype=torch.bool)
-
-
-@runtime_checkable
-class DecodedPredictionResult(Protocol):
-    @property
-    def decoded_result_id(self) -> str: ...
-
-    def __len__(self) -> int: ...
-
-
-class DecodedOffsets:
-    """Prediction-owned decoded offset buffer backed by a CPU int64 tensor."""
-
-    __slots__ = ("_tensor",)
-    decoded_result_id = OFFSET_DECODED_RESULT_ID
-
-    def __init__(self, tensor: torch.Tensor) -> None:
-        self._tensor = _coerce_cpu_int64_vector(tensor, label="decoded_offsets")
-
-    @classmethod
-    def allocate(cls, sample_count: int) -> DecodedOffsets:
-        if sample_count < 0:
-            raise ValueError("sample_count must be non-negative")
-        return cls(torch.zeros(sample_count, dtype=torch.int64))
-
-    @property
-    def tensor(self) -> torch.Tensor:
-        return self._tensor
-
-    def __len__(self) -> int:
-        return int(self._tensor.shape[0])
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, DecodedOffsets):
-            return torch.equal(self._tensor, other._tensor)
-        if isinstance(other, torch.Tensor):
-            return torch.equal(
-                self._tensor,
-                _coerce_cpu_int64_vector(other, label="decoded_offsets"),
-            )
-        if isinstance(other, Sequence) and not isinstance(other, (str, bytes, bytearray)):
-            return self._tensor.tolist() == list(other)
-        return NotImplemented
-
-    def write(self, sample_positions: torch.Tensor, decoded: torch.Tensor) -> None:
-        positions = _coerce_cpu_int64_vector(sample_positions, label="sample_positions")
-        values = _coerce_cpu_int64_vector(decoded, label="decoded")
-        if positions.shape != values.shape:
-            raise ValueError("sample_positions and decoded must have matching shape")
-        self._tensor.index_copy_(0, positions, values)
-
-    def select(self, sample_positions: torch.Tensor | IntVector) -> IntVector:
-        positions = _coerce_cpu_int64_vector(sample_positions, label="sample_positions")
-        return self._tensor.index_select(0, positions).numpy()
-
-
-def require_decoded_offsets(result: DecodedPredictionResult) -> DecodedOffsets:
-    if not isinstance(result, DecodedOffsets):
-        raise TypeError("Evaluator requires candidate offset decoded results")
-    return result
 
 
 class ModelInputBatch(Protocol):
@@ -171,51 +82,9 @@ ComputeBatchLossAndStateFn = Callable[
 CreateEpochAccumulatorFn = Callable[[], EpochMetricAccumulator]
 AllocateDecodedResultFn = Callable[[int], DecodedPredictionResult]
 DecodeBatchResultIntoFn = Callable[
-    [DecodedPredictionResult, Any, "ActionSpaceDecodeContext"],
+    [DecodedPredictionResult, Any, ActionSpaceDecodeContext],
     None,
 ]
-
-
-def masked_offset_argmax(logits: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
-    if logits.ndim != 2:
-        raise ValueError("logits must be two-dimensional")
-    mask = action_mask.detach().to(device=logits.device, dtype=torch.bool)
-    if mask.shape != logits.shape:
-        raise ValueError("action_mask must match logits shape")
-    if bool(torch.any(~mask.any(dim=1))):
-        raise ValueError("action_mask must allow at least one action per sample")
-    return logits.masked_fill(~mask, float("-inf")).argmax(dim=-1)
-
-
-@dataclass(frozen=True, slots=True)
-class ActionSpaceDecodeContext:
-    sample_positions: torch.Tensor
-    action_mask: torch.Tensor
-
-    def __post_init__(self) -> None:
-        sample_positions = _coerce_cpu_int64_vector(
-            self.sample_positions,
-            label="sample_positions",
-        )
-        action_mask = _coerce_bool_matrix(
-            self.action_mask,
-            label="action_mask",
-        )
-        if sample_positions.shape[0] != action_mask.shape[0]:
-            raise ValueError("sample_positions and action_mask must have matching rows")
-        if action_mask.numel() > 0 and bool(torch.any(~action_mask.any(dim=1))):
-            raise ValueError("action_mask must allow at least one action per sample")
-        object.__setattr__(self, "sample_positions", sample_positions)
-        object.__setattr__(self, "action_mask", action_mask)
-
-
-def decode_context_from_batch(
-    batch: ModelInputBatch,
-) -> ActionSpaceDecodeContext:
-    return ActionSpaceDecodeContext(
-        sample_positions=batch.sample_positions,
-        action_mask=batch.action_mask,
-    )
 
 
 @dataclass(slots=True)

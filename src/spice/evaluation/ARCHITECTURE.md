@@ -2,17 +2,20 @@
 
 ## Purpose
 
-`evaluation` scores decoded predictions against temporal problem stores. It owns evaluator configs, engine dispatch, metric descriptors, summary shapes, sampling, replay/window mechanics, and accepted decoded-result checks.
+`evaluation` scores decoded predictions against temporal problem stores. It owns evaluator config validation, evaluator contracts, metric descriptors, Poisson replay sampling, private replay fee accounting, and decoded-result checks.
 
 Training metrics answer “did the model optimize its objective?” Evaluation metrics answer “were the decoded decisions good under the temporal problem?” These are related but not identical.
 
 ## Config And Registry Pattern
 
-Evaluator configs separate reusable config identity from implementation selection:
+There is one concrete evaluator spec:
 
 ```yaml
-id: poisson_replay_2h_mean
-engine: replay
+id: poisson_replay_2h
+window_seconds: 7200
+repetitions: 50
+arrival_rate_per_second: 0.05
+seed: 2026
 ```
 
 ```text
@@ -20,18 +23,15 @@ mapping / EvaluatorConfig
         |
         v
 coerce_evaluator_config()
-  - require evaluation.engine
-  - lookup local evaluator spec
-  - validate concrete config type
+  - validate PoissonReplayEvaluatorConfig
         |
         v
 compile_evaluator_contract()
-  - lookup same engine spec
-  - require concrete config object
-  - call concrete compiler directly
+  - require PoissonReplayEvaluatorConfig
+  - compile Poisson replay contract
 ```
 
-Evaluator engines are explicit string selectors owned by the local evaluation registry. The registry dispatches from the `engine` field to the concrete config and compiler. Config coercion performs validation before compile-time dispatch.
+There is no evaluator engine registry while `poisson_replay_2h` is the only trusted economic evaluator.
 
 ## Scoring Flow
 
@@ -57,15 +57,15 @@ Evaluators never call models or prediction heads. The modeling scoring service p
 
 ## Replay Offset Boundary
 
-Replay evaluators accept the generic `DecodedPredictionResult` at the evaluator entrypoint because that is the evaluator ABI. Replay then narrows to `DecodedOffsets` once:
+The evaluator accepts the generic `DecodedPredictionResult` from `prediction.decoding` at the evaluator entrypoint because that is the evaluator ABI. Replay then narrows to `DecodedOffsets` from `prediction.decoded_offsets` once:
 
 ```text
-run_fullset / run_poisson_arrivals
+run_poisson_replay
   generic decoded result -> require_decoded_offsets()
   DecodedOffsets -> replay_summary.summarize_selected_costs()
 ```
 
-`replay_summary` is replay-specific and accepts `DecodedOffsets` directly. That keeps generic decoded-result handling at the evaluator boundary.
+`replay_summary` is replay-private and accepts `DecodedOffsets` directly. That keeps generic decoded-result handling at the evaluator boundary.
 
 ## Metric Descriptor Rule
 
@@ -81,18 +81,14 @@ Each evaluator contract must declare exactly one primary metric. Descriptor ids 
 evaluation/
   config.py          evaluator config models
   contracts.py       compiled evaluator contract and summary models
-  registry.py        local engine dispatch
+  registry.py        public config coercion and contract compile helpers
   metrics.py         metric descriptor definitions
-  sampling.py        sample/window selection helpers
-  windows.py         evaluator candidate-window helper
-  aggregation.py     replay aggregation rules
-  replay.py          replay evaluator entrypoints
-  replay_summary.py  replay-private run accumulation
-  zero_stop_rollout.py
-  anchor_basefee.py
+  sampling.py        Poisson arrival and chronological sample helpers
+  replay.py          Poisson replay evaluator entrypoint
+  replay_summary.py  replay-private fee accounting and run accumulation
   summary.py         generic summary helpers
 ```
 
 ## Extension Points
 
-Add a new evaluator engine when scoring mechanics change. Add a new named evaluation YAML when reusable settings change but the scoring engine is the same. Do not put evaluator-engine branches in workflows.
+Add a public fee-accounting or evaluator-engine seam only when a second trusted evaluator exists. Workflows should keep calling `compile_evaluator_contract()`.

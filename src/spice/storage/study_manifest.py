@@ -37,14 +37,14 @@ from .engine import STUDY_ROOT_KIND, create_state_engine, ensure_state_db, requi
 from .identity import (
     IdentityModel,
     identity_payload,
+    study_definition_identity_from_manifest,
+    study_definition_identity_from_tuned_config,
     study_manifest_identity,
-    study_request_identity_from_manifest,
-    study_request_identity_from_tuned_config,
 )
-from .layout import resolve_workflow_paths
 from .payloads import PayloadCodec, SingletonPayloadStore, mapping_payload
 from .schema import STUDY_TABLES, study_manifest
 from .study_models import StudyManifest
+from .workflow_paths import resolve_workflow_paths
 
 STUDY_SAMPLER_NAME = "TPESampler"
 
@@ -59,7 +59,7 @@ _STUDY_MANIFEST_STORE = SingletonPayloadStore(
 
 
 def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
-    """Build the canonical study manifest from one validated tuning request."""
+    """Build the canonical study manifest from one validated tuning definition."""
 
     paths = resolve_workflow_paths(config)
     if paths.study_id is None:
@@ -152,19 +152,19 @@ def diff_study_manifests(stored: StudyManifest, requested: StudyManifest) -> lis
     )
 
 
-def validate_tuned_train_request(
+def validate_tuned_artifact_definition(
     config: TrainConfig | EvaluateConfig,
     *,
     manifest: StudyManifest,
 ) -> None:
-    """Reject tuned-artifact requests whose identity diverges from the stored study."""
+    """Reject tuned artifacts whose identity diverges from the stored study."""
 
     paths = resolve_workflow_paths(config)
     if paths.study_id is None:
         raise ConfigResolutionError("study_id is required for tuned artifacts")
     mismatches = _mismatched_identity_fields(
-        study_request_identity_from_manifest(manifest),
-        study_request_identity_from_tuned_config(
+        study_definition_identity_from_manifest(manifest),
+        study_definition_identity_from_tuned_config(
             config,
             study_id=paths.study_id,
             dataset_id=paths.corpus_id,
@@ -172,7 +172,8 @@ def validate_tuned_train_request(
     )
     if mismatches:
         raise StateConflictError(
-            "Tuned artifact request does not match study definition: " + ", ".join(mismatches)
+            "Tuned artifact definition does not match study definition: "
+            + ", ".join(mismatches)
         )
 
 
@@ -218,51 +219,53 @@ def manifest_payload(manifest: StudyManifest) -> dict[str, object]:
 
 
 def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
-    request = mapping_payload(payload["request"], label="study.request")
-    model = coerce_model_config(mapping_payload(request["model"], label="study.request.model"))
+    definition = mapping_payload(payload["definition"], label="study.definition")
+    model = coerce_model_config(
+        mapping_payload(definition["model"], label="study.definition.model")
+    )
     problem = coerce_problem_spec(
-        mapping_payload(request["problem"], label="study.request.problem")
+        mapping_payload(definition["problem"], label="study.definition.problem")
     )
     prediction = PredictionConfig.model_validate(
-        mapping_payload(request["prediction"], label="study.request.prediction")
+        mapping_payload(definition["prediction"], label="study.definition.prediction")
     )
     semantics_payload = mapping_payload(payload["semantics"], label="study.semantics")
     return StudyManifest(
-        study_id=str(request["study_id"]),
+        study_id=str(definition["study_id"]),
         dataset_builder=coerce_dataset_builder_config(
             mapping_payload(
-                request["dataset_builder"],
-                label="study.request.dataset_builder",
+                definition["dataset_builder"],
+                label="study.definition.dataset_builder",
             )
         ),
         prediction=prediction,
         objective=coerce_objective_config(
-            mapping_payload(request["objective"], label="study.request.objective")
+            mapping_payload(definition["objective"], label="study.definition.objective")
         ),
-        study_name=str(request["study_name"]),
-        chain_name=str(request["chain_name"]),
-        dataset_id=str(request["dataset_id"]),
-        dataset_name=str(request["dataset_name"]),
+        study_name=str(definition["study_name"]),
+        chain_name=str(definition["chain_name"]),
+        dataset_id=str(definition["dataset_id"]),
+        dataset_name=str(definition["dataset_name"]),
         problem=problem,
         features=coerce_features_config(
-            mapping_payload(request["features"], label="study.request.features")
+            mapping_payload(definition["features"], label="study.definition.features")
         ),
         model=model,
         split=SplitConfig.model_validate(
-            mapping_payload(request["split"], label="study.request.split")
+            mapping_payload(definition["split"], label="study.definition.split")
         ),
         training=TrainingConfig.model_validate(
-            mapping_payload(request["training"], label="study.request.training")
+            mapping_payload(definition["training"], label="study.definition.training")
         ),
         tuning=TuningSearchConfig.model_validate(
-            mapping_payload(request["tuning"], label="study.request.tuning")
+            mapping_payload(definition["tuning"], label="study.definition.tuning")
         ),
         sampler_name=str(payload["sampler_name"]),
         sampler_seed=coerce_int(payload["sampler_seed"], label="sampler_seed"),
         pruner_name=str(payload["pruner_name"]),
         enable_pruning=bool(payload["enable_pruning"]),
         tuning_space=coerce_study_tuning_space(
-            request["tuning_space"],
+            definition["tuning_space"],
             model=model,
             problem=problem,
         ),

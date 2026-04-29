@@ -8,15 +8,13 @@ from ....modeling.models import ModelOutputs
 from ....temporal.execution_policy import CompiledExecutionPolicyContract
 from ....temporal.problem_store import CompiledProblemStore
 from ...contracts import (
-    ActionSpaceDecodeContext,
     CompiledPredictionContract,
-    DecodedOffsets,
-    DecodedPredictionResult,
     IntVector,
     PredictionTargetBatch,
     PreparedPredictionTargets,
-    masked_offset_argmax,
 )
+from ...decoded_offsets import DecodedOffsets, masked_offset_argmax
+from ...decoding import ActionSpaceDecodeContext, DecodedPredictionResult
 from .batch import (
     MinBlockFeeTargetBatch,
     MinBlockFeeTrainingState,

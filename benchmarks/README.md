@@ -4,7 +4,7 @@
 completed artifact evaluation under one evaluator and delay.
 
 The ledger records modern evaluator results only. Current result rows use
-`evaluation=poisson_replay_2h_mean`; historical `paper_replay_2h` results stay in
+`evaluation=poisson_replay_2h`; historical `paper_replay_2h` results stay in
 notes such as `PROGRESS.md` until rerun under current semantics.
 
 ## Row Contract
@@ -53,7 +53,7 @@ creates local run state under `outputs/benchmarks/runs/<name>/<timestamp>/`:
 - `collections/*.jsonl`: collection attempts and row status.
 
 `spice benchmark collect <name>` reads the latest run directory, pulls completed
-remote studies/artifacts through the existing storage sync APIs, and prints JSONL
+remote studies/artifacts through `execution.transfer`, and prints JSONL
 collection status. Re-run it safely while jobs are still finishing. With `--write`,
 collection appends only complete, non-duplicate rows to this ledger; missing expected
 evaluation rows abort the write.

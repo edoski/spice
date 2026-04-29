@@ -9,14 +9,15 @@ from pydantic import ValidationError
 
 from spice.config import (
     AcquireConfig,
-    AcquireWorkflowRequest,
+    AcquireWorkflowSelection,
     EvaluateConfig,
-    EvaluateWorkflowRequest,
+    EvaluateWorkflowSelection,
     TrainConfig,
-    TrainWorkflowRequest,
+    TrainWorkflowSelection,
     TuneConfig,
-    TuneWorkflowRequest,
+    TuneWorkflowSelection,
     WorkflowTask,
+    coerce_problem_spec,
     resolve_workflow_config,
 )
 from spice.config.registry import load_named_group
@@ -60,14 +61,14 @@ def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root)
         load_named_group("aliased_problem", "problem")
 
 
-def test_surface_refs_and_request_defaults_resolve(
+def test_surface_refs_and_selection_defaults_resolve(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
     conf_root = isolate_conf_root()
     child_root = tmp_path / "child_outputs"
     payload = _base_surface(conf_root)
-    payload["objective"] = "profit_poisson_replay_2h_mean"
+    payload["objective"] = "profit_poisson_replay_2h"
     (conf_root / "training" / "child_training.yaml").write_text(
         yaml.safe_dump(
             {
@@ -105,7 +106,7 @@ def test_surface_refs_and_request_defaults_resolve(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(surface="child_train"),
+            TrainWorkflowSelection(surface="child_train"),
         ),
     )
 
@@ -128,7 +129,7 @@ def test_acquire_resolution_resolves_one_chain_specific_rpc_endpoint(
         AcquireConfig,
         resolve_workflow_config(
             WorkflowTask.ACQUIRE,
-            AcquireWorkflowRequest(
+            AcquireWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 chain="avalanche",
                 storage_root=tmp_path / "outputs",
@@ -185,7 +186,7 @@ def test_acquire_resolution_fails_when_provider_lacks_chain_endpoint(
     ):
         resolve_workflow_config(
             WorkflowTask.ACQUIRE,
-            AcquireWorkflowRequest(
+            AcquireWorkflowSelection(
                 surface="eth_only_acquire",
                 chain="avalanche",
                 storage_root=tmp_path / "outputs",
@@ -200,7 +201,7 @@ def test_acquire_rejects_objective_override(
     isolate_conf_root()
 
     with pytest.raises(ValidationError, match="objective"):
-        AcquireWorkflowRequest.model_validate(
+        AcquireWorkflowSelection.model_validate(
             {
                 "surface": "current_row_fee_dynamics",
                 "objective": "validation_total_loss",
@@ -209,7 +210,7 @@ def test_acquire_rejects_objective_override(
         )
 
 
-def test_test_workflow_loader_rejects_invalid_request_override(
+def test_test_workflow_loader_rejects_invalid_selection_override(
     tmp_path: Path,
     load_workflow_config,
 ) -> None:
@@ -229,7 +230,7 @@ def test_test_workflow_loader_rejects_invalid_request_override(
         ("broken", "Field required"),
     ],
 )
-def test_invalid_resolution_requests_fail_cleanly(
+def test_invalid_resolution_selections_fail_cleanly(
     tmp_path: Path,
     isolate_conf_root,
     surface: str | None,
@@ -242,7 +243,7 @@ def test_invalid_resolution_requests_fail_cleanly(
     with pytest.raises(ConfigResolutionError, match=message):
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(surface=surface, storage_root=tmp_path / "outputs"),
+            TrainWorkflowSelection(surface=surface, storage_root=tmp_path / "outputs"),
         )
 
 
@@ -251,49 +252,36 @@ def test_benchmark_objective_requires_matching_evaluation(
     isolate_conf_root,
 ) -> None:
     conf_root = isolate_conf_root()
+    (conf_root / "objective" / "mismatch.yaml").write_text(
+        "\n".join(
+            [
+                "id: evaluation",
+                "metric_id: profit_over_baseline",
+                "direction: maximize",
+                "benchmark_id: other_evaluation",
+            ]
+        ),
+        encoding="utf-8",
+    )
     payload = _base_surface(conf_root)
-    payload["objective"] = "profit_poisson_replay_2h_mean"
-    payload["evaluation"] = {"id": "fullset", "delay_seconds": 36}
+    payload["objective"] = "mismatch"
+    payload["evaluation"] = {"id": "poisson_replay_2h"}
     _write_surface(conf_root, "mismatch", payload)
 
     with pytest.raises(
         ConfigResolutionError,
         match=(
-            "objective profit_poisson_replay_2h_mean requires evaluation "
-            "poisson_replay_2h_mean, got fullset"
+            "objective mismatch requires evaluation "
+            "other_evaluation, got poisson_replay_2h"
         ),
     ):
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(surface="mismatch", storage_root=tmp_path / "outputs"),
+            TrainWorkflowSelection(surface="mismatch", storage_root=tmp_path / "outputs"),
         )
 
 
-def test_evaluate_allows_diagnostic_evaluation_to_differ_from_objective_benchmark(
-    tmp_path: Path,
-    isolate_conf_root,
-) -> None:
-    conf_root = isolate_conf_root()
-    payload = _base_surface(conf_root)
-    payload["objective"] = "profit_poisson_replay_2h_mean"
-    payload["evaluation"] = {"id": "fullset", "delay_seconds": 36}
-    _write_surface(conf_root, "diagnostic", payload)
-
-    config = cast(
-        EvaluateConfig,
-        resolve_workflow_config(
-            WorkflowTask.EVALUATE,
-            EvaluateWorkflowRequest(surface="diagnostic", storage_root=tmp_path / "outputs"),
-        ),
-    )
-
-    assert config.objective.id == "evaluation"
-    assert config.objective.benchmark_id == "poisson_replay_2h_mean"
-    assert config.evaluation is not None
-    assert config.evaluation.id == "fullset"
-
-
-def test_request_overrides_allow_problem_features_and_evaluation_selection(
+def test_selection_overrides_allow_problem_features_and_evaluation_selection(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
@@ -303,7 +291,7 @@ def test_request_overrides_allow_problem_features_and_evaluation_selection(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(
+            TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 problem="current_row_recent_median",
                 features="core_fee_dynamics",
@@ -314,21 +302,50 @@ def test_request_overrides_allow_problem_features_and_evaluation_selection(
     assert train_config.problem.id == "current_row_recent_median"
     assert train_config.features.id == "core_fee_dynamics"
     assert train_config.evaluation is not None
-    assert train_config.evaluation.id == "poisson_replay_2h_mean"
+    assert train_config.evaluation.id == "poisson_replay_2h"
 
     evaluate_config = resolve_workflow_config(
         WorkflowTask.EVALUATE,
-        EvaluateWorkflowRequest(
+        EvaluateWorkflowSelection(
             surface="current_row_fee_dynamics",
-            evaluation="anchor_basefee_fullset",
+            evaluation="poisson_replay_2h",
             storage_root=tmp_path / "eval_outputs",
         ),
     )
     assert evaluate_config.evaluation is not None
-    assert evaluate_config.evaluation.id == "anchor_basefee_fullset"
+    assert evaluate_config.evaluation.id == "poisson_replay_2h"
 
 
-def test_request_overrides_allow_objective_selection(
+def test_selection_accepts_inline_problem_spec(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    isolate_conf_root()
+    problem = coerce_problem_spec(
+        {
+            **load_named_group("current_row_nominal", "problem"),
+            "id": "inline_problem",
+            "sample_count": 12345,
+        }
+    )
+
+    config = cast(
+        TrainConfig,
+        resolve_workflow_config(
+            WorkflowTask.TRAIN,
+            TrainWorkflowSelection(
+                surface="current_row_fee_dynamics",
+                problem=problem,
+                storage_root=tmp_path / "outputs",
+            ),
+        ),
+    )
+
+    assert config.problem.id == "inline_problem"
+    assert config.problem.sample_count == 12345
+
+
+def test_selection_overrides_allow_objective_selection(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
@@ -338,7 +355,7 @@ def test_request_overrides_allow_objective_selection(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowRequest(
+            TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 objective="validation_total_loss",
                 storage_root=tmp_path / "train_outputs",
@@ -353,7 +370,7 @@ def test_request_overrides_allow_objective_selection(
         TuneConfig,
         resolve_workflow_config(
             WorkflowTask.TUNE,
-            TuneWorkflowRequest(
+            TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 objective="validation_total_loss",
                 storage_root=tmp_path / "tune_outputs",
@@ -367,7 +384,7 @@ def test_request_overrides_allow_objective_selection(
         EvaluateConfig,
         resolve_workflow_config(
             WorkflowTask.EVALUATE,
-            EvaluateWorkflowRequest(
+            EvaluateWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 objective="validation_total_loss",
                 storage_root=tmp_path / "eval_outputs",
@@ -376,10 +393,10 @@ def test_request_overrides_allow_objective_selection(
     )
     assert evaluate_config.objective.id == "validation"
     assert evaluate_config.evaluation is not None
-    assert evaluate_config.evaluation.id == "poisson_replay_2h_mean"
+    assert evaluate_config.evaluation.id == "poisson_replay_2h"
 
 
-def test_request_overrides_allow_model_and_tuning_space_selection(
+def test_selection_overrides_allow_model_and_tuning_space_selection(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
@@ -389,7 +406,7 @@ def test_request_overrides_allow_model_and_tuning_space_selection(
         TuneConfig,
         resolve_workflow_config(
             WorkflowTask.TUNE,
-            TuneWorkflowRequest(
+            TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 model="transformer",
                 tuning_space="transformer_default",
@@ -422,7 +439,7 @@ def test_large_capacity_tuning_spaces_resolve(
         TuneConfig,
         resolve_workflow_config(
             WorkflowTask.TUNE,
-            TuneWorkflowRequest(
+            TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 model=model,
                 tuning_space=tuning_space,

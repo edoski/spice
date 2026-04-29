@@ -2,28 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from pydantic import field_validator, model_validator
 
 from ..core.errors import ConfigResolutionError
 from ..core.validation import validate_path_segment
-from ..evaluation import EvaluatorConfig, compile_evaluator_contract
+from ..evaluation import EvaluatorConfig
 from ..modeling.families.base import ConfigModel
-from ..modeling.scoring import EvaluationScoringContext, score_evaluation
 from ..prediction import MetricSet
 from ..semantics import ObjectiveSemantics
-
-if TYPE_CHECKING:
-    from ..modeling.families.base import ModelConfig
-    from ..modeling.models import TemporalModel
-    from ..modeling.representations import CompiledRepresentationContract
-    from ..prediction import CompiledPredictionContract
-    from ..temporal.execution_policy import CompiledExecutionPolicyContract
-    from ..temporal.problem_store import CompiledProblemStore, IntVector
 
 
 class ObjectiveDirection(StrEnum):
@@ -68,28 +59,12 @@ class ObjectiveConfig(ConfigModel):
 
 
 @dataclass(frozen=True, slots=True)
-class ObjectiveEvaluationContext:
-    model: TemporalModel
-    model_config: ModelConfig
-    prediction_contract: CompiledPredictionContract
-    representation_contract: CompiledRepresentationContract
-    execution_policy: CompiledExecutionPolicyContract
-    store: CompiledProblemStore
-    sample_indices: IntVector
-    batch_size: int
-
-
-EvaluateObjectiveMetricsFn = Callable[[MetricSet, ObjectiveEvaluationContext], MetricSet]
-
-
-@dataclass(frozen=True, slots=True)
 class CompiledObjectiveContract:
     objective_id: str
     metric_id: str
     direction: Literal["maximize", "minimize"]
     benchmark_id: str | None
     config_payload: dict[str, object]
-    evaluate_metrics_fn: EvaluateObjectiveMetricsFn
 
     @property
     def semantics(self) -> ObjectiveSemantics:
@@ -105,14 +80,6 @@ class CompiledObjectiveContract:
         if self.benchmark_id is None:
             return f"validation_{self.metric_id}"
         return f"validation_{self.benchmark_id}_{self.metric_id}"
-
-    def evaluate_metrics(
-        self,
-        validation_metrics: MetricSet,
-        *,
-        context: ObjectiveEvaluationContext,
-    ) -> MetricSet:
-        return self.evaluate_metrics_fn(validation_metrics, context)
 
     def value(self, metrics: MetricSet) -> float:
         return metrics.require(self.metric_id)
@@ -141,7 +108,6 @@ def compile_objective_contract(
             direction=config.direction.value,
             benchmark_id=None,
             config_payload=payload,
-            evaluate_metrics_fn=lambda validation_metrics, context: validation_metrics,
         )
     if evaluation is None:
         raise ConfigResolutionError(
@@ -151,29 +117,10 @@ def compile_objective_contract(
         raise ConfigResolutionError(
             f"objective benchmark {config.benchmark_id} does not match evaluation {evaluation.id}"
         )
-    evaluator_contract = compile_evaluator_contract(evaluation)
-
-    def _evaluate(validation_metrics: MetricSet, context: ObjectiveEvaluationContext) -> MetricSet:
-        del validation_metrics
-        return score_evaluation(
-            EvaluationScoringContext(
-                model=context.model,
-                model_config=context.model_config,
-                prediction_contract=context.prediction_contract,
-                representation_contract=context.representation_contract,
-                evaluator_contract=evaluator_contract,
-                execution_policy=context.execution_policy,
-                store=context.store,
-                sample_indices=context.sample_indices,
-                batch_size=context.batch_size,
-            )
-        ).metrics
-
     return CompiledObjectiveContract(
         objective_id="evaluation",
         metric_id=config.metric_id,
         direction=config.direction.value,
-        benchmark_id=evaluator_contract.evaluation_id,
+        benchmark_id=evaluation.id,
         config_payload=payload,
-        evaluate_metrics_fn=_evaluate,
     )

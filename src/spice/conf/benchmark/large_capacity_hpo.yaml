@@ -27,20 +27,20 @@ cases:
       - id: tune
         workflow: tune
         set:
-          objective: profit_poisson_replay_2h_mean
-          evaluation: poisson_replay_2h_mean
+          objective: profit_poisson_replay_2h
+          evaluation: poisson_replay_2h
           trial_count: 40
       - id: train_tuned
         workflow: train
         after: [tune]
         set:
-          objective: profit_poisson_replay_2h_mean
-          evaluation: poisson_replay_2h_mean
+          objective: profit_poisson_replay_2h
+          evaluation: poisson_replay_2h
           variant: tuned
       - id: evaluate_tuned
         workflow: evaluate
         after: [train_tuned]
         set:
-          objective: profit_poisson_replay_2h_mean
-          evaluation: poisson_replay_2h_mean
+          objective: profit_poisson_replay_2h
+          evaluation: poisson_replay_2h
           variant: tuned

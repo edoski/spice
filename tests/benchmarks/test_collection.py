@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from spice.benchmark_runs import (
+from spice.benchmarks import (
+    BenchmarkPlanEntry,
     BenchmarkSubmissionRecord,
     append_submission_jsonl,
     collect_benchmark_run,
@@ -14,7 +15,6 @@ from spice.benchmark_runs import (
     write_plan_jsonl,
 )
 from spice.config import WorkflowTask
-from spice.config.benchmarks import BenchmarkPlanEntry
 from spice.core.errors import SelectorResolutionError, SpiceOperatorError
 
 
@@ -28,7 +28,7 @@ def _write_evaluate_run(run_dir: Path, config) -> None:
         external_dependencies=(),
         selection={
             "surface": "current_row_fee_dynamics",
-            "objective": "profit_poisson_replay_2h_mean",
+            "objective": "profit_poisson_replay_2h",
         },
         config=config,
     )
@@ -49,7 +49,7 @@ def _write_evaluate_run(run_dir: Path, config) -> None:
 
 def _loaded_summary(config):
     return SimpleNamespace(
-        evaluation_id="poisson_replay_2h_mean-36s-storage",
+        evaluation_id="poisson_replay_2h-36s-storage",
         recorded_at=1_700_000_000,
         manifest=SimpleNamespace(
             artifact_id="artifact-1",
@@ -98,30 +98,27 @@ def test_benchmark_collect_writes_and_skips_duplicate_rows(
         runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
     )
     _write_evaluate_run(run_dir, config)
-    artifact_pulls: list[bool] = []
+    resolve_calls: list[object] = []
 
-    def fake_pull_artifact(**kwargs):
-        artifact_pulls.append(kwargs["replace"])
-
-    monkeypatch.setattr("spice.benchmark_runs.pull_artifact_from_cluster", fake_pull_artifact)
-    monkeypatch.setattr(
-        "spice.benchmark_runs.load_training_summary",
-        lambda path: SimpleNamespace(
-            runtime=SimpleNamespace(
-                test_metrics=SimpleNamespace(
-                    values={
-                        "total_loss": 0.3,
-                        "offset_accuracy": 0.8,
-                        "macro_f1": 0.7,
-                    }
+    def fake_resolve(config, *, session):
+        resolve_calls.append(session)
+        return SimpleNamespace(
+            evaluation=_loaded_summary(config),
+            training=SimpleNamespace(
+                runtime=SimpleNamespace(
+                    test_metrics=SimpleNamespace(
+                        values={
+                            "total_loss": 0.3,
+                            "offset_accuracy": 0.8,
+                            "macro_f1": 0.7,
+                        }
+                    )
                 )
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        "spice.benchmark_runs.list_evaluation_summaries",
-        lambda path: [_loaded_summary(config)],
-    )
+            ),
+        )
+
+    monkeypatch.setattr("spice.benchmarks.collection.open_execution_session", lambda _target: "s")
+    monkeypatch.setattr("spice.benchmarks.collection.resolve_benchmark_evaluation", fake_resolve)
     ledger_path = tmp_path / "benchmarks" / "results.csv"
 
     records = collect_benchmark_run(
@@ -144,13 +141,13 @@ def test_benchmark_collect_writes_and_skips_duplicate_rows(
     assert rows[0]["git_commit"] == "abc123"
     assert rows[0]["execution_ref"] == "slurm:57549"
     assert rows[0]["surface"] == "current_row_fee_dynamics"
-    assert rows[0]["objective"] == "profit_poisson_replay_2h_mean"
+    assert rows[0]["objective"] == "profit_poisson_replay_2h"
     assert rows[0]["profit_over_baseline"] == "0.12"
     assert rows[0]["total_loss"] == "0.3"
     assert rows[0]["offset_accuracy"] == "0.8"
     assert rows[0]["macro_f1"] == "0.7"
     assert rows[0]["log_fee_mae"] == ""
-    assert artifact_pulls == [True, True]
+    assert resolve_calls == ["s", "s"]
 
 
 def test_benchmark_collect_refuses_partial_ledger_write(
@@ -172,13 +169,16 @@ def test_benchmark_collect_refuses_partial_ledger_write(
         runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
     )
     _write_evaluate_run(run_dir, config)
-    def missing_remote_artifact(**kwargs):
-        del kwargs
+
+    def missing_remote_artifact(_config, *, session):
+        del session
         raise SelectorResolutionError(kind="artifact", records=[])
 
-    monkeypatch.setattr("spice.benchmark_runs.pull_artifact_from_cluster", missing_remote_artifact)
-    monkeypatch.setattr("spice.benchmark_runs.load_training_summary", lambda path: None)
-    monkeypatch.setattr("spice.benchmark_runs.list_evaluation_summaries", lambda path: [])
+    monkeypatch.setattr("spice.benchmarks.collection.open_execution_session", lambda _target: "s")
+    monkeypatch.setattr(
+        "spice.benchmarks.collection.resolve_benchmark_evaluation",
+        missing_remote_artifact,
+    )
     ledger_path = tmp_path / "benchmarks" / "results.csv"
 
     with pytest.raises(SpiceOperatorError, match="Refusing partial"):

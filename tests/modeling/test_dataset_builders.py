@@ -8,7 +8,7 @@ import polars as pl
 from spice.config import TrainConfig, WorkflowTask
 from spice.modeling.dataset_builders import FixedSequenceTemporalBuilderRuntimeMetadata
 from spice.modeling.pipeline import build_training_spec, prepare_training_dataset
-from spice.storage.layout import resolve_workflow_paths
+from spice.storage.workflow_paths import resolve_workflow_paths
 from tests.dataset_helpers import (
     make_block_rows,
     required_dataset_blocks,

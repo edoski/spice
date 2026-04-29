@@ -7,7 +7,7 @@ from spice.storage.catalog import CatalogArtifactRecord
 from spice.storage.catalog.store import list_artifact_records, upsert_artifact_record
 from spice.storage.engine import RootKind, ensure_state_db, state_db_path
 from spice.storage.layout import catalog_db_path
-from spice.storage.roots import _delete_artifact_record
+from spice.storage.lifecycle import delete_catalog_artifact_root
 
 
 def _artifact_record(root_path):
@@ -45,7 +45,7 @@ def test_delete_artifact_rejects_invalid_catalog_roots(tmp_path, case: str) -> N
             message = "missing state DB"
 
     with pytest.raises(StateLayoutError, match=message):
-        _delete_artifact_record(storage_root, _artifact_record(artifact_root))
+        delete_catalog_artifact_root(storage_root, _artifact_record(artifact_root))
 
     assert artifact_root.exists()
 
@@ -80,10 +80,10 @@ def test_delete_artifact_keeps_catalog_record_when_filesystem_delete_fails(
         del path
         raise OSError("delete failed")
 
-    monkeypatch.setattr("spice.storage.roots.remove_path", fail_remove_path)
+    monkeypatch.setattr("spice.storage.lifecycle.remove_path", fail_remove_path)
 
     with pytest.raises(OSError, match="delete failed"):
-        _delete_artifact_record(storage_root, record)
+        delete_catalog_artifact_root(storage_root, record)
 
     records = list_artifact_records(catalog_path)
     assert [stored.artifact_id for stored in records] == [record.artifact_id]

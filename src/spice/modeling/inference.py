@@ -7,9 +7,8 @@ import torch
 from ..core.errors import SpiceOperatorError
 from ..prediction import (
     CompiledPredictionContract,
-    DecodedPredictionResult,
-    decode_context_from_batch,
 )
+from ..prediction.decoding import DecodedPredictionResult, decode_context_from_batch
 from ..temporal.problem_store import CompiledProblemStore, IntVector
 from ._runtime import (
     build_cuda_modeling_runtime,
@@ -17,7 +16,7 @@ from ._runtime import (
     measure_forward_device_resident_budget,
     run_model_forward_pass,
 )
-from .batch_sources import build_model_input_batch_source
+from .batch_plan import build_model_input_batch_plan
 from .families.base import ModelConfig
 from .families.registry import resolve_model_training_precision
 from .models import TemporalModel
@@ -57,7 +56,7 @@ def predict_with_model(
         resolved_device=runtime.resolved_device,
         deterministic=None,
     ):
-        warmup_source = build_model_input_batch_source(
+        warmup_plan = build_model_input_batch_plan(
             store,
             sample_indices,
             representation_contract=representation_contract,
@@ -68,12 +67,12 @@ def predict_with_model(
         planned_runtime_context = runtime.representation_runtime_context.with_device_memory_budget(
             measure_forward_device_resident_budget(
                 model,
-                loader=warmup_source,
+                loader=warmup_plan.source,
                 resolved_device=runtime.resolved_device,
                 precision=precision,
             )
         )
-        batch_source = build_model_input_batch_source(
+        batch_plan = build_model_input_batch_plan(
             store,
             sample_indices,
             representation_contract=representation_contract,
@@ -83,7 +82,7 @@ def predict_with_model(
         )
         run_model_forward_pass(
             model,
-            loader=batch_source,
+            loader=batch_plan.source,
             resolved_device=runtime.resolved_device,
             precision=precision,
             on_outputs=_decode_batch,

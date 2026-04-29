@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import cast, overload
 
+from ..config.hydration import hydrate_model_workflow_config
 from ..config.models import (
     EvaluateConfig,
     TrainConfig,
@@ -13,11 +14,10 @@ from ..config.models import (
     TunedParameterSet,
     WorkflowTask,
 )
-from ..config.resolution import hydrate_model_workflow_config
 from ..core.errors import ConfigResolutionError, MissingStateError
-from ..storage.layout import resolve_workflow_paths
-from ..storage.study_manifest import load_study_manifest, validate_tuned_train_request
+from ..storage.study_manifest import load_study_manifest, validate_tuned_artifact_definition
 from ..storage.study_optuna import load_best_params
+from ..storage.workflow_paths import resolve_workflow_paths
 from .families.registry import (
     apply_model_tuned_parameters,
 )
@@ -94,7 +94,7 @@ def apply_study_best_params(config: TrainConfig | EvaluateConfig) -> AppliedStud
             "Configured tuned study does not match the current problem, features, "
             "model, or study selection"
         ) from exc
-    validate_tuned_train_request(config, manifest=manifest)
+    validate_tuned_artifact_definition(config, manifest=manifest)
     params = load_best_params(path, study_name=config.study.name)
     tuned_config = apply_tuned_parameters(config, params)
     return AppliedStudyBestParams(config=tuned_config, study_id=paths.study_id)

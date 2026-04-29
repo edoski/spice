@@ -29,7 +29,7 @@ Every row uses the same columns:
 | `chain_id` | Numeric chain id. |
 | `gas_limit` | Block gas limit. |
 
-RPC payload conversion builds this schema. Missing required block fields fail during conversion. Missing `base_fee_per_gas` becomes `0`, which keeps canonical rows rectangular for chains or blocks where the field is absent.
+RPC payload conversion builds this schema. Missing required block fields fail during conversion. Missing `base_fee_per_gas` is stored as `None`, which keeps canonical rows rectangular for chains or blocks where the field is absent.
 
 ## Parquet IO
 
@@ -44,6 +44,12 @@ corpus root/
 ```
 
 Loads scan recursively, skip hidden paths, combine chunks, and sort by `block_number`. Sorting gives deterministic row order even when chunks were written in several parts.
+
+## Corpus Assembly
+
+Corpus Assembly has one public Interface: `assemble_corpus()`. It returns a dry-run plan or a committed corpus result. Split materialization helpers are private implementation details.
+
+History refill is bounded. Assembly first requests an estimated history window, counts valid capability samples, and expands the window up to a small internal cap if observed block cadence under-requested usable rows.
 
 ## Validation
 
@@ -93,4 +99,3 @@ Training coverage requires history seconds plus max delay seconds, and warmup ro
 ## Extension Pattern
 
 New corpus sources should still emit the canonical block schema and pass the same validation reports. Acquisition method can vary; corpus semantics should not.
-

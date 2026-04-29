@@ -10,7 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..prediction.base import MetricDescriptor, MetricSet, WindowMetricSummary
-from ..prediction.contracts import DecodedPredictionResult
+from ..prediction.decoding import DecodedPredictionResult
 from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
 

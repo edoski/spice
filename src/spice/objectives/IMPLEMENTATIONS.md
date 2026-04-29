@@ -9,20 +9,20 @@ Training always computes prediction metrics. An objective decides which metric c
 ```text
 validation batches
   -> prediction metrics
-  -> optional evaluation scoring
+  -> optional Objective Metric Source
   -> objective metric
   -> checkpoint decision
 ```
 
 ## Validation Objective
 
-`id: validation` uses validation metrics directly. Current checked-in preset `validation_total_loss` minimizes `total_loss`.
+`id: validation` uses validation metrics directly. Current checked-in spec `validation_total_loss` minimizes `total_loss`.
 
 This is the simplest objective: it optimizes the same metric produced by the prediction family during validation.
 
 ## Evaluation Objective
 
-`id: evaluation` runs an evaluator on validation samples and optimizes an evaluator metric. Current checked-in presets maximize `profit_over_baseline` under Poisson replay benchmarks.
+`id: evaluation` selects an evaluator metric from validation-sample scoring. `modeling.objective_metrics` runs the model-bound scoring path. Current checked-in specs maximize `profit_over_baseline` under Poisson replay benchmarks.
 
 ```text
 validation samples
@@ -50,13 +50,12 @@ Evaluation objectives name a benchmark evaluator id. Train and tune configs must
 
 Evaluate workflow can run a selected diagnostic evaluator directly; artifact semantic validation still checks the trained configuration identity.
 
-## Current Presets
+## Current Specs
 
-| Preset | Mode | Metric | Direction |
+| Spec | Mode | Metric | Direction |
 | --- | --- | --- | --- |
 | `validation_total_loss` | validation | `total_loss` | minimize |
-| `profit_poisson_replay_2h_mean` | evaluation | `profit_over_baseline` | maximize |
-| `profit_poisson_replay_2h_total` | evaluation | `profit_over_baseline` | maximize |
+| `profit_poisson_replay_2h` | evaluation | `profit_over_baseline` | maximize |
 
 ## Failure Modes
 
@@ -70,4 +69,3 @@ Evaluate workflow can run a selected diagnostic evaluator directly; artifact sem
 ## Extension Pattern
 
 A new objective mode should still produce one metric id and direction. Keep objective selection separate from prediction family loss implementation.
-

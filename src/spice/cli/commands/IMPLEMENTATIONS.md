@@ -13,6 +13,8 @@ terminal command
 
 The CLI should be ergonomic. Lower layers should stay explicit and typed.
 
+Workflow commands keep explicit Typer signatures, then delegate CLI-value handling to the **CLI Selection Layer**. That layer builds typed **Workflow Selections**, validates local-vs-submitted rules, and returns resolved **Workflow Config** plans.
+
 ## Workflow Commands
 
 Commands:
@@ -89,7 +91,7 @@ Benchmark commands use the same config resolution stack:
 
 | Rule | Why |
 | --- | --- |
-| Remote target fallback lives only here. | Execution and sync APIs stay explicit. |
+| Remote target fallback lives only here. | Execution and transfer APIs stay explicit. |
 | Dependency and detach require submit. | They only make sense for scheduled jobs. |
 | Detail views require one match. | Avoids rendering mixed root state. |
 | Delete validates root kind. | Protects storage layout. |

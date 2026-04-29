@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 
 from ..problem_store import CompiledProblemStore
@@ -22,54 +20,6 @@ class StrictDeadlineMissConfig(ExecutionPolicyConfig):
     id: str = "strict_deadline_miss"
 
 
-@dataclass(frozen=True, slots=True)
-class _CandidateWindowSummary:
-    baseline_rows: IntVector
-    candidate_end_rows: IntVector
-    candidate_counts: IntVector
-    post_window_rows: IntVector
-    optimum_offsets: IntVector
-    optimum_log_fees: np.ndarray
-    optimum_rows: IntVector
-
-
-def _candidate_window_summary(
-    store: CompiledProblemStore,
-    sample_indices: IntVector,
-) -> _CandidateWindowSummary:
-    resolved_indices = sample_indices.astype(np.int64, copy=False)
-    baseline_rows = store.candidate_start_rows[resolved_indices].astype(np.int64, copy=False)
-    candidate_end_rows = store.candidate_end_rows[resolved_indices].astype(np.int64, copy=False)
-    candidate_counts = (candidate_end_rows - baseline_rows).astype(np.int64, copy=False)
-    if np.any(candidate_counts <= 0):
-        raise ValueError("strict_deadline_miss requires at least one future candidate")
-    post_window_rows = candidate_end_rows.astype(np.int64, copy=False)
-    optimum_offsets = np.empty(resolved_indices.shape[0], dtype=np.int64)
-    optimum_log_fees = np.empty(resolved_indices.shape[0], dtype=np.float32)
-    optimum_rows = np.empty(resolved_indices.shape[0], dtype=np.int64)
-    max_candidate_slots = int(store.max_candidate_slots)
-    if max_candidate_slots <= 0:
-        raise ValueError("strict_deadline_miss requires positive max_candidate_slots")
-    for row, (start_row, end_row) in enumerate(
-        zip(baseline_rows, candidate_end_rows, strict=True)
-    ):
-        reachable_end_row = min(int(end_row), int(start_row) + max_candidate_slots)
-        candidate_values = store.log_base_fees[start_row:reachable_end_row]
-        min_offset = int(np.argmin(candidate_values))
-        optimum_offsets[row] = min_offset
-        optimum_log_fees[row] = float(candidate_values[min_offset])
-        optimum_rows[row] = int(start_row + min_offset)
-    return _CandidateWindowSummary(
-        baseline_rows=baseline_rows,
-        candidate_end_rows=candidate_end_rows,
-        candidate_counts=candidate_counts,
-        post_window_rows=post_window_rows,
-        optimum_offsets=optimum_offsets,
-        optimum_log_fees=optimum_log_fees,
-        optimum_rows=optimum_rows,
-    )
-
-
 def _prepare_supervised_targets(
     store: CompiledProblemStore,
     sample_indices: IntVector,
@@ -77,7 +27,7 @@ def _prepare_supervised_targets(
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
     resolved_indices = sample_indices.astype(np.int64, copy=False)
-    window_summary = _candidate_window_summary(store, resolved_indices)
+    window_summary = store.candidate_windows(resolved_indices)
     batch_size = int(resolved_indices.shape[0])
     max_candidate_slots = int(store.max_candidate_slots)
     candidate_mask = np.zeros((batch_size, max_candidate_slots), dtype=np.bool_)
@@ -128,7 +78,7 @@ def _realize_selections(
     if selected_positions.size == 0:
         raise ValueError("selected_positions must be non-empty")
     selected_sample_indices = sample_indices[selected_positions]
-    window_summary = _candidate_window_summary(store, selected_sample_indices)
+    window_summary = store.candidate_windows(selected_sample_indices)
     requested_offsets = decoded_offsets.select(selected_positions).astype(np.int64, copy=False)
     if np.any(requested_offsets < 0):
         raise ValueError("decoded_offsets must be non-negative")
@@ -136,7 +86,7 @@ def _realize_selections(
         raise ValueError("decoded_offsets must be smaller than max_candidate_slots")
     overflow_mask = requested_offsets >= window_summary.candidate_counts
     overflow_without_post_window = np.any(
-        window_summary.post_window_rows[overflow_mask] >= store.n_rows
+        window_summary.candidate_end_rows[overflow_mask] >= store.n_rows
     )
     if np.any(overflow_mask) and overflow_without_post_window:
         raise ValueError(
@@ -147,7 +97,7 @@ def _realize_selections(
     realized_rows = window_summary.baseline_rows + requested_offsets
     if np.any(overflow_mask):
         resolved_offsets[overflow_mask] = window_summary.candidate_counts[overflow_mask]
-        realized_rows[overflow_mask] = window_summary.post_window_rows[overflow_mask]
+        realized_rows[overflow_mask] = window_summary.candidate_end_rows[overflow_mask]
     return RealizedSelectionBatch(
         realized_rows=realized_rows,
         baseline_rows=window_summary.baseline_rows,

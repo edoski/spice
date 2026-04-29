@@ -54,11 +54,12 @@ Runtime metadata exists because some builders learn non-model assumptions during
 training prepare
   -> builder runtime metadata
   -> artifact manifest
+  -> Artifact Inference Context
   -> evaluation prepare
   -> reconstruct same assumptions
 ```
 
-Fixed-context inference explicitly requires `FixedSequenceTemporalBuilderRuntimeMetadata`. The check lives near the fixed-sequence use site because the requirement is builder-specific, not a generic base helper.
+Artifact Inference Context decodes compiler runtime metadata before inference preparation. Fixed-context inference explicitly requires `FixedSequenceTemporalBuilderRuntimeMetadata`; that type check stays near the fixed-sequence use site because the requirement is builder-specific.
 
 ## Invariants
 

@@ -66,7 +66,7 @@ class ArtifactStorageIdentity(IdentityModel):
     study: StudyConfig | None = None
 
 
-class StudyRequestIdentity(IdentityModel):
+class StudyDefinitionIdentity(IdentityModel):
     study_name: str
     study_id: str | None
     chain_name: str
@@ -85,7 +85,7 @@ class StudyRequestIdentity(IdentityModel):
 
 
 class StudyManifestIdentity(IdentityModel):
-    request: StudyRequestIdentity
+    definition: StudyDefinitionIdentity
     sampler_name: str
     sampler_seed: int
     pruner_name: str
@@ -184,7 +184,7 @@ def artifact_storage_identity_from_config(
     )
 
 
-def study_request_identity(
+def study_definition_identity(
     *,
     study_name: str,
     study_id: str | None,
@@ -201,8 +201,8 @@ def study_request_identity(
     training: TrainingConfig,
     tuning: TuningSearchConfig,
     tuning_space: TuningSpaceConfig,
-) -> StudyRequestIdentity:
-    return StudyRequestIdentity(
+) -> StudyDefinitionIdentity:
+    return StudyDefinitionIdentity(
         study_name=study_name,
         study_id=study_id,
         chain_name=chain_name,
@@ -221,8 +221,8 @@ def study_request_identity(
     )
 
 
-def study_request_identity_from_manifest(manifest: StudyManifest) -> StudyRequestIdentity:
-    return study_request_identity(
+def study_definition_identity_from_manifest(manifest: StudyManifest) -> StudyDefinitionIdentity:
+    return study_definition_identity(
         study_name=manifest.study_name,
         study_id=manifest.study_id,
         chain_name=manifest.chain_name,
@@ -241,17 +241,17 @@ def study_request_identity_from_manifest(manifest: StudyManifest) -> StudyReques
     )
 
 
-def study_request_identity_from_tuned_config(
+def study_definition_identity_from_tuned_config(
     config: TrainConfig | EvaluateConfig,
     *,
     study_id: str,
     dataset_id: str,
-) -> StudyRequestIdentity:
+) -> StudyDefinitionIdentity:
     if config.tuning is None or config.tuning_space is None:
         raise ConfigResolutionError(
-            "tuned artifact requests require tuning and tuning_space in the surface"
+            "tuned artifact definitions require tuning and tuning_space in the surface"
         )
-    return study_request_identity(
+    return study_definition_identity(
         study_name=config.study.name,
         study_id=study_id,
         chain_name=config.chain.name,
@@ -272,7 +272,7 @@ def study_request_identity_from_tuned_config(
 
 def study_manifest_identity(manifest: StudyManifest) -> StudyManifestIdentity:
     return StudyManifestIdentity(
-        request=study_request_identity_from_manifest(manifest),
+        definition=study_definition_identity_from_manifest(manifest),
         sampler_name=manifest.sampler_name,
         sampler_seed=manifest.sampler_seed,
         pruner_name=manifest.pruner_name,
@@ -287,6 +287,6 @@ def _study_definition(
         return config.tuning, config.tuning_space
     if config.tuning is None or config.tuning_space is None:
         raise ConfigResolutionError(
-            "tuned artifact requests require tuning and tuning_space in the surface"
+            "tuned artifact definitions require tuning and tuning_space in the surface"
         )
     return config.tuning, config.tuning_space

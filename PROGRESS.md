@@ -2,11 +2,13 @@
 
 _Last verified: 2026-04-28 08:12 CEST_
 
+Current runnable code uses evaluator `poisson_replay_2h` and objective `profit_poisson_replay_2h`. Older evaluator ids in this file are historical remote-run evidence only.
+
 ## Status Snapshot
 
 Local `main` is ahead of the remote experiment branch. That split is intentional: the just-completed remote wave ran on `codex/temporal-parity` with older config/evaluator names. Preserve the remote evidence before updating that checkout.
 
-The current local architecture is safe-only. The runnable defaults are surface `current_row_fee_dynamics`, features `core_fee_dynamics`, problem `current_row_nominal`, compiler `observed_time_window`, execution policy `strict_deadline_miss`, evaluator `poisson_replay_2h_mean`, and diagnostic evaluator `poisson_replay_2h_total`.
+The current local architecture is safe-only. The runnable defaults are surface `current_row_fee_dynamics`, features `core_fee_dynamics`, problem `current_row_nominal`, compiler `observed_time_window`, execution policy `strict_deadline_miss`, and evaluator `poisson_replay_2h`.
 
 Remote benchmark logs still use older historical preset and evaluator names such as `same_block_closed`, `block_open_lagged`, `estimated_block`, `icdcs_2026_oracle_intermediate`, `icdcs_2026_professor_block_open_*`, and `paper_replay_2h`. Those names are historical evidence only in the current codebase. The removed runnable paths are documented in `ARCHIVE.md`.
 
@@ -31,13 +33,11 @@ Current corpus status:
 - Slot-spacing comparison problem: `current_row_recent_median`.
 - Compiler: `observed_time_window`.
 - Execution policy: `strict_deadline_miss`.
-- Primary evaluator: `poisson_replay_2h_mean`, reporting mean per-prediction `profit_over_baseline` and `cost_over_optimum`.
-- Diagnostic total-ratio evaluator: `poisson_replay_2h_total`.
-- Diagnostic fullset evaluators: `zero_stop_rollout_fullset` and `anchor_basefee_fullset`.
+- Primary evaluator: `poisson_replay_2h`, reporting event-mean `profit_over_baseline` and `cost_over_optimum`.
 
 Historical remote results below use removed runnable paths such as `same_block_closed`, `block_open_lagged`, and `estimated_block`. They remain useful as thesis evidence, not as current config targets.
 
-Historical remote results below use the older `paper_replay_2h` total-ratio style unless stated otherwise. Do not silently compare those numbers against current `poisson_replay_2h_mean` output.
+Historical remote results below use the older `paper_replay_2h` total-ratio style unless stated otherwise. Do not silently compare those numbers against current `poisson_replay_2h` output.
 
 ### Active Remote Runs
 
@@ -126,7 +126,7 @@ Proof-quality grid:
 - Models: LSTM, Transformer, Transformer-LSTM.
 - Problem: `current_row_nominal`.
 - Surface: `current_row_fee_dynamics`, with only the `features` selection varied.
-- Primary evaluator: `poisson_replay_2h_mean`.
+- Historical primary evaluator id at the time: `poisson_replay_2h_mean`.
 - Compare held-out evaluation results, not just training loss or HPO validation objective.
 - Prefer repeated seeds if the single-seed deltas are small or inconsistent.
 
@@ -191,13 +191,13 @@ Benchmark sweep operator flow:
 - Before launching a full sweep, push validated ETH/AVAX/POL 1M corpora to remote and run one small current-config smoke train/evaluate to verify the remote checkout, storage, and evaluator path.
 - Preview the exact remote workflow DAG with `spice benchmark plan <name>`.
 - Submit with `spice benchmark submit <name>`. This uses the default remote target, records the remote git commit, writes `outputs/benchmarks/runs/<name>/<timestamp>/plan.jsonl`, and appends Slurm submission records to `submission.jsonl`.
-- Poll collection with `spice benchmark collect <name>`. This reads the latest run directory, pulls required remote studies/artifacts over SSH through existing storage sync APIs, and prints JSONL status without changing `benchmarks/results.csv`.
+- Poll collection with `spice benchmark collect <name>`. This reads the latest run directory, pulls required remote studies/artifacts over SSH through `execution.transfer`, and prints JSONL status without changing `benchmarks/results.csv`.
 - Finalize with `spice benchmark collect <name> --write` only after all expected evaluation jobs are complete. Writes are all-or-nothing for missing expected evaluation rows and skip duplicate `(artifact_id, evaluation_storage_id)` ledger rows.
 
 Configured sweep specs awaiting launch decisions:
 
-- `safe_baseline_grid`: untuned ETH/POL/AVAX by LSTM/Transformer/Transformer-LSTM on `current_row_fee_dynamics`, `core_fee_dynamics`, default 1M `current_row_nominal`, and `poisson_replay_2h_mean`.
-- `large_capacity_hpo`: bounded calibration HPO over the same 3x3 chain/model grid, large-capacity tuning spaces, 40 trials per cell, tuned train, and tuned `poisson_replay_2h_mean` evaluation.
+- `safe_baseline_grid`: untuned ETH/POL/AVAX by LSTM/Transformer/Transformer-LSTM on `current_row_fee_dynamics`, `core_fee_dynamics`, default 1M `current_row_nominal`, and `poisson_replay_2h`.
+- `large_capacity_hpo`: bounded calibration HPO over the same 3x3 chain/model grid, large-capacity tuning spaces, 40 trials per cell, tuned train, and tuned `poisson_replay_2h` evaluation.
 - `lookback_window_sweep`: fixed train/evaluate grid over ETH/POL/AVAX, LSTM/Transformer/Transformer-LSTM, and `600s`/`900s`/`1200s` lookbacks. No per-cell HPO.
 - `slot_spacing_sweep`: fixed train/evaluate comparison of `current_row_nominal` and `current_row_recent_median` across the same 3x3 safe grid. No per-cell HPO.
 - `elapsed_position_ablation`: fixed train/evaluate comparison of `core_fee_dynamics` against `core_fee_dynamics_elapsed_position` across the same 3x3 safe grid.
@@ -207,18 +207,17 @@ GPU-hour policy:
 
 - Do not tune every structural sweep cell. Run `large_capacity_hpo` as the broad calibration search, then run structural sweeps as fixed train/evaluate grids.
 - If tuned parameters should be reused outside their exact study identity, first materialize explicit model/training presets from the selected HPO results. Current benchmark YAML does not automatically transplant best parameters across different problem/features cells.
-- Keep `poisson_replay_2h_mean` as the canonical benchmark evaluator for new claims. Use total-ratio diagnostics only when there is a specific historical-comparability reason.
+- Keep `poisson_replay_2h` as the canonical benchmark evaluator for new claims.
 
 Metrics plan:
 
-- Domain replay metrics stay in evaluators and benchmark collection. `poisson_replay_2h_mean` is the current canonical domain result.
+- Domain replay metrics stay in evaluators and benchmark collection. `poisson_replay_2h` is the current canonical domain result.
 - Pre-benchmark v1 ML metrics: add `macro_f1` for both offset-output prediction families and `log_fee_mae` / `log_fee_mse` for `min_block_fee_multitask`, then persist them through `benchmarks/results.csv`. Do not do a broader metric redesign before this benchmark wave.
 
 ### Benchmarking Rules
 
 - Treat `paper_replay_2h` results as historical remote evidence until rerun under current local evaluator names.
-- Treat `poisson_replay_2h_mean` as the current canonical evaluator for new local benchmark claims.
-- Keep `poisson_replay_2h_total` only for targeted total-ratio diagnostics and legacy comparability.
+- Treat `poisson_replay_2h` as the current canonical evaluator for new local benchmark claims.
 - Do not read notebook rollout/fullset diagnostics as equivalent to one-shot replay.
 - Do not claim exact professor-pipeline parity; preprocessing, split construction, evaluator semantics, and checkpoint selection remain partially unresolved.
 
@@ -226,7 +225,7 @@ Metrics plan:
 
 ### Current Safe Architecture
 
-`current_row_fee_dynamics` is the primary current runnable surface. It composes `core_fee_dynamics`, 1M-sample `current_row_nominal`, `fixed_sequence_temporal`, `lstm`, `icdcs_2026`, `profit_poisson_replay_2h_mean`, and `poisson_replay_2h_mean` by default. Sample-count sweeps are deferred until exact chain/date ranges and protocol-regime boundaries are explicit.
+`current_row_fee_dynamics` is the primary current runnable surface. It composes `core_fee_dynamics`, 1M-sample `current_row_nominal`, `fixed_sequence_temporal`, `lstm`, `icdcs_2026`, `profit_poisson_replay_2h`, and `poisson_replay_2h` by default. Sample-count sweeps are deferred until exact chain/date ranges and protocol-regime boundaries are explicit.
 
 `core_fee_dynamics` is safe by construction. The source layer allows current `base_fee_per_gas[t]` because EIP-1559 base fee for block `t` is deterministic from parent state before block `t` execution. Finalized current-block facts such as gas used, gas limit, transaction count, and fee-history priority-fee summaries are lagged to `t-1`.
 
@@ -248,7 +247,7 @@ Both names are historical evidence only after the safe refactor. Current runnabl
 
 ### Current Evaluators
 
-`poisson_replay_2h_mean` is the primary evaluator for current work. `poisson_replay_2h_total` preserves total-ratio diagnostics. `zero_stop_rollout_fullset` and `anchor_basefee_fullset` remain diagnostic fullset evaluators.
+`poisson_replay_2h` is the primary evaluator for current work. Removed total-ratio and fullset evaluator ids in historical notes are not runnable current configs.
 
 Replay is a one-shot decoded-offset benchmark: the model commits to one decoded choice from the current row. Notebook-style rollout is a sequential re-decision policy and is easier to do well on, so it is diagnostic only.
 

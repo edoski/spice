@@ -1,18 +1,16 @@
-"""Workflow request handling and surface resolution."""
+"""Workflow selection resolution."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal, overload
 
-from pydantic import Field, ValidationError
+from pydantic import ValidationError
 
 from ..core.errors import ConfigResolutionError
 from ..evaluation import EvaluatorConfig, coerce_evaluator_config
 from ..modeling.dataset_builders import coerce_dataset_builder_config
-from ..modeling.families.base import ConfigModel, ModelConfig
+from ..modeling.families.base import ModelConfig
 from ..modeling.families.registry import coerce_model_config
 from ..modeling.tuned_config import coerce_tuning_space_config
 from ..objectives import ObjectiveConfig, coerce_objective_config
@@ -42,57 +40,20 @@ from .models import (
     coerce_problem_spec,
 )
 from .registry import load_named_group
-from .surfaces import SurfaceFrame, apply_request_overrides, load_surface_frame
+from .selections import (
+    AcquireWorkflowSelection,
+    EvaluateWorkflowSelection,
+    TrainWorkflowSelection,
+    TuneWorkflowSelection,
+    WorkflowSelection,
+    workflow_selection_type,
+)
+from .surfaces import SurfaceFrame, apply_selection_overrides, load_surface_frame
 
 _MODEL_GROUP = "model"
 _TUNING_SPACE_GROUP = "tuning_space"
 
 WorkflowConfig = AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig
-
-
-class WorkflowRequestBase(ConfigModel):
-    surface: str | None = None
-    chain: str | None = None
-    problem: str | None = None
-    features: str | None = None
-    storage_root: Path | None = None
-
-
-class AcquireWorkflowRequest(WorkflowRequestBase):
-    provider: str | None = None
-    dry_run: bool | None = None
-
-
-class ModelWorkflowRequestBase(WorkflowRequestBase):
-    objective: str | None = None
-    evaluation: str | None = None
-    model: str | None = None
-    tuning_space: str | None = None
-    training: str | None = None
-    split: str | None = None
-    tuning: str | None = None
-    study: str | None = None
-
-
-class TrainWorkflowRequest(ModelWorkflowRequestBase):
-    variant: str | None = None
-
-
-class TuneWorkflowRequest(ModelWorkflowRequestBase):
-    trial_count: int | None = Field(default=None, gt=0)
-
-
-class EvaluateWorkflowRequest(ModelWorkflowRequestBase):
-    variant: str | None = None
-    delay_seconds: int | None = Field(default=None, gt=0)
-
-
-WorkflowConfigRequest = (
-    AcquireWorkflowRequest
-    | TrainWorkflowRequest
-    | TuneWorkflowRequest
-    | EvaluateWorkflowRequest
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,82 +99,53 @@ def load_named_tuning_space(
 @overload
 def resolve_workflow_config(
     workflow_kind: Literal[WorkflowTask.ACQUIRE],
-    request: AcquireWorkflowRequest,
+    selection: AcquireWorkflowSelection,
 ) -> AcquireConfig: ...
 
 
 @overload
 def resolve_workflow_config(
     workflow_kind: Literal[WorkflowTask.TRAIN],
-    request: TrainWorkflowRequest,
+    selection: TrainWorkflowSelection,
 ) -> TrainConfig: ...
 
 
 @overload
 def resolve_workflow_config(
     workflow_kind: Literal[WorkflowTask.TUNE],
-    request: TuneWorkflowRequest,
+    selection: TuneWorkflowSelection,
 ) -> TuneConfig: ...
 
 
 @overload
 def resolve_workflow_config(
     workflow_kind: Literal[WorkflowTask.EVALUATE],
-    request: EvaluateWorkflowRequest,
+    selection: EvaluateWorkflowSelection,
 ) -> EvaluateConfig: ...
 
 
 @overload
 def resolve_workflow_config(
     workflow_kind: WorkflowTask,
-    request: WorkflowConfigRequest,
+    selection: WorkflowSelection,
 ) -> WorkflowConfig: ...
 
 
 def resolve_workflow_config(
     workflow_kind: WorkflowTask,
-    request: WorkflowConfigRequest,
+    selection: WorkflowSelection,
 ) -> WorkflowConfig:
-    """Resolve one workflow request into one validated workflow config."""
+    """Resolve one workflow selection into one validated workflow config."""
 
-    if request.surface is None:
+    if selection.surface is None:
         raise ConfigResolutionError("surface is required")
     try:
-        _validate_request_kind(workflow_kind, request)
-        frame = apply_request_overrides(
-            load_surface_frame(request.surface),
-            chain=request.chain,
-            problem=request.problem,
-            features=request.features,
-            objective=getattr(request, "objective", None),
-            evaluation=getattr(request, "evaluation", None),
-            model=getattr(request, "model", None),
-            tuning_space=getattr(request, "tuning_space", None),
-            provider=getattr(request, "provider", None),
-            training=getattr(request, "training", None),
-            split=getattr(request, "split", None),
-            tuning=getattr(request, "tuning", None),
-            study=getattr(request, "study", None),
-            variant=getattr(request, "variant", None),
-            delay_seconds=getattr(request, "delay_seconds", None),
-            storage_root=request.storage_root,
+        _validate_selection_kind(workflow_kind, selection)
+        frame = apply_selection_overrides(
+            load_surface_frame(selection.surface),
+            selection,
         )
-        return _resolve_surface_frame(workflow_kind, frame, request=request)
-    except ConfigResolutionError:
-        raise
-    except (ValidationError, ValueError, TypeError) as exc:
-        raise ConfigResolutionError(str(exc)) from exc
-
-
-def resolve_workflow_frame_config(
-    workflow_kind: WorkflowTask,
-    frame: SurfaceFrame,
-    *,
-    request: WorkflowConfigRequest,
-) -> WorkflowConfig:
-    try:
-        _validate_request_kind(workflow_kind, request)
-        return _resolve_surface_frame(workflow_kind, frame, request=request)
+        return _resolve_surface_frame(workflow_kind, frame, selection=selection)
     except ConfigResolutionError:
         raise
     except (ValidationError, ValueError, TypeError) as exc:
@@ -224,135 +156,29 @@ def _resolve_surface_frame(
     workflow: WorkflowTask,
     frame: SurfaceFrame,
     *,
-    request: WorkflowConfigRequest,
+    selection: WorkflowSelection,
 ) -> WorkflowConfig:
     if workflow is WorkflowTask.ACQUIRE:
-        if not isinstance(request, AcquireWorkflowRequest):
-            raise ConfigResolutionError("acquire requires AcquireWorkflowRequest")
-        return _resolve_acquire_config(frame, dry_run=request.dry_run)
+        if not isinstance(selection, AcquireWorkflowSelection):
+            raise ConfigResolutionError("acquire requires AcquireWorkflowSelection")
+        return _resolve_acquire_config(frame, dry_run=selection.dry_run)
     if workflow is WorkflowTask.TRAIN:
         return _resolve_train_config(frame)
     if workflow is WorkflowTask.TUNE:
-        if not isinstance(request, TuneWorkflowRequest):
-            raise ConfigResolutionError("tune requires TuneWorkflowRequest")
-        return _resolve_tune_config(frame, trial_count=request.trial_count)
+        if not isinstance(selection, TuneWorkflowSelection):
+            raise ConfigResolutionError("tune requires TuneWorkflowSelection")
+        return _resolve_tune_config(frame, trial_count=selection.trial_count)
     if workflow is WorkflowTask.EVALUATE:
         return _resolve_evaluate_config(frame)
     raise ConfigResolutionError(f"Unsupported workflow: {workflow.value}")
 
 
-def _validate_request_kind(workflow: WorkflowTask, request: WorkflowConfigRequest) -> None:
-    expected = workflow_request_type(workflow)
-    if not isinstance(request, expected):
+def _validate_selection_kind(workflow: WorkflowTask, selection: WorkflowSelection) -> None:
+    expected = workflow_selection_type(workflow)
+    if not isinstance(selection, expected):
         raise ConfigResolutionError(
-            f"{workflow.value} requires {expected.__name__}, got {type(request).__name__}"
+            f"{workflow.value} requires {expected.__name__}, got {type(selection).__name__}"
         )
-
-
-def workflow_request_type(workflow: WorkflowTask) -> type[WorkflowRequestBase]:
-    if workflow is WorkflowTask.ACQUIRE:
-        return AcquireWorkflowRequest
-    if workflow is WorkflowTask.TRAIN:
-        return TrainWorkflowRequest
-    if workflow is WorkflowTask.TUNE:
-        return TuneWorkflowRequest
-    if workflow is WorkflowTask.EVALUATE:
-        return EvaluateWorkflowRequest
-    raise ConfigResolutionError(f"Unsupported workflow: {workflow.value}")
-
-
-def workflow_request_fields(workflow: WorkflowTask) -> tuple[str, ...]:
-    return tuple(workflow_request_type(workflow).model_fields)
-
-
-def workflow_request_payload(
-    workflow: WorkflowTask,
-    values: Mapping[str, object | None],
-) -> dict[str, object]:
-    fields = frozenset(workflow_request_fields(workflow))
-    return {
-        key: value
-        for key, value in values.items()
-        if key in fields and value is not None
-    }
-
-
-def hydrate_model_workflow_config(
-    workflow: WorkflowTask,
-    payload: Mapping[str, object],
-) -> WorkflowConfig:
-    try:
-        if workflow not in {WorkflowTask.TRAIN, WorkflowTask.TUNE, WorkflowTask.EVALUATE}:
-            raise ConfigResolutionError(f"Unsupported model workflow: {workflow.value}")
-        resolved_payload = _model_workflow_payload(payload)
-        if workflow is WorkflowTask.TRAIN:
-            return TrainConfig.model_validate(resolved_payload)
-        if workflow is WorkflowTask.TUNE:
-            return TuneConfig.model_validate(resolved_payload)
-        if workflow is WorkflowTask.EVALUATE:
-            return EvaluateConfig.model_validate(resolved_payload)
-    except ConfigResolutionError:
-        raise
-    except (ValidationError, ValueError, TypeError) as exc:
-        raise ConfigResolutionError(str(exc)) from exc
-    raise ConfigResolutionError(f"Unsupported model workflow: {workflow.value}")
-
-
-def _model_workflow_payload(payload: Mapping[str, object]) -> dict[str, object]:
-    raw = dict(payload)
-    problem = coerce_problem_spec(_mapping_field(raw, "problem"))
-    model = coerce_model_config(_mapping_field(raw, "model"))
-    tuning_space_payload = raw.get("tuning_space")
-    tuning_space = (
-        None
-        if tuning_space_payload is None
-        else coerce_tuning_space_config(
-            _mapping_value(tuning_space_payload, label="tuning_space"),
-            model_config=model,
-            problem_config=problem,
-        )
-    )
-    return {
-        **raw,
-        "chain": ChainSpec.model_validate(_mapping_field(raw, "chain")),
-        "dataset": DatasetSpec.model_validate(_mapping_field(raw, "dataset")),
-        "storage": StorageSpec.model_validate(_mapping_field(raw, "storage")),
-        "problem": problem,
-        "model": model,
-        "dataset_builder": coerce_dataset_builder_config(_mapping_field(raw, "dataset_builder")),
-        "features": coerce_features_config(_mapping_field(raw, "features")),
-        "prediction": PredictionConfig.model_validate(_mapping_field(raw, "prediction")),
-        "objective": coerce_objective_config(_mapping_field(raw, "objective")),
-        "evaluation": _optional_evaluation(raw.get("evaluation")),
-        "study": StudyConfig.model_validate(_mapping_field(raw, "study")),
-        "artifact": ArtifactConfig.model_validate(_mapping_field(raw, "artifact")),
-        "split": SplitConfig.model_validate(_mapping_field(raw, "split")),
-        "training": TrainingConfig.model_validate(_mapping_field(raw, "training")),
-        "tuning": _optional_tuning(raw.get("tuning")),
-        "tuning_space": tuning_space,
-    }
-
-
-def _optional_evaluation(payload: object) -> EvaluatorConfig | None:
-    if payload is None:
-        return None
-    return coerce_evaluator_config(_mapping_value(payload, label="evaluation"))
-
-
-def _optional_tuning(payload: object) -> TuningConfig | None:
-    if payload is None:
-        return None
-    return TuningConfig.model_validate(_mapping_value(payload, label="tuning"))
-
-
-def _mapping_field(payload: Mapping[str, object], key: str) -> Mapping[str, object]:
-    return _mapping_value(payload.get(key), label=key)
-
-
-def _mapping_value(payload: object, *, label: str) -> Mapping[str, object]:
-    if not isinstance(payload, Mapping):
-        raise ConfigResolutionError(f"resolved workflow snapshot field {label} must be a mapping")
-    return payload
 
 
 def _resolve_dataset(name: str) -> DatasetSpec:

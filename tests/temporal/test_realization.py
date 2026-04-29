@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from spice.prediction import DecodedOffsets
+from spice.prediction.decoded_offsets import DecodedOffsets
 from spice.temporal import (
     coerce_execution_policy_config,
     compile_execution_policy_contract,

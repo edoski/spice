@@ -3,6 +3,9 @@
 This file preserves historical runnable paths removed by the clean safe feature
 refactor. These paths are not part of the current architecture.
 
+Current runnable code uses evaluator `poisson_replay_2h` and objective
+`profit_poisson_replay_2h`. Older evaluator ids below are historical only.
+
 ## Unsafe Same-Block Reference
 
 Former runnable names included `same_block_closed` surfaces and

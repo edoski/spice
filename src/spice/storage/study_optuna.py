@@ -49,7 +49,8 @@ def open_tuning_study(db_path: Path, *, config: TuneConfig) -> OpenStudy:
         mismatches = diff_study_manifests(stored_manifest, requested_manifest)
         if mismatches:
             raise StateConflictError(
-                "Existing study definition does not match current request: " + ", ".join(mismatches)
+                "Existing study definition does not match current definition: "
+                + ", ".join(mismatches)
             )
         manifest = stored_manifest
     study = load_or_create_materialized_study(db_path, config=config)

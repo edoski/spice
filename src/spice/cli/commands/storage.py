@@ -9,21 +9,9 @@ from typing import Annotated, NoReturn
 
 import typer
 
-from ...core.errors import SpiceOperatorError
-from ...storage.inspect import describe_root, sectioned_summary
-from ...storage.inspect_artifact import artifact_list_sections
-from ...storage.inspect_dataset import dataset_list_sections
-from ...storage.inspect_study import study_list_sections
-from ...storage.roots import (
-    ArtifactSelector,
+from ...core.errors import DeleteBlockedError, SelectorResolutionError, SpiceOperatorError
+from ...storage.catalog.index import (
     CatalogRefreshSummary,
-    DatasetSelector,
-    DeleteBlockedError,
-    SelectorResolutionError,
-    StudySelector,
-    delete_artifact_record,
-    delete_dataset_record,
-    delete_study_record,
     list_artifact_records,
     list_dataset_records,
     list_study_records,
@@ -32,6 +20,16 @@ from ...storage.roots import (
     resolve_dataset_record,
     resolve_study_record,
 )
+from ...storage.inspect import describe_root, sectioned_summary
+from ...storage.inspect_artifact import artifact_list_sections
+from ...storage.inspect_dataset import dataset_list_sections
+from ...storage.inspect_study import study_list_sections
+from ...storage.lifecycle import (
+    delete_artifact_record,
+    delete_dataset_record,
+    delete_study_record,
+)
+from ...storage.selectors import ArtifactSelector, DatasetSelector, StudySelector
 from ..options import (
     ChainFilterOption,
     DatasetFilterOption,

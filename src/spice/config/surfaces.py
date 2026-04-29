@@ -1,8 +1,7 @@
-"""Canonical surface frame and request overlays."""
+"""Canonical surface frames and selection overlays."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TypeVar, cast
 
 from pydantic import Field
@@ -10,6 +9,7 @@ from pydantic import Field
 from ..modeling.families.base import ConfigModel
 from .models import ArtifactConfig, ProblemSpec, StorageSpec, StudyConfig
 from .registry import load_named_group
+from .selections import WorkflowSelection
 
 ConfigT = TypeVar("ConfigT", bound=ConfigModel)
 
@@ -83,69 +83,62 @@ def load_surface_frame(name: str) -> SurfaceFrame:
     return SurfaceFrame.model_validate(load_named_group(name, "surface"))
 
 
-def apply_request_overrides(
-    frame: SurfaceFrame,
-    *,
-    chain: str | None,
-    problem: str | ProblemSpec | None,
-    features: str | None,
-    objective: str | None,
-    evaluation: str | None,
-    model: str | None,
-    tuning_space: str | None,
-    provider: str | None,
-    training: str | None,
-    split: str | None,
-    tuning: str | None,
-    study: str | None,
-    variant: str | None,
-    delay_seconds: int | None,
-    storage_root: Path | None,
-) -> SurfaceFrame:
+def apply_selection_overrides(frame: SurfaceFrame, selection: WorkflowSelection) -> SurfaceFrame:
     updates: dict[str, object] = {}
-    if chain is not None:
-        updates["chain"] = chain
-    if problem is not None:
-        updates["problem"] = problem
-    if features is not None:
-        updates["features"] = features
+    if selection.chain is not None:
+        updates["chain"] = selection.chain
+    if selection.problem is not None:
+        updates["problem"] = selection.problem
+    if selection.features is not None:
+        updates["features"] = selection.features
+    objective = getattr(selection, "objective", None)
     if objective is not None:
         updates["objective"] = objective
+    evaluation = getattr(selection, "evaluation", None)
     if evaluation is not None:
         updates["evaluation"] = _updated_model(frame.evaluation, id=evaluation)
+    model = getattr(selection, "model", None)
     if model is not None:
         updates["model"] = model
+    tuning_space = getattr(selection, "tuning_space", None)
     if tuning_space is not None:
         updates["tuning"] = _updated_model(
             cast(SurfaceTuningFrame, updates.get("tuning", frame.tuning)),
             space=tuning_space,
         )
+    provider = getattr(selection, "provider", None)
     if provider is not None:
         updates["acquisition"] = _updated_model(
             cast(SurfaceAcquisitionFrame, updates.get("acquisition", frame.acquisition)),
             provider=provider,
         )
+    training = getattr(selection, "training", None)
     if training is not None:
         updates["training"] = _updated_model(frame.training, id=training)
+    split = getattr(selection, "split", None)
     if split is not None:
         updates["training"] = _updated_model(
             cast(SurfaceTrainingFrame, updates.get("training", frame.training)),
             split=split,
         )
+    tuning = getattr(selection, "tuning", None)
     if tuning is not None:
         updates["tuning"] = _updated_model(
             cast(SurfaceTuningFrame, updates.get("tuning", frame.tuning)),
             id=tuning,
         )
-    if storage_root is not None:
+    if selection.storage_root is not None:
         base_storage = frame.storage or StorageSpec()
-        updates["storage"] = _updated_model(base_storage, root=storage_root)
+        updates["storage"] = _updated_model(base_storage, root=selection.storage_root)
+    study = getattr(selection, "study", None)
     if study is not None:
         base_study = frame.study or StudyConfig()
         updates["study"] = _updated_model(base_study, name=study)
+    variant = getattr(selection, "variant", None)
     if variant is not None:
         base_artifact = frame.artifact or ArtifactConfig()
         updates["artifact"] = _updated_model(base_artifact, variant=variant)
+    delay_seconds = getattr(selection, "delay_seconds", None)
     if delay_seconds is not None:
         updates["evaluation"] = _updated_model(
             cast(SurfaceEvaluationFrame, updates.get("evaluation", frame.evaluation)),

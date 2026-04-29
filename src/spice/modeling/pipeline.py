@@ -25,7 +25,7 @@ from ..features import CompiledFeatureContract
 from ..objectives import CompiledObjectiveContract, ObjectiveConfig
 from ..prediction import CompiledPredictionContract
 from ..semantics import FeatureSemantics
-from ..storage.layout import WorkflowPaths
+from ..storage.workflow_paths import WorkflowPaths
 from ..temporal.contracts import CompiledProblemContract
 from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.input_normalization import CompiledInputNormalizationContract
@@ -44,12 +44,15 @@ from .dataset_builders import (
 from .families.base import ModelConfig
 from .families.registry import build_model
 from .models import TemporalModel
+from .objective_metrics import CompiledObjectiveMetricSource
 from .representations import CompiledRepresentationContract
-from .training import (
+from .training_runner import (
     EarlyStopCallback,
     EpochEndCallback,
+    TrainingCallbacks,
+    TrainingFitSpec,
     TrainingResult,
-    train_model,
+    run_training_fit,
 )
 
 
@@ -69,6 +72,7 @@ class TrainingSpec:
     objective: ObjectiveConfig
     prediction_contract: CompiledPredictionContract
     objective_contract: CompiledObjectiveContract
+    objective_metric_source: CompiledObjectiveMetricSource
     input_normalization_contract: CompiledInputNormalizationContract
     representation_contract: CompiledRepresentationContract
     model: ModelConfig
@@ -85,6 +89,7 @@ class InferencePreparationSpec:
     problem_contract: CompiledProblemContract
     delay_seconds: int
     builder_runtime_metadata: BuilderRuntimeMetadata
+    compiler_runtime_metadata: object
     scaler: ScalerStats
     max_candidate_slots: int
     window_start_timestamp: int
@@ -113,6 +118,7 @@ def build_training_spec(config: TrainConfig | TuneConfig, *, paths: WorkflowPath
         objective=config.objective,
         prediction_contract=context.prediction_contract,
         objective_contract=context.objective_contract,
+        objective_metric_source=context.objective_metric_source,
         input_normalization_contract=context.input_normalization_contract,
         representation_contract=context.representation_contract,
         model=config.model,
@@ -168,16 +174,6 @@ class TrainingRunResult:
     prediction_training_state: object | None
 
 
-def selected_row_span(store: CompiledProblemStore, sample_indices: IntVector) -> tuple[int, int]:
-    if sample_indices.size == 0:
-        raise ValueError("sample_indices must be non-empty")
-    first_sample = int(sample_indices[0])
-    last_sample = int(sample_indices[-1])
-    start = int(store.context_start_rows[first_sample])
-    end = int(store.candidate_end_rows[last_sample])
-    return start, end
-
-
 def prepare_training_dataset(
     blocks: pl.DataFrame,
     *,
@@ -195,6 +191,7 @@ def prepare_inference_dataset(
     problem_contract: CompiledProblemContract,
     delay_seconds: int,
     builder_runtime_metadata: BuilderRuntimeMetadata,
+    compiler_runtime_metadata: object,
     scaler: ScalerStats,
     max_candidate_slots: int,
     window_start_timestamp: int,
@@ -208,6 +205,7 @@ def prepare_inference_dataset(
             problem_contract=problem_contract,
             delay_seconds=delay_seconds,
             builder_runtime_metadata=builder_runtime_metadata,
+            compiler_runtime_metadata=compiler_runtime_metadata,
             scaler=scaler,
             max_candidate_slots=max_candidate_slots,
             window_start_timestamp=window_start_timestamp,
@@ -237,20 +235,25 @@ def run_training(
     )
     if on_fit_start is not None:
         on_fit_start()
-    training_result = train_model(
-        model,
-        model_config=spec.model,
-        prediction_contract=spec.prediction_contract,
-        objective_contract=spec.objective_contract,
-        execution_policy=prepared.execution_policy,
-        representation_contract=spec.representation_contract,
-        store=prepared.store,
-        train_sample_indices=prepared.split_indices.train,
-        validation_sample_indices=prepared.split_indices.validation,
-        training_config=spec.training,
-        artifact_dir=artifact_dir,
-        on_epoch_end=on_epoch_end,
-        on_early_stop=on_early_stop,
+    training_result = run_training_fit(
+        TrainingFitSpec(
+            model=model,
+            model_config=spec.model,
+            prediction_contract=spec.prediction_contract,
+            objective_contract=spec.objective_contract,
+            objective_metric_source=spec.objective_metric_source,
+            execution_policy=prepared.execution_policy,
+            representation_contract=spec.representation_contract,
+            store=prepared.store,
+            train_sample_indices=prepared.split_indices.train,
+            validation_sample_indices=prepared.split_indices.validation,
+            training_config=spec.training,
+            artifact_dir=artifact_dir,
+        ),
+        callbacks=TrainingCallbacks(
+            on_epoch_end=on_epoch_end,
+            on_early_stop=on_early_stop,
+        ),
     )
     return TrainingRunResult(
         model=model,

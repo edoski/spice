@@ -8,11 +8,10 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-from ..acquisition.rpc import AcquisitionRuntimeSnapshot
+from ..acquisition import AcquisitionRuntimeSnapshot
 from ..config.models import AcquireConfig
 from ..corpus.io import iter_block_files
 from ..corpus.validation import BlockDatasetValidationReport
-from ..storage.layout import resolve_workflow_paths
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +213,7 @@ def acquisition_runtime_metadata(
 def build_dataset_manifest(
     *,
     config: AcquireConfig,
+    dataset_id: str,
     history_request_start_timestamp: int,
     history_request_end_timestamp: int,
     evaluation_request_start_timestamp: int,
@@ -221,10 +221,9 @@ def build_dataset_manifest(
     history_validation: BlockDatasetValidationReport,
     evaluation_validation: BlockDatasetValidationReport,
 ) -> DatasetManifest:
-    paths = resolve_workflow_paths(config)
     return DatasetManifest(
         dataset=DatasetIdentity(
-            id=paths.corpus_id,
+            id=dataset_id,
             name=config.dataset.name,
         ),
         chain=ChainMetadata(

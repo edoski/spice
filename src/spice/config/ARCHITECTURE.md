@@ -7,10 +7,10 @@
 ## Mental Model
 
 ```text
-surface YAML + CLI overrides
+surface YAML + workflow selection
           |
           v
-workflow request model
+surface frame with selection overrides
           |
           v
 named YAML groups loaded from conf/
@@ -25,11 +25,17 @@ AcquireConfig / TrainConfig / TuneConfig / EvaluateConfig
 Configuration has two jobs:
 
 ```text
-composition  choose named pieces and apply request overrides
+composition  choose named pieces and apply selection overrides
 validation   turn those pieces into typed models with clear errors
 ```
 
 The config package should not train models, evaluate predictions, acquire blocks, or write artifacts. It resolves intent.
+
+## Workflow Selection
+
+A workflow selection is unresolved workflow intent. CLI commands and benchmark plans build selections from user-facing choices. Resolution applies the selection to a surface, then loads named config groups and owner coercers to produce a workflow config.
+
+Selections usually refer to problem specs by name. Benchmark problem grids may supply an inline `ProblemSpec`; this still uses the same resolution path, and the resolved workflow config stores the full executable problem.
 
 ## Owner Coercion
 
@@ -69,7 +75,7 @@ owner coercers reconstruct concrete nested configs
 
 ## Public API Boundary
 
-`spice.config` exports resolved config types, workflow request types, `resolve_workflow_config()`, and config-owned coercers such as `coerce_problem_spec()` and `coerce_features_config()`.
+`spice.config` exports resolved config types, workflow selection types, `resolve_workflow_config()`, and config-owned coercers such as `coerce_problem_spec()` and `coerce_features_config()`.
 
 It does not re-export dataset-builder coercion. Dataset-builder config coercion belongs to `spice.modeling.dataset_builders`.
 
@@ -85,4 +91,4 @@ Resolved configs and execution APIs do not carry a hidden fallback target. Submi
 
 ## Extension Points
 
-Add a public config group when users need to name, inspect, or edit that spec. Add a request override only when it is a legitimate workflow selection or runtime control. Add concrete implementation selection in the owner package, not in config.
+Add a public config group when users need to name, inspect, or edit that spec. Add a workflow selection field only when it is legitimate unresolved workflow intent or runtime control. Add concrete implementation selection in the owner package, not in config.

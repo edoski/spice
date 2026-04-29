@@ -18,6 +18,7 @@ build_training_spec()
   +--> problem contract
   +--> prediction contract
   +--> objective contract
+  +--> objective metric source
   +--> dataset-builder contract
   +--> input-normalization contract
   |
@@ -28,7 +29,7 @@ prepare_training_dataset()
 build model family
   |
   v
-train_model()
+run_training_fit()
   |
   v
 persist artifact state
@@ -42,7 +43,14 @@ The model family is only one part of learning. The same model architecture can l
 loaded artifact
   |
   v
-prepare inference dataset
+Artifact Inference Context
+  |
+  +--> validate artifact semantics
+  +--> reconstruct runtime metadata
+  +--> prepare inference dataset
+  |
+  v
+EvaluationScoringContext
   |
   v
 score_evaluation()
@@ -55,7 +63,7 @@ score_evaluation()
 EvaluationSummary
 ```
 
-Evaluator execution is centralized in `modeling.scoring` when model inference is involved. Objectives and evaluate workflows route through this service instead of duplicating inference-plus-evaluation logic.
+Artifact inference preparation is centralized in `modeling.artifact_inference`. It turns an active evaluate workflow config plus a trained artifact into trusted scoring inputs. Evaluator execution stays in `modeling.scoring` when model inference is involved.
 
 ## Dataset Builders
 
@@ -86,10 +94,13 @@ modeling/
   pipeline.py             spec construction and dataset preparation facade
   dataset_builders/       tensorization strategies and runtime metadata
   families/               neural network family configs/builders/tuning hooks
-  training.py             fit/evaluate loops
+  batch_plan.py           training/inference batch planning
+  training_runner.py      fit and split metric execution
+  objective_metrics.py    objective metric production during training
   inference.py            model prediction over prepared stores
   scoring.py              model inference -> evaluator bridge
   artifacts.py            artifact loading/validation helpers
+  artifact_inference.py   artifact validation -> inference scoring context
   result_codecs.py        persisted ML result payload codecs
   persisted_training.py   training artifact write path
 ```

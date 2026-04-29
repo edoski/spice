@@ -9,7 +9,9 @@ import torch
 
 from spice.config import PredictionConfig
 from spice.modeling.models import ModelOutputs
-from spice.prediction import ActionSpaceDecodeContext, DecodedOffsets, compile_prediction_contract
+from spice.prediction import compile_prediction_contract
+from spice.prediction.decoded_offsets import DecodedOffsets
+from spice.prediction.decoding import ActionSpaceDecodeContext
 from spice.prediction.families.min_block_fee_multitask.batch import (
     MinBlockFeeTargetBatch,
     MinBlockFeeTrainingState,

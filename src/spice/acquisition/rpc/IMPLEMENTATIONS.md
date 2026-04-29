@@ -1,6 +1,6 @@
 # Concrete RPC Acquisition
 
-The RPC acquisition implementation downloads canonical block rows from JSON-RPC endpoints. It handles timestamp-to-block lookup, batch requests, adaptive backoff, ordered chunk writing, and cancellation cleanup.
+The RPC acquisition implementation downloads canonical block rows from JSON-RPC endpoints. It handles timestamp-to-block lookup, batch requests, provider transport, and provider-specific payload conversion.
 
 ## Mental Model
 
@@ -10,9 +10,8 @@ Blockchain RPC is a remote database with rate limits, transient failures, and va
 timestamp window
   -> binary search block boundaries
   -> half-open block ranges
-  -> concurrent batch requests
+  -> batch requests
   -> canonical rows
-  -> ordered parquet chunks
 ```
 
 ## `BlockRpcClient`
@@ -44,7 +43,7 @@ web3 batch request
 
 ## Adaptive Controller
 
-`RpcController` adjusts batch size and concurrency.
+`AcquisitionPullController` adjusts batch size and concurrency in the generic acquisition pull scheduler.
 
 | Signal | Response |
 | --- | --- |
@@ -56,7 +55,7 @@ This keeps acquisition productive on healthy endpoints and less aggressive when 
 
 ## Pull Scheduler
 
-`pull_block_range` splits the block range into batch requests and runs them concurrently.
+`acquisition.pull.pull_block_range` splits the block range into batch requests and runs them concurrently. It depends on the generic `BlockSource` Interface, so it is not an RPC Adapter.
 
 Important behavior:
 
@@ -68,12 +67,12 @@ in-flight batches may finish out of order
 
 That rule preserves materialized order. Oversized batches are split and retried. Transient failures are retried up to the configured attempt limit. On exit, in-flight tasks are cancelled.
 
-## Acquisition Workflow Link
+## Corpus Assembly Link
 
-The acquire workflow uses RPC acquisition in two passes:
+Corpus Assembly uses RPC acquisition through the `BlockSource` Interface:
 
 1. Download history, then count valid temporal samples.
-2. If valid samples are short, refill history once with a larger lookback estimate.
+2. If valid samples are short, refill history with bounded larger lookback estimates.
 3. Download evaluation-day rows.
 4. Write dataset state and promote corpus paths atomically.
 
@@ -92,5 +91,4 @@ The refill exists because nominal block timing can underestimate how much real h
 
 ## Extension Pattern
 
-A new RPC provider should keep the same canonical row output and controller snapshot metadata. Endpoint-specific behavior belongs in transport/client setup; corpus builders should still receive ordered canonical rows.
-
+A new RPC provider should keep the same canonical row output and controller snapshot metadata. Endpoint-specific behavior belongs in transport/client setup; Corpus Assembly should still receive ordered canonical rows through `BlockSource`.

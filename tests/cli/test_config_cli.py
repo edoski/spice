@@ -11,13 +11,13 @@ from typer.testing import CliRunner
 
 from spice.cli import app
 from spice.config import AcquireConfig, EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
-from spice.execution.slurm_ssh import ExecutionJobSubmission
-from spice.storage.layout import resolve_workflow_paths
+from spice.execution.session import ExecutionJobSubmission
+from spice.storage.workflow_paths import resolve_workflow_paths
 
 runner = CliRunner()
 
 
-def test_acquire_cli_resolves_request_surface(tmp_path, monkeypatch) -> None:
+def test_acquire_cli_resolves_selection_surface(tmp_path, monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     def _capture(config) -> None:
@@ -67,7 +67,7 @@ def test_acquire_cli_resolves_request_surface(tmp_path, monkeypatch) -> None:
         ),
     ],
 )
-def test_model_workflow_cli_resolves_local_request_surface(
+def test_model_workflow_cli_resolves_local_selection_surface(
     tmp_path: Path,
     monkeypatch,
     command: str,
@@ -121,8 +121,7 @@ def test_config_public_commands_only(isolate_conf_root) -> None:
 
     evaluation_result = runner.invoke(app, ["config", "list", "evaluation"])
     assert evaluation_result.exit_code == 0, evaluation_result.stdout
-    assert "poisson_replay_2h_mean" in evaluation_result.stdout.splitlines()
-    assert "poisson_replay_2h_total" in evaluation_result.stdout.splitlines()
+    assert evaluation_result.stdout.splitlines() == ["poisson_replay_2h"]
 
     acquisition_result = runner.invoke(app, ["config", "list", "acquisition"])
     assert acquisition_result.exit_code != 0
@@ -178,21 +177,24 @@ def test_train_submit_rejects_local_storage_override(tmp_path: Path) -> None:
 def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_submit(task, *, config, target_name, dependency):
-        del config, dependency
-        captured["task"] = task
-        captured["target_name"] = target_name
-        return ExecutionJobSubmission(
-            task=task,
-            target=SimpleNamespace(spec=SimpleNamespace(follow_by_default=False)),
-            job_id="12345",
-            log_path=Path("/tmp/spice-train-12345.out"),
-        )
+    class FakeSession:
+        target = SimpleNamespace(spec=SimpleNamespace(follow_by_default=False))
 
-    monkeypatch.setattr(
-        "spice.cli.commands.workflows.submit_execution_workflow",
-        fake_submit,
-    )
+        def submit_workflow(self, task, *, config, dependency):
+            del config, dependency
+            captured["task"] = task
+            return ExecutionJobSubmission(
+                task=task,
+                target=self.target,
+                job_id="12345",
+                log_path=Path("/tmp/spice-train-12345.out"),
+            )
+
+    def fake_open_session(target_name: str) -> FakeSession:
+        captured["target_name"] = target_name
+        return FakeSession()
+
+    monkeypatch.setattr("spice.cli.commands.workflows.open_execution_session", fake_open_session)
 
     result = runner.invoke(app, ["train", "--surface", "current_row_fee_dynamics", "--submit"])
 
@@ -216,49 +218,41 @@ def test_acquire_rejects_objective_option() -> None:
     assert "--objective" in result.output
 
 
-def test_surface_option_replaces_preset_option() -> None:
-    surface_result = runner.invoke(
-        app,
-        ["train", "--surface", "current_row_fee_dynamics", "--help"],
-    )
-    preset_result = runner.invoke(app, ["train", "--preset", "current_row_fee_dynamics"])
-
-    assert surface_result.exit_code == 0, surface_result.output
-    assert preset_result.exit_code != 0
-    assert "--preset" in preset_result.output
-
-
 def test_train_submit_cli_preflights_and_routes_to_execution_backend(
     monkeypatch,
 ) -> None:
+    from spice.cli import selection as cli_selection
     from spice.cli.commands import workflows as workflow_commands
 
     events: list[tuple[str, object]] = []
 
-    def _fake_resolve(task: WorkflowTask, request) -> object:
-        events.append(("resolve", (task, request)))
+    def _fake_resolve(task: WorkflowTask, selection) -> object:
+        events.append(("resolve", (task, selection)))
         return SimpleNamespace(
-            study=SimpleNamespace(name=request.study),
-            artifact=SimpleNamespace(variant=SimpleNamespace(value=request.variant)),
+            study=SimpleNamespace(name=selection.study),
+            artifact=SimpleNamespace(variant=SimpleNamespace(value=selection.variant)),
         )
 
-    def _fake_submit(
-        task: WorkflowTask,
-        *,
-        config,
-        target_name: str = "disi_l40",
-        dependency: str | None = None,
-    ) -> ExecutionJobSubmission:
-        events.append(("submit", (task, config, target_name, dependency)))
-        return ExecutionJobSubmission(
-            task=task,
-            target=SimpleNamespace(spec=SimpleNamespace(follow_by_default=False)),
-            job_id="12345",
-            log_path=Path("/remote/logs/spice-train-12345.out"),
-        )
+    class FakeSession:
+        target = SimpleNamespace(spec=SimpleNamespace(follow_by_default=False))
 
-    monkeypatch.setattr(workflow_commands, "resolve_workflow_config", _fake_resolve)
-    monkeypatch.setattr(workflow_commands, "submit_execution_workflow", _fake_submit)
+        def submit_workflow(
+            self,
+            task: WorkflowTask,
+            *,
+            config,
+            dependency: str | None = None,
+        ) -> ExecutionJobSubmission:
+            events.append(("submit", (task, config, "disi_l40", dependency)))
+            return ExecutionJobSubmission(
+                task=task,
+                target=self.target,
+                job_id="12345",
+                log_path=Path("/remote/logs/spice-train-12345.out"),
+            )
+
+    monkeypatch.setattr(cli_selection, "resolve_workflow_config", _fake_resolve)
+    monkeypatch.setattr(workflow_commands, "open_execution_session", lambda _target: FakeSession())
 
     result = runner.invoke(
         app,
@@ -276,10 +270,10 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
 
     assert result.exit_code == 0, result.stdout
     assert [event[0] for event in events] == ["resolve", "submit"]
-    resolved_task, request = cast(tuple[WorkflowTask, object], events[0][1])
+    resolved_task, selection = cast(tuple[WorkflowTask, object], events[0][1])
     assert resolved_task is WorkflowTask.TRAIN
-    assert request.study == "default"
-    assert request.variant == "baseline"
+    assert selection.study == "default"
+    assert selection.variant == "baseline"
     submitted_task, submitted_config, target_name, dependency = cast(
         tuple[WorkflowTask, object, str, str | None],
         events[1][1],

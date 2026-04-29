@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, cast
 
 import aiohttp
 from web3 import AsyncWeb3
@@ -80,8 +81,13 @@ class ManagedAsyncHTTPProvider(AsyncHTTPProvider):
         self._request_session_manager = _ManagedAsyncSessionManager()
 
     def _request_kwargs_mapping(self) -> dict[str, Any]:
-        kwargs = dict(self.get_request_kwargs())
-        headers = dict(kwargs.get("headers") or {})
+        kwargs = cast(dict[str, Any], self.get_request_kwargs()).copy()
+        headers_value = kwargs.get("headers")
+        headers = (
+            dict(cast(Mapping[str, str], headers_value))
+            if isinstance(headers_value, Mapping)
+            else {}
+        )
         headers["User-Agent"] = RPC_USER_AGENT
         kwargs["headers"] = headers
         return kwargs

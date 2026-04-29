@@ -4,9 +4,7 @@ import numpy as np
 import torch
 
 from spice.config import PredictionConfig
-from spice.modeling.batch_sources import (
-    build_prediction_batch_source,
-)
+from spice.modeling.batch_plan import build_prediction_batch_plan
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.representations import RepresentationRuntimeContext, sequence_input_contract
 from spice.prediction import compile_prediction_contract
@@ -116,7 +114,7 @@ def test_prediction_batch_source_binds_current_family_targets() -> None:
     store = _test_store()
     sample_indices = np.array([0, 1, 2, 3], dtype=np.int64)
     representation_contract = sequence_input_contract()
-    batch_source = build_prediction_batch_source(
+    batch_plan = build_prediction_batch_plan(
         store,
         sample_indices,
         representation_contract=representation_contract,
@@ -129,7 +127,7 @@ def test_prediction_batch_source_binds_current_family_targets() -> None:
         resolved_device=torch.device("cuda"),
         seed=2026,
     )
-    first_batch = next(iter(batch_source))
+    first_batch = next(iter(batch_plan.source))
 
     assert first_batch.inputs.sample_positions.tolist() == [0, 1]
     assert tuple(first_batch.targets.min_block_offsets.shape) == (2,)

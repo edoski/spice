@@ -1,1 +1,22 @@
-"""Block acquisition, RPC transport, metadata, and validation modules."""
+"""Acquisition contracts and adapters."""
+
+from .pull import AcquisitionPullController, pull_block_range
+from .types import (
+    AcquisitionRuntimeSnapshot,
+    BlockPullPlan,
+    BlockRange,
+    BlockSource,
+    TimestampRange,
+    evaluation_range,
+)
+
+__all__ = [
+    "AcquisitionPullController",
+    "AcquisitionRuntimeSnapshot",
+    "BlockPullPlan",
+    "BlockRange",
+    "BlockSource",
+    "TimestampRange",
+    "evaluation_range",
+    "pull_block_range",
+]

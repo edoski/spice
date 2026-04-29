@@ -2,20 +2,32 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, SupportsInt, cast
 
+import aiohttp
 from web3 import AsyncWeb3
 from web3.exceptions import Web3RPCError
 
+from ...acquisition.errors import (
+    OversizedAcquisitionRequestError,
+    TransientAcquisitionError,
+)
+from ...acquisition.types import BlockPullPlan, BlockRange, TimestampRange
 from ...config.models import ChainSpec, ResolvedRpcEndpointConfig
 from ...corpus.contract import CanonicalBlockRow, RpcBlock, build_canonical_block_row
 from .transport import build_async_web3
-from .types import BlockHeader, BlockPullPlan, BlockRange, TimestampRange
 
 FEE_HISTORY_REWARD_PERCENTILES = (10.0, 50.0, 90.0)
+
+
+@dataclass(frozen=True, slots=True)
+class BlockHeader:
+    number: int
+    timestamp: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,32 +120,38 @@ class BlockRpcClient:
         if end <= start:
             return []
 
-        async with self._web3.batch_requests() as batch:
-            for block_number in range(start, end):
-                batch.add(self._web3.eth.get_block(block_number, False))
-            raw_blocks = await batch.async_execute()
+        try:
+            async with self._web3.batch_requests() as batch:
+                for block_number in range(start, end):
+                    batch.add(self._web3.eth.get_block(block_number, False))
+                raw_blocks = await batch.async_execute()
 
-        if not isinstance(raw_blocks, list):
-            raise TypeError("Expected batch block responses as a list")
+            if not isinstance(raw_blocks, list):
+                raise TypeError("Expected batch block responses as a list")
 
-        blocks = [self._raw_block_from_response(block) for block in raw_blocks]
-        if len(blocks) != end - start:
-            raise RuntimeError(
-                f"Expected {end - start} block responses, got {len(blocks)}"
-            )
-        self._validate_range_blocks(blocks, start=start, end=end)
-        fee_history_rows = await self._fee_history_rows(start, end)
-        return [
-            build_canonical_block_row(
-                block,
-                self.chain,
-                priority_fee_p10=fee_history.priority_fee_p10,
-                priority_fee_p50=fee_history.priority_fee_p50,
-                priority_fee_p90=fee_history.priority_fee_p90,
-                fee_history_gas_used_ratio=fee_history.gas_used_ratio,
-            )
-            for block, fee_history in zip(blocks, fee_history_rows, strict=True)
-        ]
+            blocks = [self._raw_block_from_response(block) for block in raw_blocks]
+            if len(blocks) != end - start:
+                raise RuntimeError(
+                    f"Expected {end - start} block responses, got {len(blocks)}"
+                )
+            self._validate_range_blocks(blocks, start=start, end=end)
+            fee_history_rows = await self._fee_history_rows(start, end)
+            return [
+                build_canonical_block_row(
+                    block,
+                    self.chain,
+                    priority_fee_p10=fee_history.priority_fee_p10,
+                    priority_fee_p50=fee_history.priority_fee_p50,
+                    priority_fee_p90=fee_history.priority_fee_p90,
+                    fee_history_gas_used_ratio=fee_history.gas_used_ratio,
+                )
+                for block, fee_history in zip(blocks, fee_history_rows, strict=True)
+            ]
+        except Exception as exc:
+            mapped = self._provider_error(exc)
+            if mapped is not exc:
+                raise mapped from exc
+            raise
 
     @staticmethod
     def _as_int(value: object) -> int:
@@ -267,6 +285,71 @@ class BlockRpcClient:
                 "-32601",
             )
         )
+
+    @classmethod
+    def _provider_error(cls, exc: Exception) -> Exception:
+        message = cls._provider_error_message(exc)
+        if "response too large" in message or "batch too large" in message:
+            return OversizedAcquisitionRequestError(str(exc))
+        if isinstance(
+            exc,
+            (
+                asyncio.TimeoutError,
+                TimeoutError,
+                OSError,
+                aiohttp.ClientPayloadError,
+                aiohttp.ClientConnectionError,
+                aiohttp.ServerTimeoutError,
+            ),
+        ):
+            return TransientAcquisitionError(str(exc))
+        if isinstance(exc, aiohttp.ClientResponseError) and (
+            exc.status == 429 or exc.status >= 500
+        ):
+            return TransientAcquisitionError(str(exc))
+        if any(
+            token in message
+            for token in (
+                "timed out",
+                "timeout",
+                "too many requests",
+                "rate limit",
+                "temporarily unavailable",
+                "service unavailable",
+                "bad gateway",
+                "gateway timeout",
+                "connection reset",
+                "connection aborted",
+                "server disconnected",
+                "response payload is not completed",
+                "not enough data to satisfy transfer length header",
+                "status:429",
+                "status:500",
+                "status:502",
+                "status:503",
+                "status:504",
+            )
+        ):
+            return TransientAcquisitionError(str(exc))
+        return exc
+
+    @staticmethod
+    def _provider_error_message(exc: BaseException) -> str:
+        parts = [str(exc).lower()]
+        if isinstance(exc, Web3RPCError):
+            parts.append(exc.message.lower())
+            if exc.rpc_response is not None:
+                error = exc.rpc_response.get("error")
+                if isinstance(error, Mapping):
+                    message = error.get("message")
+                    if message is not None:
+                        parts.append(str(message).lower())
+                    code = error.get("code")
+                    if code is not None:
+                        parts.append(str(code).lower())
+        if isinstance(exc, aiohttp.ClientResponseError):
+            parts.append(f"status:{exc.status}")
+        return " ".join(parts)
 
     @classmethod
     def _header_from_raw_block(cls, block: RpcBlock) -> BlockHeader:

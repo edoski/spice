@@ -66,11 +66,11 @@ CLI owns user conveniences
   -> domains receive contracts and typed state
 ```
 
-`DEFAULT_REMOTE_TARGET = "disi_l40"` exists only at the CLI edge. Downstream execution and storage-sync APIs require an explicit target name. This makes the operator default convenient without leaking cluster-specific behavior into core workflow code.
+`DEFAULT_REMOTE_TARGET = "disi_l40"` exists only at the CLI edge. Downstream execution and transfer APIs require an explicit target name. This makes the operator default convenient without leaking cluster-specific behavior into core workflow code.
 
 Prediction and evaluation are separate. Prediction families produce decoded-result kinds, such as offset decisions. Evaluators declare which decoded-result id they accept. The modeling scoring service is the bridge that runs inference, checks the accepted result id, and calls the evaluator.
 
-Storage is its own domain. Root kind, layout, root-local SQLite state, catalog indexing, staging, sync, and persisted payload decoding live there. Workflows call storage primitives instead of moving directories or opening state databases ad hoc.
+Storage is its own domain. Root kind, layout, root-local SQLite state, catalog indexing, root lifecycle, and persisted payload decoding live there. Remote transfer orchestration lives in execution. Workflows call storage primitives instead of moving directories or opening state databases ad hoc.
 
 ## Dependency Direction
 
@@ -122,7 +122,8 @@ src/spice/modeling/ARCHITECTURE.md                tensorization, training, infer
 src/spice/prediction/ARCHITECTURE.md              targets, losses, decoding
 src/spice/evaluation/ARCHITECTURE.md              evaluator contracts and metrics
 src/spice/objectives/ARCHITECTURE.md              optimization objective selection
-src/spice/storage/ARCHITECTURE.md                 root state, catalog, staging, sync
+src/spice/benchmarks/ARCHITECTURE.md              benchmark specs, plans, runs, collection
+src/spice/storage/ARCHITECTURE.md                 root state, catalog, lifecycle
 ```
 
 Subpackage guides document generic seams and enough theory to understand why the seam exists. Concrete implementation notes may appear where they clarify a generic pattern, but the primary goal is architecture and learning, not a catalog of every experiment setting.

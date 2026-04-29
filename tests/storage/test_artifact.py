@@ -276,9 +276,10 @@ def _evaluation_summary(evaluation_id: str, value: float) -> EvaluationRuntimeSu
         evaluation_id=evaluation_id,
         evaluation_config={
             "id": evaluation_id,
-            "engine": "replay",
-            "sampler": "fullset",
-            "aggregation": {"id": "total_ratio"},
+            "window_seconds": 7200,
+            "repetitions": 50,
+            "arrival_rate_per_second": 0.05,
+            "seed": 2026,
         },
         metric_descriptors=(
             MetricDescriptor(
@@ -306,8 +307,8 @@ def _evaluation_summary(evaluation_id: str, value: float) -> EvaluationRuntimeSu
 def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
     db_path = tmp_path / ".spice" / "state.sqlite"
     manifest = _manifest()
-    base_summary = _evaluation_summary("fullset", 0.2)
-    replay_summary = _evaluation_summary("poisson_replay_2h_mean", 0.1)
+    base_summary = _evaluation_summary("poisson_replay_2h_short", 0.2)
+    replay_summary = _evaluation_summary("poisson_replay_2h", 0.1)
 
     write_artifact_manifest(db_path, manifest=manifest)
     evaluation_id, recorded_at = upsert_evaluation_state(

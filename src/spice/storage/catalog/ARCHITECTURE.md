@@ -10,7 +10,7 @@ The catalog is an index, not the source of truth. Root-local SQLite state owns p
 
 ## Invariants
 
-Catalog rows point to root paths and state DB paths. Reindexing reads root-local state and upserts catalog rows. Upserts must not rewrite `created_at`. Deleting catalog rows must be coordinated with root deletion in `storage.roots`.
+Catalog rows point to root paths and state DB paths. Reindexing reads root-local state and upserts catalog rows. Upserts must not rewrite `created_at`. Deleting catalog rows must be coordinated with root deletion in `storage.lifecycle`.
 
 ## Extension Points
 

@@ -6,11 +6,11 @@
 
 ## Theory
 
-Command modules should translate user language into typed requests. They should not reimplement package internals. This keeps command behavior predictable and makes the Python APIs useful outside the terminal.
+Command modules should translate user language into typed workflow selections. They should not reimplement package internals. This keeps command behavior predictable and makes the Python APIs useful outside the terminal.
 
 ## Invariants
 
-Workflow commands construct workflow request models and call config resolution once. Transfer commands use storage selectors over existing catalog records. Config commands use registry APIs. Command modules may format output, but persistence and ML behavior remain elsewhere.
+Workflow commands construct workflow selection models and call config resolution once. Transfer commands use storage selectors over existing catalog records. Config commands use registry APIs. Command modules may format output, but persistence and ML behavior remain elsewhere.
 
 Workflow submit commands and transfer commands share the same remote-target option. The default target is provided by the CLI layer, then passed downstream explicitly.
 
@@ -31,11 +31,11 @@ commands/
 
 ## Selector Rule
 
-Workflow commands use config selectors. Storage and transfer commands use catalog selectors:
+Workflow commands use **Workflow Selections**. Storage and transfer commands use catalog selectors:
 
 ```text
-workflow selector -> build future work
-catalog selector  -> find existing persisted root
+Workflow Selection -> build future work
+catalog selector   -> find existing persisted root
 ```
 
 Do not mix these concepts. A storage command should not need a surface. A workflow command should not need a catalog record unless it is loading existing artifact or study state through workflow config.

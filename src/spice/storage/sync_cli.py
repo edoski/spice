@@ -8,14 +8,10 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from .catalog.index import resolve_artifact_record, resolve_study_record
 from .engine import RootKind
-from .roots import (
-    ArtifactSelector,
-    StudySelector,
-    resolve_artifact_record,
-    resolve_study_record,
-)
-from .staging import cleanup_root_stage, prepare_root_stage, promote_root_stage
+from .lifecycle import cleanup_root_stage, prepare_root_stage, promote_root_stage
+from .selectors import ArtifactSelector, StudySelector
 
 
 def main(argv: list[str] | None = None) -> None:

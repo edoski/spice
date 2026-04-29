@@ -40,10 +40,7 @@ def chronological_sample_view(
     sample_indices: IntVector,
 ) -> ChronologicalSampleView:
     resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
-    sample_timestamps = store.timestamps[store.anchor_rows[resolved_sample_indices]].astype(
-        np.int64,
-        copy=False,
-    )
+    sample_timestamps = store.sample_timestamps(resolved_sample_indices)
     order = np.argsort(sample_timestamps, kind="stable").astype(np.int64, copy=False)
     return ChronologicalSampleView(
         sample_positions=order,

@@ -10,7 +10,7 @@ from spice.storage.study_manifest import (
 )
 
 
-def test_study_manifest_round_trips_through_canonical_request_payload(
+def test_study_manifest_round_trips_through_canonical_definition_payload(
     tmp_path,
     load_workflow_config,
 ) -> None:

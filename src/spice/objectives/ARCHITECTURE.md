@@ -10,11 +10,11 @@ An objective can be a validation metric from the training loop or a benchmark me
 
 ## Invariants
 
-Validation objectives read validation metrics directly. Evaluation objectives use the scoring service, which checks the evaluator's accepted decoded-result id, runs inference, and returns evaluator metrics. Objective configs must match the selected evaluation when they benchmark an evaluator.
+Validation objectives read validation metrics directly. Evaluation objectives declare the benchmark metric to optimize. Objective configs must match the selected evaluation when they benchmark an evaluator. Model-bound metric production belongs to `modeling.objective_metrics`.
 
 ## Extension Points
 
-Add an objective type when the source of objective metrics changes. Do not put evaluator execution in tuning code; route through the objective contract and scoring service.
+Add an objective type when optimization policy changes. Do not put evaluator execution in objectives or tuning code; route model-bound metric production through Modeling.
 
 ## Objective Flow
 
@@ -23,7 +23,7 @@ training epoch
     |
     +--> validation metrics --------+
     |                               |
-    +--> optional evaluator scoring +
+    +--> optional Objective Metric Source +
                                     |
                                     v
                               objective metric
@@ -38,7 +38,7 @@ The objective is the scalar value used to compare model states or tuning trials.
 
 ## Evaluation Objective Boundary
 
-Evaluation-backed objectives use `modeling.scoring`. That service performs the generic sequence:
+Objectives are policy-only: metric id, direction, benchmark binding, semantics, and checkpoint monitor naming. Evaluation-backed objective metrics use `modeling.objective_metrics`, which calls `modeling.scoring` for the generic sequence:
 
 ```text
 check decoded-result id -> predict -> evaluate -> return metrics

@@ -17,6 +17,10 @@ from .dataset_builders import (
     CompiledDatasetBuilderContract,
     compile_dataset_builder_contract,
 )
+from .objective_metrics import (
+    CompiledObjectiveMetricSource,
+    compile_objective_metric_source,
+)
 from .representations import (
     CompiledRepresentationContract,
     sequence_input_contract,
@@ -29,6 +33,7 @@ class CompiledTrainingContext:
     problem_contract: CompiledProblemContract
     prediction_contract: CompiledPredictionContract
     objective_contract: CompiledObjectiveContract
+    objective_metric_source: CompiledObjectiveMetricSource
     dataset_builder_contract: CompiledDatasetBuilderContract
     input_normalization_contract: CompiledInputNormalizationContract
     representation_contract: CompiledRepresentationContract
@@ -36,6 +41,10 @@ class CompiledTrainingContext:
 
 def compile_training_context(config: TrainConfig | TuneConfig) -> CompiledTrainingContext:
     feature_contract = compile_feature_contract(features=config.features)
+    objective_contract = compile_objective_contract(
+        config.objective,
+        evaluation=config.evaluation,
+    )
     return CompiledTrainingContext(
         feature_contract=feature_contract,
         problem_contract=compile_problem_contract(
@@ -47,8 +56,9 @@ def compile_training_context(config: TrainConfig | TuneConfig) -> CompiledTraini
             prediction_id=config.prediction.id,
             family_id=config.prediction.family_id,
         ),
-        objective_contract=compile_objective_contract(
-            config.objective,
+        objective_contract=objective_contract,
+        objective_metric_source=compile_objective_metric_source(
+            objective_contract,
             evaluation=config.evaluation,
         ),
         dataset_builder_contract=compile_dataset_builder_contract(config.dataset_builder),

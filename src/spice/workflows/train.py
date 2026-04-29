@@ -12,12 +12,12 @@ from ..corpus.coverage import training_coverage_requirement, validate_corpus_cov
 from ..modeling.persisted_training import run_persisted_training
 from ..modeling.pipeline import build_training_spec
 from ..modeling.summary import training_result_fields
-from ..modeling.training import TrainingEpochProgress
+from ..modeling.training_runner import TrainingEpochProgress
 from ..modeling.tuning import apply_study_best_params
 from ..storage.corpus import load_dataset_manifest
 from ..storage.engine import ARTIFACT_ROOT_KIND
-from ..storage.layout import resolve_workflow_paths
-from ..storage.staging import staged_root
+from ..storage.lifecycle import staged_root
+from ..storage.workflow_paths import resolve_workflow_paths
 
 
 def _workflow_facts(config: TrainConfig) -> list[tuple[str, str]]:

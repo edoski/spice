@@ -6,13 +6,14 @@ from typing import Annotated
 
 import typer
 
-from ...storage.roots import ArtifactSelector, DatasetSelector, StudySelector
-from ...storage.sync import (
+from ...execution.session import open_execution_session
+from ...execution.transfer import (
     pull_artifact_from_cluster,
     pull_study_from_cluster,
     push_dataset_to_cluster,
     push_study_to_cluster,
 )
+from ...storage.selectors import ArtifactSelector, DatasetSelector, StudySelector
 from ..options import (
     DEFAULT_REMOTE_TARGET,
     ChainFilterOption,
@@ -51,9 +52,10 @@ def push_dataset_command(
     replace: ReplaceOption = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
+    session = open_execution_session(target)
     record = push_dataset_to_cluster(
         storage_root=root,
-        target_name=target,
+        session=session,
         selector=DatasetSelector(chain_name=chain, dataset_name=dataset),
         replace=replace,
     )
@@ -74,9 +76,10 @@ def push_study_command(
     replace: ReplaceOption = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
+    session = open_execution_session(target)
     record = push_study_to_cluster(
         storage_root=root,
-        target_name=target,
+        session=session,
         selector=StudySelector(
             chain_name=chain,
             dataset_name=dataset,
@@ -106,9 +109,10 @@ def pull_artifact_command(
     replace: ReplaceOption = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
+    session = open_execution_session(target)
     record, dataset_present = pull_artifact_from_cluster(
         storage_root=root,
-        target_name=target,
+        session=session,
         selector=ArtifactSelector(
             chain_name=chain,
             dataset_name=dataset,
@@ -146,9 +150,10 @@ def pull_study_command(
     replace: ReplaceOption = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
+    session = open_execution_session(target)
     record = pull_study_from_cluster(
         storage_root=root,
-        target_name=target,
+        session=session,
         selector=StudySelector(
             chain_name=chain,
             dataset_name=dataset,

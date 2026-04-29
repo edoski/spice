@@ -8,7 +8,7 @@ import yaml
 from typer.testing import CliRunner
 
 from spice.cli import app
-from spice.execution.slurm_ssh import ExecutionJobSubmission
+from spice.execution.session import ExecutionJobSubmission
 
 runner = CliRunner()
 
@@ -78,8 +78,8 @@ def test_benchmark_submit_uses_existing_remote_submitter(isolate_conf_root, monk
                             "workflow": "evaluate",
                             "after": ["train"],
                             "set": {
-                                "objective": "profit_poisson_replay_2h_mean",
-                                "evaluation": "poisson_replay_2h_mean",
+                                "objective": "profit_poisson_replay_2h",
+                                "evaluation": "poisson_replay_2h",
                                 "variant": "baseline",
                                 "delay_seconds": 12,
                             },
@@ -91,19 +91,27 @@ def test_benchmark_submit_uses_existing_remote_submitter(isolate_conf_root, monk
     )
     calls: list[tuple[str, str, str | None]] = []
 
-    def fake_submit(task, *, config, target_name, dependency):
-        del config
-        job_id = str(100 + len(calls))
-        calls.append((task.value, target_name, dependency))
-        return ExecutionJobSubmission(
-            task=task,
-            target=SimpleNamespace(),
-            job_id=job_id,
-            log_path=Path(f"/tmp/spice-{task.value}-{job_id}.out"),
-        )
+    class FakeSession:
+        target = SimpleNamespace()
 
-    monkeypatch.setattr("spice.execution.slurm_ssh.submit_execution_workflow", fake_submit)
-    monkeypatch.setattr("spice.benchmark_runs.resolve_remote_git_commit", lambda target: "abc123")
+        def remote_git_commit(self) -> str:
+            return "abc123"
+
+        def submit_workflow(self, task, *, config, dependency):
+            del config
+            job_id = str(100 + len(calls))
+            calls.append((task.value, "disi_l40", dependency))
+            return ExecutionJobSubmission(
+                task=task,
+                target=self.target,
+                job_id=job_id,
+                log_path=Path(f"/tmp/spice-{task.value}-{job_id}.out"),
+            )
+
+    monkeypatch.setattr(
+        "spice.benchmarks.submission.open_execution_session",
+        lambda _target: FakeSession(),
+    )
 
     result = runner.invoke(app, ["benchmark", "submit", "submit_case", "--target", "disi_l40"])
 

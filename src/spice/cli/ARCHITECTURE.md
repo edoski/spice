@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`cli` is the operator edge. It translates command-line options into workflow requests, config-inspection actions, storage inspection/deletion, benchmark expansion, and remote transfer operations.
+`cli` is the operator edge. It translates command-line options into workflow selections, config-inspection actions, storage inspection/deletion, benchmark expansion, and remote transfer operations.
 
 The CLI may provide user conveniences. It should not own model training, evaluator logic, storage layout internals, or YAML hydration rules.
 
@@ -15,7 +15,7 @@ operator command
 Typer option parsing
     |
     v
-workflow request / selector model
+workflow selection / storage selector
     |
     v
 config resolution or storage service
@@ -24,7 +24,9 @@ config resolution or storage service
 workflow/service result rendered to stdout
 ```
 
-Workflow commands either run locally or submit a resolved config snapshot to remote execution. Transfer commands call storage-sync services. Config commands call config registry APIs.
+Workflow commands either run locally or submit a resolved config snapshot to remote execution. Transfer commands call execution transfer services. Config commands call config registry APIs.
+
+`cli.selection` is the **CLI Selection Layer**. It turns explicit operator values into typed **Workflow Selections**, validates local-vs-submitted command rules, and resolves the **Workflow Config** handed to workflow execution or an **Execution Session**.
 
 ## Remote Target Boundary
 
@@ -33,8 +35,8 @@ CLI option default:
   DEFAULT_REMOTE_TARGET = "disi_l40"
 
 Downstream APIs:
-  submit_execution_workflow(..., target_name=...)
-  push/pull storage sync(..., target_name=...)
+  open_execution_session(target_name)
+  transfer(..., session=...)
 ```
 
 The default exists once, at the CLI edge. This lets the common cluster stay convenient without making lower layers cluster-aware.

@@ -15,7 +15,7 @@ problem: current_row_nominal
 dataset_builder: fixed_sequence_temporal
 model: lstm
 prediction: icdcs_2026
-objective: profit_poisson_replay_2h_mean
+objective: profit_poisson_replay_2h
 
 acquisition:
   provider: publicnode
@@ -26,10 +26,10 @@ tuning:
   id: default
   space: lstm_fixed_context
 evaluation:
-  id: poisson_replay_2h_mean
+  id: poisson_replay_2h
 ```
 
-The default runnable surface is `current_row_fee_dynamics`. `evaluation.delay_seconds` is usually omitted; evaluation workflows default it from `problem.max_delay_seconds`. `model`, `features`, `objective`, `evaluation`, `tuning_space`, `delay_seconds`, `study`, `variant`, and `trial_count` may be supplied by benchmark cases or CLI overrides when a surface leaves variation to the run request.
+The default runnable surface is `current_row_fee_dynamics`. `evaluation.delay_seconds` is usually omitted; evaluation workflows default it from `problem.max_delay_seconds`. `model`, `features`, `objective`, `evaluation`, `tuning_space`, `delay_seconds`, `study`, `variant`, and `trial_count` may be supplied by benchmark cases or CLI overrides when a surface leaves variation to the **Workflow Selection**.
 
 ## Workflow Refs
 
@@ -47,7 +47,7 @@ Add a new named ref only when behavior differs. Small run variation should norma
 
 Workflow commands use `--surface`. `--preset` is intentionally unsupported.
 
-Shared model-workflow selectors include `--chain`, `--problem`, `--features`, `--objective`, `--evaluation`, `--model`, `--tuning-space`, `--training`, `--split`, `--tuning`, and `--study`. `train` and `evaluate` accept `--variant`; `evaluate` accepts `--delay-seconds`; `tune` accepts `--trial-count`. `acquire` accepts `--chain`, `--problem`, `--features`, `--provider`, `--dry-run`, and `--storage-root`.
+Shared model-workflow selection options include `--chain`, `--problem`, `--features`, `--objective`, `--evaluation`, `--model`, `--tuning-space`, `--training`, `--split`, `--tuning`, and `--study`. `train` and `evaluate` accept `--variant`; `evaluate` accepts `--delay-seconds`; `tune` accepts `--trial-count`. `acquire` accepts `--chain`, `--problem`, `--features`, `--provider`, `--dry-run`, and `--storage-root`.
 
 Resolution order:
 
@@ -98,15 +98,15 @@ cases:
       - id: train_baseline
         workflow: train
         set:
-          objective: profit_poisson_replay_2h_mean
-          evaluation: poisson_replay_2h_mean
+          objective: profit_poisson_replay_2h
+          evaluation: poisson_replay_2h
           variant: baseline
       - id: evaluate_baseline
         workflow: evaluate
         after: [train_baseline]
         set:
-          objective: profit_poisson_replay_2h_mean
-          evaluation: poisson_replay_2h_mean
+          objective: profit_poisson_replay_2h
+          evaluation: poisson_replay_2h
           variant: baseline
 ```
 
@@ -123,7 +123,7 @@ and uses the configured remote target:
 spice benchmark submit lookback_window_sweep
 ```
 
-Collection pulls remote studies/artifacts through storage sync and prints JSONL status.
+Collection pulls remote studies/artifacts through `execution.transfer` and prints JSONL status.
 Use `--write` only when all expected evaluation rows are complete; missing rows abort the
 ledger write.
 

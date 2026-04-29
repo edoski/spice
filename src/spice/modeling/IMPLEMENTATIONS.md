@@ -24,18 +24,19 @@ The artifact manifest records exact configs, semantic fingerprints, scaler, data
 Training starts by compiling all contracts:
 
 ```text
-features config      -> feature contract
-problem config          -> temporal problem contract
+features config         -> feature contract
+problem spec            -> temporal problem contract
 prediction config       -> prediction contract
 objective config        -> objective contract
+objective + evaluation  -> objective metric source
 dataset_builder config  -> dataset builder contract
 input_normalization     -> scaler policy
 model config            -> model family
 ```
 
-The compiled context is the source of truth for model input width, prediction output heads, action-space size, target batches, and objective metric direction.
+The compiled context is the source of truth for model input width, prediction output heads, action-space size, target batches, objective metric direction, and objective metric production.
 
-## Batch Source
+## Batch Plan
 
 The sequence representation builds tensors:
 
@@ -47,6 +48,8 @@ The sequence representation builds tensors:
 | `sample_positions` | `[batch]` | Positions into the selected sample array. |
 
 Windows are front-packed. Models use `take_last_valid` to read the final real context position.
+
+Batch Plan binds representation batches with prediction targets, orders samples by batch signature, and chooses host or device-resident storage after runtime memory budget is known.
 
 ## Training Loop
 
@@ -97,7 +100,7 @@ sample_indices
   -> DecodedOffsets buffer
 ```
 
-`DecodedOffsets` is the current decoded ABI consumed by evaluators.
+`DecodedOffsets` is the current candidate-offset decoded result ABI consumed by evaluators.
 
 ## Scoring Service
 
@@ -141,7 +144,7 @@ Study state stores the study manifest and Optuna tables. Trial user attributes r
 | Empty split | Dataset builder produced no samples for a split. |
 | Objective metric missing | Prediction/evaluator metrics do not expose configured metric. |
 | Artifact semantic mismatch | Evaluation config does not match trained artifact. |
-| Tuning identity mismatch | Existing study state belongs to a different request. |
+| Tuning identity mismatch | Existing study state belongs to a different study definition. |
 
 ## Extension Pattern
 

@@ -72,7 +72,7 @@ This path explains how chain data is downloaded, validated, committed, indexed, 
 
 ```text
 RPC acquisition
-  -> corpus builders
+  -> Corpus Assembly
   -> corpus validation
   -> storage roots
   -> catalog
@@ -83,9 +83,8 @@ Read:
 
 1. [RPC acquisition implementations](src/spice/acquisition/rpc/IMPLEMENTATIONS.md)
 2. [Corpus implementations](src/spice/corpus/IMPLEMENTATIONS.md)
-3. [Corpus builder implementations](src/spice/corpus/builders/IMPLEMENTATIONS.md)
-4. [Storage implementations](src/spice/storage/IMPLEMENTATIONS.md)
-5. [Catalog implementations](src/spice/storage/catalog/IMPLEMENTATIONS.md)
+3. [Storage implementations](src/spice/storage/IMPLEMENTATIONS.md)
+4. [Catalog implementations](src/spice/storage/catalog/IMPLEMENTATIONS.md)
 
 The key mental model:
 
@@ -141,7 +140,8 @@ surface name + overrides
 | Candidate window | Future row interval the model may choose from. |
 | Candidate offset | Integer action relative to the candidate-window start. |
 | Execution policy | Rule that maps decoded offsets to actual outcome rows. |
-| DecodedOffsets | Current decoded prediction ABI consumed by evaluators. |
+| Decoded Result ABI | Typed prediction output contract consumed by evaluators. |
+| DecodedOffsets | Current candidate-offset decoded result ABI. |
 | Artifact | Persisted trained model plus exact manifest and runtime state. |
 | Study | Persisted tuning state and Optuna trial database. |
 | Evaluator | Runtime scorer that turns decoded predictions into metrics. |
@@ -231,7 +231,7 @@ spice pull artifact --chain ethereum --dataset icdcs_2026 --features core_fee_dy
 | Dataset builders | `fixed_sequence_temporal` |
 | Model families | `lstm`, `transformer`, `transformer_lstm` |
 | Prediction families | `min_block_fee_multitask` |
-| Evaluator engines | `replay`, `zero_stop_rollout`, `anchor_basefee` |
+| Evaluator | `poisson_replay_2h` |
 | Remote target | `disi_l40` |
 
 ## Output Layout

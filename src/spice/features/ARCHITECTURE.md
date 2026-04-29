@@ -2,7 +2,7 @@
 
 `features` turns canonical block rows into finite numeric model inputs. It owns feature configs, source availability, feature formulas, prerequisites, fingerprints, and table execution.
 
-Features answer what information is observable at the decision row. They do not define labels, losses, model architecture, evaluator metrics, storage layout, or workflow presets.
+Features answer what information is observable at the decision row. They do not define labels, losses, model architecture, evaluator metrics, storage layout, or workflow specs.
 
 ## Flow
 
@@ -41,7 +41,7 @@ The current catalog is deliberately lean and protocol-first:
 
 All previous-block facts are lagged inside their `SourceSpec`, not ad hoc in dataset builders or models. That keeps causality local to the source that owns availability.
 
-`elapsed_seconds` remains implemented only for the `core_fee_dynamics_elapsed_position` ablation preset. It measures timestamp distance from the first row in the materialized feature table. It is not part of the default catalog because it can encode corpus position, long-term regime, or split-specific trends rather than reusable fee dynamics.
+`elapsed_seconds` remains implemented only for the `core_fee_dynamics_elapsed_position` ablation spec. It measures timestamp distance from the first row in the materialized feature table. It is not part of the default catalog because it can encode corpus position, long-term regime, or split-specific trends rather than reusable fee dynamics.
 
 ## Invariants
 

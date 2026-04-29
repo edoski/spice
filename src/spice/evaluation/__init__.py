@@ -1,14 +1,9 @@
 """Evaluation configs, contracts, and registry helpers."""
 
 from .config import (
-    AnchorBasefeeEvaluatorConfig,
-    EvaluationAggregationConfig,
-    EvaluationAggregationId,
     EvaluationConfigModel,
-    EvaluationSampler,
     EvaluatorConfig,
-    ReplayEvaluatorConfig,
-    ZeroStopRolloutEvaluatorConfig,
+    PoissonReplayEvaluatorConfig,
 )
 from .contracts import (
     CompiledEvaluatorContract,
@@ -23,19 +18,14 @@ from .registry import (
 )
 
 __all__ = [
-    "AnchorBasefeeEvaluatorConfig",
     "CompiledEvaluatorContract",
-    "EvaluationAggregationConfig",
-    "EvaluationAggregationId",
     "EvaluationConfigModel",
     "EvaluationRun",
-    "EvaluationSampler",
     "EvaluationSummary",
     "EvaluatorConfig",
     "IntVector",
-    "ReplayEvaluatorConfig",
+    "PoissonReplayEvaluatorConfig",
     "RunEvaluatorFn",
-    "ZeroStopRolloutEvaluatorConfig",
     "coerce_evaluator_config",
     "compile_evaluator_contract",
 ]

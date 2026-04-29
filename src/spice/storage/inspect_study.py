@@ -91,7 +91,7 @@ def study_sections(
     if description.include_config:
         sections.extend(
             [
-                ("problem config", mapping_fields(manifest.problem.model_dump(mode="json"))),
+                ("problem spec", mapping_fields(manifest.problem.model_dump(mode="json"))),
                 (
                     "features config",
                     mapping_fields(manifest.features.model_dump(mode="json")),

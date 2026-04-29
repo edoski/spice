@@ -4,7 +4,7 @@ import pytest
 from optuna.trial import FixedTrial
 
 from spice.config import (
-    TrainWorkflowRequest,
+    TrainWorkflowSelection,
     TunedParameterSet,
     WorkflowTask,
     coerce_problem_spec,
@@ -98,7 +98,7 @@ def test_sample_transformer_large_capacity_params_derives_feedforward_dim() -> N
 def test_apply_transformer_tuned_params_updates_model_config(tmp_path) -> None:
     config = resolve_workflow_config(
         WorkflowTask.TRAIN,
-        TrainWorkflowRequest(
+        TrainWorkflowSelection(
             surface="current_row_fee_dynamics",
             model="transformer",
             variant="baseline",

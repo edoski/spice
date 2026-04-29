@@ -27,13 +27,13 @@ cases:
       - id: train_baseline
         workflow: train
         set:
-          objective: profit_poisson_replay_2h_mean
-          evaluation: poisson_replay_2h_mean
+          objective: profit_poisson_replay_2h
+          evaluation: poisson_replay_2h
           variant: baseline
       - id: evaluate_baseline
         workflow: evaluate
         after: [train_baseline]
         set:
-          objective: profit_poisson_replay_2h_mean
-          evaluation: poisson_replay_2h_mean
+          objective: profit_poisson_replay_2h
+          evaluation: poisson_replay_2h
           variant: baseline

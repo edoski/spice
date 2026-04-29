@@ -6,7 +6,7 @@ import pytest
 
 from spice.core.errors import StateConflictError
 from spice.storage.engine import RootKind
-from spice.storage.staging import PartialRootCommit, prepare_root_stage
+from spice.storage.lifecycle import PartialRootCommit, prepare_root_stage
 
 
 def test_partial_root_commit_promotes_selected_paths_and_reindexes(
@@ -24,7 +24,7 @@ def test_partial_root_commit_promotes_selected_paths_and_reindexes(
         captured.update({"storage_root": storage_root, "root_path": root_path})
         return RootKind.CORPUS
 
-    monkeypatch.setattr("spice.storage.staging.reindex_root", fake_reindex_root)
+    monkeypatch.setattr("spice.storage.lifecycle.reindex_root", fake_reindex_root)
 
     commit = PartialRootCommit(storage_root=storage_root, root_path=root_path)
     commit.add(root_path / "history", source_dir)

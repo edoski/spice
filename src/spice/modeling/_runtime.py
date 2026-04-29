@@ -15,7 +15,7 @@ import torch
 from numpy.typing import NDArray
 
 from ..core.errors import SpiceOperatorError
-from .batch_sources import BatchSource, resolve_available_device_memory_budget
+from .batch_plan import BatchSource, resolve_available_device_memory_budget
 from .models import ModelOutputs, TemporalModel
 from .representations import RepresentationRuntimeContext
 

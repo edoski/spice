@@ -19,9 +19,8 @@ from ..modeling.persisted_training import run_persisted_training
 from ..modeling.pipeline import build_training_spec
 from ..modeling.tuned_config import sample_tuned_parameters
 from ..modeling.tuning import apply_tuned_parameters
+from ..storage.catalog.index import reindex_root
 from ..storage.corpus import load_dataset_manifest
-from ..storage.layout import resolve_workflow_paths
-from ..storage.roots import reindex_root
 from ..storage.study_models import best_epoch_from_trial, build_study_summary
 from ..storage.study_optuna import (
     open_tuning_study,
@@ -29,6 +28,7 @@ from ..storage.study_optuna import (
     record_trial_params,
 )
 from ..storage.study_render import study_result_fields
+from ..storage.workflow_paths import resolve_workflow_paths
 
 
 def _workflow_facts(config: TuneConfig) -> list[tuple[str, str]]:

@@ -13,7 +13,13 @@ from spice.evaluation import (
     coerce_evaluator_config,
     compile_evaluator_contract,
 )
-from spice.prediction import DecodedOffsets, MetricDescriptor, MetricSet
+from spice.evaluation.sampling import (
+    chronological_sample_view,
+    sample_poisson_arrivals,
+    select_sample_positions_for_arrivals,
+)
+from spice.prediction import MetricDescriptor, MetricSet
+from spice.prediction.decoded_offsets import DecodedOffsets
 from spice.temporal import (
     coerce_execution_policy_config,
     compile_execution_policy_contract,
@@ -46,55 +52,40 @@ def _store() -> CompiledProblemStore:
     )
 
 
+def _poisson_config() -> dict[str, object]:
+    return {
+        "id": "poisson_replay_2h",
+        "window_seconds": 7200,
+        "arrival_rate_per_second": 0.01,
+        "repetitions": 3,
+        "seed": 2026,
+    }
+
+
 def _execution_policy():
     return compile_execution_policy_contract(
         coerce_execution_policy_config({"id": "strict_deadline_miss"})
     )
 
 
-def _current_row_store() -> CompiledProblemStore:
-    return CompiledProblemStore(
-        feature_matrix=np.zeros((9, 1), dtype=np.float32),
-        log_base_fees=np.log(
-            np.array([110, 95, 90, 80, 70, 60, 50, 40, 30], dtype=np.float32)
-        ).astype(np.float32, copy=False),
-        timestamps=(np.arange(9, dtype=np.int64) * 1800).astype(np.int64, copy=False),
-        anchor_rows=np.array([1, 2, 3, 4], dtype=np.int64),
-        context_start_rows=np.array([0, 1, 2, 3], dtype=np.int64),
-        candidate_start_rows=np.array([1, 2, 3, 4], dtype=np.int64),
-        candidate_end_rows=np.array([3, 4, 5, 6], dtype=np.int64),
-        max_candidate_slots=2,
-    )
-
-
-def test_evaluator_config_requires_engine_and_dispatches_by_engine() -> None:
-    with pytest.raises(ConfigResolutionError, match="evaluation.engine is required"):
-        coerce_evaluator_config(
-            {
-                "id": "fullset",
-                "sampler": "fullset",
-                "aggregation": {"id": "total_ratio"},
-            }
-        )
-
-    config = coerce_evaluator_config(
-        {
-            "id": "custom_replay_name",
-            "engine": "replay",
-            "sampler": "fullset",
-            "aggregation": {"id": "total_ratio"},
-        }
-    )
+def test_evaluator_config_is_poisson_only_without_engine_sampler_or_aggregation() -> None:
+    config = coerce_evaluator_config(_poisson_config())
     contract = compile_evaluator_contract(config)
 
-    assert config.id == "custom_replay_name"
-    assert config.engine == "replay"
-    assert contract.evaluation_id == "custom_replay_name"
+    assert config.id == "poisson_replay_2h"
+    assert contract.evaluation_id == "poisson_replay_2h"
+    assert contract.config_payload == _poisson_config()
+
+    with pytest.raises(ConfigResolutionError, match="Extra inputs"):
+        coerce_evaluator_config({**_poisson_config(), "engine": "replay"})
+
+    with pytest.raises(ConfigResolutionError, match="poisson_replay_2h"):
+        coerce_evaluator_config({**_poisson_config(), "id": "other_evaluation"})
 
 
-def test_evaluator_compile_requires_concrete_config_for_engine() -> None:
-    with pytest.raises(ConfigResolutionError, match="evaluation config"):
-        compile_evaluator_contract(EvaluatorConfig(id="base", engine="replay"))
+def test_evaluator_compile_requires_concrete_poisson_config() -> None:
+    with pytest.raises(ConfigResolutionError, match="poisson_replay_2h"):
+        compile_evaluator_contract(EvaluatorConfig(id="base"))
 
 
 def test_metric_descriptors_and_evaluator_contract_validate_primary_metric() -> None:
@@ -130,16 +121,7 @@ def test_metric_descriptors_and_evaluator_contract_validate_primary_metric() -> 
 
 def test_evaluator_rejects_incompatible_decoded_result_semantics() -> None:
     store = _store()
-    evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
-            {
-                "id": "fullset",
-                "engine": "replay",
-                "sampler": "fullset",
-                "aggregation": {"id": "total_ratio"},
-            }
-        )
-    )
+    evaluator = compile_evaluator_contract(coerce_evaluator_config(_poisson_config()))
 
     with pytest.raises(TypeError, match="decoded-result requirement"):
         evaluator.run(
@@ -149,26 +131,46 @@ def test_evaluator_rejects_incompatible_decoded_result_semantics() -> None:
             np.arange(store.n_samples, dtype=np.int64),
         )
 
+
+def test_poisson_arrival_sampling_selects_previous_chronological_sample() -> None:
+    rng = np.random.default_rng(7)
+
+    arrivals = sample_poisson_arrivals(
+        rng,
+        rate_per_second=0.01,
+        start_timestamp=100.0,
+        end_timestamp=500.0,
+    )
+
+    assert arrivals.size > 0
+    assert np.all(arrivals >= 100.0)
+    assert np.all(arrivals < 500.0)
+    assert select_sample_positions_for_arrivals(
+        np.array([100, 200, 400], dtype=np.int64),
+        np.array([50.0, 100.0, 199.9, 200.0, 450.0]),
+    ).tolist() == [0, 0, 1, 2]
+
+
+def test_poisson_replay_uses_event_mean_economic_metrics() -> None:
+    store = _store()
+    sample_indices = np.arange(store.n_samples, dtype=np.int64)
+    offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
+    evaluator = compile_evaluator_contract(coerce_evaluator_config(_poisson_config()))
+
+    summary = evaluator.run(store, _execution_policy(), offsets, sample_indices)
+    expected = _expected_poisson_metrics(store, offsets, sample_indices)
+
+    assert summary.total_events == expected.pop("total_events")
+    assert summary.metrics.values == pytest.approx(expected)
+
+
 def test_poisson_replay_handles_non_chronological_sample_indices() -> None:
     store = _store()
     forward_indices = np.arange(store.n_samples, dtype=np.int64)
     reversed_indices = forward_indices[::-1].copy()
     forward_offsets = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
     reversed_offsets = DecodedOffsets(forward_offsets.flip(0))
-    evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
-            {
-                "id": "poisson_replay_2h_mean",
-                "engine": "replay",
-                "sampler": "poisson_arrivals",
-                "aggregation": {"id": "event_mean"},
-                "window_seconds": 7200,
-                "arrival_rate_per_second": 0.01,
-                "repetitions": 3,
-                "seed": 2026,
-            }
-        )
-    )
+    evaluator = compile_evaluator_contract(coerce_evaluator_config(_poisson_config()))
 
     summary = evaluator.run(
         store,
@@ -185,249 +187,69 @@ def test_poisson_replay_handles_non_chronological_sample_indices() -> None:
 
     assert reversed_summary.metrics.values == pytest.approx(summary.metrics.values)
     assert reversed_summary.total_events == summary.total_events
-    assert [run.n_events for run in reversed_summary.runs] == [run.n_events for run in summary.runs]
+    assert [run.n_events for run in reversed_summary.runs] == [
+        run.n_events for run in summary.runs
+    ]
 
 
-def test_replay_total_ratio_uses_fee_sums() -> None:
-    store = _store()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-    evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
-            {
-                "id": "fullset",
-                "engine": "replay",
-                "sampler": "fullset",
-                "aggregation": {"id": "total_ratio"},
-            }
+def _expected_poisson_metrics(
+    store: CompiledProblemStore,
+    offsets: DecodedOffsets,
+    sample_indices: np.ndarray,
+) -> dict[str, float | int]:
+    config = _poisson_config()
+    chronological_samples = chronological_sample_view(store, sample_indices)
+    first_timestamp = int(chronological_samples.sample_timestamps[0])
+    last_timestamp = int(chronological_samples.sample_timestamps[-1])
+    latest_start = last_timestamp - int(config["window_seconds"])
+    rng = np.random.default_rng(int(config["seed"]))
+
+    total_events = 0
+    realized_fee_sum = 0.0
+    baseline_fee_sum = 0.0
+    optimum_fee_sum = 0.0
+    profit_sum = 0.0
+    cost_sum = 0.0
+    baseline_cost_sum = 0.0
+
+    for _ in range(int(config["repetitions"])):
+        window_start = float(rng.uniform(first_timestamp, latest_start))
+        arrivals = sample_poisson_arrivals(
+            rng,
+            rate_per_second=float(config["arrival_rate_per_second"]),
+            start_timestamp=window_start,
+            end_timestamp=window_start + int(config["window_seconds"]),
         )
-    )
+        selected_positions = chronological_samples.sample_positions[
+            select_sample_positions_for_arrivals(
+                chronological_samples.sample_timestamps,
+                arrivals,
+            )
+        ]
+        if selected_positions.size == 0:
+            continue
+        selected_samples = sample_indices[selected_positions]
+        windows = store.candidate_windows(selected_samples)
+        selected_offsets = offsets.select(selected_positions).astype(np.int64, copy=False)
+        realized_rows = windows.baseline_rows + selected_offsets
+        realized_fees = np.exp(store.log_base_fees[realized_rows].astype(np.float64))
+        baseline_fees = np.exp(store.log_base_fees[windows.baseline_rows].astype(np.float64))
+        optimum_fees = np.exp(store.log_base_fees[windows.optimum_rows].astype(np.float64))
 
-    summary = evaluator.run(
-        store,
-        _execution_policy(),
-        DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64)),
-        sample_indices,
-    )
+        total_events += int(selected_positions.shape[0])
+        realized_fee_sum += float(realized_fees.sum())
+        baseline_fee_sum += float(baseline_fees.sum())
+        optimum_fee_sum += float(optimum_fees.sum())
+        profit_sum += float(((baseline_fees - realized_fees) / baseline_fees).sum())
+        cost_sum += float(((realized_fees - optimum_fees) / optimum_fees).sum())
+        baseline_cost_sum += float(((baseline_fees - optimum_fees) / optimum_fees).sum())
 
-    baseline_total = 90.0 + 70.0 + 50.0 + 30.0
-    realized_total = 90.0 + 60.0 + 50.0 + 25.0
-    optimum_total = 80.0 + 60.0 + 40.0 + 25.0
-
-    assert summary.total_events == 4
-    assert summary.metrics.values == pytest.approx(
-        {
-            "profit_over_baseline": (baseline_total - realized_total) / baseline_total,
-            "cost_over_optimum": (realized_total - optimum_total) / optimum_total,
-            "baseline_cost_over_optimum": (baseline_total - optimum_total) / optimum_total,
-            "realized_fee_sum": realized_total,
-            "baseline_fee_sum": baseline_total,
-            "optimum_fee_sum": optimum_total,
-        }
-    )
-
-
-def test_replay_event_mean_uses_per_event_ratios() -> None:
-    store = _store()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-    evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
-            {
-                "id": "fullset_mean",
-                "engine": "replay",
-                "sampler": "fullset",
-                "aggregation": {"id": "event_mean"},
-            }
-        )
-    )
-
-    summary = evaluator.run(
-        store,
-        _execution_policy(),
-        DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64)),
-        sample_indices,
-    )
-
-    baseline_fees = np.array([90.0, 70.0, 50.0, 30.0])
-    realized_fees = np.array([90.0, 60.0, 50.0, 25.0])
-    optimum_fees = np.array([80.0, 60.0, 40.0, 25.0])
-
-    assert summary.metrics.values == pytest.approx(
-        {
-            "profit_over_baseline": float(
-                np.mean((baseline_fees - realized_fees) / baseline_fees)
-            ),
-            "cost_over_optimum": float(np.mean((realized_fees - optimum_fees) / optimum_fees)),
-            "baseline_cost_over_optimum": float(
-                np.mean((baseline_fees - optimum_fees) / optimum_fees)
-            ),
-            "realized_fee_sum": float(realized_fees.sum()),
-            "baseline_fee_sum": float(baseline_fees.sum()),
-            "optimum_fee_sum": float(optimum_fees.sum()),
-        }
-    )
-
-
-def test_zero_stop_rollout_stops_on_zero_and_truncates_tail_windows() -> None:
-    store = _current_row_store()
-    evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
-            {
-                "id": "zero_stop_rollout_fullset",
-                "engine": "zero_stop_rollout",
-            }
-        )
-    )
-    summary = evaluator.run(
-        store,
-        _execution_policy(),
-        DecodedOffsets(torch.tensor([1, 0, 1, 1], dtype=torch.int64)),
-        np.arange(store.n_samples, dtype=np.int64),
-    )
-
-    baseline_total = 95.0 + 90.0 + 80.0 + 70.0
-    realized_total = 90.0 + 90.0 + 70.0 + 70.0
-    optimum_total = 90.0 + 80.0 + 70.0 + 60.0
-
-    assert summary.total_events == 4
-    assert summary.runs[0].metadata == {
-        "mode": "zero_stop_rollout_fullset",
-        "zero_stop_count": 2,
-        "terminal_without_zero_count": 2,
-        "truncated_window_count": 1,
+    return {
+        "profit_over_baseline": profit_sum / total_events,
+        "cost_over_optimum": cost_sum / total_events,
+        "baseline_cost_over_optimum": baseline_cost_sum / total_events,
+        "realized_fee_sum": realized_fee_sum,
+        "baseline_fee_sum": baseline_fee_sum,
+        "optimum_fee_sum": optimum_fee_sum,
+        "total_events": total_events,
     }
-    assert summary.metrics.values == pytest.approx(
-        {
-            "profit_over_baseline": (baseline_total - realized_total) / baseline_total,
-            "cost_over_optimum": (realized_total - optimum_total) / optimum_total,
-            "baseline_cost_over_optimum": (baseline_total - optimum_total) / optimum_total,
-            "realized_fee_sum": realized_total,
-            "baseline_fee_sum": baseline_total,
-            "optimum_fee_sum": optimum_total,
-            "mean_steps_to_stop": 0.5,
-            "zero_stop_rate": 0.5,
-            "terminal_without_zero_count": 2.0,
-        }
-    )
-
-
-def test_zero_stop_rollout_rejects_invalid_decoded_offsets() -> None:
-    store = _current_row_store()
-    evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
-            {
-                "id": "zero_stop_rollout_fullset",
-                "engine": "zero_stop_rollout",
-            }
-        )
-    )
-
-    with pytest.raises(ValueError, match="non-negative"):
-        evaluator.run(
-            store,
-            _execution_policy(),
-            DecodedOffsets(torch.tensor([-1, 0, 1, 1], dtype=torch.int64)),
-            np.arange(store.n_samples, dtype=np.int64),
-        )
-
-    with pytest.raises(ValueError, match="max_candidate_slots"):
-        evaluator.run(
-            store,
-            _execution_policy(),
-            DecodedOffsets(torch.tensor([store.max_candidate_slots, 0, 1, 1], dtype=torch.int64)),
-            np.arange(store.n_samples, dtype=np.int64),
-        )
-
-
-def test_zero_stop_rollout_rejects_misaligned_decoded_offsets() -> None:
-    store = _current_row_store()
-    evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
-            {
-                "id": "zero_stop_rollout_fullset",
-                "engine": "zero_stop_rollout",
-            }
-        )
-    )
-
-    with pytest.raises(ValueError, match="align with sample_indices"):
-        evaluator.run(
-            store,
-            _execution_policy(),
-            DecodedOffsets(torch.tensor([0, 1, 0], dtype=torch.int64)),
-            np.arange(store.n_samples, dtype=np.int64),
-        )
-
-
-def test_zero_stop_rollout_scores_reachable_optimum_only() -> None:
-    store = CompiledProblemStore(
-        feature_matrix=np.zeros((6, 1), dtype=np.float32),
-        log_base_fees=np.log(
-            np.array([100, 90, 80, 70, 60, 1], dtype=np.float32)
-        ).astype(np.float32, copy=False),
-        timestamps=(np.arange(6, dtype=np.int64) * 12).astype(np.int64, copy=False),
-        anchor_rows=np.array([1, 2, 3, 4, 5], dtype=np.int64),
-        context_start_rows=np.array([0, 1, 2, 3, 4], dtype=np.int64),
-        candidate_start_rows=np.array([1, 2, 3, 4, 5], dtype=np.int64),
-        candidate_end_rows=np.array([6, 6, 6, 6, 6], dtype=np.int64),
-        max_candidate_slots=2,
-    )
-    evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
-            {
-                "id": "zero_stop_rollout_fullset",
-                "engine": "zero_stop_rollout",
-            }
-        )
-    )
-
-    summary = evaluator.run(
-        store,
-        _execution_policy(),
-        DecodedOffsets(torch.ones(store.n_samples, dtype=torch.int64)),
-        np.arange(store.n_samples, dtype=np.int64),
-    )
-
-    assert summary.runs[0].metadata["terminal_without_zero_count"] == store.n_samples
-    assert summary.runs[0].metadata["truncated_window_count"] == 0
-    assert summary.metrics.values["optimum_fee_sum"] == pytest.approx(
-        80.0 + 70.0 + 60.0 + 1.0 + 1.0
-    )
-    assert summary.metrics.values["realized_fee_sum"] == pytest.approx(
-        80.0 + 70.0 + 60.0 + 1.0 + 1.0
-    )
-
-
-def test_anchor_basefee_compares_anchor_and_realized_fees() -> None:
-    store = _current_row_store()
-    evaluator = compile_evaluator_contract(
-        coerce_evaluator_config(
-            {
-                "id": "anchor_basefee_fullset",
-                "engine": "anchor_basefee",
-            }
-        )
-    )
-    summary = evaluator.run(
-        store,
-        _execution_policy(),
-        DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64)),
-        np.arange(store.n_samples, dtype=np.int64),
-    )
-
-    anchor_total = 95.0 + 90.0 + 80.0 + 70.0
-    realized_total = 95.0 + 80.0 + 80.0 + 60.0
-
-    assert summary.runs[0].metadata == {
-        "mode": "anchor_basefee_fullset",
-        "overflow_count": 0,
-        "zero_action_count": 2,
-    }
-    assert summary.metrics.values == pytest.approx(
-        {
-            "fee_delta_over_anchor": (anchor_total - realized_total) / anchor_total,
-            "realized_fee_sum": realized_total,
-            "anchor_fee_sum": anchor_total,
-            "overflow_count": 0.0,
-            "zero_action_rate": 0.5,
-        }
-    )

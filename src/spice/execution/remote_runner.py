@@ -6,13 +6,14 @@ import argparse
 import json
 from collections.abc import Mapping
 
+from ..config.hydration import hydrate_model_workflow_config
 from ..config.models import (
     EvaluateConfig,
     TrainConfig,
     TuneConfig,
     WorkflowTask,
 )
-from ..config.resolution import WorkflowConfig, hydrate_model_workflow_config
+from ..config.resolution import WorkflowConfig
 from ..core.errors import ConfigResolutionError
 
 

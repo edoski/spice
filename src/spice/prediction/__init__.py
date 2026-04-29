@@ -8,15 +8,11 @@ from .base import (
     WindowMetricSummary,
 )
 from .contracts import (
-    ActionSpaceDecodeContext,
     CompiledPredictionContract,
-    DecodedOffsets,
-    DecodedPredictionResult,
     EpochMetricAccumulator,
     ModelInputBatch,
     PredictionBatch,
     PredictionTargetBatch,
-    decode_context_from_batch,
 )
 from .registry import (
     compile_prediction_contract,
@@ -25,10 +21,7 @@ from .registry import (
 
 __all__ = [
     "CompiledPredictionContract",
-    "DecodedPredictionResult",
-    "DecodedOffsets",
     "EpochMetricAccumulator",
-    "ActionSpaceDecodeContext",
     "MetricDescriptor",
     "MetricSet",
     "ModelInputBatch",
@@ -38,6 +31,5 @@ __all__ = [
     "PredictionTargetBatch",
     "WindowMetricSummary",
     "compile_prediction_contract",
-    "decode_context_from_batch",
     "validate_prediction_family_id",
 ]
