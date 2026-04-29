@@ -5,11 +5,10 @@ from __future__ import annotations
 from typing import Literal
 
 import optuna
-import torch
 from pydantic import Field, field_validator, model_validator
 
 from ...prediction import PredictionOutputSpec
-from .._runtime import device_supports_auto_compile, require_cuda_device
+from .._runtime import require_cuda_device
 from ..models import TemporalModel, TransformerBaseline
 from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
 from .registry import ModelSpec
@@ -158,13 +157,12 @@ def _apply_model_params(
 
 def _resolve_training_precision(device) -> str:
     require_cuda_device(device)
-    if torch.cuda.is_bf16_supported():
-        return "bf16-mixed"
-    return "16-mixed"
+    return "32-true"
 
 
 def _resolve_compile_enabled(device) -> bool:
-    return device_supports_auto_compile(device)
+    require_cuda_device(device)
+    return False
 
 
 MODEL_SPEC = ModelSpec(

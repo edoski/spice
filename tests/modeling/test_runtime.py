@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 import torch
 
@@ -46,25 +44,7 @@ def test_ensure_cuda_runtime_ready_rejects_rocm(monkeypatch) -> None:
         ensure_cuda_runtime_ready(torch.device("cuda"))
 
 
-@pytest.mark.parametrize(
-    ("multi_processor_count", "expected"),
-    [
-        (32, False),
-        (72, True),
-    ],
-)
-def test_transformer_auto_compile_depends_on_cuda_gpu_size(
-    monkeypatch,
-    multi_processor_count: int,
-    expected: bool,
-) -> None:
-    monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
-    monkeypatch.setattr(
-        torch.cuda,
-        "get_device_properties",
-        lambda index: SimpleNamespace(multi_processor_count=multi_processor_count),
-    )
-
+def test_transformer_disables_auto_compile_on_cuda() -> None:
     enabled = resolve_model_compile_enabled(
         device=torch.device("cuda"),
         model_config=TransformerModelConfig(
@@ -77,7 +57,7 @@ def test_transformer_auto_compile_depends_on_cuda_gpu_size(
         ),
     )
 
-    assert enabled is expected
+    assert enabled is False
 
 
 def test_recurrent_families_disable_auto_compile_on_cuda() -> None:
@@ -141,20 +121,7 @@ def test_recurrent_families_default_to_fp32_on_cuda() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("bf16_supported", "expected"),
-    [
-        (True, "bf16-mixed"),
-        (False, "16-mixed"),
-    ],
-)
-def test_transformer_default_precision_tracks_bf16_support(
-    monkeypatch,
-    bf16_supported: bool,
-    expected: str,
-) -> None:
-    monkeypatch.setattr(torch.cuda, "is_bf16_supported", lambda: bf16_supported)
-
+def test_transformer_defaults_to_fp32_on_cuda() -> None:
     assert (
         resolve_model_training_precision(
             device=torch.device("cuda"),
@@ -167,7 +134,7 @@ def test_transformer_default_precision_tracks_bf16_support(
                 head_hidden_dim=8,
             ),
         )
-        == expected
+        == "32-true"
     )
 
 

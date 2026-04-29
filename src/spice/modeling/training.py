@@ -12,6 +12,7 @@ import torch
 from numpy.typing import NDArray
 
 from ..config.models import TrainingConfig
+from ..core.errors import SpiceOperatorError
 from ..core.files import write_path_atomic
 from ..objectives import CompiledObjectiveContract, ObjectiveEvaluationContext
 from ..prediction import CompiledPredictionContract, MetricSet
@@ -91,6 +92,26 @@ def _is_improvement(
     if direction == "maximize":
         return current_value > best_value + min_delta
     return current_value < best_value - min_delta
+
+
+def _all_metrics_finite(metrics: MetricSet) -> bool:
+    return all(np.isfinite(value) for value in metrics.values.values())
+
+
+def _nonfinite_metric_error(
+    *,
+    epoch: int,
+    phase: str,
+    best_epoch: int,
+) -> SpiceOperatorError:
+    if best_epoch > 0:
+        return SpiceOperatorError(
+            f"Non-finite {phase} metrics at epoch {epoch}; "
+            f"stopping and preserving best_epoch={best_epoch}"
+        )
+    return SpiceOperatorError(
+        f"Non-finite {phase} metrics at epoch {epoch} before any valid checkpoint"
+    )
 
 
 def _clone_cpu_state(model: TemporalModel) -> dict[str, torch.Tensor]:
@@ -392,6 +413,16 @@ def train_model(
                 gradient_clip_norm=training_config.gradient_clip_norm,
                 training=True,
             )
+            if not _all_metrics_finite(train_metrics):
+                if best_epoch > 0:
+                    if on_early_stop is not None:
+                        on_early_stop(epoch, best_epoch)
+                    break
+                raise _nonfinite_metric_error(
+                    epoch=epoch,
+                    phase="train",
+                    best_epoch=best_epoch,
+                )
             validation_metrics = _run_epoch(
                 fit_model,
                 loader=validation_batch_source,
@@ -404,8 +435,16 @@ def train_model(
                 gradient_clip_norm=None,
                 training=False,
             )
-            train_history.append(train_metrics)
-            validation_history.append(validation_metrics)
+            if not _all_metrics_finite(validation_metrics):
+                if best_epoch > 0:
+                    if on_early_stop is not None:
+                        on_early_stop(epoch, best_epoch)
+                    break
+                raise _nonfinite_metric_error(
+                    epoch=epoch,
+                    phase="validation",
+                    best_epoch=best_epoch,
+                )
             objective_metrics = objective_contract.evaluate_metrics(
                 validation_metrics,
                 context=ObjectiveEvaluationContext(
@@ -419,7 +458,19 @@ def train_model(
                     batch_size=training_config.batch_size,
                 ),
             )
+            if not _all_metrics_finite(objective_metrics):
+                if best_epoch > 0:
+                    if on_early_stop is not None:
+                        on_early_stop(epoch, best_epoch)
+                    break
+                raise _nonfinite_metric_error(
+                    epoch=epoch,
+                    phase="objective",
+                    best_epoch=best_epoch,
+                )
             objective_history.append(objective_metrics)
+            train_history.append(train_metrics)
+            validation_history.append(validation_metrics)
 
             if _is_improvement(
                 current_epoch=epoch,

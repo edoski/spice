@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import torch
+
+from ..core.errors import SpiceOperatorError
 from ..prediction import (
     CompiledPredictionContract,
     DecodedPredictionResult,
@@ -43,6 +46,7 @@ def predict_with_model(
     predictions = prediction_contract.allocate_decoded_result(int(sample_indices.shape[0]))
 
     def _decode_batch(batch, outputs) -> None:
+        _validate_finite_outputs(outputs)
         prediction_contract.decode_batch_result_into(
             predictions,
             outputs,
@@ -85,3 +89,9 @@ def predict_with_model(
             on_outputs=_decode_batch,
         )
     return predictions
+
+
+def _validate_finite_outputs(outputs) -> None:
+    for head_id, tensor in outputs.heads.items():
+        if tensor.is_floating_point() and not bool(torch.isfinite(tensor).all()):
+            raise SpiceOperatorError(f"Non-finite model output head during inference: {head_id}")
