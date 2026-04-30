@@ -6,9 +6,6 @@ from pydantic import BaseModel, ConfigDict, SerializeAsAny
 
 from ..config.models import (
     ArtifactVariant,
-    ChainSpec,
-    DatasetSpec,
-    EvaluateConfig,
     FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
@@ -33,8 +30,6 @@ class IdentityModel(BaseModel):
 
 
 class StudyStorageIdentity(IdentityModel):
-    chain: ChainSpec
-    dataset: DatasetSpec
     corpus_id: str
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     features: FeaturesConfig
@@ -50,8 +45,6 @@ class StudyStorageIdentity(IdentityModel):
 
 
 class ArtifactStorageIdentity(IdentityModel):
-    chain: ChainSpec
-    dataset: DatasetSpec
     corpus_id: str
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     features: FeaturesConfig
@@ -101,8 +94,6 @@ def identity_payload(identity: IdentityModel) -> dict[str, object]:
 
 def study_storage_identity(
     *,
-    chain: ChainSpec,
-    dataset: DatasetSpec,
     corpus_id: str,
     dataset_builder: DatasetBuilderConfig,
     features: FeaturesConfig,
@@ -117,8 +108,6 @@ def study_storage_identity(
     tuning_space: TuningSpaceConfig,
 ) -> StudyStorageIdentity:
     return StudyStorageIdentity(
-        chain=chain,
-        dataset=dataset,
         corpus_id=corpus_id,
         dataset_builder=dataset_builder,
         features=features,
@@ -135,14 +124,12 @@ def study_storage_identity(
 
 
 def study_storage_identity_from_config(
-    config: TuneConfig | TrainConfig | EvaluateConfig,
+    config: TuneConfig | TrainConfig,
     *,
     corpus_id: str,
 ) -> StudyStorageIdentity:
     tuning, tuning_space = _study_definition(config)
     return study_storage_identity(
-        chain=config.chain,
-        dataset=config.dataset,
         corpus_id=corpus_id,
         dataset_builder=config.dataset_builder,
         features=config.features,
@@ -159,7 +146,7 @@ def study_storage_identity_from_config(
 
 
 def artifact_storage_identity_from_config(
-    config: TrainConfig | EvaluateConfig,
+    config: TrainConfig,
     *,
     corpus_id: str,
     study_id: str | None,
@@ -167,8 +154,6 @@ def artifact_storage_identity_from_config(
     if config.artifact.variant is ArtifactVariant.TUNED and study_id is None:
         raise ConfigResolutionError("study_id is required for tuned artifact identity")
     return ArtifactStorageIdentity(
-        chain=config.chain,
-        dataset=config.dataset,
         corpus_id=corpus_id,
         dataset_builder=config.dataset_builder,
         features=config.features,
@@ -242,10 +227,12 @@ def study_definition_identity_from_manifest(manifest: StudyManifest) -> StudyDef
 
 
 def study_definition_identity_from_tuned_config(
-    config: TrainConfig | EvaluateConfig,
+    config: TrainConfig,
     *,
     study_id: str,
+    chain_name: str,
     dataset_id: str,
+    dataset_name: str,
 ) -> StudyDefinitionIdentity:
     if config.tuning is None or config.tuning_space is None:
         raise ConfigResolutionError(
@@ -254,9 +241,9 @@ def study_definition_identity_from_tuned_config(
     return study_definition_identity(
         study_name=config.study.name,
         study_id=study_id,
-        chain_name=config.chain.name,
+        chain_name=chain_name,
         dataset_id=dataset_id,
-        dataset_name=config.dataset.name,
+        dataset_name=dataset_name,
         dataset_builder=config.dataset_builder,
         prediction=config.prediction,
         objective=config.objective,
@@ -281,7 +268,7 @@ def study_manifest_identity(manifest: StudyManifest) -> StudyManifestIdentity:
 
 
 def _study_definition(
-    config: TuneConfig | TrainConfig | EvaluateConfig,
+    config: TuneConfig | TrainConfig,
 ) -> tuple[TuningConfig, TuningSpaceConfig]:
     if isinstance(config, TuneConfig):
         return config.tuning, config.tuning_space

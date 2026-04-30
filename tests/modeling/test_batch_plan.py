@@ -106,7 +106,7 @@ def test_batch_plan_orders_samples_deterministically_by_signature() -> None:
         seed=2026,
     )
 
-    assert plan.storage_mode == "host"
+    assert plan.storage_mode == "host_materialized"
     assert plan.sample_count == 4
     assert plan.batch_count == 2
     assert plan.estimated_storage_bytes == 1024
@@ -168,7 +168,7 @@ def test_device_resident_plan_exposes_storage_mode() -> None:
         seed=2026,
     )
 
-    assert plan.storage_mode == "device_resident"
+    assert plan.storage_mode == "cuda_materialized"
     assert next(iter(plan.source)).sample_positions.tolist() == [1, 3]
 
 
@@ -185,6 +185,6 @@ def test_device_resident_oom_falls_back_to_host_loader(monkeypatch) -> None:
         seed=2026,
     )
 
-    assert plan.storage_mode == "host"
+    assert plan.storage_mode == "host_materialized"
     assert next(iter(plan.source)).sample_positions.tolist() == [1, 3]
     assert empty_cache_calls == [True]

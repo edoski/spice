@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..execution.session import ExecutionSession, open_execution_session
-from . import BenchmarkPlanEntry, plan_benchmark
+from .compilation import BenchmarkPlanEntry, plan_benchmark
 from .runs import (
     BenchmarkSubmissionRecord,
     append_submission_jsonl,

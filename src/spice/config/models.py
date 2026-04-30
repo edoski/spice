@@ -508,14 +508,31 @@ class ObjectiveModelWorkflowConfig(ModelWorkflowConfig):
 
 class TrainConfig(ObjectiveModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.TRAIN
+    dataset_id: str | None = None
+    study_id: str | None = None
     split: SplitConfig
     training: TrainingConfig
     tuning: TuningConfig | None = None
     tuning_space: TuningSpaceConfig | None = None
 
+    @model_validator(mode="after")
+    def validate_root_selector(self) -> Self:
+        if self.artifact.variant is ArtifactVariant.TUNED:
+            if self.study_id is None:
+                raise ConfigResolutionError("tuned training requires study_id")
+            if self.dataset_id is not None:
+                raise ConfigResolutionError("tuned training must not define dataset_id")
+            return self
+        if self.dataset_id is None:
+            raise ConfigResolutionError("baseline training requires dataset_id")
+        if self.study_id is not None:
+            raise ConfigResolutionError("baseline training must not define study_id")
+        return self
+
 
 class TuneConfig(ObjectiveModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.TUNE
+    dataset_id: str
     split: SplitConfig
     training: TrainingConfig
     tuning: TuningConfig
@@ -530,18 +547,17 @@ class TuneConfig(ObjectiveModelWorkflowConfig):
         return self
 
 
-class EvaluateConfig(ObjectiveModelWorkflowConfig):
+class EvaluateConfig(ConfigModel):
     workflow: WorkflowTask = WorkflowTask.EVALUATE
-    split: SplitConfig
-    training: TrainingConfig
-    delay_seconds: int = Field(gt=0)
-    tuning: TuningConfig | None = None
-    tuning_space: TuningSpaceConfig | None = None
+    storage: StorageSpec = Field(default_factory=StorageSpec)
+    artifact_id: str
+    dataset_id: str
+    evaluation: SerializeAsAny[EvaluatorConfig]
+    delay_seconds: int | None = Field(default=None, gt=0)
+    batch_size: int = Field(default=256, gt=0)
 
     @model_validator(mode="after")
-    def validate_required_objective_and_delay(self) -> Self:
+    def validate_required_evaluator(self) -> Self:
         if self.evaluation is None:
             raise ConfigResolutionError("evaluation workflow requires evaluation")
-        if self.delay_seconds > self.problem.max_delay_seconds:
-            raise ConfigResolutionError("delay_seconds must be <= problem.max_delay_seconds")
         return self

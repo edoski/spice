@@ -5,6 +5,7 @@ from typing import cast
 import pytest
 
 from spice.config import TrainConfig, WorkflowTask
+from spice.config.models import ChainRuntimeSpec
 from spice.core.errors import StateConflictError
 from spice.corpus.coverage import training_coverage_requirement, validate_corpus_coverage
 from spice.corpus.metadata import (
@@ -46,7 +47,14 @@ def _manifest(*, history_seconds: int, history_rows: int) -> DatasetManifest:
     )
     return DatasetManifest(
         dataset=DatasetIdentity(id="cor_test", name="test"),
-        chain=ChainMetadata(name="ethereum", chain_id=1),
+        chain=ChainMetadata(
+            name="ethereum",
+            runtime=ChainRuntimeSpec(
+                chain_id=1,
+                uses_poa_extra_data=False,
+                nominal_block_time_seconds=12.0,
+            ),
+        ),
         request=DatasetRequestMetadata(history=history, evaluation=evaluation),
         coverage=DatasetCoverageMetadata(history=history, evaluation=evaluation),
         validation=DatasetValidationMetadata(

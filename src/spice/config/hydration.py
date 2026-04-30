@@ -31,28 +31,37 @@ from .models import (
     coerce_problem_spec,
 )
 
-ModelWorkflowConfig: TypeAlias = TrainConfig | TuneConfig | EvaluateConfig
+ResolvedWorkflowConfig: TypeAlias = TrainConfig | TuneConfig | EvaluateConfig
 
 
-def hydrate_model_workflow_config(
+def hydrate_resolved_workflow_config(
     workflow: WorkflowTask,
     payload: Mapping[str, object],
-) -> ModelWorkflowConfig:
+) -> ResolvedWorkflowConfig:
     try:
         if workflow not in {WorkflowTask.TRAIN, WorkflowTask.TUNE, WorkflowTask.EVALUATE}:
-            raise ConfigResolutionError(f"Unsupported model workflow: {workflow.value}")
+            raise ConfigResolutionError(f"Unsupported resolved workflow: {workflow.value}")
+        if workflow is WorkflowTask.EVALUATE:
+            return EvaluateConfig.model_validate(_evaluate_workflow_payload(payload))
         resolved_payload = _model_workflow_payload(payload)
         if workflow is WorkflowTask.TRAIN:
             return TrainConfig.model_validate(resolved_payload)
         if workflow is WorkflowTask.TUNE:
             return TuneConfig.model_validate(resolved_payload)
-        if workflow is WorkflowTask.EVALUATE:
-            return EvaluateConfig.model_validate(resolved_payload)
     except ConfigResolutionError:
         raise
     except (ValidationError, ValueError, TypeError) as exc:
         raise ConfigResolutionError(str(exc)) from exc
-    raise ConfigResolutionError(f"Unsupported model workflow: {workflow.value}")
+    raise ConfigResolutionError(f"Unsupported resolved workflow: {workflow.value}")
+
+
+def _evaluate_workflow_payload(payload: Mapping[str, object]) -> dict[str, object]:
+    raw = dict(payload)
+    return {
+        **raw,
+        "storage": StorageSpec.model_validate(_mapping_field(raw, "storage")),
+        "evaluation": coerce_evaluator_config(_mapping_field(raw, "evaluation")),
+    }
 
 
 def _model_workflow_payload(payload: Mapping[str, object]) -> dict[str, object]:

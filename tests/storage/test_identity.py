@@ -5,26 +5,37 @@ from typing import cast
 import yaml
 
 from spice.config import (
-    EvaluateConfig,
-    EvaluateWorkflowSelection,
+    AcquireWorkflowSelection,
     TrainConfig,
     TrainWorkflowSelection,
     TuneConfig,
-    TunedParameterSet,
     TuneWorkflowSelection,
     WorkflowTask,
     resolve_workflow_config,
 )
-from spice.config.models import TunedTrainingParams
 from spice.config.registry import load_named_group
-from spice.modeling.pipeline import build_training_spec
-from spice.modeling.tuning import apply_tuned_parameters
+from spice.corpus.metadata import (
+    ChainMetadata,
+    DatasetCoverageMetadata,
+    DatasetIdentity,
+    DatasetManifest,
+    DatasetRequestMetadata,
+    DatasetValidationMetadata,
+    DatasetWindowMetadata,
+)
 from spice.storage.identity import (
     study_definition_identity_from_manifest,
     study_definition_identity_from_tuned_config,
 )
+from spice.storage.root_consumer_paths import produced_artifact_id, produced_study_id
 from spice.storage.study_manifest import manifest_from_tune_config
-from spice.storage.workflow_paths import resolve_workflow_paths
+from spice.storage.workflow_paths import (
+    WorkflowIdentity,
+    build_workflow_paths,
+    resolve_workflow_paths,
+)
+
+TEST_DATASET_ID = "cor_9a73b1e88edb488afb1e"
 
 
 def _write_surface(conf_root, name: str, payload: dict[str, object]) -> None:
@@ -36,208 +47,120 @@ def _base_surface(conf_root) -> dict[str, object]:
     return load_named_group("current_row_fee_dynamics", "surface")
 
 
-def _updated_surface(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
-    return {**base, **override}
-
-
-def _train_paths(
-    tmp_path,
-    *,
-    surface: str,
-    variant: str | None = None,
-    objective: str | None = None,
-):
-    config = cast(
-        TrainConfig,
-        resolve_workflow_config(
-            WorkflowTask.TRAIN,
-            TrainWorkflowSelection(
-                surface=surface,
-                variant=variant,
-                objective=objective,
-                storage_root=tmp_path / "outputs",
-            ),
-        ),
-    )
-    return resolve_workflow_paths(config)
-
-
-def _tune_paths(
-    tmp_path,
-    *,
-    surface: str,
-    objective: str | None = None,
-    trial_count: int | None = None,
-):
-    config = cast(
+def _tune_config(tmp_path, *, surface: str, objective: str | None = None) -> TuneConfig:
+    return cast(
         TuneConfig,
         resolve_workflow_config(
             WorkflowTask.TUNE,
             TuneWorkflowSelection(
                 surface=surface,
+                dataset_id=TEST_DATASET_ID,
                 objective=objective,
-                trial_count=trial_count,
                 storage_root=tmp_path / "outputs",
             ),
         ),
     )
-    return resolve_workflow_paths(config)
 
 
-def _evaluate_paths(tmp_path, *, surface: str, objective: str | None = None):
-    config = cast(
-        EvaluateConfig,
+def _train_config(
+    tmp_path,
+    *,
+    surface: str,
+    objective: str | None = None,
+    study_id: str | None = None,
+) -> TrainConfig:
+    return cast(
+        TrainConfig,
         resolve_workflow_config(
-            WorkflowTask.EVALUATE,
-            EvaluateWorkflowSelection(
+            WorkflowTask.TRAIN,
+            TrainWorkflowSelection(
                 surface=surface,
+                dataset_id=None if study_id is not None else TEST_DATASET_ID,
+                study_id=study_id,
+                variant="tuned" if study_id is not None else "baseline",
                 objective=objective,
                 storage_root=tmp_path / "outputs",
             ),
         ),
     )
-    return resolve_workflow_paths(config)
 
 
-def test_study_id_uses_full_resolved_identity(
+def _corpus_manifest(config: TuneConfig) -> DatasetManifest:
+    window = DatasetWindowMetadata(start_timestamp=1, end_timestamp=2)
+    return DatasetManifest(
+        dataset=DatasetIdentity(id=TEST_DATASET_ID, name=config.dataset.name),
+        chain=ChainMetadata(name=config.chain.name, runtime=config.chain.runtime),
+        request=DatasetRequestMetadata(history=window, evaluation=window),
+        coverage=DatasetCoverageMetadata(history=window, evaluation=window),
+        validation=DatasetValidationMetadata(history=None, evaluation=None),
+    )
+
+
+def test_study_id_uses_resolved_identity_but_not_trial_limits(
     tmp_path,
     isolate_conf_root,
 ) -> None:
     conf_root = isolate_conf_root()
-    name = "study_identity_change"
-    override = {"tuning": {"id": "default", "space": "lstm_extensive_calibrated"}}
-    payload = _updated_surface(_base_surface(conf_root), override)
-    _write_surface(conf_root, name, payload)
+    payload = {
+        **_base_surface(conf_root),
+        "tuning": {"id": "default", "space": "lstm_extensive_calibrated"},
+    }
+    _write_surface(conf_root, "study_identity_change", payload)
 
-    base = _tune_paths(tmp_path, surface="current_row_fee_dynamics")
-    changed = _tune_paths(tmp_path, surface=name)
-
-    assert base.study_id is not None
-    assert changed.study_id is not None
-    assert changed.study_id != base.study_id
-
-
-def test_study_id_ignores_tuning_run_limits(
-    tmp_path,
-    isolate_conf_root,
-) -> None:
-    isolate_conf_root()
-
-    base = _tune_paths(tmp_path, surface="current_row_fee_dynamics")
-    changed = _tune_paths(tmp_path, surface="current_row_fee_dynamics", trial_count=40)
-
-    assert base.study_id is not None
-    assert changed.study_id == base.study_id
-
-
-def test_study_and_artifact_ids_ignore_surface_name(
-    tmp_path,
-    isolate_conf_root,
-) -> None:
-    conf_root = isolate_conf_root()
-    clone_name = "current_row_fee_dynamics_clone"
-    _write_surface(conf_root, clone_name, _base_surface(conf_root))
-
-    base_tune = _tune_paths(tmp_path, surface="current_row_fee_dynamics")
-    clone_tune = _tune_paths(tmp_path, surface=clone_name)
-    base_train = _train_paths(tmp_path, surface="current_row_fee_dynamics")
-    clone_train = _train_paths(tmp_path, surface=clone_name)
-
-    assert base_tune.study_id == clone_tune.study_id
-    assert base_train.artifact_id == clone_train.artifact_id
-
-
-def test_study_id_uses_objective_selection_override(
-    tmp_path,
-    isolate_conf_root,
-) -> None:
-    isolate_conf_root()
-
-    base = _tune_paths(tmp_path, surface="current_row_fee_dynamics")
-    changed = _tune_paths(
-        tmp_path,
-        surface="current_row_fee_dynamics",
-        objective="validation_total_loss",
-    )
-
-    assert base.study_id is not None
-    assert changed.study_id is not None
-    assert changed.study_id != base.study_id
-
-
-def test_artifact_id_uses_full_resolved_identity(
-    tmp_path,
-    isolate_conf_root,
-) -> None:
-    conf_root = isolate_conf_root()
-    name = "artifact_identity_change"
-    override = {"problem": "current_row_recent_median"}
-    payload = _updated_surface(_base_surface(conf_root), override)
-    _write_surface(conf_root, name, payload)
-
-    base = _train_paths(tmp_path, surface="current_row_fee_dynamics")
-    changed = _train_paths(tmp_path, surface=name)
-
-    assert base.artifact_id is not None
-    assert changed.artifact_id is not None
-    assert changed.artifact_id != base.artifact_id
-
-
-def test_artifact_id_uses_objective_selection_override(
-    tmp_path,
-    isolate_conf_root,
-) -> None:
-    isolate_conf_root()
-
-    base_train = _train_paths(tmp_path, surface="current_row_fee_dynamics")
-    changed_train = _train_paths(
-        tmp_path,
-        surface="current_row_fee_dynamics",
-        objective="validation_total_loss",
-    )
-    base_evaluate = _evaluate_paths(tmp_path, surface="current_row_fee_dynamics")
-    changed_evaluate = _evaluate_paths(
-        tmp_path,
-        surface="current_row_fee_dynamics",
-        objective="validation_total_loss",
-    )
-
-    assert base_train.artifact_id is not None
-    assert changed_train.artifact_id is not None
-    assert base_evaluate.artifact_id == base_train.artifact_id
-    assert changed_evaluate.artifact_id == changed_train.artifact_id
-    assert changed_train.artifact_id != base_train.artifact_id
-
-
-def test_storage_root_does_not_affect_ids(tmp_path, isolate_conf_root) -> None:
-    isolate_conf_root()
-    first = cast(
-        TrainConfig,
+    base = _tune_config(tmp_path, surface="current_row_fee_dynamics")
+    changed = _tune_config(tmp_path, surface="study_identity_change")
+    limited = cast(
+        TuneConfig,
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
-            TrainWorkflowSelection(
+            WorkflowTask.TUNE,
+            TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
-                storage_root=tmp_path / "one",
-            ),
-        ),
-    )
-    second = cast(
-        TrainConfig,
-        resolve_workflow_config(
-            WorkflowTask.TRAIN,
-            TrainWorkflowSelection(
-                surface="current_row_fee_dynamics",
-                storage_root=tmp_path / "two",
+                dataset_id=TEST_DATASET_ID,
+                trial_count=40,
+                storage_root=tmp_path / "outputs",
             ),
         ),
     )
 
-    first_paths = resolve_workflow_paths(first)
-    second_paths = resolve_workflow_paths(second)
+    assert produced_study_id(changed) != produced_study_id(base)
+    assert produced_study_id(limited) == produced_study_id(base)
 
-    assert first_paths.corpus_id == second_paths.corpus_id
-    assert first_paths.artifact_id == second_paths.artifact_id
-    assert first_paths.output_root != second_paths.output_root
+
+def test_artifact_id_uses_training_identity_and_selected_dataset(
+    tmp_path,
+    isolate_conf_root,
+) -> None:
+    conf_root = isolate_conf_root()
+    _write_surface(
+        conf_root,
+        "artifact_identity_change",
+        {**_base_surface(conf_root), "problem": "current_row_recent_median"},
+    )
+
+    base = _train_config(tmp_path, surface="current_row_fee_dynamics")
+    changed_problem = _train_config(tmp_path, surface="artifact_identity_change")
+    changed_objective = _train_config(
+        tmp_path,
+        surface="current_row_fee_dynamics",
+        objective="validation_total_loss",
+    )
+
+    assert produced_artifact_id(changed_problem, dataset_id=TEST_DATASET_ID) != (
+        produced_artifact_id(base, dataset_id=TEST_DATASET_ID)
+    )
+    assert produced_artifact_id(changed_objective, dataset_id=TEST_DATASET_ID) != (
+        produced_artifact_id(base, dataset_id=TEST_DATASET_ID)
+    )
+
+
+def test_storage_root_does_not_affect_produced_ids(tmp_path, isolate_conf_root) -> None:
+    isolate_conf_root()
+    first = _train_config(tmp_path / "one", surface="current_row_fee_dynamics")
+    second = _train_config(tmp_path / "two", surface="current_row_fee_dynamics")
+
+    assert produced_artifact_id(first, dataset_id=TEST_DATASET_ID) == (
+        produced_artifact_id(second, dataset_id=TEST_DATASET_ID)
+    )
 
 
 def test_tuned_definition_identity_matches_stored_study_manifest(
@@ -245,80 +168,60 @@ def test_tuned_definition_identity_matches_stored_study_manifest(
     isolate_conf_root,
 ) -> None:
     isolate_conf_root()
-    tune_config = cast(
-        TuneConfig,
-        resolve_workflow_config(
-            WorkflowTask.TUNE,
-            TuneWorkflowSelection(
-                surface="current_row_fee_dynamics",
-                storage_root=tmp_path / "outputs",
-            ),
-        ),
+    tune_config = _tune_config(tmp_path, surface="current_row_fee_dynamics")
+    study_id = produced_study_id(tune_config)
+    train_config = _train_config(
+        tmp_path,
+        surface="current_row_fee_dynamics",
+        study_id=study_id,
     )
-    train_config = cast(
-        TrainConfig,
-        resolve_workflow_config(
-            WorkflowTask.TRAIN,
-            TrainWorkflowSelection(
-                surface="current_row_fee_dynamics",
-                variant="tuned",
-                storage_root=tmp_path / "outputs",
-            ),
-        ),
+    paths = build_workflow_paths(
+        output_root=tune_config.storage.root,
+        chain_name=tune_config.chain.name,
+        identity=WorkflowIdentity(corpus_id=TEST_DATASET_ID, study_id=study_id),
+    )
+    manifest = manifest_from_tune_config(
+        tune_config,
+        paths=paths,
+        corpus_manifest=_corpus_manifest(tune_config),
     )
 
-    tune_paths = resolve_workflow_paths(tune_config)
-    manifest = manifest_from_tune_config(tune_config)
-
-    assert tune_paths.study_id is not None
     assert study_definition_identity_from_manifest(manifest) == (
         study_definition_identity_from_tuned_config(
             train_config,
-            study_id=tune_paths.study_id,
-            dataset_id=tune_paths.corpus_id,
+            study_id=study_id,
+            chain_name=manifest.chain_name,
+            dataset_id=manifest.dataset_id,
+            dataset_name=manifest.dataset_name,
         )
     )
 
 
 def test_corpus_id_uses_dataset_evaluation_date(tmp_path, isolate_conf_root) -> None:
     conf_root = isolate_conf_root()
-    base = _train_paths(tmp_path, surface="current_row_fee_dynamics")
+    base = resolve_workflow_paths(
+        resolve_workflow_config(
+            WorkflowTask.ACQUIRE,
+            AcquireWorkflowSelection(
+                surface="current_row_fee_dynamics",
+                storage_root=tmp_path / "outputs",
+            ),
+        )
+    )
     changed_dataset = dict(load_named_group("icdcs_2026", "dataset"))
     changed_dataset["evaluation_date"] = "2025-11-10"
     (conf_root / "dataset" / "icdcs_2026.yaml").write_text(
         yaml.safe_dump(changed_dataset, sort_keys=False),
         encoding="utf-8",
     )
-    changed = _train_paths(tmp_path, surface="current_row_fee_dynamics")
-
-    assert changed.corpus_id != base.corpus_id
-
-
-def test_tuned_training_spec_uses_resolved_workflow_paths(tmp_path, isolate_conf_root) -> None:
-    isolate_conf_root()
-    config = cast(
-        TrainConfig,
+    changed = resolve_workflow_paths(
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
-            TrainWorkflowSelection(
+            WorkflowTask.ACQUIRE,
+            AcquireWorkflowSelection(
                 surface="current_row_fee_dynamics",
-                variant="tuned",
                 storage_root=tmp_path / "outputs",
             ),
-        ),
-    )
-    paths = resolve_workflow_paths(config)
-    tuned_config = cast(
-        TrainConfig,
-        apply_tuned_parameters(
-            config,
-            TunedParameterSet(
-                training=TunedTrainingParams(learning_rate=0.001),
-            ),
-        ),
+        )
     )
 
-    spec = build_training_spec(tuned_config, paths=paths)
-
-    assert spec.study_id == paths.study_id
-    assert spec.artifact_id == paths.artifact_id
+    assert changed.corpus_id != base.corpus_id

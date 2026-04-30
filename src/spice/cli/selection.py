@@ -18,14 +18,8 @@ from ..config.selections import (
 )
 from ..core.errors import SpiceOperatorError
 
-ModelWorkflowSelectionType: TypeAlias = (
-    type[TrainWorkflowSelection]
-    | type[TuneWorkflowSelection]
-    | type[EvaluateWorkflowSelection]
-)
-ModelWorkflowSelection: TypeAlias = (
-    TrainWorkflowSelection | TuneWorkflowSelection | EvaluateWorkflowSelection
-)
+ModelWorkflowSelectionType: TypeAlias = type[TrainWorkflowSelection] | type[TuneWorkflowSelection]
+ModelWorkflowSelection: TypeAlias = TrainWorkflowSelection | TuneWorkflowSelection
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,8 +99,9 @@ def build_model_workflow_command_plan(
     split: str | None,
     tuning: str | None,
     study: str | None,
+    dataset_id: str | None = None,
+    study_id: str | None = None,
     variant: str | None = None,
-    delay_seconds: int | None = None,
     trial_count: int | None = None,
 ) -> WorkflowCommandPlan:
     validate_submission_flags(
@@ -131,8 +126,9 @@ def build_model_workflow_command_plan(
         split=split,
         tuning=tuning,
         study=study,
+        dataset_id=dataset_id,
+        study_id=study_id,
         variant=variant,
-        delay_seconds=delay_seconds,
         trial_count=trial_count,
     )
     return WorkflowCommandPlan(
@@ -160,8 +156,9 @@ def build_model_workflow_selection(
     split: str | None,
     tuning: str | None,
     study: str | None,
+    dataset_id: str | None = None,
+    study_id: str | None = None,
     variant: str | None = None,
-    delay_seconds: int | None = None,
     trial_count: int | None = None,
 ) -> ModelWorkflowSelection:
     return selection_type.model_validate(
@@ -180,10 +177,45 @@ def build_model_workflow_selection(
                 "split": split,
                 "tuning": tuning,
                 "study": study,
+                "dataset_id": dataset_id,
+                "study_id": study_id,
                 "variant": variant,
-                "delay_seconds": delay_seconds,
                 "trial_count": trial_count,
                 "storage_root": storage_root,
             },
         )
+    )
+
+
+def build_evaluate_workflow_command_plan(
+    *,
+    submit: bool,
+    dependency: str | None,
+    detach: bool,
+    storage_root: Path | None,
+    artifact_id: str | None,
+    dataset_id: str | None,
+    evaluation: str | None,
+    delay_seconds: int | None,
+    batch_size: int | None,
+) -> WorkflowCommandPlan:
+    validate_submission_flags(
+        submit=submit,
+        dependency=dependency,
+        detach=detach,
+        storage_root=storage_root,
+    )
+    selection = EvaluateWorkflowSelection(
+        storage_root=None if submit else storage_root,
+        artifact_id=artifact_id,
+        dataset_id=dataset_id,
+        evaluation=evaluation,
+        delay_seconds=delay_seconds,
+        batch_size=batch_size,
+    )
+    return WorkflowCommandPlan(
+        task=WorkflowTask.EVALUATE,
+        selection=selection,
+        config=resolve_selection_for_task(WorkflowTask.EVALUATE, selection),
+        submit=submit,
     )

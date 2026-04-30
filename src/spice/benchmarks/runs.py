@@ -12,12 +12,12 @@ from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict
 
-from ..config.hydration import hydrate_model_workflow_config
+from ..config.hydration import hydrate_resolved_workflow_config
 from ..config.models import WorkflowTask
 from ..config.resolution import WorkflowConfig
 from ..core.errors import SpiceOperatorError
 from ..core.validation import validate_path_segment
-from . import BenchmarkPlanEntry
+from .compilation import BenchmarkPlanEntry
 
 BENCHMARK_RUNS_ROOT = Path("outputs") / "benchmarks" / "runs"
 PLAN_FILENAME = "plan.jsonl"
@@ -137,7 +137,7 @@ def load_plan_jsonl(run_dir: Path) -> list[LoadedBenchmarkPlanEntry]:
                     for value in sequence_payload(payload.get("external_dependencies", []))
                 ),
                 selection=dict(mapping_payload(payload.get("selection", {}), label="selection")),
-                config=hydrate_model_workflow_config(workflow, config_payload),
+                config=hydrate_resolved_workflow_config(workflow, config_payload),
             )
         )
     return entries

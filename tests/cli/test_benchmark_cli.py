@@ -30,6 +30,7 @@ def test_benchmark_plan_outputs_jsonl(isolate_conf_root) -> None:
                     "base": {
                         "surface": "current_row_fee_dynamics",
                         "study": "single",
+                        "dataset_id": "cor_9a73b1e88edb488afb1e",
                     },
                     "steps": [
                         {
@@ -65,6 +66,7 @@ def test_benchmark_submit_uses_existing_remote_submitter(isolate_conf_root, monk
                     "base": {
                         "surface": "current_row_fee_dynamics",
                         "study": "single",
+                        "dataset_id": "cor_9a73b1e88edb488afb1e",
                     },
                     "steps": [
                         {
@@ -77,10 +79,9 @@ def test_benchmark_submit_uses_existing_remote_submitter(isolate_conf_root, monk
                             "id": "evaluate",
                             "workflow": "evaluate",
                             "after": ["train"],
+                            "artifact_from": "train",
                             "set": {
-                                "objective": "profit_poisson_replay_2h",
                                 "evaluation": "poisson_replay_2h",
-                                "variant": "baseline",
                                 "delay_seconds": 12,
                             },
                         },

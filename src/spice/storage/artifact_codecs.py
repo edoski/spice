@@ -1,9 +1,8 @@
-"""Typed payload codecs for artifact manifests and summaries."""
+"""Typed payload codecs for artifact-root manifests and summaries."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
@@ -18,19 +17,19 @@ from ..config.models import (
 )
 from ..core.errors import StateLayoutError
 from ..evaluation import EvaluationRun
-from ..features import FeaturePrerequisites
+from ..modeling.dataset_builders import (
+    coerce_builder_runtime_metadata,
+    coerce_dataset_builder_config,
+)
+from ..modeling.families.registry import coerce_model_config
 from ..objectives import coerce_objective_config
 from ..prediction import MetricDescriptor, MetricSet, WindowMetricSummary
-from ..semantics import (
-    ArtifactSemantics,
-    StudySemantics,
-)
 from ..temporal.scaling import ScalerStats
-from .dataset_builders import coerce_builder_runtime_metadata, coerce_dataset_builder_config
-from .families.registry import coerce_model_config
+from .payloads import mapping_payload
+from .semantics_codecs import artifact_semantics_from_payload, artifact_semantics_payload
 
 if TYPE_CHECKING:
-    from .results import (
+    from ..modeling.results import (
         EvaluationRuntimeSummary,
         TrainingArtifactManifest,
         TrainingEpochRecord,
@@ -43,38 +42,11 @@ class CodecPayloadModel(BaseModel):
 
 
 _EVALUATION_RUN_ADAPTER = TypeAdapter(EvaluationRun)
-_STUDY_SEMANTICS_ADAPTER = TypeAdapter(StudySemantics)
-_ARTIFACT_SEMANTICS_ADAPTER = TypeAdapter(ArtifactSemantics)
-
-_ADAPTER_NAMESPACE = {
-    "FeaturePrerequisites": FeaturePrerequisites,
-    "MetricDescriptor": MetricDescriptor,
-}
-for _adapter in (
-    _STUDY_SEMANTICS_ADAPTER,
-    _ARTIFACT_SEMANTICS_ADAPTER,
-):
-    _adapter.rebuild(_types_namespace=_ADAPTER_NAMESPACE)
-
-
-def mapping_payload(payload: object) -> dict[str, object]:
-    if not isinstance(payload, Mapping):
-        raise StateLayoutError("Expected mapping payload")
-    return dict(payload)
-
-
 def _adapter_payload(adapter: object, value: object) -> dict[str, object]:
     payload = cast(TypeAdapter[Any], adapter).dump_python(value, mode="json")
     if not isinstance(payload, dict):
         raise StateLayoutError("Expected adapter to serialize to a mapping payload")
     return cast(dict[str, object], payload)
-
-
-AdapterValueT = TypeVar("AdapterValueT")
-
-
-def _adapter_value(adapter: TypeAdapter[AdapterValueT], payload: object) -> AdapterValueT:
-    return adapter.validate_python(payload)
 
 
 def _metric_values_payload(metrics: MetricSet) -> dict[str, float]:
@@ -96,7 +68,7 @@ def _metric_descriptor_payload(descriptor: MetricDescriptor) -> dict[str, str]:
 
 
 def _metric_descriptor_from_payload(payload: object) -> MetricDescriptor:
-    mapping = mapping_payload(payload)
+    mapping = mapping_payload(payload, label="evaluation_summary.metric_descriptor")
     return MetricDescriptor(
         id=str(mapping["id"]),
         label=str(mapping["label"]),
@@ -148,7 +120,7 @@ class ArtifactManifestPayload(CodecPayloadModel):
         )
 
     def to_manifest(self) -> TrainingArtifactManifest:
-        from .results import TrainingArtifactManifest
+        from ..modeling.results import TrainingArtifactManifest
 
         dataset_builder = coerce_dataset_builder_config(self.dataset_builder)
         return TrainingArtifactManifest(
@@ -170,7 +142,10 @@ class ArtifactManifestPayload(CodecPayloadModel):
             scaler=ScalerStats.model_validate(self.scaler),
             builder_runtime_metadata=coerce_builder_runtime_metadata(
                 dataset_builder.id,
-                mapping_payload(self.builder_runtime_metadata),
+                mapping_payload(
+                    self.builder_runtime_metadata,
+                    label="artifact_manifest.builder_runtime_metadata",
+                ),
             ),
             semantics=artifact_semantics_from_payload(self.semantics),
         )
@@ -204,7 +179,7 @@ class TrainingSummaryPayload(CodecPayloadModel):
         )
 
     def to_runtime(self) -> TrainingRuntimeSummary:
-        from .results import SplitSizes, TrainingRuntimeSummary
+        from ..modeling.results import SplitSizes, TrainingRuntimeSummary
 
         return TrainingRuntimeSummary(
             n_rows_available=self.n_rows_available,
@@ -236,7 +211,7 @@ class TrainingEpochPayload(CodecPayloadModel):
         )
 
     def to_record(self, *, epoch: int) -> TrainingEpochRecord:
-        from .results import TrainingEpochRecord
+        from ..modeling.results import TrainingEpochRecord
 
         return TrainingEpochRecord(
             epoch=epoch,
@@ -277,7 +252,7 @@ class EvaluationSummaryPayload(CodecPayloadModel):
         )
 
     def to_runtime(self, *, runs: list[EvaluationRun]) -> EvaluationRuntimeSummary:
-        from .results import EvaluationRuntimeSummary
+        from ..modeling.results import EvaluationRuntimeSummary
 
         return EvaluationRuntimeSummary(
             delay_seconds=self.delay_seconds,
@@ -355,23 +330,7 @@ def evaluation_run_payload(run: EvaluationRun) -> dict[str, object]:
 
 
 def evaluation_run_from_payload(payload: dict[str, object]):
-    return cast(EvaluationRun, _adapter_value(_EVALUATION_RUN_ADAPTER, payload))
-
-
-def artifact_semantics_payload(semantics: ArtifactSemantics) -> dict[str, object]:
-    return _adapter_payload(_ARTIFACT_SEMANTICS_ADAPTER, semantics)
-
-
-def artifact_semantics_from_payload(payload: dict[str, object]) -> ArtifactSemantics:
-    return cast(ArtifactSemantics, _adapter_value(_ARTIFACT_SEMANTICS_ADAPTER, payload))
-
-
-def study_semantics_payload(semantics: StudySemantics) -> dict[str, object]:
-    return _adapter_payload(_STUDY_SEMANTICS_ADAPTER, semantics)
-
-
-def study_semantics_from_payload(payload: dict[str, object]) -> StudySemantics:
-    return cast(StudySemantics, _adapter_value(_STUDY_SEMANTICS_ADAPTER, payload))
+    return cast(EvaluationRun, _EVALUATION_RUN_ADAPTER.validate_python(payload))
 
 
 def _metadata_value(value: object) -> str | int | float:

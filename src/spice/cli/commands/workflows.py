@@ -6,22 +6,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import typer
 
 from ...config.models import WorkflowTask
 from ...config.resolution import WorkflowConfig
-from ...config.selections import (
-    EvaluateWorkflowSelection,
-    TrainWorkflowSelection,
-    TuneWorkflowSelection,
-)
+from ...config.selections import TrainWorkflowSelection, TuneWorkflowSelection
 from ...core.errors import SpiceOperatorError
 from ...execution.session import ExecutionSession, open_execution_session
 from ..options import DEFAULT_REMOTE_TARGET, RemoteTargetOption
 from ..selection import (
     build_acquire_workflow_config,
+    build_evaluate_workflow_command_plan,
     build_model_workflow_command_plan,
 )
 
@@ -78,9 +75,7 @@ def _submit_selected_workflow(
 def _run_or_submit_model_workflow(
     *,
     task: WorkflowTask,
-    selection_type: type[TrainWorkflowSelection]
-    | type[TuneWorkflowSelection]
-    | type[EvaluateWorkflowSelection],
+    selection_type: type[TrainWorkflowSelection] | type[TuneWorkflowSelection],
     runner: Callable[[Any], None],
     submit: bool,
     target: str,
@@ -99,8 +94,9 @@ def _run_or_submit_model_workflow(
     split: str | None,
     tuning: str | None,
     study: str | None,
+    dataset_id: str | None = None,
+    study_id: str | None = None,
     variant: str | None = None,
-    delay_seconds: int | None = None,
     trial_count: int | None = None,
 ) -> None:
     plan = build_model_workflow_command_plan(
@@ -122,8 +118,9 @@ def _run_or_submit_model_workflow(
         split=split,
         tuning=tuning,
         study=study,
+        dataset_id=dataset_id,
+        study_id=study_id,
         variant=variant,
-        delay_seconds=delay_seconds,
         trial_count=trial_count,
     )
     if submit:
@@ -281,6 +278,14 @@ def train_command(
         str | None,
         _selection_option("--variant", metavar="VARIANT", help="Override the artifact variant."),
     ] = None,
+    dataset_id: Annotated[
+        str | None,
+        _selection_option("--dataset-id", metavar="DATASET_ID", help="Consume this corpus root."),
+    ] = None,
+    study_id: Annotated[
+        str | None,
+        _selection_option("--study-id", metavar="STUDY_ID", help="Consume this study root."),
+    ] = None,
     storage_root: Annotated[
         Path | None,
         _output_option(
@@ -338,6 +343,8 @@ def train_command(
         split=split,
         tuning=tuning,
         study=study,
+        dataset_id=dataset_id,
+        study_id=study_id,
         variant=variant,
     )
 
@@ -415,6 +422,10 @@ def tune_command(
         str | None,
         _selection_option("--study", metavar="STUDY", help="Override the study name."),
     ] = None,
+    dataset_id: Annotated[
+        str | None,
+        _selection_option("--dataset-id", metavar="DATASET_ID", help="Consume this corpus root."),
+    ] = None,
     trial_count: Annotated[
         int | None,
         _execution_option(
@@ -480,86 +491,31 @@ def tune_command(
         split=split,
         tuning=tuning,
         study=study,
+        dataset_id=dataset_id,
         trial_count=trial_count,
     )
 
 
 def evaluate_command(
-    surface: Annotated[
+    artifact_id: Annotated[
         str | None,
         _selection_option(
-            "--surface",
-            metavar="SURFACE",
-            help="Resolve a named workflow surface.",
+            "--artifact-id",
+            metavar="ARTIFACT_ID",
+            help="Consume this artifact root.",
         ),
     ] = None,
-    chain: Annotated[
-        str | None,
-        _selection_option("--chain", metavar="CHAIN", help="Override the target chain."),
-    ] = None,
-    problem: Annotated[
-        str | None,
-        _selection_option("--problem", metavar="PROBLEM", help="Override the problem spec."),
-    ] = None,
-    features: Annotated[
+    dataset_id: Annotated[
         str | None,
         _selection_option(
-            "--features",
-            metavar="FEATURES",
-            help="Override the features spec.",
-        ),
-    ] = None,
-    objective: Annotated[
-        str | None,
-        _selection_option(
-            "--objective",
-            metavar="OBJECTIVE",
-            help="Override the objective spec.",
+            "--dataset-id",
+            metavar="DATASET_ID",
+            help="Evaluate on this corpus root.",
         ),
     ] = None,
     evaluation: Annotated[
         str | None,
-        _selection_option(
-            "--evaluation",
-            metavar="EVALUATION",
-            help="Override the evaluation spec.",
-        ),
-    ] = None,
-    model: Annotated[
-        str | None,
-        _selection_option("--model", metavar="MODEL", help="Override the model spec."),
-    ] = None,
-    tuning_space: Annotated[
-        str | None,
-        _selection_option(
-            "--tuning-space",
-            metavar="TUNING_SPACE",
-            help="Override the tuning-space spec.",
-        ),
-    ] = None,
-    training: Annotated[
-        str | None,
-        _selection_option(
-            "--training",
-            metavar="TRAINING",
-            help="Override the training spec.",
-        ),
-    ] = None,
-    split: Annotated[
-        str | None,
-        _selection_option("--split", metavar="SPLIT", help="Override the split spec."),
-    ] = None,
-    tuning: Annotated[
-        str | None,
-        _selection_option("--tuning", metavar="TUNING", help="Override the tuning spec."),
-    ] = None,
-    study: Annotated[
-        str | None,
-        _selection_option("--study", metavar="STUDY", help="Override the study name."),
-    ] = None,
-    variant: Annotated[
-        str | None,
-        _selection_option("--variant", metavar="VARIANT", help="Override the artifact variant."),
+        _selection_option("--evaluation", metavar="EVALUATION", help="Use this evaluator spec."),
     ] = None,
     delay_seconds: Annotated[
         int | None,
@@ -567,6 +523,14 @@ def evaluate_command(
             "--delay-seconds",
             metavar="SECONDS",
             help="Override the evaluation delay in seconds.",
+        ),
+    ] = None,
+    batch_size: Annotated[
+        int | None,
+        _execution_option(
+            "--batch-size",
+            metavar="COUNT",
+            help="Override the evaluation batch size.",
         ),
     ] = None,
     storage_root: Annotated[
@@ -605,27 +569,25 @@ def evaluate_command(
 ) -> None:
     from ...workflows import evaluate
 
-    _run_or_submit_model_workflow(
-        task=WorkflowTask.EVALUATE,
-        selection_type=EvaluateWorkflowSelection,
-        runner=evaluate.run,
+    plan = build_evaluate_workflow_command_plan(
         submit=submit,
-        target=target,
         dependency=dependency,
         detach=detach,
         storage_root=storage_root,
-        surface=surface,
-        chain=chain,
-        problem=problem,
-        features=features,
-        objective=objective,
+        artifact_id=artifact_id,
+        dataset_id=dataset_id,
         evaluation=evaluation,
-        model=model,
-        tuning_space=tuning_space,
-        training=training,
-        split=split,
-        tuning=tuning,
-        study=study,
-        variant=variant,
         delay_seconds=delay_seconds,
+        batch_size=batch_size,
     )
+    if submit:
+        session = open_execution_session(target)
+        _submit_selected_workflow(
+            task=WorkflowTask.EVALUATE,
+            config=plan.config,
+            session=session,
+            dependency=dependency,
+            detach=detach,
+        )
+        return
+    evaluate.run(cast(Any, plan.config))

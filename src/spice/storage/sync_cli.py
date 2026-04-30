@@ -38,12 +38,12 @@ def main(argv: list[str] | None = None) -> None:
 
     resolve_study = subparsers.add_parser("resolve-study-record")
     resolve_study.add_argument("--storage-root", required=True)
-    resolve_study.add_argument("--selector-json", required=True)
+    resolve_study.add_argument("--study-id", required=True)
     resolve_study.set_defaults(func=_resolve_study_record_command)
 
     resolve_artifact = subparsers.add_parser("resolve-artifact-record")
     resolve_artifact.add_argument("--storage-root", required=True)
-    resolve_artifact.add_argument("--selector-json", required=True)
+    resolve_artifact.add_argument("--artifact-id", required=True)
     resolve_artifact.set_defaults(func=_resolve_artifact_record_command)
 
     namespace = parser.parse_args(argv)
@@ -76,19 +76,17 @@ def _cleanup_stage_command(args: argparse.Namespace) -> None:
 
 
 def _resolve_study_record_command(args: argparse.Namespace) -> None:
-    selector_payload = json.loads(args.selector_json)
     record = resolve_study_record(
         Path(args.storage_root),
-        selector=StudySelector(**selector_payload),
+        selector=StudySelector(study_id=args.study_id),
     )
     _emit_record_json(record)
 
 
 def _resolve_artifact_record_command(args: argparse.Namespace) -> None:
-    selector_payload = json.loads(args.selector_json)
     record = resolve_artifact_record(
         Path(args.storage_root),
-        selector=ArtifactSelector(**selector_payload),
+        selector=ArtifactSelector(artifact_id=args.artifact_id),
     )
     _emit_record_json(record)
 

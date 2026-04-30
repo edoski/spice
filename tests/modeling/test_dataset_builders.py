@@ -8,7 +8,7 @@ import polars as pl
 from spice.config import TrainConfig, WorkflowTask
 from spice.modeling.dataset_builders import FixedSequenceTemporalBuilderRuntimeMetadata
 from spice.modeling.pipeline import build_training_spec, prepare_training_dataset
-from spice.storage.workflow_paths import resolve_workflow_paths
+from spice.storage.workflow_paths import WorkflowIdentity, build_workflow_paths
 from tests.dataset_helpers import (
     make_block_rows,
     required_dataset_blocks,
@@ -48,6 +48,15 @@ def _make_rows_with_tail_cadence_shift(
     return rows
 
 
+def _paths(config: TrainConfig):
+    assert config.dataset_id is not None
+    return build_workflow_paths(
+        output_root=config.storage.root,
+        chain_name=config.chain.name,
+        identity=WorkflowIdentity(corpus_id=config.dataset_id, artifact_id="art_test"),
+    )
+
+
 def test_fixed_context_dataset_builder_prepares_seq_len_without_builder_owned_class_state(
     tmp_path,
     load_workflow_config,
@@ -77,7 +86,7 @@ def test_fixed_context_dataset_builder_prepares_seq_len_without_builder_owned_cl
     )
     prepared = prepare_training_dataset(
         pl.DataFrame(_make_history_rows_with_margin(config)),
-        spec=build_training_spec(config, paths=resolve_workflow_paths(config)),
+        spec=build_training_spec(config, paths=_paths(config)),
     )
 
     assert config.dataset_builder.id == "fixed_sequence_temporal"
@@ -125,7 +134,7 @@ def test_fixed_context_dataset_builder_keeps_candidate_window_arrays_aligned_aft
 
     prepared = prepare_training_dataset(
         pl.DataFrame(_make_history_rows_with_margin(config)),
-        spec=build_training_spec(config, paths=resolve_workflow_paths(config)),
+        spec=build_training_spec(config, paths=_paths(config)),
     )
 
     assert prepared.store.anchor_rows.shape == prepared.store.candidate_start_rows.shape
@@ -177,7 +186,7 @@ def test_fixed_sequence_length_calibration_uses_train_sample_rows_only(
 
     prepared = prepare_training_dataset(
         pl.DataFrame(rows),
-        spec=build_training_spec(config, paths=resolve_workflow_paths(config)),
+        spec=build_training_spec(config, paths=_paths(config)),
     )
 
     assert prepared.builder_runtime_metadata.median_dt_seconds == 12.0

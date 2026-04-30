@@ -126,8 +126,13 @@ _SELECTOR_FLAGS: dict[str, dict[str, str]] = {
 }
 
 
-def _dataset_selector(*, chain: str | None, dataset: str | None) -> DatasetSelector:
-    return DatasetSelector(chain_name=chain, dataset_name=dataset)
+def _dataset_selector(
+    *,
+    dataset_id: str | None = None,
+    chain: str | None,
+    dataset: str | None,
+) -> DatasetSelector:
+    return DatasetSelector(dataset_id=dataset_id, chain_name=chain, dataset_name=dataset)
 
 
 def _show_root_detail(root_path: Path, *, detail: str | None) -> None:
@@ -222,13 +227,19 @@ def _render_catalog_refresh(summary: CatalogRefreshSummary) -> str:
     help="List datasets or show one dataset in detail.",
 )
 def show_dataset_command(
+    dataset_id: Annotated[
+        str | None,
+        typer.Option("--dataset-id", metavar="DATASET_ID", help="Show this dataset root."),
+    ] = None,
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
     storage_root: StorageRootReadOption = None,
     detail: DatasetDetailOption = None,
 ) -> None:
     root = resolve_storage_root(storage_root)
-    selector = _dataset_selector(chain=chain, dataset=dataset)
+    if detail is not None and dataset_id is None:
+        raise SpiceOperatorError("--detail requires --dataset-id")
+    selector = _dataset_selector(dataset_id=dataset_id, chain=chain, dataset=dataset)
     records = list_dataset_records(
         root,
         selector=selector,
@@ -236,7 +247,7 @@ def show_dataset_command(
     _show_records(
         kind="dataset",
         records=records,
-        has_filters=chain is not None or dataset is not None,
+        has_filters=dataset_id is not None or chain is not None or dataset is not None,
         detail=None if detail is None else detail.value,
         list_sections=dataset_list_sections,
         selector=selector,
@@ -249,6 +260,10 @@ def show_dataset_command(
     help="List studies or show one study in detail.",
 )
 def show_study_command(
+    study_id: Annotated[
+        str | None,
+        typer.Option("--study-id", metavar="STUDY_ID", help="Show this study root."),
+    ] = None,
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
     features: FeaturesFilterOption = None,
@@ -260,7 +275,10 @@ def show_study_command(
     detail: StudyDetailOption = None,
 ) -> None:
     root = resolve_storage_root(storage_root)
+    if detail is not None and study_id is None:
+        raise SpiceOperatorError("--detail requires --study-id")
     selector = StudySelector(
+        study_id=study_id,
         chain_name=chain,
         dataset_name=dataset,
         features_id=features,
@@ -278,7 +296,7 @@ def show_study_command(
         records=records,
         has_filters=any(
             value is not None
-            for value in (chain, dataset, features, prediction, model, problem, study)
+            for value in (study_id, chain, dataset, features, prediction, model, problem, study)
         ),
         detail=None if detail is None else detail.value,
         list_sections=study_list_sections,
@@ -292,6 +310,18 @@ def show_study_command(
     help="List artifacts or show one artifact in detail.",
 )
 def show_artifact_command(
+    artifact_id: Annotated[
+        str | None,
+        typer.Option("--artifact-id", metavar="ARTIFACT_ID", help="Show this artifact root."),
+    ] = None,
+    dataset_id: Annotated[
+        str | None,
+        typer.Option("--dataset-id", metavar="DATASET_ID", help="Filter by dataset root."),
+    ] = None,
+    study_id: Annotated[
+        str | None,
+        typer.Option("--study-id", metavar="STUDY_ID", help="Filter by study root."),
+    ] = None,
     chain: ChainFilterOption = None,
     dataset: DatasetFilterOption = None,
     features: FeaturesFilterOption = None,
@@ -304,7 +334,12 @@ def show_artifact_command(
     detail: ArtifactDetailOption = None,
 ) -> None:
     root = resolve_storage_root(storage_root)
+    if detail is not None and artifact_id is None:
+        raise SpiceOperatorError("--detail requires --artifact-id")
     selector = ArtifactSelector(
+        artifact_id=artifact_id,
+        dataset_id=dataset_id,
+        study_id=study_id,
         chain_name=chain,
         dataset_name=dataset,
         features_id=features,
@@ -322,8 +357,20 @@ def show_artifact_command(
         kind="artifact",
         records=records,
         has_filters=any(
-            value is not None
-            for value in (chain, dataset, features, prediction, model, problem, variant, study)
+                value is not None
+            for value in (
+                artifact_id,
+                dataset_id,
+                study_id,
+                chain,
+                dataset,
+                features,
+                prediction,
+                model,
+                problem,
+                variant,
+                study,
+            )
         ),
         detail=None if detail is None else detail.value,
         list_sections=artifact_list_sections,
@@ -337,31 +384,17 @@ def show_artifact_command(
     help="Delete exactly one artifact.",
 )
 def delete_artifact_command(
-    chain: ChainFilterOption = None,
-    dataset: DatasetFilterOption = None,
-    features: FeaturesFilterOption = None,
-    prediction: PredictionFilterOption = None,
-    model: ModelFilterOption = None,
-    problem: ProblemFilterOption = None,
-    variant: VariantFilterOption = None,
-    study: StudyFilterOption = None,
+    artifact_id: Annotated[
+        str,
+        typer.Option("--artifact-id", metavar="ARTIFACT_ID", help="Delete this artifact root."),
+    ],
     storage_root: StorageRootDeleteOption = None,
 ) -> None:
     root = resolve_storage_root(storage_root)
-    selector = ArtifactSelector(
-        chain_name=chain,
-        dataset_name=dataset,
-        features_id=features,
-        prediction_id=prediction,
-        model_id=model,
-        problem_id=problem,
-        variant=variant,
-        study_name=study,
+    record = resolve_artifact_record(
+        root,
+        selector=ArtifactSelector(artifact_id=artifact_id),
     )
-    try:
-        record = resolve_artifact_record(root, selector=selector)
-    except SelectorResolutionError as error:
-        _handle_selector_error(error, list_sections=artifact_list_sections, selector=selector)
     delete_artifact_record(root, record=record)
 
 
@@ -371,13 +404,10 @@ def delete_artifact_command(
     help=("Delete exactly one study. Use --cascade to also delete dependent tuned artifacts."),
 )
 def delete_study_command(
-    chain: ChainFilterOption = None,
-    dataset: DatasetFilterOption = None,
-    features: FeaturesFilterOption = None,
-    prediction: PredictionFilterOption = None,
-    model: ModelFilterOption = None,
-    problem: ProblemFilterOption = None,
-    study: StudyFilterOption = None,
+    study_id: Annotated[
+        str,
+        typer.Option("--study-id", metavar="STUDY_ID", help="Delete this study root."),
+    ],
     storage_root: StorageRootDeleteOption = None,
     cascade: Annotated[
         bool,
@@ -385,19 +415,7 @@ def delete_study_command(
     ] = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
-    selector = StudySelector(
-        chain_name=chain,
-        dataset_name=dataset,
-        features_id=features,
-        prediction_id=prediction,
-        model_id=model,
-        problem_id=problem,
-        study_name=study,
-    )
-    try:
-        record = resolve_study_record(root, selector=selector)
-    except SelectorResolutionError as error:
-        _handle_selector_error(error, list_sections=study_list_sections, selector=selector)
+    record = resolve_study_record(root, selector=StudySelector(study_id=study_id))
     try:
         delete_study_record(root, record=record, cascade=cascade)
     except DeleteBlockedError as error:
@@ -420,8 +438,10 @@ def refresh_catalog_command(
     ),
 )
 def delete_dataset_command(
-    chain: ChainFilterOption = None,
-    dataset: DatasetFilterOption = None,
+    dataset_id: Annotated[
+        str,
+        typer.Option("--dataset-id", metavar="DATASET_ID", help="Delete this dataset root."),
+    ],
     storage_root: StorageRootDeleteOption = None,
     cascade: Annotated[
         bool,
@@ -429,11 +449,10 @@ def delete_dataset_command(
     ] = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
-    selector = _dataset_selector(chain=chain, dataset=dataset)
-    try:
-        record = resolve_dataset_record(root, selector=selector)
-    except SelectorResolutionError as error:
-        _handle_selector_error(error, list_sections=dataset_list_sections, selector=selector)
+    record = resolve_dataset_record(
+        root,
+        selector=DatasetSelector(dataset_id=dataset_id),
+    )
     try:
         delete_dataset_record(root, record=record, cascade=cascade)
     except DeleteBlockedError as error:

@@ -1,7 +1,7 @@
 """Public configuration API."""
 
 from ..objectives import ObjectiveConfig
-from .hydration import hydrate_model_workflow_config
+from .hydration import hydrate_resolved_workflow_config
 from .models import (
     AcquireConfig,
     AcquisitionConfig,
@@ -79,7 +79,7 @@ __all__ = [
     "WorkflowTask",
     "coerce_features_config",
     "coerce_problem_spec",
-    "hydrate_model_workflow_config",
+    "hydrate_resolved_workflow_config",
     "resolve_workflow_config",
     "workflow_selection_fields",
     "workflow_selection_payload",

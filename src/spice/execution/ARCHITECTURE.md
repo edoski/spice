@@ -22,7 +22,7 @@ ssh + sbatch remote command
 python -m spice.execution.remote_runner <task> <config_json>
     |
     v
-hydrate_model_workflow_config()
+hydrate_resolved_workflow_config()
     |
     v
 train/tune/evaluate workflow
@@ -44,9 +44,9 @@ No hidden default here:
 
 This keeps execution reusable for tests, scripts, and future target selection without a hard-coded cluster dependency in the service layer.
 
-## Supported Remote Workflows
+## Supported Resolved Workflows
 
-The remote runner supports model workflows:
+The remote runner supports already resolved workflow snapshots:
 
 ```text
 train
@@ -54,7 +54,7 @@ tune
 evaluate
 ```
 
-Acquire is not routed through this resolved model-workflow hydration path. Acquisition has provider/RPC behavior and storage commit mechanics that are resolved through the normal acquire workflow path.
+Acquire is not routed through this resolved-snapshot hydration path. Acquisition has provider/RPC behavior and storage commit mechanics that are resolved through the normal acquire workflow path.
 
 ## Transfer Boundary
 

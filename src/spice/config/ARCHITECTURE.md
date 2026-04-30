@@ -65,13 +65,13 @@ model_dump_json()
 remote runner or tuned-param materialization
         |
         v
-hydrate_model_workflow_config()
+hydrate_resolved_workflow_config()
         |
         v
 owner coercers reconstruct concrete nested configs
 ```
 
-`hydrate_model_workflow_config()` is intentionally model-workflow-only. It supports train, tune, and evaluate. Acquire has different acquisition/provider concerns and is resolved through normal workflow resolution.
+`hydrate_resolved_workflow_config()` is intentionally resolved-snapshot-only. It supports train, tune, and evaluate. Acquire has different acquisition/provider concerns and is resolved through normal workflow resolution.
 
 ## Public API Boundary
 

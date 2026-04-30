@@ -12,6 +12,10 @@ _Avoid_: preset, profile
 Unresolved workflow intent made of a surface plus optional overrides.
 _Avoid_: request
 
+**Root Consumer Selection**:
+Explicit root-id intent for a workflow or action that reads an existing corpus, study, or artifact.
+_Avoid_: config echo, fuzzy selector
+
 **Workflow Config**:
 Executable typed configuration produced by resolving a workflow selection.
 _Avoid_: resolved request
@@ -45,7 +49,7 @@ One submitted benchmark plan with local run-state files for plan, submission, co
 _Avoid_: ad hoc benchmark output folder
 
 **Storage Selector**:
-A typed query for one existing catalog record: dataset, study, or artifact.
+A typed query for one existing catalog record, preferably by exact root id: dataset, study, or artifact.
 _Avoid_: workflow selector
 
 **Root Lifecycle**:
@@ -57,15 +61,15 @@ Acquisition-to-corpus policy that plans block windows, materializes history/eval
 _Avoid_: corpus builders
 
 **Artifact Inference Context**:
-Trusted inference inputs reconstructed from a trained artifact and an active evaluate workflow config.
+Trusted inference inputs reconstructed from a trained artifact manifest, selected corpus manifest, and eval-only controls.
 _Avoid_: evaluation setup, scoring setup
 
 **Batch Plan**:
-Executable model-batch iteration plan with sample ordering, target binding, and host/device storage placement.
+Executable model-batch iteration plan with sample ordering, target binding, and host/device storage-mode choice.
 _Avoid_: batch source
 
 **Training Runner**:
-Fit execution module that owns runtime setup, epoch execution, objective tracking, checkpoint selection, and split metric evaluation.
+Fit execution module that owns runtime setup, epoch execution, objective tracking, best-state selection, and split metric evaluation.
 _Avoid_: training loop helper
 
 **Forward Runtime Plan**:
@@ -106,7 +110,8 @@ _Avoid_: execution backend
 
 ## Relationships
 
-- A **Workflow Selection** references exactly one **Surface**.
+- A **Workflow Selection** references exactly one **Surface** when it produces a new root.
+- A **Root Consumer Selection** references existing roots by exact id and does not reproduce their original config identity.
 - A **Surface** references one or more **Config Groups**.
 - A **Workflow Selection** may override values from its **Surface**.
 - A **Workflow Config** is produced from exactly one **Workflow Selection**.
@@ -115,10 +120,10 @@ _Avoid_: execution backend
 - A **Benchmark Case** contains one or more **Benchmark Steps**.
 - A **Benchmark Step** expands into one or more **Benchmark Workflow Selections**.
 - A **Benchmark Run** records submitted **Benchmark Workflow Selections** and collection results.
-- A **Storage Selector** resolves existing persisted roots through the catalog.
+- A **Storage Selector** resolves existing persisted roots through the catalog before consumers build paths.
 - **Root Lifecycle** changes storage roots and keeps the catalog index current.
 - **Corpus Assembly** consumes a block source and produces a dry-run plan or committed corpus root.
-- An **Artifact Inference Context** validates a trained artifact against an evaluate **Workflow Config** and prepares model scoring inputs.
+- An **Artifact Inference Context** trusts artifact manifest semantics, validates selected corpus compatibility, and prepares model scoring inputs.
 - A **Training Runner** consumes prepared training data and produces fitted model state plus runtime training metrics.
 - A **Batch Plan** is built by the **Training Runner** and inference paths after runtime memory budget is known.
 - A **Forward Runtime Plan** builds the warmup and final **Batch Plans** for inference and split-metric forward passes.
@@ -128,7 +133,7 @@ _Avoid_: execution backend
 - An **Objective Metric Source** turns validation metrics or model-bound evaluator scoring into objective metrics for the **Training Runner**.
 - **Temporal Accounting** is shared by evaluator adapters after they select temporal decision events.
 - The **CLI Selection Layer** builds **Workflow Selections** from operator options and resolves local-or-submitted command plans.
-- A **Benchmark Collection Resolver** consumes an evaluate **Workflow Config** and an **Execution Session** to produce a collected benchmark evaluation.
+- A **Benchmark Collection Resolver** consumes exact artifact/evaluation ids and an **Execution Session** to produce a collected benchmark evaluation.
 - An **Execution Session** is opened for one explicit execution target and used by submission, following, remote transfer, and benchmark collection.
 
 ## Example Dialogue

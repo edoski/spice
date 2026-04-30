@@ -8,9 +8,9 @@ cases:
       study: large_capacity_hpo
     dimensions:
       data:
-        - set: {chain: ethereum}
-        - set: {chain: polygon}
-        - set: {chain: avalanche}
+        - set: {chain: ethereum, dataset_id: cor_9a73b1e88edb488afb1e}
+        - set: {chain: polygon, dataset_id: cor_415186063685f5b7588f}
+        - set: {chain: avalanche, dataset_id: cor_91fa9b80b6014317c148}
       models:
         - set:
             model: lstm
@@ -40,7 +40,6 @@ cases:
       - id: evaluate_tuned
         workflow: evaluate
         after: [train_tuned]
+        artifact_from: train_tuned
         set:
-          objective: profit_poisson_replay_2h
           evaluation: poisson_replay_2h
-          variant: tuned

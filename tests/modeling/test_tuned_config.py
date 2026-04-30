@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from optuna.trial import FixedTrial
 
@@ -10,12 +12,13 @@ from spice.config import (
     coerce_problem_spec,
     resolve_workflow_config,
 )
+from spice.config.models import TunedTrainingParams
 from spice.modeling.families.transformer import (
     TransformerModelConfig,
     TransformerTunedModelParams,
 )
 from spice.modeling.tuned_config import coerce_tuning_space_config, sample_tuned_parameters
-from spice.modeling.tuning import apply_tuned_parameters
+from spice.modeling.tuning import apply_study_best_params, apply_tuned_parameters
 
 
 def _transformer_model() -> TransformerModelConfig:
@@ -100,6 +103,7 @@ def test_apply_transformer_tuned_params_updates_model_config(tmp_path) -> None:
         WorkflowTask.TRAIN,
         TrainWorkflowSelection(
             surface="current_row_fee_dynamics",
+            dataset_id="cor_9a73b1e88edb488afb1e",
             model="transformer",
             variant="baseline",
             storage_root=tmp_path / "outputs",
@@ -125,6 +129,51 @@ def test_apply_transformer_tuned_params_updates_model_config(tmp_path) -> None:
     assert tuned.model.transformer_layers == 6
     assert tuned.model.feedforward_dim == 2048
     assert tuned.model.head_hidden_dim == 1024
+
+
+def test_apply_study_best_params_uses_manifest_study_name(tmp_path, monkeypatch) -> None:
+    config = resolve_workflow_config(
+        WorkflowTask.TRAIN,
+        TrainWorkflowSelection(
+            surface="current_row_fee_dynamics",
+            study_id="std_manifest",
+            variant="tuned",
+            storage_root=tmp_path / "outputs",
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "spice.modeling.tuning.load_study_manifest",
+        lambda _path: SimpleNamespace(study_name="manifest_study"),
+    )
+
+    def fake_validate(config, **_kwargs):
+        captured["validated_study"] = config.study.name
+
+    monkeypatch.setattr(
+        "spice.modeling.tuning.validate_tuned_artifact_definition",
+        fake_validate,
+    )
+
+    def fake_load_best_params(_path, *, study_name: str):
+        captured["loaded_study"] = study_name
+        return TunedParameterSet(training=TunedTrainingParams(learning_rate=0.0002))
+
+    monkeypatch.setattr("spice.modeling.tuning.load_best_params", fake_load_best_params)
+
+    applied = apply_study_best_params(
+        config,
+        study_state_db=tmp_path / "study.sqlite",
+        study_id="std_manifest",
+        dataset_id="cor_9a73b1e88edb488afb1e",
+    )
+
+    assert captured == {
+        "validated_study": "manifest_study",
+        "loaded_study": "manifest_study",
+    }
+    assert applied.config.study.name == "manifest_study"
 
 
 def test_transformer_tuning_space_rejects_incompatible_attention_dimensions() -> None:

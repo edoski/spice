@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import NamedTuple, Protocol, TypeVar
+from typing import Literal, NamedTuple, Protocol, TypeVar
 
 import numpy as np
 import torch
@@ -209,6 +209,10 @@ class _StreamingSequenceInputRepresentation:
             max_candidate_slots=self.store.max_candidate_slots,
         )
 
+    @property
+    def host_storage_mode(self) -> Literal["host_streaming"]:
+        return "host_streaming"
+
     def build_batch(self, sample_positions: torch.Tensor) -> ModelInputBatch:
         positions = sample_positions.detach().cpu().numpy().astype(np.int64, copy=False)
         batch_sample_indices = self.layout.sample_indices[positions]
@@ -255,6 +259,10 @@ class _MaterializedSequenceInputRepresentation:
             + self.input_mask.element_size() * self.input_mask.numel()
             + self.action_mask.element_size() * self.action_mask.numel()
         )
+
+    @property
+    def host_storage_mode(self) -> Literal["host_materialized"]:
+        return "host_materialized"
 
     def build_batch(self, sample_positions: torch.Tensor) -> ModelInputBatch:
         positions = sample_positions.detach().cpu().to(dtype=torch.int64, copy=False)

@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
 
 from ..config.models import EvaluateConfig
-from ..core.errors import ConfigResolutionError, SpiceOperatorError
+from ..core.errors import SpiceOperatorError
 from ..execution.session import ExecutionSession
-from ..execution.transfer import pull_artifact_from_cluster, pull_study_from_cluster
+from ..execution.transfer import pull_artifact_from_cluster
 from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary
-from ..modeling.tuning import apply_study_best_params
-from ..storage.artifact import list_evaluation_summaries, load_training_summary
-from ..storage.selectors import ArtifactSelector, StudySelector
-from ..storage.workflow_paths import resolve_workflow_paths
+from ..storage.artifact import (
+    list_evaluation_summaries,
+    load_artifact_manifest,
+    load_training_summary,
+)
+from ..storage.catalog.index import resolve_artifact_record
+from ..storage.selectors import ArtifactSelector
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,62 +29,31 @@ def resolve_benchmark_evaluation(
     *,
     session: ExecutionSession,
 ) -> ResolvedBenchmarkEvaluation | None:
-    active_config = config
-    study_id: str | None = None
-    if config.artifact.variant.value == "tuned":
-        study_paths = resolve_workflow_paths(config)
-        if study_paths.study_id is None:
-            raise ConfigResolutionError("tuned evaluation has no study identity")
-        _pull_study_once(
-            config,
-            session=session,
-            study_id=study_paths.study_id,
-        )
-        applied = apply_study_best_params(config)
-        active_config = cast(EvaluateConfig, applied.config)
-        study_id = applied.study_id
-    paths = resolve_workflow_paths(active_config, study_id=study_id)
-    if paths.artifact_id is None or paths.artifact_state_db is None:
-        raise ConfigResolutionError("evaluation has no artifact identity")
-    if active_config.evaluation is None:
-        raise ConfigResolutionError("evaluation workflow requires evaluation")
     _pull_artifact_once(
-        active_config,
+        config,
         session=session,
-        artifact_id=paths.artifact_id,
+        artifact_id=config.artifact_id,
     )
-    training_summary = load_training_summary(paths.artifact_state_db)
+    record = resolve_artifact_record(
+        config.storage.root,
+        selector=ArtifactSelector(artifact_id=config.artifact_id),
+    )
+    training_summary = load_training_summary(record.state_db_path)
+    manifest = load_artifact_manifest(record.state_db_path)
+    expected_delay = config.delay_seconds or manifest.max_delay_seconds
     summaries = [
         summary
-        for summary in list_evaluation_summaries(paths.artifact_state_db)
-        if summary.runtime.delay_seconds == active_config.delay_seconds
-        and summary.runtime.evaluation_id == active_config.evaluation.id
+        for summary in list_evaluation_summaries(record.state_db_path)
+        if summary.runtime.delay_seconds == expected_delay
+        and summary.runtime.evaluation_id == config.evaluation.id
     ]
     if not summaries:
         return None
     if len(summaries) > 1:
         raise SpiceOperatorError(
-            f"Multiple evaluation summaries match artifact {paths.artifact_id}"
+            f"Multiple evaluation summaries match artifact {config.artifact_id}"
         )
     return ResolvedBenchmarkEvaluation(evaluation=summaries[0], training=training_summary)
-
-
-def _pull_study_once(
-    config: EvaluateConfig,
-    *,
-    session: ExecutionSession,
-    study_id: str,
-) -> None:
-    pull_study_from_cluster(
-        storage_root=config.storage.root,
-        session=session,
-        selector=StudySelector(
-            study_id=study_id,
-            chain_name=config.chain.name,
-            dataset_name=config.dataset.name,
-        ),
-        replace=True,
-    )
 
 
 def _pull_artifact_once(
@@ -94,10 +65,6 @@ def _pull_artifact_once(
     pull_artifact_from_cluster(
         storage_root=config.storage.root,
         session=session,
-        selector=ArtifactSelector(
-            artifact_id=artifact_id,
-            chain_name=config.chain.name,
-            dataset_name=config.dataset.name,
-        ),
+        artifact_id=artifact_id,
         replace=True,
     )

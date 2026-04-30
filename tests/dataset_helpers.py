@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import math
 
-from spice.config import EvaluateConfig, TrainConfig, TuneConfig
+from spice.config import TrainConfig, TuneConfig
 from spice.features import compile_feature_contract
 from spice.temporal.contracts import compile_problem_contract
 
-ModelWorkflowConfig = TrainConfig | TuneConfig | EvaluateConfig
+TrainTuneWorkflowConfig = TrainConfig | TuneConfig
 BlockRowValue = int | float | None
 
 
@@ -18,7 +18,7 @@ def synthetic_block_interval_seconds(chain_name: str) -> int:
     }.get(chain_name, 12)
 
 
-def required_dataset_blocks(config: ModelWorkflowConfig) -> int:
+def required_dataset_blocks(config: TrainTuneWorkflowConfig) -> int:
     feature_contract = compile_feature_contract(features=config.features)
     contract = compile_problem_contract(
         problem=config.problem,
@@ -82,7 +82,7 @@ def make_block_rows(
     return rows
 
 
-def make_history_rows(config: ModelWorkflowConfig) -> list[dict[str, BlockRowValue]]:
+def make_history_rows(config: TrainTuneWorkflowConfig) -> list[dict[str, BlockRowValue]]:
     block_interval_seconds = synthetic_block_interval_seconds(config.chain.name)
     count = required_dataset_blocks(config)
     return make_block_rows(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..config.models import TrainConfig, TuneConfig
+from ..config.models import ChainRuntimeSpec, TrainConfig, TuneConfig
 from ..features import CompiledFeatureContract, compile_feature_contract
 from ..objectives import CompiledObjectiveContract, compile_objective_contract
 from ..prediction import CompiledPredictionContract, compile_prediction_contract
@@ -39,7 +39,11 @@ class CompiledTrainingContext:
     representation_contract: CompiledRepresentationContract
 
 
-def compile_training_context(config: TrainConfig | TuneConfig) -> CompiledTrainingContext:
+def compile_training_context(
+    config: TrainConfig | TuneConfig,
+    *,
+    chain_runtime: ChainRuntimeSpec | None = None,
+) -> CompiledTrainingContext:
     feature_contract = compile_feature_contract(features=config.features)
     objective_contract = compile_objective_contract(
         config.objective,
@@ -50,7 +54,7 @@ def compile_training_context(config: TrainConfig | TuneConfig) -> CompiledTraini
         problem_contract=compile_problem_contract(
             problem=config.problem,
             feature_contract=feature_contract,
-            chain_runtime=config.chain.runtime,
+            chain_runtime=chain_runtime or config.chain.runtime,
         ),
         prediction_contract=compile_prediction_contract(
             prediction_id=config.prediction.id,

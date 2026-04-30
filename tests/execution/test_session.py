@@ -139,9 +139,12 @@ def test_execution_session_submit_workflow_forwards_sbatch_dependency(
     submission = session.submit_workflow(
         WorkflowTask.TRAIN,
         config=resolve_workflow_config(
-            WorkflowTask.TRAIN,
-            TrainWorkflowSelection(surface="current_row_fee_dynamics"),
-        ),
+                WorkflowTask.TRAIN,
+                TrainWorkflowSelection(
+                    surface="current_row_fee_dynamics",
+                    dataset_id="cor_9a73b1e88edb488afb1e",
+                ),
+            ),
         dependency="afterok:99999",
     )
 

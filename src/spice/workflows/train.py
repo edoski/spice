@@ -17,7 +17,7 @@ from ..modeling.tuning import apply_study_best_params
 from ..storage.corpus import load_dataset_manifest
 from ..storage.engine import ARTIFACT_ROOT_KIND
 from ..storage.lifecycle import staged_root
-from ..storage.workflow_paths import resolve_workflow_paths
+from ..storage.root_consumer_paths import resolve_train_consumer_paths
 
 
 def _workflow_facts(config: TrainConfig) -> list[tuple[str, str]]:
@@ -60,16 +60,26 @@ def _fit_epoch_message(
 def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
     active_reporter = reporter or Reporter()
     active_config: TrainConfig = config
-    study_id: str | None = None
+    paths = resolve_train_consumer_paths(config)
     if config.artifact.variant is ArtifactVariant.TUNED:
-        applied = apply_study_best_params(config)
+        if paths.study_state_db is None or paths.study_id is None:
+            raise ConfigResolutionError("tuned training requires a resolved study root")
+        applied = apply_study_best_params(
+            config,
+            study_state_db=paths.study_state_db,
+            study_id=paths.study_id,
+            dataset_id=paths.corpus_id,
+        )
         active_config = cast(TrainConfig, applied.config)
-        study_id = applied.study_id
-    paths = resolve_workflow_paths(active_config, study_id=study_id)
+    corpus_manifest = load_dataset_manifest(paths.corpus_state_db)
     active_reporter.header("train", _workflow_facts(active_config))
-    spec = build_training_spec(active_config, paths=paths)
+    spec = build_training_spec(
+        active_config,
+        paths=paths,
+        corpus_manifest=corpus_manifest,
+    )
     validate_corpus_coverage(
-        load_dataset_manifest(paths.corpus_state_db),
+        corpus_manifest,
         contract=spec.problem_contract,
         feature_contract=spec.feature_contract,
         requirement=training_coverage_requirement(spec.problem_contract),

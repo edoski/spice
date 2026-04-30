@@ -11,7 +11,6 @@ import pytest
 from spice.core.errors import StateConflictError
 from spice.execution.transfer import pull_artifact_from_cluster, push_study_to_cluster
 from spice.storage.catalog import CatalogArtifactRecord, CatalogStudyRecord
-from spice.storage.selectors import ArtifactSelector, StudySelector
 
 
 class _FakeSession:
@@ -129,15 +128,7 @@ def test_push_study_to_cluster_uses_canonical_destination_root(tmp_path, monkeyp
     pushed = push_study_to_cluster(
         storage_root=local_storage_root,
         session=session,
-        selector=StudySelector(
-            chain_name=record.chain_name,
-            dataset_name=record.dataset_name,
-            features_id=record.features_id,
-            prediction_id=record.prediction_id,
-            model_id=record.model_id,
-            problem_id=record.problem_id,
-            study_name=record.study_name,
-        ),
+        study_id=record.study_id,
         replace=False,
     )
 
@@ -183,15 +174,7 @@ def test_pull_artifact_from_cluster_promotes_and_reindexes(tmp_path, monkeypatch
     pulled, dataset_present = pull_artifact_from_cluster(
         storage_root=local_storage_root,
         session=session,
-        selector=ArtifactSelector(
-            chain_name=record.chain_name,
-            dataset_name=record.dataset_name,
-            features_id=record.features_id,
-            prediction_id=record.prediction_id,
-            model_id=record.model_id,
-            problem_id=record.problem_id,
-            variant=record.variant,
-        ),
+        artifact_id=record.artifact_id,
         replace=False,
     )
 
@@ -218,6 +201,6 @@ def test_pull_artifact_from_cluster_rejects_existing_destination(tmp_path, monke
         pull_artifact_from_cluster(
             storage_root=tmp_path / "outputs",
             session=session,
-            selector=ArtifactSelector(),
+            artifact_id=record.artifact_id,
             replace=False,
         )

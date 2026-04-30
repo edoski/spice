@@ -38,16 +38,23 @@ class ModelWorkflowSelectionBase(WorkflowSelectionBase):
 
 
 class TrainWorkflowSelection(ModelWorkflowSelectionBase):
+    dataset_id: str | None = None
+    study_id: str | None = None
     variant: str | None = None
 
 
 class TuneWorkflowSelection(ModelWorkflowSelectionBase):
+    dataset_id: str | None = None
     trial_count: int | None = Field(default=None, gt=0)
 
 
-class EvaluateWorkflowSelection(ModelWorkflowSelectionBase):
-    variant: str | None = None
+class EvaluateWorkflowSelection(ConfigModel):
+    storage_root: Path | None = None
+    artifact_id: str | None = None
+    dataset_id: str | None = None
+    evaluation: str | None = None
     delay_seconds: int | None = Field(default=None, gt=0)
+    batch_size: int | None = Field(default=None, gt=0)
 
 
 WorkflowSelection: TypeAlias = (
@@ -58,7 +65,7 @@ WorkflowSelection: TypeAlias = (
 )
 
 
-def workflow_selection_type(workflow: WorkflowTask) -> type[WorkflowSelectionBase]:
+def workflow_selection_type(workflow: WorkflowTask) -> type[ConfigModel]:
     if workflow is WorkflowTask.ACQUIRE:
         return AcquireWorkflowSelection
     if workflow is WorkflowTask.TRAIN:

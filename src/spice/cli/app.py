@@ -45,14 +45,19 @@ app.command(
     help="Train one artifact from a materialized history corpus.",
     epilog=(
         "Example:\n"
-        "  spice train --surface current_row_fee_dynamics --study default --variant baseline"
+        "  spice train --surface current_row_fee_dynamics "
+        "--dataset-id cor_9a73b1e88edb488afb1e"
     ),
 )(train_command)
 app.command(
     "tune",
     short_help="Tune a model artifact.",
     help="Tune one artifact with Optuna.",
-    epilog="Example:\n  spice tune --surface current_row_fee_dynamics --trial-count 20",
+    epilog=(
+        "Example:\n"
+        "  spice tune --surface current_row_fee_dynamics "
+        "--dataset-id cor_9a73b1e88edb488afb1e --trial-count 20"
+    ),
 )(tune_command)
 app.command(
     "evaluate",
@@ -60,7 +65,8 @@ app.command(
     help="Evaluate one trained artifact on historical evaluation data.",
     epilog=(
         "Example:\n"
-        "  spice evaluate --surface current_row_fee_dynamics --study default --variant baseline"
+        "  spice evaluate --artifact-id art_... "
+        "--dataset-id cor_9a73b1e88edb488afb1e --evaluation poisson_replay_2h"
     ),
 )(evaluate_command)
 

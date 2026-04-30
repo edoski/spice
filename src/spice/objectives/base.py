@@ -75,12 +75,6 @@ class CompiledObjectiveContract:
             benchmark_id=self.benchmark_id,
         )
 
-    @property
-    def checkpoint_monitor(self) -> str:
-        if self.benchmark_id is None:
-            return f"validation_{self.metric_id}"
-        return f"validation_{self.benchmark_id}_{self.metric_id}"
-
     def value(self, metrics: MetricSet) -> float:
         return metrics.require(self.metric_id)
 

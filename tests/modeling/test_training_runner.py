@@ -120,11 +120,10 @@ def _fit_spec(
         train_sample_indices=np.array([0], dtype=np.int64),
         validation_sample_indices=np.array([0], dtype=np.int64),
         training_config=training_config,
-        artifact_dir=tmp_path,
     )
 
 
-def test_training_checkpoint_state_and_best_epoch_ignore_sub_delta_best(
+def test_training_best_state_and_best_epoch_ignore_sub_delta_best(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -215,21 +214,15 @@ def test_training_checkpoint_state_and_best_epoch_ignore_sub_delta_best(
             train_sample_indices=np.array([0], dtype=np.int64),
             validation_sample_indices=np.array([0], dtype=np.int64),
             training_config=training_config,
-            artifact_dir=tmp_path,
         )
     )
 
     assert result.best_epoch == 1
     assert result.best_objective_value == 1.0
-    assert (
-        result.best_checkpoint_path
-        == tmp_path / "checkpoints" / "epoch=01-validation_score=1.000000.pt"
-    )
-    assert result.best_checkpoint_path.exists()
     assert model.weight.item() == 1.0
 
 
-def test_training_stops_on_nonfinite_validation_metrics_and_preserves_best_checkpoint(
+def test_training_stops_on_nonfinite_validation_metrics_and_preserves_best_state(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -322,7 +315,6 @@ def test_training_stops_on_nonfinite_validation_metrics_and_preserves_best_check
             train_sample_indices=np.array([0], dtype=np.int64),
             validation_sample_indices=np.array([0], dtype=np.int64),
             training_config=training_config,
-            artifact_dir=tmp_path,
         ),
         callbacks=TrainingCallbacks(
             on_early_stop=lambda epoch, best_epoch: early_stop_calls.append(
@@ -341,7 +333,7 @@ def test_training_stops_on_nonfinite_validation_metrics_and_preserves_best_check
 
 
 @pytest.mark.parametrize("phase", ["train", "validation", "objective"])
-def test_training_raises_on_nonfinite_metrics_before_first_checkpoint(
+def test_training_raises_on_nonfinite_metrics_before_first_best_state(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
     phase: str,
@@ -367,7 +359,7 @@ def test_training_raises_on_nonfinite_metrics_before_first_checkpoint(
 
     with pytest.raises(
         SpiceOperatorError,
-        match="before any valid checkpoint",
+        match="before any valid best state",
     ):
         run_training_fit(
             _fit_spec(
@@ -381,7 +373,7 @@ def test_training_raises_on_nonfinite_metrics_before_first_checkpoint(
 
 
 @pytest.mark.parametrize("phase", ["train", "objective"])
-def test_training_stops_on_nonfinite_metrics_after_checkpoint(
+def test_training_stops_on_nonfinite_metrics_after_best_state(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
     phase: str,

@@ -15,7 +15,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection, RowMapping
 
 from ..core.errors import MissingStateError, StateLayoutError
-from ..modeling.result_codecs import (
+from .artifact_codecs import (
     artifact_manifest_from_payload,
     artifact_manifest_payload,
     evaluation_run_from_payload,
@@ -35,7 +35,7 @@ from .engine import (
     table_exists,
     touch_meta,
 )
-from .payloads import PayloadCodec, SequencePayloadStore, SingletonPayloadStore, mapping_payload
+from .payloads import PayloadCodec, SingletonPayloadStore, mapping_payload
 from .schema import (
     ARTIFACT_TABLES,
     artifact_manifest,
@@ -56,11 +56,6 @@ if TYPE_CHECKING:
         TrainingRuntimeSummary,
     )
 
-_RAW_PAYLOAD_CODEC: PayloadCodec[dict[str, object]] = PayloadCodec(
-    encode=lambda payload: payload,
-    decode=lambda payload: payload,
-)
-
 _ARTIFACT_MANIFEST_STORE = SingletonPayloadStore(
     table=artifact_manifest,
     codec=PayloadCodec(
@@ -70,11 +65,10 @@ _ARTIFACT_MANIFEST_STORE = SingletonPayloadStore(
 )
 _TRAINING_SUMMARY_STORE = SingletonPayloadStore(
     table=training_summary,
-    codec=_RAW_PAYLOAD_CODEC,
-)
-_TRAINING_EPOCH_STORE = SequencePayloadStore(
-    table=training_epochs,
-    codec=_RAW_PAYLOAD_CODEC,
+    codec=PayloadCodec(
+        encode=training_summary_payload,
+        decode=training_summary_from_payload,
+    ),
 )
 
 
@@ -124,14 +118,16 @@ def write_training_state(
     engine = create_state_engine(db_path)
     try:
         with engine.begin() as conn:
-            _TRAINING_SUMMARY_STORE.upsert(conn, training_summary_payload(summary))
-            _TRAINING_EPOCH_STORE.replace(
-                conn,
-                [
-                    {"epoch": record.epoch, "payload": training_epoch_payload(record)}
-                    for record in epoch_rows
-                ],
-            )
+            _TRAINING_SUMMARY_STORE.upsert(conn, summary)
+            conn.execute(delete(training_epochs))
+            if epoch_rows:
+                conn.execute(
+                    training_epochs.insert(),
+                    [
+                        {"epoch": record.epoch, "payload": training_epoch_payload(record)}
+                        for record in epoch_rows
+                    ],
+                )
             touch_meta(conn, root_kind=ARTIFACT_ROOT_KIND)
     finally:
         engine.dispose()
@@ -149,12 +145,12 @@ def load_training_summary(db_path: Path) -> LoadedTrainingSummary | None:
     try:
         with engine.connect() as conn:
             manifest = _ARTIFACT_MANIFEST_STORE.load(conn)
-            payload = _TRAINING_SUMMARY_STORE.load(conn)
-        if manifest is None or payload is None:
+            summary = _TRAINING_SUMMARY_STORE.load(conn)
+        if manifest is None or summary is None:
             return None
         return LoadedTrainingSummary(
             manifest=manifest,
-            runtime=training_summary_from_payload(payload),
+            runtime=summary,
         )
     finally:
         engine.dispose()

@@ -183,17 +183,17 @@ Local workflows:
 
 ```bash
 spice acquire --surface current_row_fee_dynamics
-spice train --surface current_row_fee_dynamics --variant baseline
-spice tune --surface current_row_fee_dynamics --trial-count 20
-spice evaluate --surface current_row_fee_dynamics --variant baseline
+spice train --surface current_row_fee_dynamics --dataset-id cor_9a73b1e88edb488afb1e
+spice tune --surface current_row_fee_dynamics --dataset-id cor_9a73b1e88edb488afb1e --trial-count 20
+spice evaluate --artifact-id art_... --dataset-id cor_9a73b1e88edb488afb1e --evaluation poisson_replay_2h
 ```
 
 Remote train/tune/evaluate submission:
 
 ```bash
-spice train --surface current_row_fee_dynamics --variant baseline --submit
-spice tune --surface current_row_fee_dynamics --trial-count 20 --submit
-spice evaluate --surface current_row_fee_dynamics --variant baseline --submit
+spice train --surface current_row_fee_dynamics --dataset-id cor_9a73b1e88edb488afb1e --submit
+spice tune --surface current_row_fee_dynamics --dataset-id cor_9a73b1e88edb488afb1e --trial-count 20 --submit
+spice evaluate --artifact-id art_... --dataset-id cor_9a73b1e88edb488afb1e --evaluation poisson_replay_2h --submit
 ```
 
 The CLI owns the default remote target, `disi_l40`. Execution and sync APIs receive explicit targets below the CLI layer.
@@ -206,18 +206,18 @@ spice config show dataset icdcs_2026
 spice config edit problem current_row_nominal
 
 spice show dataset
-spice show artifact --chain ethereum --dataset icdcs_2026 --features core_fee_dynamics --prediction icdcs_2026 --model lstm --problem current_row_nominal --variant baseline --study default
-spice delete artifact --chain ethereum --dataset icdcs_2026 --features core_fee_dynamics --prediction icdcs_2026 --model lstm --problem current_row_nominal --variant baseline --study default
+spice show artifact --artifact-id art_...
+spice delete artifact --artifact-id art_...
 spice refresh catalog
 ```
 
 Transfer:
 
 ```bash
-spice push dataset --chain ethereum --dataset icdcs_2026
-spice push study --chain ethereum --dataset icdcs_2026 --features core_fee_dynamics --prediction icdcs_2026 --model lstm --problem current_row_nominal --study default
-spice pull study --chain ethereum --dataset icdcs_2026 --features core_fee_dynamics --prediction icdcs_2026 --model lstm --problem current_row_nominal --study default
-spice pull artifact --chain ethereum --dataset icdcs_2026 --features core_fee_dynamics --prediction icdcs_2026 --model lstm --problem current_row_nominal --variant baseline --study default
+spice push dataset --dataset-id cor_9a73b1e88edb488afb1e
+spice push study --study-id std_...
+spice pull study --study-id std_...
+spice pull artifact --artifact-id art_...
 ```
 
 ## Current Concrete IDs
@@ -247,7 +247,6 @@ outputs/
     .spice/state.sqlite
   artifacts/<chain>/<artifact_id>/
     model.pt
-    checkpoints/
     .spice/state.sqlite
 ```
 

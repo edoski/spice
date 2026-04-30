@@ -137,10 +137,17 @@ def resolve_workflow_config(
 ) -> WorkflowConfig:
     """Resolve one workflow selection into one validated workflow config."""
 
-    if selection.surface is None:
-        raise ConfigResolutionError("surface is required")
     try:
         _validate_selection_kind(workflow_kind, selection)
+        if workflow_kind is WorkflowTask.EVALUATE:
+            if not isinstance(selection, EvaluateWorkflowSelection):
+                raise ConfigResolutionError("evaluate requires EvaluateWorkflowSelection")
+            return _resolve_evaluate_config(selection)
+        if isinstance(selection, EvaluateWorkflowSelection):
+            raise ConfigResolutionError("evaluate selection cannot resolve surface workflows")
+        if selection.surface is None:
+            raise ConfigResolutionError("surface is required")
+        assert selection.surface is not None
         frame = apply_selection_overrides(
             load_surface_frame(selection.surface),
             selection,
@@ -163,13 +170,21 @@ def _resolve_surface_frame(
             raise ConfigResolutionError("acquire requires AcquireWorkflowSelection")
         return _resolve_acquire_config(frame, dry_run=selection.dry_run)
     if workflow is WorkflowTask.TRAIN:
-        return _resolve_train_config(frame)
+        if not isinstance(selection, TrainWorkflowSelection):
+            raise ConfigResolutionError("train requires TrainWorkflowSelection")
+        return _resolve_train_config(frame, selection=selection)
     if workflow is WorkflowTask.TUNE:
         if not isinstance(selection, TuneWorkflowSelection):
             raise ConfigResolutionError("tune requires TuneWorkflowSelection")
-        return _resolve_tune_config(frame, trial_count=selection.trial_count)
+        return _resolve_tune_config(
+            frame,
+            selection=selection,
+            trial_count=selection.trial_count,
+        )
     if workflow is WorkflowTask.EVALUATE:
-        return _resolve_evaluate_config(frame)
+        if not isinstance(selection, EvaluateWorkflowSelection):
+            raise ConfigResolutionError("evaluate requires EvaluateWorkflowSelection")
+        return _resolve_evaluate_config(selection)
     raise ConfigResolutionError(f"Unsupported workflow: {workflow.value}")
 
 
@@ -373,7 +388,11 @@ def _resolve_acquire_config(frame: SurfaceFrame, *, dry_run: bool | None) -> Acq
     )
 
 
-def _resolve_train_config(frame: SurfaceFrame) -> TrainConfig:
+def _resolve_train_config(
+    frame: SurfaceFrame,
+    *,
+    selection: TrainWorkflowSelection,
+) -> TrainConfig:
     base = _resolve_model_workflow_base(frame, validate_objective_benchmark=True)
     spine = _resolve_model_workflow_spine(
         frame,
@@ -386,6 +405,8 @@ def _resolve_train_config(frame: SurfaceFrame) -> TrainConfig:
         chain=base.chain,
         dataset=base.dataset,
         storage=base.storage,
+        dataset_id=selection.dataset_id,
+        study_id=selection.study_id,
         problem=base.problem,
         model=base.model,
         dataset_builder=base.dataset_builder,
@@ -402,7 +423,12 @@ def _resolve_train_config(frame: SurfaceFrame) -> TrainConfig:
     )
 
 
-def _resolve_tune_config(frame: SurfaceFrame, *, trial_count: int | None) -> TuneConfig:
+def _resolve_tune_config(
+    frame: SurfaceFrame,
+    *,
+    selection: TuneWorkflowSelection,
+    trial_count: int | None,
+) -> TuneConfig:
     base = _resolve_model_workflow_base(frame, validate_objective_benchmark=True)
     spine = _resolve_model_workflow_spine(
         frame,
@@ -422,6 +448,7 @@ def _resolve_tune_config(frame: SurfaceFrame, *, trial_count: int | None) -> Tun
         chain=base.chain,
         dataset=base.dataset,
         storage=base.storage,
+        dataset_id=_required(selection.dataset_id, "dataset_id"),
         problem=base.problem,
         model=base.model,
         dataset_builder=base.dataset_builder,
@@ -438,34 +465,19 @@ def _resolve_tune_config(frame: SurfaceFrame, *, trial_count: int | None) -> Tun
     )
 
 
-def _resolve_evaluate_config(frame: SurfaceFrame) -> EvaluateConfig:
-    base = _resolve_model_workflow_base(frame, validate_objective_benchmark=False)
-    spine = _resolve_model_workflow_spine(
-        frame,
-        model=base.model,
-        problem=base.problem,
-        require_tuning=False,
-        allow_tuned_variant=True,
-    )
-    delay_seconds = frame.delay_seconds or base.problem.max_delay_seconds
+def _resolve_evaluate_config(selection: EvaluateWorkflowSelection) -> EvaluateConfig:
+    evaluation = _resolve_evaluation(_required(selection.evaluation, "evaluation"))
+    if evaluation is None:
+        raise ConfigResolutionError("evaluation is required")
     return EvaluateConfig(
-        chain=base.chain,
-        dataset=base.dataset,
-        storage=base.storage,
-        problem=base.problem,
-        model=base.model,
-        dataset_builder=base.dataset_builder,
-        features=base.features,
-        prediction=base.prediction,
-        objective=base.objective,
-        evaluation=base.evaluation,
-        study=base.study,
-        artifact=base.artifact,
-        training=spine.training,
-        split=spine.split,
-        delay_seconds=delay_seconds,
-        tuning=spine.tuning,
-        tuning_space=spine.tuning_space,
+        storage=_resolve_storage(
+            None if selection.storage_root is None else StorageSpec(root=selection.storage_root)
+        ),
+        artifact_id=_required(selection.artifact_id, "artifact_id"),
+        dataset_id=_required(selection.dataset_id, "dataset_id"),
+        evaluation=evaluation,
+        delay_seconds=selection.delay_seconds,
+        batch_size=selection.batch_size or 256,
     )
 
 

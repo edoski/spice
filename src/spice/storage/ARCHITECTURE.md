@@ -74,6 +74,8 @@ storage/
   schema.py          root-local state schema
   selectors.py       typed catalog selectors
   payloads.py        generic payload stores/codecs
+  artifact_codecs.py artifact-root payload ABI
+  semantics_codecs.py persisted semantic-contract payload ABI
   corpus.py          corpus-root persistence
   study_manifest.py  study-root manifest persistence
   study_models.py    study payload models/codecs
@@ -86,7 +88,7 @@ storage/
   catalog/           global searchable index and refresh service
 ```
 
-ML result payload codecs live in `modeling.result_codecs` because they understand modeling/evaluation result shapes. Storage calls them at the persistence boundary.
+Storage owns persisted payload ABI. Modeling and evaluation own runtime result objects; storage codecs translate those objects at the SQLite table boundary.
 
 ## Remote Transfer Boundary
 

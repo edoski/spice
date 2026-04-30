@@ -98,6 +98,7 @@ def test_evaluate_workflow_delegates_artifact_inference_preparation(
         prepared=prepared,
         evaluator_contract=evaluator_contract,
         scoring_context=object(),
+        delay_seconds=36,
     )
     evaluation = EvaluationSummary(
         metrics=MetricSet(values={"profit_over_baseline": 0.25}),
@@ -130,13 +131,20 @@ def test_evaluate_workflow_delegates_artifact_inference_preparation(
         "evaluation_result_fields",
         lambda _summary: [("evaluation", "poisson_replay_2h"), ("events", "2")],
     )
+    monkeypatch.setattr(
+        evaluate_workflow,
+        "resolve_evaluate_consumer_paths",
+        lambda _config: SimpleNamespace(
+            artifact_root=tmp_path / "outputs" / "ethereum" / "artifacts" / "art_test",
+        ),
+    )
 
     evaluate_workflow.run(config, reporter=reporter)
 
     assert calls[0].startswith(f"prepare:{config.delay_seconds}:")
     assert calls[1:] == ["score:True"]
     rendered = output.getvalue()
-    assert "evaluate dataset=" in rendered
+    assert "evaluate dataset_id=" in rendered
     assert "prepare history_rows=10 evaluation_rows=5 samples=2" in rendered
     assert "evaluate complete evaluation=poisson_replay_2h events=2" in rendered
 
@@ -186,7 +194,21 @@ def test_train_workflow_emits_compact_epoch_output(
         return SimpleNamespace(summary=object())
 
     monkeypatch.setattr(train_workflow, "run_persisted_training", fake_run_persisted_training)
-    monkeypatch.setattr(train_workflow, "load_dataset_manifest", lambda *_args: object())
+    monkeypatch.setattr(
+        train_workflow,
+        "resolve_train_consumer_paths",
+        lambda _config: SimpleNamespace(
+            output_root=tmp_path / "outputs",
+            artifact_root=tmp_path / "outputs" / "ethereum" / "artifacts" / "art_test",
+            corpus_state_db=tmp_path / "outputs" / "ethereum" / "corpus" / "state.sqlite",
+            history_dir=tmp_path / "outputs" / "ethereum" / "corpus" / "history",
+        ),
+    )
+    monkeypatch.setattr(
+        train_workflow,
+        "load_dataset_manifest",
+        lambda *_args: SimpleNamespace(chain=SimpleNamespace(name=config.chain.name)),
+    )
     monkeypatch.setattr(train_workflow, "training_coverage_requirement", lambda *_args: object())
     monkeypatch.setattr(train_workflow, "validate_corpus_coverage", lambda *_args, **_kwargs: None)
 
@@ -218,6 +240,182 @@ def test_train_workflow_emits_compact_epoch_output(
     assert "fit started epochs=3" in rendered
     assert "fit epoch=1/3 objective.profit_over_baseline=0.2000" in rendered
     assert "train complete artifact=" in rendered
+
+
+def test_train_workflow_accepts_id_resolved_corpus_chain(
+    tmp_path,
+    monkeypatch,
+    load_workflow_config,
+    model_workflow_override,
+) -> None:
+    config = _load_test_train_config(
+        load_workflow_config,
+        tmp_path,
+        override=model_workflow_override(),
+    )
+    reporter = Reporter(stream=StringIO())
+
+    monkeypatch.setattr(
+        train_workflow,
+        "resolve_train_consumer_paths",
+        lambda _config: SimpleNamespace(
+            output_root=tmp_path / "outputs",
+            artifact_root=tmp_path / "outputs" / "polygon" / "artifacts" / "art_test",
+            corpus_state_db=tmp_path / "outputs" / "polygon" / "corpus" / "state.sqlite",
+            history_dir=tmp_path / "outputs" / "polygon" / "corpus" / "history",
+        ),
+    )
+    corpus_manifest = SimpleNamespace(
+        chain=SimpleNamespace(
+            name="polygon",
+            runtime=SimpleNamespace(),
+        ),
+        dataset=SimpleNamespace(name="polygon_dataset"),
+    )
+    monkeypatch.setattr(train_workflow, "load_dataset_manifest", lambda *_args: corpus_manifest)
+
+    def fake_build_training_spec(active_config, *, corpus_manifest, **_kwargs):
+        assert active_config.chain.name == "ethereum"
+        assert corpus_manifest.chain.name == "polygon"
+        return SimpleNamespace(
+            training=SimpleNamespace(max_epochs=1),
+            prediction_contract=SimpleNamespace(primary_metric_id="total_loss"),
+            problem_contract=object(),
+            feature_contract=object(),
+        )
+
+    monkeypatch.setattr(train_workflow, "build_training_spec", fake_build_training_spec)
+    monkeypatch.setattr(train_workflow, "training_coverage_requirement", lambda *_args: object())
+    monkeypatch.setattr(train_workflow, "validate_corpus_coverage", lambda *_args, **_kwargs: None)
+
+    class FakeStage:
+        staged_root = tmp_path / "stage"
+
+        def __enter__(self):
+            self.staged_root.mkdir(parents=True, exist_ok=True)
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def promote(self) -> None:
+            return None
+
+    monkeypatch.setattr(train_workflow, "staged_root", lambda **_kwargs: FakeStage())
+    monkeypatch.setattr(
+        train_workflow,
+        "run_persisted_training",
+        lambda *_args, **_kwargs: SimpleNamespace(summary=object()),
+    )
+    monkeypatch.setattr(
+        train_workflow,
+        "training_result_fields",
+        lambda _summary, *, artifact_dir: [("artifact", str(artifact_dir))],
+    )
+
+    train_workflow.run(config, reporter=reporter)
+
+
+def test_tuned_train_keeps_artifact_path_stable_after_best_params(
+    tmp_path,
+    monkeypatch,
+    load_workflow_config,
+    model_workflow_override,
+) -> None:
+    config = cast(
+        TrainConfig,
+        load_workflow_config(
+            WorkflowTask.TRAIN,
+            workspace=tmp_path,
+            surface="current_row_fee_dynamics",
+            override=model_workflow_override(),
+            variant="tuned",
+        ),
+    )
+    reporter = Reporter(stream=StringIO())
+    original_artifact_root = tmp_path / "outputs" / "ethereum" / "artifacts" / "art_original"
+    resolved_batch_sizes: list[int] = []
+    captured: dict[str, object] = {}
+
+    def fake_resolve(active_config):
+        resolved_batch_sizes.append(active_config.training.batch_size)
+        return SimpleNamespace(
+            output_root=tmp_path / "outputs",
+            artifact_root=original_artifact_root,
+            study_state_db=(
+                tmp_path / "outputs" / "studies" / "std_test" / ".spice" / "state.sqlite"
+            ),
+            study_id="std_test",
+            corpus_id="cor_9a73b1e88edb488afb1e",
+            corpus_state_db=tmp_path / "outputs" / "corpora" / "state.sqlite",
+            history_dir=tmp_path / "outputs" / "corpora" / "history",
+        )
+
+    tuned_training = config.training.model_copy(
+        update={"batch_size": config.training.batch_size + 7}
+    )
+    tuned_config = config.model_copy(update={"training": tuned_training})
+    monkeypatch.setattr(train_workflow, "resolve_train_consumer_paths", fake_resolve)
+    monkeypatch.setattr(
+        train_workflow,
+        "apply_study_best_params",
+        lambda *_args, **_kwargs: SimpleNamespace(config=tuned_config),
+    )
+    monkeypatch.setattr(
+        train_workflow,
+        "load_dataset_manifest",
+        lambda *_args: SimpleNamespace(
+            chain=SimpleNamespace(name=config.chain.name, runtime=SimpleNamespace()),
+            dataset=SimpleNamespace(name=config.dataset.name),
+        ),
+    )
+
+    def fake_build_training_spec(active_config, *, paths, **_kwargs):
+        captured["training_batch_size"] = active_config.training.batch_size
+        captured["artifact_root"] = paths.artifact_root
+        return SimpleNamespace(
+            training=SimpleNamespace(max_epochs=1),
+            prediction_contract=SimpleNamespace(primary_metric_id="total_loss"),
+            problem_contract=object(),
+            feature_contract=object(),
+        )
+
+    monkeypatch.setattr(train_workflow, "build_training_spec", fake_build_training_spec)
+    monkeypatch.setattr(train_workflow, "training_coverage_requirement", lambda *_args: object())
+    monkeypatch.setattr(train_workflow, "validate_corpus_coverage", lambda *_args, **_kwargs: None)
+
+    class FakeStage:
+        staged_root = tmp_path / "stage"
+
+        def __enter__(self):
+            self.staged_root.mkdir(parents=True, exist_ok=True)
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def promote(self) -> None:
+            return None
+
+    monkeypatch.setattr(train_workflow, "staged_root", lambda **_kwargs: FakeStage())
+    monkeypatch.setattr(
+        train_workflow,
+        "run_persisted_training",
+        lambda *_args, **_kwargs: SimpleNamespace(summary=object()),
+    )
+    monkeypatch.setattr(
+        train_workflow,
+        "training_result_fields",
+        lambda _summary, *, artifact_dir: [("artifact", str(artifact_dir))],
+    )
+
+    train_workflow.run(config, reporter=reporter)
+
+    assert resolved_batch_sizes == [config.training.batch_size]
+    assert captured == {
+        "training_batch_size": tuned_training.batch_size,
+        "artifact_root": original_artifact_root,
+    }
 
 
 def test_tune_workflow_emits_per_trial_not_per_epoch_output(
@@ -261,7 +459,33 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
                     callback(self, trial)
 
     fake_study = FakeStudy()
-    monkeypatch.setattr(tune_workflow, "load_dataset_manifest", lambda *_args: object())
+    monkeypatch.setattr(
+        tune_workflow,
+        "resolve_tune_consumer_paths",
+        lambda _config: SimpleNamespace(
+            output_root=tmp_path / "outputs",
+            study_root=tmp_path / "outputs" / "ethereum" / "studies" / "std_test",
+            study_state_db=(
+                tmp_path / "outputs" / "ethereum" / "studies" / "std_test" / "state.sqlite"
+            ),
+            study_id="std_test",
+            corpus_state_db=tmp_path / "outputs" / "ethereum" / "corpus" / "state.sqlite",
+        ),
+    )
+    monkeypatch.setattr(
+        tune_workflow,
+        "load_dataset_manifest",
+        lambda *_args: SimpleNamespace(chain=SimpleNamespace(name=config.chain.name)),
+    )
+    monkeypatch.setattr(
+        tune_workflow,
+        "_coverage_spec",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            problem_contract=object(),
+            feature_contract=object(),
+        ),
+    )
+    monkeypatch.setattr(tune_workflow, "training_coverage_requirement", lambda *_args: object())
     monkeypatch.setattr(tune_workflow, "validate_corpus_coverage", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         tune_workflow,
@@ -297,3 +521,66 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
     assert "trial 2/2 complete value=0.3500 best_epoch=3" in rendered
     assert "tune complete" in rendered
     assert "fit epoch=" not in rendered
+
+
+def test_tune_workflow_accepts_id_resolved_corpus_chain(
+    tmp_path,
+    monkeypatch,
+    load_workflow_config,
+    model_workflow_override,
+    tune_override,
+) -> None:
+    override = model_workflow_override() | tune_override()
+    config = _load_test_tune_config(load_workflow_config, tmp_path, override=override)
+    reporter = Reporter(stream=StringIO())
+
+    monkeypatch.setattr(
+        tune_workflow,
+        "resolve_tune_consumer_paths",
+        lambda _config: SimpleNamespace(
+            output_root=tmp_path / "outputs",
+            study_root=tmp_path / "outputs" / "polygon" / "studies" / "std_test",
+            study_state_db=(
+                tmp_path / "outputs" / "polygon" / "studies" / "std_test" / "state.sqlite"
+            ),
+            study_id="std_test",
+            corpus_state_db=tmp_path / "outputs" / "polygon" / "corpus" / "state.sqlite",
+        ),
+    )
+    corpus_manifest = SimpleNamespace(
+        chain=SimpleNamespace(
+            name="polygon",
+            runtime=SimpleNamespace(),
+        ),
+        dataset=SimpleNamespace(name="polygon_dataset"),
+    )
+    monkeypatch.setattr(tune_workflow, "load_dataset_manifest", lambda *_args: corpus_manifest)
+
+    def fake_coverage_spec(active_config, *, corpus_manifest, **_kwargs):
+        assert active_config.chain.name == "ethereum"
+        assert corpus_manifest.chain.name == "polygon"
+        return SimpleNamespace(problem_contract=object(), feature_contract=object())
+
+    monkeypatch.setattr(tune_workflow, "_coverage_spec", fake_coverage_spec)
+    monkeypatch.setattr(tune_workflow, "training_coverage_requirement", lambda *_args: object())
+    monkeypatch.setattr(tune_workflow, "validate_corpus_coverage", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(tune_workflow, "reindex_root", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        tune_workflow,
+        "open_tuning_study",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            manifest=object(),
+            study=SimpleNamespace(trials=[]),
+            existing_trial_count=0,
+            target_trial_count=0,
+            remaining_trial_count=0,
+        ),
+    )
+    monkeypatch.setattr(tune_workflow, "build_study_summary", lambda *_args: object())
+    monkeypatch.setattr(
+        tune_workflow,
+        "study_result_fields",
+        lambda _summary: [("complete", "0")],
+    )
+
+    tune_workflow.run(config, reporter=reporter)

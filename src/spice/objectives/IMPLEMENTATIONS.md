@@ -4,14 +4,14 @@ Objectives define what training and tuning optimize. They are not model losses b
 
 ## Mental Model
 
-Training always computes prediction metrics. An objective decides which metric controls best checkpoint and early stopping.
+Training always computes prediction metrics. An objective decides which metric controls best-state selection and early stopping.
 
 ```text
 validation batches
   -> prediction metrics
   -> optional Objective Metric Source
   -> objective metric
-  -> checkpoint decision
+  -> best-state decision
 ```
 
 ## Validation Objective
@@ -31,7 +31,7 @@ validation samples
   -> select evaluator metric
 ```
 
-This is slower than a validation-loss objective, but it aligns checkpoint selection with the economic metric used for research reporting.
+This is slower than a validation-loss objective, but it aligns best-state selection with the economic metric used for research reporting.
 
 ## Direction
 
@@ -42,13 +42,13 @@ Each objective has a direction:
 | `minimize` | Smaller metric is better. |
 | `maximize` | Larger metric is better. |
 
-The direction controls early stopping, best checkpoint selection, and Optuna study optimization.
+The direction controls early stopping, best-state selection, and Optuna study optimization.
 
 ## Benchmark Binding
 
 Evaluation objectives name a benchmark evaluator id. Train and tune configs must select the same evaluation benchmark. This keeps the optimized metric tied to the intended evaluator.
 
-Evaluate workflow can run a selected diagnostic evaluator directly; artifact semantic validation still checks the trained configuration identity.
+Evaluate workflow can run a selected diagnostic evaluator directly; artifact inference validates manifest and selected corpus compatibility.
 
 ## Current Specs
 

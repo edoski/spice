@@ -53,17 +53,42 @@ def test_acquire_cli_resolves_selection_surface(tmp_path, monkeypatch) -> None:
         (
             "train",
             "spice.workflows.train.run",
-            ["--study", "experiment", "--variant", "baseline"],
+            [
+                "--surface",
+                "current_row_fee_dynamics",
+                "--dataset-id",
+                "cor_9a73b1e88edb488afb1e",
+                "--study",
+                "experiment",
+                "--variant",
+                "baseline",
+            ],
         ),
         (
             "tune",
             "spice.workflows.tune.run",
-            ["--trial-count", "2"],
+            [
+                "--surface",
+                "current_row_fee_dynamics",
+                "--dataset-id",
+                "cor_9a73b1e88edb488afb1e",
+                "--trial-count",
+                "2",
+            ],
         ),
         (
             "evaluate",
             "spice.workflows.evaluate.run",
-            ["--study", "experiment", "--variant", "baseline", "--delay-seconds", "12"],
+            [
+                "--artifact-id",
+                "art_test",
+                "--dataset-id",
+                "cor_9a73b1e88edb488afb1e",
+                "--evaluation",
+                "poisson_replay_2h",
+                "--delay-seconds",
+                "12",
+            ],
         ),
     ],
 )
@@ -85,8 +110,6 @@ def test_model_workflow_cli_resolves_local_selection_surface(
         app,
         [
             command,
-            "--surface",
-            "current_row_fee_dynamics",
             *args,
             "--storage-root",
             str(tmp_path / "outputs"),
@@ -95,14 +118,17 @@ def test_model_workflow_cli_resolves_local_selection_surface(
 
     assert result.exit_code == 0, result.stdout
     config = cast(TrainConfig | TuneConfig | EvaluateConfig, captured["config"])
-    assert resolve_workflow_paths(config).output_root == tmp_path / "outputs"
+    assert config.storage.root == tmp_path / "outputs"
     if isinstance(config, TuneConfig):
         assert config.tuning.trial_count == 2
         return
+    if isinstance(config, EvaluateConfig):
+        assert config.artifact_id == "art_test"
+        assert config.dataset_id == "cor_9a73b1e88edb488afb1e"
+        assert config.delay_seconds == 12
+        return
     assert config.study.name == "experiment"
     assert config.artifact.variant.value == "baseline"
-    if isinstance(config, EvaluateConfig):
-        assert config.delay_seconds == 12
 
 
 def test_config_public_commands_only(isolate_conf_root) -> None:
@@ -199,7 +225,17 @@ def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
 
     monkeypatch.setattr("spice.cli.commands.workflows.open_execution_session", fake_open_session)
 
-    result = runner.invoke(app, ["train", "--surface", "current_row_fee_dynamics", "--submit"])
+    result = runner.invoke(
+        app,
+        [
+            "train",
+            "--surface",
+            "current_row_fee_dynamics",
+            "--dataset-id",
+            "cor_9a73b1e88edb488afb1e",
+            "--submit",
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     assert captured == {"task": WorkflowTask.TRAIN, "target_name": "disi_l40"}

@@ -9,7 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from ..acquisition import AcquisitionRuntimeSnapshot
-from ..config.models import AcquireConfig
+from ..config.models import AcquireConfig, ChainRuntimeSpec
 from ..corpus.io import iter_block_files
 from ..corpus.validation import BlockDatasetValidationReport
 
@@ -23,7 +23,11 @@ class DatasetIdentity:
 @dataclass(frozen=True, slots=True)
 class ChainMetadata:
     name: str
-    chain_id: int
+    runtime: ChainRuntimeSpec
+
+    @property
+    def chain_id(self) -> int:
+        return self.runtime.chain_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,7 +232,7 @@ def build_dataset_manifest(
         ),
         chain=ChainMetadata(
             name=config.chain.name,
-            chain_id=config.chain.runtime.chain_id,
+            runtime=config.chain.runtime,
         ),
         request=DatasetRequestMetadata(
             history=DatasetWindowMetadata(

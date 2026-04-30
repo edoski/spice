@@ -57,7 +57,7 @@ Training is CUDA-only. It sets seeds, configures deterministic behavior when req
 
 `training_runtime.plan_training_runtime()` performs the gradient-bearing warmup: unshuffled host Batch Plan, temporary AdamW, one probe step, CUDA budget calculation, model-state restore, and cache cleanup. The returned prediction training state is semantic-immutable and reused for train, validation, returned training results, and split metrics.
 
-`_epoch_execution` owns the mechanics inside a train or validation epoch. `_fit_policy` owns finite-metric behavior, objective history, strict `min_delta`, best-state tracking, progress payloads, and patience stopping. `training_runner.run_training_fit()` still calls callbacks, writes the atomic best checkpoint, reloads the best state, and assembles the public result.
+`_epoch_execution` owns the mechanics inside a train or validation epoch. `_fit_policy` owns finite-metric behavior, objective history, strict `min_delta`, best-state tracking, progress payloads, and patience stopping. `training_runner.run_training_fit()` calls callbacks, keeps the best state in memory, restores it before returning, and assembles the public result.
 
 ```text
 for epoch:
@@ -66,11 +66,11 @@ for epoch:
     clip gradients
     validate
     evaluate objective metric
-    save best checkpoint
+    retain best state
     apply early stopping
 ```
 
-Optimizer is AdamW. Registered model families resolve training precision to `32-true`, and the runtime only supports that precision. Best checkpoint reload happens before final artifact persistence.
+Optimizer is AdamW. Registered model families resolve training precision to `32-true`, and the runtime only supports that precision. The best in-memory state is restored before final artifact persistence.
 
 ## Beginner Theory: Loss, Backpropagation, And Optimization
 
@@ -90,7 +90,7 @@ Gradient clipping limits the total gradient norm before the optimizer step. This
 
 Mixed precision is intentionally not part of the current modeling runtime. A future precision policy would need an explicit design pass because lower precision can change numeric behavior, not just speed.
 
-Early stopping is a model-selection rule. If the objective metric stops improving by at least `min_delta` for `patience` epochs, training stops and the best checkpoint is reloaded. This keeps the persisted artifact tied to the best validation objective, not the final epoch by accident.
+Early stopping is a model-selection rule. If the objective metric stops improving by at least `min_delta` for `patience` epochs, training stops and the best state is restored. This keeps the persisted artifact tied to the best validation objective, not the final epoch by accident.
 
 ## Inference
 

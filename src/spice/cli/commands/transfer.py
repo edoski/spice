@@ -13,19 +13,10 @@ from ...execution.transfer import (
     push_dataset_to_cluster,
     push_study_to_cluster,
 )
-from ...storage.selectors import ArtifactSelector, DatasetSelector, StudySelector
 from ..options import (
     DEFAULT_REMOTE_TARGET,
-    ChainFilterOption,
-    DatasetFilterOption,
-    FeaturesFilterOption,
-    ModelFilterOption,
-    PredictionFilterOption,
-    ProblemFilterOption,
     RemoteTargetOption,
     StorageRootReadOption,
-    StudyFilterOption,
-    VariantFilterOption,
     resolve_storage_root,
 )
 
@@ -45,8 +36,10 @@ ReplaceOption = Annotated[
 
 @push_app.command("dataset", short_help="Push one dataset root to cluster storage.")
 def push_dataset_command(
-    chain: ChainFilterOption = None,
-    dataset: DatasetFilterOption = None,
+    dataset_id: Annotated[
+        str,
+        typer.Option("--dataset-id", metavar="DATASET_ID", help="Push this dataset root."),
+    ],
     storage_root: StorageRootReadOption = None,
     target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     replace: ReplaceOption = False,
@@ -56,7 +49,7 @@ def push_dataset_command(
     record = push_dataset_to_cluster(
         storage_root=root,
         session=session,
-        selector=DatasetSelector(chain_name=chain, dataset_name=dataset),
+        dataset_id=dataset_id,
         replace=replace,
     )
     typer.echo(f"push dataset={record.dataset_name} dataset_id={record.dataset_id}")
@@ -64,13 +57,10 @@ def push_dataset_command(
 
 @push_app.command("study", short_help="Push one study root to cluster storage.")
 def push_study_command(
-    chain: ChainFilterOption = None,
-    dataset: DatasetFilterOption = None,
-    features: FeaturesFilterOption = None,
-    prediction: PredictionFilterOption = None,
-    model: ModelFilterOption = None,
-    problem: ProblemFilterOption = None,
-    study: StudyFilterOption = None,
+    study_id: Annotated[
+        str,
+        typer.Option("--study-id", metavar="STUDY_ID", help="Push this study root."),
+    ],
     storage_root: StorageRootReadOption = None,
     target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     replace: ReplaceOption = False,
@@ -80,15 +70,7 @@ def push_study_command(
     record = push_study_to_cluster(
         storage_root=root,
         session=session,
-        selector=StudySelector(
-            chain_name=chain,
-            dataset_name=dataset,
-            features_id=features,
-            prediction_id=prediction,
-            model_id=model,
-            problem_id=problem,
-            study_name=study,
-        ),
+        study_id=study_id,
         replace=replace,
     )
     typer.echo(f"push study={record.study_name} study_id={record.study_id}")
@@ -96,14 +78,10 @@ def push_study_command(
 
 @pull_app.command("artifact", short_help="Pull one artifact root from cluster storage.")
 def pull_artifact_command(
-    chain: ChainFilterOption = None,
-    dataset: DatasetFilterOption = None,
-    features: FeaturesFilterOption = None,
-    prediction: PredictionFilterOption = None,
-    model: ModelFilterOption = None,
-    problem: ProblemFilterOption = None,
-    variant: VariantFilterOption = None,
-    study: StudyFilterOption = None,
+    artifact_id: Annotated[
+        str,
+        typer.Option("--artifact-id", metavar="ARTIFACT_ID", help="Pull this artifact root."),
+    ],
     storage_root: StorageRootReadOption = None,
     target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     replace: ReplaceOption = False,
@@ -113,16 +91,7 @@ def pull_artifact_command(
     record, dataset_present = pull_artifact_from_cluster(
         storage_root=root,
         session=session,
-        selector=ArtifactSelector(
-            chain_name=chain,
-            dataset_name=dataset,
-            features_id=features,
-            prediction_id=prediction,
-            model_id=model,
-            problem_id=problem,
-            variant=variant,
-            study_name=study,
-        ),
+        artifact_id=artifact_id,
         replace=replace,
     )
     typer.echo(f"pull artifact={record.artifact_id}")
@@ -138,13 +107,10 @@ def pull_artifact_command(
 
 @pull_app.command("study", short_help="Pull one study root from cluster storage.")
 def pull_study_command(
-    chain: ChainFilterOption = None,
-    dataset: DatasetFilterOption = None,
-    features: FeaturesFilterOption = None,
-    prediction: PredictionFilterOption = None,
-    model: ModelFilterOption = None,
-    problem: ProblemFilterOption = None,
-    study: StudyFilterOption = None,
+    study_id: Annotated[
+        str,
+        typer.Option("--study-id", metavar="STUDY_ID", help="Pull this study root."),
+    ],
     storage_root: StorageRootReadOption = None,
     target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     replace: ReplaceOption = False,
@@ -154,15 +120,7 @@ def pull_study_command(
     record = pull_study_from_cluster(
         storage_root=root,
         session=session,
-        selector=StudySelector(
-            chain_name=chain,
-            dataset_name=dataset,
-            features_id=features,
-            prediction_id=prediction,
-            model_id=model,
-            problem_id=problem,
-            study_name=study,
-        ),
+        study_id=study_id,
         replace=replace,
     )
     typer.echo(f"pull study_id={record.study_id}")

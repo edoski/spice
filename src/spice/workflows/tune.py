@@ -21,6 +21,7 @@ from ..modeling.tuned_config import sample_tuned_parameters
 from ..modeling.tuning import apply_tuned_parameters
 from ..storage.catalog.index import reindex_root
 from ..storage.corpus import load_dataset_manifest
+from ..storage.root_consumer_paths import resolve_tune_consumer_paths
 from ..storage.study_models import best_epoch_from_trial, build_study_summary
 from ..storage.study_optuna import (
     open_tuning_study,
@@ -28,7 +29,6 @@ from ..storage.study_optuna import (
     record_trial_params,
 )
 from ..storage.study_render import study_result_fields
-from ..storage.workflow_paths import resolve_workflow_paths
 
 
 def _workflow_facts(config: TuneConfig) -> list[tuple[str, str]]:
@@ -87,6 +87,7 @@ def _objective(
     trial: optuna.Trial,
     *,
     paths,
+    corpus_manifest,
     study_root: Path,
 ) -> float:
     assert base_config.tuning_space is not None
@@ -94,7 +95,7 @@ def _objective(
     record_trial_params(trial, params)
     config = apply_tuned_parameters(base_config, params)
 
-    spec = build_training_spec(config, paths=paths)
+    spec = build_training_spec(config, paths=paths, corpus_manifest=corpus_manifest)
     history_block_path = paths.history_dir
     with _trial_work_dir(study_root, trial.number) as temp_dir_name:
         artifact_dir = Path(temp_dir_name)
@@ -113,12 +114,12 @@ def _objective(
     return metric_value
 
 
-def _coverage_spec(config: TuneConfig, *, paths):
+def _coverage_spec(config: TuneConfig, *, paths, corpus_manifest):
     if (
         config.tuning_space.problem is None
         or config.tuning_space.problem.lookback_seconds is None
     ):
-        return build_training_spec(config, paths=paths)
+        return build_training_spec(config, paths=paths, corpus_manifest=corpus_manifest)
     return build_training_spec(
         apply_tuned_parameters(
             config,
@@ -129,28 +130,35 @@ def _coverage_spec(config: TuneConfig, *, paths):
             ),
         ),
         paths=paths,
+        corpus_manifest=corpus_manifest,
     )
 
 
 def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
     active_reporter = reporter or Reporter()
     active_reporter.header("tune", _workflow_facts(config))
-    paths = resolve_workflow_paths(config)
+    paths = resolve_tune_consumer_paths(config)
     study_root = paths.study_root
     study_state_db = paths.study_state_db
     study_id = paths.study_id
     if study_root is None or study_state_db is None or study_id is None:
         raise ConfigResolutionError("tuning workflow requires study output paths")
-    spec = _coverage_spec(config, paths=paths)
+    corpus_manifest = load_dataset_manifest(paths.corpus_state_db)
+    spec = _coverage_spec(config, paths=paths, corpus_manifest=corpus_manifest)
     validate_corpus_coverage(
-        load_dataset_manifest(paths.corpus_state_db),
+        corpus_manifest,
         contract=spec.problem_contract,
         feature_contract=spec.feature_contract,
         requirement=training_coverage_requirement(spec.problem_contract),
     )
 
     with _optuna_warning_verbosity():
-        study_access = open_tuning_study(study_state_db, config=config)
+        study_access = open_tuning_study(
+            study_state_db,
+            config=config,
+            paths=paths,
+            corpus_manifest=corpus_manifest,
+        )
         reindex_root(paths.output_root, root_path=study_root)
         study = study_access.study
         if study_access.existing_trial_count:
@@ -197,6 +205,7 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
                     config,
                     trial,
                     paths=paths,
+                    corpus_manifest=corpus_manifest,
                     study_root=study_root,
                 ),
                 n_trials=study_access.remaining_trial_count,

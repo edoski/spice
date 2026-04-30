@@ -14,8 +14,21 @@ from spice.benchmarks import (
     create_benchmark_run_dir,
     write_plan_jsonl,
 )
-from spice.config import WorkflowTask
+from spice.config import EvaluateConfig, StorageSpec, WorkflowTask
+from spice.config.models import ArtifactVariant
+from spice.config.registry import load_named_group
 from spice.core.errors import SelectorResolutionError, SpiceOperatorError
+from spice.evaluation.registry import coerce_evaluator_config
+
+
+def _evaluate_config(tmp_path: Path) -> EvaluateConfig:
+    return EvaluateConfig(
+        storage=StorageSpec(root=tmp_path / "outputs"),
+        artifact_id="artifact-1",
+        dataset_id="dataset-1",
+        evaluation=coerce_evaluator_config(load_named_group("poisson_replay_2h", "evaluation")),
+        delay_seconds=36,
+    )
 
 
 def _write_evaluate_run(run_dir: Path, config) -> None:
@@ -26,9 +39,12 @@ def _write_evaluate_run(run_dir: Path, config) -> None:
         workflow=WorkflowTask.EVALUATE,
         depends_on=(),
         external_dependencies=(),
+        artifact_from=None,
         selection={
-            "surface": "current_row_fee_dynamics",
-            "objective": "profit_poisson_replay_2h",
+            "artifact_id": config.artifact_id,
+            "dataset_id": config.dataset_id,
+            "evaluation": config.evaluation.id,
+            "delay_seconds": config.delay_seconds,
         },
         config=config,
     )
@@ -53,14 +69,14 @@ def _loaded_summary(config):
         recorded_at=1_700_000_000,
         manifest=SimpleNamespace(
             artifact_id="artifact-1",
-            chain_name=config.chain.name,
-            dataset_name=config.dataset.name,
-            features_id=config.features.id,
-            model=SimpleNamespace(id=config.model.id),
-            problem_id=config.problem.id,
-            prediction_id=config.prediction.id,
-            objective=config.objective,
-            variant=config.artifact.variant,
+            chain_name="ethereum",
+            dataset_name="icdcs_2026",
+            features_id="core_fee_dynamics",
+            model=SimpleNamespace(id="lstm"),
+            problem_id="current_row_nominal",
+            prediction_id="icdcs_2026",
+            objective=SimpleNamespace(id="profit_poisson_replay_2h"),
+            variant=ArtifactVariant.BASELINE,
             study=None,
         ),
         runtime=SimpleNamespace(
@@ -82,15 +98,8 @@ def _loaded_summary(config):
 def test_benchmark_collect_writes_and_skips_duplicate_rows(
     tmp_path: Path,
     monkeypatch,
-    load_workflow_config,
 ) -> None:
-    config = load_workflow_config(
-        WorkflowTask.EVALUATE,
-        workspace=tmp_path,
-        surface="current_row_fee_dynamics",
-        variant="baseline",
-        delay_seconds=36,
-    )
+    config = _evaluate_config(tmp_path)
     run_dir = create_benchmark_run_dir(
         "collect_case",
         target="disi_l40",
@@ -140,7 +149,7 @@ def test_benchmark_collect_writes_and_skips_duplicate_rows(
     assert len(rows) == 1
     assert rows[0]["git_commit"] == "abc123"
     assert rows[0]["execution_ref"] == "slurm:57549"
-    assert rows[0]["surface"] == "current_row_fee_dynamics"
+    assert rows[0]["surface"] == ""
     assert rows[0]["objective"] == "profit_poisson_replay_2h"
     assert rows[0]["profit_over_baseline"] == "0.12"
     assert rows[0]["total_loss"] == "0.3"
@@ -153,15 +162,8 @@ def test_benchmark_collect_writes_and_skips_duplicate_rows(
 def test_benchmark_collect_refuses_partial_ledger_write(
     tmp_path: Path,
     monkeypatch,
-    load_workflow_config,
 ) -> None:
-    config = load_workflow_config(
-        WorkflowTask.EVALUATE,
-        workspace=tmp_path,
-        surface="current_row_fee_dynamics",
-        variant="baseline",
-        delay_seconds=36,
-    )
+    config = _evaluate_config(tmp_path)
     run_dir = create_benchmark_run_dir(
         "missing_case",
         target="disi_l40",

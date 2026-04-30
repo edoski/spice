@@ -23,6 +23,9 @@ from spice.config import (
 from spice.config.registry import load_named_group
 from spice.core.errors import ConfigResolutionError
 
+TEST_DATASET_ID = "cor_9a73b1e88edb488afb1e"
+TEST_ARTIFACT_ID = "art_test"
+
 
 def _write_surface(conf_root: Path, name: str, payload: dict[str, object]) -> None:
     path = conf_root / "surface" / f"{name}.yaml"
@@ -127,7 +130,7 @@ def test_surface_refs_and_selection_defaults_resolve(
         TrainConfig,
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowSelection(surface="child_train"),
+            TrainWorkflowSelection(surface="child_train", dataset_id=TEST_DATASET_ID),
         ),
     )
 
@@ -264,7 +267,11 @@ def test_invalid_resolution_selections_fail_cleanly(
     with pytest.raises(ConfigResolutionError, match=message):
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowSelection(surface=surface, storage_root=tmp_path / "outputs"),
+            TrainWorkflowSelection(
+                surface=surface,
+                dataset_id=TEST_DATASET_ID,
+                storage_root=tmp_path / "outputs",
+            ),
         )
 
 
@@ -298,7 +305,11 @@ def test_benchmark_objective_requires_matching_evaluation(
     ):
         resolve_workflow_config(
             WorkflowTask.TRAIN,
-            TrainWorkflowSelection(surface="mismatch", storage_root=tmp_path / "outputs"),
+            TrainWorkflowSelection(
+                surface="mismatch",
+                dataset_id=TEST_DATASET_ID,
+                storage_root=tmp_path / "outputs",
+            ),
         )
 
 
@@ -314,6 +325,7 @@ def test_full_temporal_replay_objective_requires_matching_train_evaluation(
             WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
+                dataset_id=TEST_DATASET_ID,
                 objective="profit_full_temporal_replay",
                 evaluation="full_temporal_replay",
                 storage_root=tmp_path / "train_outputs",
@@ -335,6 +347,7 @@ def test_full_temporal_replay_objective_requires_matching_train_evaluation(
             WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
+                dataset_id=TEST_DATASET_ID,
                 objective="profit_full_temporal_replay",
                 evaluation="poisson_replay_2h",
                 storage_root=tmp_path / "mismatch_outputs",
@@ -342,7 +355,7 @@ def test_full_temporal_replay_objective_requires_matching_train_evaluation(
         )
 
 
-def test_evaluate_allows_objective_and_diagnostic_evaluator_to_differ(
+def test_evaluate_resolves_eval_only_controls(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
@@ -353,17 +366,36 @@ def test_evaluate_allows_objective_and_diagnostic_evaluator_to_differ(
         resolve_workflow_config(
             WorkflowTask.EVALUATE,
             EvaluateWorkflowSelection(
-                surface="current_row_fee_dynamics",
-                objective="profit_poisson_replay_2h",
+                artifact_id=TEST_ARTIFACT_ID,
+                dataset_id=TEST_DATASET_ID,
                 evaluation="full_temporal_replay",
                 storage_root=tmp_path / "outputs",
             ),
         ),
     )
 
-    assert config.objective.benchmark_id == "poisson_replay_2h"
-    assert config.evaluation is not None
+    assert config.artifact_id == TEST_ARTIFACT_ID
+    assert config.dataset_id == TEST_DATASET_ID
     assert config.evaluation.id == "full_temporal_replay"
+
+
+def test_tuned_train_rejects_dataset_id(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    isolate_conf_root()
+
+    with pytest.raises(ConfigResolutionError, match="tuned training must not define dataset_id"):
+        resolve_workflow_config(
+            WorkflowTask.TRAIN,
+            TrainWorkflowSelection(
+                surface="current_row_fee_dynamics",
+                dataset_id=TEST_DATASET_ID,
+                study_id="stu_test",
+                variant="tuned",
+                storage_root=tmp_path / "outputs",
+            ),
+        )
 
 
 def test_selection_overrides_allow_problem_features_and_evaluation_selection(
@@ -378,6 +410,7 @@ def test_selection_overrides_allow_problem_features_and_evaluation_selection(
             WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
+                dataset_id=TEST_DATASET_ID,
                 problem="current_row_recent_median",
                 features="core_fee_dynamics",
                 storage_root=tmp_path / "train_outputs",
@@ -392,7 +425,8 @@ def test_selection_overrides_allow_problem_features_and_evaluation_selection(
     evaluate_config = resolve_workflow_config(
         WorkflowTask.EVALUATE,
         EvaluateWorkflowSelection(
-            surface="current_row_fee_dynamics",
+            artifact_id=TEST_ARTIFACT_ID,
+            dataset_id=TEST_DATASET_ID,
             evaluation="poisson_replay_2h",
             storage_root=tmp_path / "eval_outputs",
         ),
@@ -420,6 +454,7 @@ def test_selection_accepts_inline_problem_spec(
             WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
+                dataset_id=TEST_DATASET_ID,
                 problem=problem,
                 storage_root=tmp_path / "outputs",
             ),
@@ -442,6 +477,7 @@ def test_selection_overrides_allow_objective_selection(
             WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
+                dataset_id=TEST_DATASET_ID,
                 objective="validation_total_loss",
                 storage_root=tmp_path / "train_outputs",
             ),
@@ -457,6 +493,7 @@ def test_selection_overrides_allow_objective_selection(
             WorkflowTask.TUNE,
             TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
+                dataset_id=TEST_DATASET_ID,
                 objective="validation_total_loss",
                 storage_root=tmp_path / "tune_outputs",
             ),
@@ -470,14 +507,14 @@ def test_selection_overrides_allow_objective_selection(
         resolve_workflow_config(
             WorkflowTask.EVALUATE,
             EvaluateWorkflowSelection(
-                surface="current_row_fee_dynamics",
-                objective="validation_total_loss",
+                artifact_id=TEST_ARTIFACT_ID,
+                dataset_id=TEST_DATASET_ID,
+                evaluation="poisson_replay_2h",
                 storage_root=tmp_path / "eval_outputs",
             ),
         ),
     )
-    assert evaluate_config.objective.id == "validation"
-    assert evaluate_config.evaluation is not None
+    assert evaluate_config.artifact_id == TEST_ARTIFACT_ID
     assert evaluate_config.evaluation.id == "poisson_replay_2h"
 
 
@@ -493,6 +530,7 @@ def test_selection_overrides_allow_model_and_tuning_space_selection(
             WorkflowTask.TUNE,
             TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
+                dataset_id=TEST_DATASET_ID,
                 model="transformer",
                 tuning_space="transformer_default",
                 storage_root=tmp_path / "outputs",
@@ -526,6 +564,7 @@ def test_large_capacity_tuning_spaces_resolve(
             WorkflowTask.TUNE,
             TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
+                dataset_id=TEST_DATASET_ID,
                 model=model,
                 tuning_space=tuning_space,
                 storage_root=tmp_path / "outputs",

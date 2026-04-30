@@ -49,4 +49,4 @@ def test_show_writes_success_to_stdout_and_ambiguous_detail_to_stderr(tmp_path: 
 
     assert failure.exit_code != 0
     assert "artifact matches" not in failure.stdout
-    assert "artifact matches" in failure.stderr
+    assert "--detail requires --artifact-id" in failure.stderr

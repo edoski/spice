@@ -6,7 +6,7 @@ import argparse
 import json
 from collections.abc import Mapping
 
-from ..config.hydration import hydrate_model_workflow_config
+from ..config.hydration import hydrate_resolved_workflow_config
 from ..config.models import (
     EvaluateConfig,
     TrainConfig,
@@ -46,7 +46,7 @@ def workflow_config_from_json(task: WorkflowTask, payload: str) -> WorkflowConfi
     raw_payload = json.loads(payload)
     if not isinstance(raw_payload, Mapping):
         raise ConfigResolutionError("resolved workflow snapshot must be a mapping")
-    return hydrate_model_workflow_config(task, raw_payload)
+    return hydrate_resolved_workflow_config(task, raw_payload)
 
 
 def main() -> None:

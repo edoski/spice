@@ -187,7 +187,7 @@ def _nonfinite_metric_error(
             f"stopping and preserving best_epoch={best_epoch}"
         )
     return SpiceOperatorError(
-        f"Non-finite {phase} metrics at epoch {epoch} before any valid checkpoint"
+        f"Non-finite {phase} metrics at epoch {epoch} before any valid best state"
     )
 
 

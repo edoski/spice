@@ -87,7 +87,6 @@ def run_persisted_training(
     training_run = run_training(
         history_block_path,
         spec=spec,
-        artifact_dir=artifact_dir,
         on_prepare_complete=on_prepare_complete,
         on_fit_start=on_fit_start,
         on_epoch_end=on_epoch_end,
@@ -137,9 +136,6 @@ def run_persisted_training(
             best_validation_metrics=best_validation_metrics,
             test_metrics=test_metrics,
         )
-    if training_run.training_result.best_checkpoint_path is not None:
-        artifact_paths.append(training_run.training_result.best_checkpoint_path)
-
     return PersistedTrainingRun(
         training_run=training_run,
         manifest=manifest,

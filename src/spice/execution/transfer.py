@@ -22,11 +22,7 @@ from ..storage.lifecycle import (
     promote_root_stage,
     staged_root_path,
 )
-from ..storage.selectors import (
-    ArtifactSelector,
-    DatasetSelector,
-    StudySelector,
-)
+from ..storage.selectors import DatasetSelector, StudySelector
 from .session import (
     ExecutionSession,
     ExecutionTarget,
@@ -40,12 +36,12 @@ def push_dataset_to_cluster(
     *,
     storage_root: Path,
     session: ExecutionSession,
-    selector: DatasetSelector,
+    dataset_id: str,
     replace: bool,
 ) -> CatalogDatasetRecord:
     return _push_record_to_cluster(
         storage_root=storage_root,
-        selector=selector,
+        selector=DatasetSelector(dataset_id=dataset_id),
         resolve_record=lambda root, selected: resolve_dataset_record(
             root,
             selector=cast(DatasetSelector, selected),
@@ -61,12 +57,12 @@ def push_study_to_cluster(
     *,
     storage_root: Path,
     session: ExecutionSession,
-    selector: StudySelector,
+    study_id: str,
     replace: bool,
 ) -> CatalogStudyRecord:
     return _push_record_to_cluster(
         storage_root=storage_root,
-        selector=selector,
+        selector=StudySelector(study_id=study_id),
         resolve_record=lambda root, selected: resolve_study_record(
             root,
             selector=cast(StudySelector, selected),
@@ -82,11 +78,11 @@ def pull_artifact_from_cluster(
     *,
     storage_root: Path,
     session: ExecutionSession,
-    selector: ArtifactSelector,
+    artifact_id: str,
     replace: bool,
 ) -> tuple[CatalogArtifactRecord, bool]:
     target = session.target
-    record = _resolve_cluster_artifact_record(session, selector=selector)
+    record = _resolve_cluster_artifact_record(session, artifact_id=artifact_id)
     destination_root = _local_artifact_root(storage_root, record)
     _pull_root_from_cluster(
         session=session,
@@ -105,11 +101,11 @@ def pull_study_from_cluster(
     *,
     storage_root: Path,
     session: ExecutionSession,
-    selector: StudySelector,
+    study_id: str,
     replace: bool,
 ) -> CatalogStudyRecord:
     target = session.target
-    record = _resolve_cluster_study_record(session, selector=selector)
+    record = _resolve_cluster_study_record(session, study_id=study_id)
     _pull_root_from_cluster(
         session=session,
         target=target,
@@ -272,13 +268,13 @@ def _cleanup_cluster_path(session: ExecutionSession, path: Path) -> None:
 def _resolve_cluster_study_record(
     session: ExecutionSession,
     *,
-    selector: StudySelector,
+    study_id: str,
 ) -> CatalogStudyRecord:
     return _resolve_cluster_record(
         session,
         command="resolve-study-record",
-        action_label="StudySelector",
-        selector_payload=_selector_payload(selector),
+        action_label=f"study {study_id}",
+        id_args=["--study-id", study_id],
         record_type=CatalogStudyRecord,
     )
 
@@ -286,13 +282,13 @@ def _resolve_cluster_study_record(
 def _resolve_cluster_artifact_record(
     session: ExecutionSession,
     *,
-    selector: ArtifactSelector,
+    artifact_id: str,
 ) -> CatalogArtifactRecord:
     return _resolve_cluster_record(
         session,
         command="resolve-artifact-record",
-        action_label="ArtifactSelector",
-        selector_payload=_selector_payload(selector),
+        action_label=f"artifact {artifact_id}",
+        id_args=["--artifact-id", artifact_id],
         record_type=CatalogArtifactRecord,
         nullable_fields=frozenset({"study_id", "study_name"}),
     )
@@ -303,7 +299,7 @@ def _resolve_cluster_record(
     *,
     command: str,
     action_label: str,
-    selector_payload: dict[str, object | None],
+    id_args: list[str],
     record_type: type[RemoteRecordT],
     nullable_fields: frozenset[str] = frozenset(),
 ) -> RemoteRecordT:
@@ -311,7 +307,7 @@ def _resolve_cluster_record(
         session,
         command=command,
         action_label=action_label,
-        selector_payload=selector_payload,
+        id_args=id_args,
     )
     record_payload: dict[str, object] = {}
     for field in fields(record_type):
@@ -330,7 +326,7 @@ def _resolve_cluster_record_payload(
     *,
     command: str,
     action_label: str,
-    selector_payload: dict[str, object | None],
+    id_args: list[str],
 ) -> dict[str, object | None]:
     result = session.run_module(
         "spice.storage.sync_cli",
@@ -338,21 +334,14 @@ def _resolve_cluster_record_payload(
             command,
             "--storage-root",
             str(session.target.spec.paths.storage_root),
-            "--selector-json",
-            json.dumps(selector_payload),
+            *id_args,
         ],
         check_action=f"resolve {action_label}",
     )
     payload = json.loads(result.stdout)
     if not isinstance(payload, dict):
-        raise SpiceOperatorError("selector payload must be a mapping")
+        raise SpiceOperatorError("resolved record payload must be a mapping")
     return payload
-
-
-def _selector_payload(selector: StudySelector | ArtifactSelector) -> dict[str, object | None]:
-    return {
-        field.name: cast(object | None, getattr(selector, field.name)) for field in fields(selector)
-    }
 
 
 def _cluster_dataset_root(cluster_storage_root: Path, record: CatalogDatasetRecord) -> Path:

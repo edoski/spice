@@ -7,9 +7,9 @@ cases:
       study: evaluator_objective_grid
     dimensions:
       data:
-        - set: {chain: ethereum}
-        - set: {chain: polygon}
-        - set: {chain: avalanche}
+        - set: {chain: ethereum, dataset_id: cor_9a73b1e88edb488afb1e}
+        - set: {chain: polygon, dataset_id: cor_415186063685f5b7588f}
+        - set: {chain: avalanche, dataset_id: cor_91fa9b80b6014317c148}
       models:
         - set:
             model: lstm
@@ -38,28 +38,24 @@ cases:
       - id: evaluate_poisson_artifact_with_poisson
         workflow: evaluate
         after: [train_poisson_objective]
+        artifact_from: train_poisson_objective
         set:
-          objective: profit_poisson_replay_2h
           evaluation: poisson_replay_2h
-          variant: baseline
       - id: evaluate_poisson_artifact_with_full
         workflow: evaluate
         after: [train_poisson_objective]
+        artifact_from: train_poisson_objective
         set:
-          objective: profit_poisson_replay_2h
           evaluation: full_temporal_replay
-          variant: baseline
       - id: evaluate_full_artifact_with_poisson
         workflow: evaluate
         after: [train_full_objective]
+        artifact_from: train_full_objective
         set:
-          objective: profit_full_temporal_replay
           evaluation: poisson_replay_2h
-          variant: baseline
       - id: evaluate_full_artifact_with_full
         workflow: evaluate
         after: [train_full_objective]
+        artifact_from: train_full_objective
         set:
-          objective: profit_full_temporal_replay
           evaluation: full_temporal_replay
-          variant: baseline

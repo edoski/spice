@@ -21,7 +21,7 @@ tuning: {id: default, space: lstm_fixed_context}
 evaluation: {id: poisson_replay_2h}
 ```
 
-Workflow selections may override surface fields by name. `evaluation.delay_seconds` is optional in the surface; resolution defaults it to `problem.max_delay_seconds` for evaluation workflows.
+Producer workflow selections may override surface fields by name. Evaluation is a root consumer: it selects an existing artifact and corpus by id, plus evaluator/runtime controls.
 
 The surface YAML uses targeted nesting where the nesting matches ownership:
 
@@ -40,8 +40,7 @@ The surface YAML uses targeted nesting where the nesting matches ownership:
 | `training.split` | Split spec. |
 | `tuning.id` | Optuna runtime spec. |
 | `tuning.space` | Tuning search-space spec. |
-| `evaluation.id` | Evaluator spec. |
-| `evaluation.delay_seconds` | Concrete evaluation delay; defaults to problem capability when omitted. |
+| `evaluation.id` | Evaluator spec used by train/tune objectives. |
 
 ## Current Specs
 
@@ -68,7 +67,7 @@ Evaluators: `poisson_replay_2h` and `full_temporal_replay`. The default surface 
 
 Benchmarks: `safe_baseline_grid`, `large_capacity_hpo`, `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, `delay_degradation_sweep`, and `evaluator_objective_grid`.
 
-`safe_baseline_grid` is the untuned ETH/POL/AVAX by LSTM/Transformer/Transformer-LSTM baseline. `large_capacity_hpo` is the bounded calibration search: the same 3x3 grid, large-capacity spaces, and 40 trials per cell. `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, and `delay_degradation_sweep` are fixed train/evaluate grids, not per-cell HPO grids. `delay_degradation_sweep` trains one artifact per `max_delay_seconds` value and evaluates with the same delay through the default `evaluation.delay_seconds = problem.max_delay_seconds` resolution. Sample-count sweeps are deferred because larger history windows need explicit date-range and protocol-regime checks.
+`safe_baseline_grid` is the untuned ETH/POL/AVAX by LSTM/Transformer/Transformer-LSTM baseline. `large_capacity_hpo` is the bounded calibration search: the same 3x3 grid, large-capacity spaces, and 40 trials per cell. `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, and `delay_degradation_sweep` are fixed train/evaluate grids, not per-cell HPO grids. `delay_degradation_sweep` trains one artifact per `max_delay_seconds` value and evaluates with the artifact capability delay unless an evaluate step sets `delay_seconds`. Sample-count sweeps are deferred because larger history windows need explicit date-range and protocol-regime checks.
 
 ## Invariants
 

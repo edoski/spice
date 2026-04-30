@@ -27,7 +27,6 @@ outputs/
     .spice/state.sqlite
   artifacts/{chain}/{artifact_id}/
     model.pt
-    checkpoints/
     .spice/state.sqlite
 ```
 

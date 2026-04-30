@@ -45,10 +45,10 @@ def test_workflow_selection_payload_keeps_only_supported_non_null_fields() -> No
     }
 
 
-def test_inline_problem_spec_is_valid_for_all_workflow_selections() -> None:
+def test_inline_problem_spec_is_valid_for_surface_workflow_selections() -> None:
     problem = coerce_problem_spec(load_named_group("current_row_nominal", "problem"))
 
-    for workflow in WorkflowTask:
+    for workflow in (WorkflowTask.ACQUIRE, WorkflowTask.TRAIN, WorkflowTask.TUNE):
         selection_type = workflow_selection_type(workflow)
         selection = selection_type.model_validate(
             {
@@ -59,3 +59,5 @@ def test_inline_problem_spec_is_valid_for_all_workflow_selections() -> None:
 
         assert "problem" in workflow_selection_fields(workflow)
         assert selection.problem == problem
+
+    assert "problem" not in workflow_selection_fields(WorkflowTask.EVALUATE)

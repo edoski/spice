@@ -183,6 +183,7 @@ def upsert_artifact_record(
 def list_dataset_records(
     path: Path,
     *,
+    dataset_id: str | None = None,
     chain_name: str | None = None,
     dataset_name: str | None = None,
 ) -> list[CatalogDatasetRecord]:
@@ -190,6 +191,7 @@ def list_dataset_records(
         path,
         spec=_DATASET_SPEC,
         filters={
+            "dataset_id": dataset_id,
             "chain_name": chain_name,
             "dataset_name": dataset_name,
         },
@@ -238,6 +240,8 @@ def list_artifact_records(
     path: Path,
     *,
     artifact_id: str | None = None,
+    dataset_id: str | None = None,
+    study_id: str | None = None,
     chain_name: str | None = None,
     dataset_name: str | None = None,
     features_id: str | None = None,
@@ -252,6 +256,8 @@ def list_artifact_records(
         spec=_ARTIFACT_SPEC,
         filters={
             "artifact_id": artifact_id,
+            "dataset_id": dataset_id,
+            "study_id": study_id,
             "chain_name": chain_name,
             "dataset_name": dataset_name,
             "features_id": features_id,

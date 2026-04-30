@@ -21,6 +21,7 @@ from ..config.models import (
     TuneConfig,
 )
 from ..corpus.io import load_block_frame
+from ..corpus.metadata import DatasetManifest
 from ..features import CompiledFeatureContract
 from ..objectives import CompiledObjectiveContract, ObjectiveConfig
 from ..prediction import CompiledPredictionContract
@@ -96,13 +97,28 @@ class InferencePreparationSpec:
     window_end_timestamp: int
 
 
-def build_training_spec(config: TrainConfig | TuneConfig, *, paths: WorkflowPaths) -> TrainingSpec:
+def build_training_spec(
+    config: TrainConfig | TuneConfig,
+    *,
+    paths: WorkflowPaths,
+    corpus_manifest: DatasetManifest | None = None,
+) -> TrainingSpec:
     variant = ArtifactVariant.TUNED if isinstance(config, TuneConfig) else config.artifact.variant
-    context = compile_training_context(config)
+    chain = (
+        ChainSpec(name=corpus_manifest.chain.name, runtime=corpus_manifest.chain.runtime)
+        if corpus_manifest is not None
+        else config.chain
+    )
+    context = compile_training_context(
+        config,
+        chain_runtime=None if corpus_manifest is None else corpus_manifest.chain.runtime,
+    )
     return TrainingSpec(
-        chain=config.chain,
+        chain=chain,
         dataset_id=paths.corpus_id,
-        dataset_name=config.dataset.name,
+        dataset_name=(
+            config.dataset.name if corpus_manifest is None else corpus_manifest.dataset.name
+        ),
         artifact_id=(
             paths.artifact_id
             if paths.artifact_id is not None
@@ -218,7 +234,6 @@ def run_training(
     history_block_path: Path,
     *,
     spec: TrainingSpec,
-    artifact_dir: Path,
     on_prepare_complete: Callable[[PreparedTrainingDataset], None] | None = None,
     on_fit_start: Callable[[], None] | None = None,
     on_epoch_end: EpochEndCallback | None = None,
@@ -248,7 +263,6 @@ def run_training(
             train_sample_indices=prepared.split_indices.train,
             validation_sample_indices=prepared.split_indices.validation,
             training_config=spec.training,
-            artifact_dir=artifact_dir,
         ),
         callbacks=TrainingCallbacks(
             on_epoch_end=on_epoch_end,

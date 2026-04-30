@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from typing import TypeVar, cast
 
-from pydantic import Field
-
 from ..modeling.families.base import ConfigModel
 from .models import ArtifactConfig, ProblemSpec, StorageSpec, StudyConfig
 from .registry import load_named_group
-from .selections import WorkflowSelection
+from .selections import WorkflowSelectionBase
 
 ConfigT = TypeVar("ConfigT", bound=ConfigModel)
 
@@ -30,7 +28,6 @@ class SurfaceTuningFrame(ConfigModel):
 
 class SurfaceEvaluationFrame(ConfigModel):
     id: str | None = None
-    delay_seconds: int | None = Field(default=None, gt=0)
 
 
 class SurfaceFrame(ConfigModel):
@@ -74,16 +71,15 @@ class SurfaceFrame(ConfigModel):
     def evaluation_id(self) -> str | None:
         return self.evaluation.id
 
-    @property
-    def delay_seconds(self) -> int | None:
-        return self.evaluation.delay_seconds
-
 
 def load_surface_frame(name: str) -> SurfaceFrame:
     return SurfaceFrame.model_validate(load_named_group(name, "surface"))
 
 
-def apply_selection_overrides(frame: SurfaceFrame, selection: WorkflowSelection) -> SurfaceFrame:
+def apply_selection_overrides(
+    frame: SurfaceFrame,
+    selection: WorkflowSelectionBase,
+) -> SurfaceFrame:
     updates: dict[str, object] = {}
     if selection.chain is not None:
         updates["chain"] = selection.chain
@@ -138,12 +134,6 @@ def apply_selection_overrides(frame: SurfaceFrame, selection: WorkflowSelection)
     if variant is not None:
         base_artifact = frame.artifact or ArtifactConfig()
         updates["artifact"] = _updated_model(base_artifact, variant=variant)
-    delay_seconds = getattr(selection, "delay_seconds", None)
-    if delay_seconds is not None:
-        updates["evaluation"] = _updated_model(
-            cast(SurfaceEvaluationFrame, updates.get("evaluation", frame.evaluation)),
-            delay_seconds=delay_seconds,
-        )
     return frame.model_copy(update=updates)
 
 

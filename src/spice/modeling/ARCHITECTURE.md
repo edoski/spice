@@ -105,7 +105,6 @@ modeling/
   scoring.py              model inference -> evaluator bridge
   artifacts.py            artifact loading/validation helpers
   artifact_inference.py   artifact validation -> inference scoring context
-  result_codecs.py        persisted ML result payload codecs
   persisted_training.py   training artifact write path
 ```
 
@@ -113,4 +112,4 @@ modeling/
 
 Add a model family for a new neural architecture. Add a dataset builder for a new tensorization strategy. Add scoring behavior only when it is generic model-to-evaluator bridging; evaluator-specific scoring belongs in `evaluation`.
 
-Runtime planning is intentionally split from fit policy. `forward_runtime.py` owns forward-only host warmup and measured final batch planning for inference and split metrics. `training_runtime.py` owns the destructive gradient-bearing probe, restores model state, clears CUDA cache after that probe, and returns one reusable prediction training state. `training_runner.py` remains the public fit interface and keeps callback, checkpoint, and result assembly ownership.
+Runtime planning is intentionally split from fit policy. `forward_runtime.py` owns forward-only host warmup and measured final batch planning for inference and split metrics. `training_runtime.py` owns the destructive gradient-bearing probe, restores model state, clears CUDA cache after that probe, and returns one reusable prediction training state. `training_runner.py` remains the public fit interface and keeps callback, best-state, and result assembly ownership.

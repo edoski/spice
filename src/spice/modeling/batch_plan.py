@@ -25,7 +25,8 @@ from .representations import (
 
 IntVector = NDArray[np.int64]
 BatchT = TypeVar("BatchT", covariant=True)
-StorageMode = Literal["host", "device_resident"]
+StorageMode = Literal["host_streaming", "host_materialized", "cuda_materialized"]
+HostStorageMode = Literal["host_streaming", "host_materialized"]
 _CUDA_DEVICE_RESIDENT_BUDGET_FRACTION = 0.5
 
 
@@ -192,6 +193,10 @@ class _PreparedPredictionBatches:
     def estimated_storage_bytes(self) -> int:
         return self.prepared.estimated_storage_bytes + self.targets.estimated_storage_bytes
 
+    @property
+    def host_storage_mode(self) -> HostStorageMode:
+        return _host_storage_mode(self.prepared)
+
     def build_batch(self, sample_positions: torch.Tensor) -> PredictionBatch:
         input_batch = self.prepared.build_batch(sample_positions)
         return PredictionBatch(
@@ -330,7 +335,7 @@ def _build_batch_source(
                     prepared=prepared.to_device_storage(resolved_device),
                     batch_sampler=batch_sampler,
                 ),
-                "device_resident",
+                "cuda_materialized",
             )
         except torch.cuda.OutOfMemoryError:
             torch.cuda.empty_cache()
@@ -340,8 +345,12 @@ def _build_batch_source(
             batch_sampler=batch_sampler,
             resolved_device=resolved_device,
         ),
-        "host",
+        _host_storage_mode(prepared),
     )
+
+
+def _host_storage_mode(prepared: object) -> HostStorageMode:
+    return getattr(prepared, "host_storage_mode", "host_materialized")
 
 
 def _build_host_dataloader_source(

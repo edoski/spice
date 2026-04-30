@@ -6,29 +6,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-from pydantic import BaseModel
 
-from ..config.models import (
-    FeaturesConfig,
-    PredictionConfig,
-    ProblemSpec,
-    SplitConfig,
-    TrainingConfig,
-)
 from ..core.constants import MODEL_STATE_FILENAME
-from ..core.errors import ConfigResolutionError
 from ..core.files import write_path_atomic
-from ..features import CompiledFeatureContract, compile_feature_contract
-from ..objectives import ObjectiveConfig
 from ..prediction import compile_prediction_contract
 from ..semantics import ArtifactSemantics
 from ..storage.artifact import load_artifact_manifest, write_artifact_manifest
 from .dataset_builders import (
     CompiledDatasetBuilderContract,
-    DatasetBuilderConfig,
     compile_dataset_builder_contract,
 )
-from .families.base import ModelConfig
 from .families.registry import build_model
 from .models import TemporalModel
 from .pipeline import PreparedTrainingDataset, TrainingSpec
@@ -46,66 +33,6 @@ class LoadedTrainingArtifact:
     model: TemporalModel
     representation_contract: CompiledRepresentationContract
     dataset_builder_contract: CompiledDatasetBuilderContract
-
-
-@dataclass(slots=True)
-class ValidatedArtifactPreparation:
-    feature_contract: CompiledFeatureContract
-    dataset_builder_contract: CompiledDatasetBuilderContract
-
-
-def validate_artifact_semantics(
-    manifest: TrainingArtifactManifest,
-    *,
-    problem: ProblemSpec,
-    dataset_builder: DatasetBuilderConfig,
-    features: FeaturesConfig,
-    prediction: PredictionConfig,
-    objective: ObjectiveConfig,
-    model: ModelConfig,
-    split: SplitConfig,
-    training: TrainingConfig,
-) -> ValidatedArtifactPreparation:
-    for label, stored_value, configured_value in (
-        ("problem", manifest.problem, problem),
-        ("dataset_builder", manifest.dataset_builder, dataset_builder),
-        ("prediction", manifest.prediction, prediction),
-        ("objective", manifest.objective, objective),
-        ("model", manifest.model, model),
-        ("features", manifest.features, features),
-        ("split", manifest.split, split),
-        ("training", manifest.training, training),
-    ):
-        _require_matching_config(
-            label=label,
-            stored_value=stored_value,
-            configured_value=configured_value,
-        )
-    feature_contract = compile_feature_contract(features=features)
-    if feature_contract.feature_graph_fingerprint != manifest.feature_graph_fingerprint:
-        raise ConfigResolutionError(
-            "Current feature graph does not match the trained artifact manifest"
-        )
-    if feature_contract.feature_prerequisites != manifest.feature_prerequisites:
-        raise ConfigResolutionError(
-            "Current feature prerequisites do not match the trained artifact manifest"
-        )
-    return ValidatedArtifactPreparation(
-        feature_contract=feature_contract,
-        dataset_builder_contract=compile_dataset_builder_contract(manifest.dataset_builder),
-    )
-
-
-def _require_matching_config(
-    *,
-    label: str,
-    stored_value: BaseModel,
-    configured_value: BaseModel,
-) -> None:
-    if stored_value.model_dump(mode="json") != configured_value.model_dump(mode="json"):
-        raise ConfigResolutionError(
-            f"Configured {label} does not match the trained artifact semantics"
-        )
 
 
 def build_training_artifact_manifest(

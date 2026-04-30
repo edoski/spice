@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import cast
 
 import numpy as np
@@ -12,7 +11,6 @@ import torch
 from numpy.typing import NDArray
 
 from ..config.models import TrainingConfig
-from ..core.files import write_path_atomic
 from ..objectives import CompiledObjectiveContract
 from ..prediction import CompiledPredictionContract, MetricSet
 from ..prediction.contracts import PredictionBatch
@@ -51,7 +49,6 @@ class TrainingResult:
     train_history: list[MetricSet]
     validation_history: list[MetricSet]
     objective_history: list[MetricSet]
-    best_checkpoint_path: Path | None
     prediction_training_state: object | None
 
 
@@ -78,7 +75,6 @@ class TrainingFitSpec:
     train_sample_indices: IntVector
     validation_sample_indices: IntVector
     training_config: TrainingConfig
-    artifact_dir: Path
 
 
 @dataclass(slots=True)
@@ -92,23 +88,6 @@ class TrainingMetricEvaluationSpec:
     sample_indices: IntVector
     prediction_training_state: object | None
     training_config: TrainingConfig
-
-
-def _checkpoint_path(
-    artifact_dir: Path,
-    *,
-    epoch: int,
-    monitor: str,
-    value: float,
-) -> Path:
-    return artifact_dir / "checkpoints" / f"epoch={epoch:02d}-{monitor}={value:.6f}.pt"
-
-
-def _write_checkpoint(path: Path, state_dict: dict[str, torch.Tensor]) -> None:
-    def _write(tmp_path: Path) -> None:
-        torch.save(state_dict, tmp_path)
-
-    write_path_atomic(path, _write)
 
 
 def run_training_fit(
@@ -279,13 +258,6 @@ def run_training_fit(
 
     best_epoch, best_state, best_value = policy.finalized_best(model=fit_model)
     spec.model.load_state_dict(best_state)
-    best_checkpoint_path = _checkpoint_path(
-        spec.artifact_dir,
-        epoch=best_epoch,
-        monitor=spec.objective_contract.checkpoint_monitor,
-        value=best_value,
-    )
-    _write_checkpoint(best_checkpoint_path, best_state)
 
     return TrainingResult(
         best_epoch=best_epoch,
@@ -294,7 +266,6 @@ def run_training_fit(
         train_history=policy.train_history,
         validation_history=policy.validation_history,
         objective_history=policy.objective_history,
-        best_checkpoint_path=best_checkpoint_path,
         prediction_training_state=prediction_training_state,
     )
 

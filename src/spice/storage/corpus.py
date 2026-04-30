@@ -9,6 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
+from ..config.models import ChainRuntimeSpec
 from ..core.errors import MissingStateError, StateLayoutError
 from ..corpus.metadata import (
     AcquireRunFacts,
@@ -106,7 +107,10 @@ def list_acquire_runs(db_path: Path) -> list[AcquireRunRecord]:
 def _dataset_manifest_payload(manifest: DatasetManifest) -> dict[str, object]:
     return {
         "dataset": {"id": manifest.dataset.id, "name": manifest.dataset.name},
-        "chain": {"name": manifest.chain.name, "chain_id": manifest.chain.chain_id},
+        "chain": {
+            "name": manifest.chain.name,
+            "runtime": manifest.chain.runtime.model_dump(mode="json"),
+        },
         "request": {
             "history": asdict(manifest.request.history),
             "evaluation": asdict(manifest.request.evaluation),
@@ -135,7 +139,9 @@ def _dataset_manifest_from_payload(payload: dict[str, object]) -> DatasetManifes
         ),
         chain=ChainMetadata(
             name=str(chain["name"]),
-            chain_id=_int_value(chain["chain_id"]),
+            runtime=ChainRuntimeSpec.model_validate(
+                mapping_payload(chain["runtime"], label="chain.runtime")
+            ),
         ),
         request=DatasetRequestMetadata(
             history=_window_from_payload(request["history"]),

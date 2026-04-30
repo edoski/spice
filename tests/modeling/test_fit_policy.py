@@ -55,10 +55,10 @@ def test_fit_policy_appends_histories_and_uses_strict_min_delta() -> None:
     assert second.should_stop is False
 
 
-def test_fit_policy_nonfinite_before_checkpoint_raises_without_append() -> None:
+def test_fit_policy_nonfinite_before_best_state_raises_without_append() -> None:
     policy = _policy()
 
-    with pytest.raises(SpiceOperatorError, match="before any valid checkpoint"):
+    with pytest.raises(SpiceOperatorError, match="before any valid best state"):
         policy.handle_nonfinite_metrics(
             epoch=1,
             phase="train",
@@ -68,7 +68,7 @@ def test_fit_policy_nonfinite_before_checkpoint_raises_without_append() -> None:
     assert policy.objective_history == []
 
 
-def test_fit_policy_nonfinite_after_checkpoint_stops_without_progress() -> None:
+def test_fit_policy_nonfinite_after_best_state_stops_without_progress() -> None:
     model = torch.nn.Linear(1, 1)
     policy = _policy()
     policy.record_completed_epoch(_completed(1, 1.0), model=model)

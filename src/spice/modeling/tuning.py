@@ -4,20 +4,14 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast, overload
 
-from ..config.hydration import hydrate_model_workflow_config
-from ..config.models import (
-    EvaluateConfig,
-    TrainConfig,
-    TuneConfig,
-    TunedParameterSet,
-    WorkflowTask,
-)
+from ..config.hydration import hydrate_resolved_workflow_config
+from ..config.models import StudyConfig, TrainConfig, TuneConfig, TunedParameterSet, WorkflowTask
 from ..core.errors import ConfigResolutionError, MissingStateError
 from ..storage.study_manifest import load_study_manifest, validate_tuned_artifact_definition
 from ..storage.study_optuna import load_best_params
-from ..storage.workflow_paths import resolve_workflow_paths
 from .families.registry import (
     apply_model_tuned_parameters,
 )
@@ -25,7 +19,7 @@ from .families.registry import (
 
 @dataclass(frozen=True, slots=True)
 class AppliedStudyBestParams:
-    config: TrainConfig | EvaluateConfig
+    config: TrainConfig
     study_id: str
 
 
@@ -43,17 +37,10 @@ def apply_tuned_parameters(
 ) -> TuneConfig: ...
 
 
-@overload
 def apply_tuned_parameters(
-    config: EvaluateConfig,
+    config: TrainConfig | TuneConfig,
     params: TunedParameterSet,
-) -> EvaluateConfig: ...
-
-
-def apply_tuned_parameters(
-    config: TrainConfig | TuneConfig | EvaluateConfig,
-    params: TunedParameterSet,
-) -> TrainConfig | TuneConfig | EvaluateConfig:
+) -> TrainConfig | TuneConfig:
     tuned_config = deepcopy(config)
     if params.training is not None:
         if params.training.learning_rate is not None:
@@ -68,25 +55,18 @@ def apply_tuned_parameters(
         tuned_config.model = apply_model_tuned_parameters(tuned_config.model, params.model)
     payload = tuned_config.model_dump(mode="json")
     if isinstance(config, TuneConfig):
-        return cast(TuneConfig, hydrate_model_workflow_config(WorkflowTask.TUNE, payload))
-    if isinstance(config, EvaluateConfig):
-        return cast(EvaluateConfig, hydrate_model_workflow_config(WorkflowTask.EVALUATE, payload))
-    return cast(TrainConfig, hydrate_model_workflow_config(WorkflowTask.TRAIN, payload))
+        return cast(TuneConfig, hydrate_resolved_workflow_config(WorkflowTask.TUNE, payload))
+    return cast(TrainConfig, hydrate_resolved_workflow_config(WorkflowTask.TRAIN, payload))
 
 
-@overload
-def apply_study_best_params(config: TrainConfig) -> AppliedStudyBestParams: ...
-
-
-@overload
-def apply_study_best_params(config: EvaluateConfig) -> AppliedStudyBestParams: ...
-
-
-def apply_study_best_params(config: TrainConfig | EvaluateConfig) -> AppliedStudyBestParams:
-    paths = resolve_workflow_paths(config)
-    path = paths.study_state_db
-    if path is None or paths.study_id is None:
-        raise ConfigResolutionError("study_state_db is required for tuned artifacts")
+def apply_study_best_params(
+    config: TrainConfig,
+    *,
+    study_state_db: Path,
+    study_id: str,
+    dataset_id: str,
+) -> AppliedStudyBestParams:
+    path = study_state_db
     try:
         manifest = load_study_manifest(path)
     except MissingStateError as exc:
@@ -94,7 +74,17 @@ def apply_study_best_params(config: TrainConfig | EvaluateConfig) -> AppliedStud
             "Configured tuned study does not match the current problem, features, "
             "model, or study selection"
         ) from exc
-    validate_tuned_artifact_definition(config, manifest=manifest)
-    params = load_best_params(path, study_name=config.study.name)
-    tuned_config = apply_tuned_parameters(config, params)
-    return AppliedStudyBestParams(config=tuned_config, study_id=paths.study_id)
+    study_config = _with_manifest_study_name(config, study_name=manifest.study_name)
+    validate_tuned_artifact_definition(
+        study_config,
+        manifest=manifest,
+        study_id=study_id,
+        dataset_id=dataset_id,
+    )
+    params = load_best_params(path, study_name=manifest.study_name)
+    tuned_config = apply_tuned_parameters(study_config, params)
+    return AppliedStudyBestParams(config=tuned_config, study_id=study_id)
+
+
+def _with_manifest_study_name(config: TrainConfig, *, study_name: str) -> TrainConfig:
+    return config.model_copy(update={"study": StudyConfig(name=study_name)})

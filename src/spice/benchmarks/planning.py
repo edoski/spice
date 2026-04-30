@@ -42,6 +42,7 @@ class BenchmarkWorkflowSelection:
     dimension_labels: Mapping[str, str]
     selection: WorkflowSelection
     selection_payload: Mapping[str, object]
+    artifact_from: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,7 @@ class _ExpandedStep:
     dimension_labels: Mapping[str, str]
     depends_on_steps: tuple[str, ...]
     external_dependencies: tuple[str, ...]
+    artifact_from_step: str | None
     row: Mapping[str, object]
 
 
@@ -79,7 +81,12 @@ def _plan_case_workflow_selections(case: BenchmarkCase) -> list[BenchmarkWorkflo
     selections: list[BenchmarkWorkflowSelection] = []
     for index, expanded in enumerate(expanded_steps):
         try:
-            depends_on = _resolve_dependencies(expanded, by_step)
+            artifact_from = _resolve_artifact_from(expanded, by_step)
+            depends_on = _resolve_dependencies(
+                expanded,
+                by_step,
+                artifact_from=artifact_from,
+            )
             selection = _workflow_selection(expanded)
             selections.append(
                 BenchmarkWorkflowSelection(
@@ -92,6 +99,7 @@ def _plan_case_workflow_selections(case: BenchmarkCase) -> list[BenchmarkWorkflo
                     dimension_labels=expanded.dimension_labels,
                     selection=selection,
                     selection_payload=_selection_payload(expanded.row),
+                    artifact_from=artifact_from,
                 )
             )
         except ConfigResolutionError as exc:
@@ -129,6 +137,7 @@ def _expand_case(case: BenchmarkCase) -> list[_ExpandedStep]:
                         dimension_labels=step_labels,
                         depends_on_steps=_local_after_steps(step.after),
                         external_dependencies=_external_after_dependencies(step.after),
+                        artifact_from_step=step.artifact_from,
                         row=row,
                     )
                 )
@@ -139,11 +148,6 @@ def _workflow_selection(expanded: _ExpandedStep) -> WorkflowSelection:
     workflow = expanded.workflow
     row = expanded.row
     workflow_fields = frozenset(workflow_selection_fields(workflow))
-    unknown = sorted(set(row) - workflow_fields)
-    if unknown:
-        raise ConfigResolutionError(
-            f"{workflow.value} benchmark step does not support fields: " + ", ".join(unknown)
-        )
     try:
         selection = cast(
             WorkflowSelection,
@@ -151,7 +155,7 @@ def _workflow_selection(expanded: _ExpandedStep) -> WorkflowSelection:
                 {key: value for key, value in row.items() if key in workflow_fields}
             ),
         )
-        if selection.surface is None:
+        if workflow is not WorkflowTask.EVALUATE and getattr(selection, "surface", None) is None:
             raise ConfigResolutionError("surface is required")
         return selection
     except (ConfigResolutionError, ValidationError, ValueError, TypeError) as exc:
@@ -294,6 +298,8 @@ def _entries_by_step(
 def _resolve_dependencies(
     entry: _ExpandedStep,
     by_step: Mapping[str, list[tuple[_ExpandedStep, str]]],
+    *,
+    artifact_from: str | None,
 ) -> tuple[str, ...]:
     run_ids: list[str] = []
     for step_id in entry.depends_on_steps:
@@ -307,7 +313,31 @@ def _resolve_dependencies(
         if len(candidates) > 1:
             raise ConfigResolutionError(f"dependency {step_id} is ambiguous")
         run_ids.append(candidates[0])
+    if artifact_from is not None and artifact_from not in run_ids:
+        run_ids.append(artifact_from)
     return tuple(run_ids)
+
+
+def _resolve_artifact_from(
+    entry: _ExpandedStep,
+    by_step: Mapping[str, list[tuple[_ExpandedStep, str]]],
+) -> str | None:
+    step_id = entry.artifact_from_step
+    if step_id is None:
+        return None
+    candidates = [
+        (candidate, run_id)
+        for candidate, run_id in by_step[step_id]
+        if _labels_match(candidate.dimension_labels, entry.dimension_labels)
+    ]
+    if not candidates:
+        raise ConfigResolutionError(f"artifact_from {step_id} has no matching expanded row")
+    if len(candidates) > 1:
+        raise ConfigResolutionError(f"artifact_from {step_id} is ambiguous")
+    candidate, run_id = candidates[0]
+    if candidate.workflow is not WorkflowTask.TRAIN:
+        raise ConfigResolutionError("artifact_from may reference train steps only")
+    return run_id
 
 
 def _labels_match(upstream: Mapping[str, str], downstream: Mapping[str, str]) -> bool:
@@ -332,7 +362,7 @@ def _validate_step_graph(steps: Sequence[BenchmarkStep]) -> None:
     positions = {step.id: index for index, step in enumerate(steps)}
     edges: dict[str, set[str]] = {step.id: set() for step in steps}
     for step in steps:
-        for dependency in _local_after_steps(step.after):
+        for dependency in _local_dependency_steps(step):
             if dependency not in step_id_set:
                 raise ConfigResolutionError(f"step {step.id} depends on unknown step {dependency}")
             if dependency == step.id:
@@ -355,6 +385,13 @@ def _validate_step_graph(steps: Sequence[BenchmarkStep]) -> None:
                 queue.append(dependent)
     if visited != len(steps):
         raise ConfigResolutionError("benchmark step dependencies contain a cycle")
+
+
+def _local_dependency_steps(step: BenchmarkStep) -> tuple[str, ...]:
+    dependencies = list(_local_after_steps(step.after))
+    if step.artifact_from is not None and step.artifact_from not in dependencies:
+        dependencies.append(step.artifact_from)
+    return tuple(dependencies)
 
 
 def _label_for_patch(patch: Mapping[str, object]) -> str:

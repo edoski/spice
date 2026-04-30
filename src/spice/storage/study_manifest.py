@@ -7,7 +7,6 @@ from pathlib import Path
 from sqlalchemy import select
 
 from ..config.models import (
-    EvaluateConfig,
     PredictionConfig,
     ProblemSpec,
     SplitConfig,
@@ -25,11 +24,11 @@ from ..core.errors import (
     StateConflictError,
     StateLayoutError,
 )
+from ..corpus.metadata import DatasetManifest
 from ..modeling._training_context import compile_training_context
 from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.base import ModelConfig
 from ..modeling.families.registry import coerce_model_config
-from ..modeling.result_codecs import study_semantics_from_payload, study_semantics_payload
 from ..modeling.tuned_config import coerce_tuning_space_config
 from ..objectives import coerce_objective_config
 from ..semantics import StudySemantics
@@ -43,8 +42,9 @@ from .identity import (
 )
 from .payloads import PayloadCodec, SingletonPayloadStore, mapping_payload
 from .schema import STUDY_TABLES, study_manifest
+from .semantics_codecs import study_semantics_from_payload, study_semantics_payload
 from .study_models import StudyManifest
-from .workflow_paths import resolve_workflow_paths
+from .workflow_paths import WorkflowPaths
 
 STUDY_SAMPLER_NAME = "TPESampler"
 
@@ -58,22 +58,29 @@ _STUDY_MANIFEST_STORE = SingletonPayloadStore(
 )
 
 
-def manifest_from_tune_config(config: TuneConfig) -> StudyManifest:
+def manifest_from_tune_config(
+    config: TuneConfig,
+    *,
+    paths: WorkflowPaths,
+    corpus_manifest: DatasetManifest,
+) -> StudyManifest:
     """Build the canonical study manifest from one validated tuning definition."""
 
-    paths = resolve_workflow_paths(config)
     if paths.study_id is None:
         raise ConfigResolutionError("study_id is required for study manifests")
-    context = compile_training_context(config)
+    context = compile_training_context(
+        config,
+        chain_runtime=corpus_manifest.chain.runtime,
+    )
     return StudyManifest(
         study_id=paths.study_id,
         dataset_builder=config.dataset_builder,
         prediction=config.prediction,
         objective=config.objective,
         study_name=config.study.name,
-        chain_name=config.chain.name,
+        chain_name=corpus_manifest.chain.name,
         dataset_id=paths.corpus_id,
-        dataset_name=config.dataset.name,
+        dataset_name=corpus_manifest.dataset.name,
         problem=config.problem,
         features=config.features,
         model=config.model,
@@ -153,21 +160,22 @@ def diff_study_manifests(stored: StudyManifest, requested: StudyManifest) -> lis
 
 
 def validate_tuned_artifact_definition(
-    config: TrainConfig | EvaluateConfig,
+    config: TrainConfig,
     *,
     manifest: StudyManifest,
+    study_id: str,
+    dataset_id: str,
 ) -> None:
     """Reject tuned artifacts whose identity diverges from the stored study."""
 
-    paths = resolve_workflow_paths(config)
-    if paths.study_id is None:
-        raise ConfigResolutionError("study_id is required for tuned artifacts")
     mismatches = _mismatched_identity_fields(
         study_definition_identity_from_manifest(manifest),
         study_definition_identity_from_tuned_config(
             config,
-            study_id=paths.study_id,
-            dataset_id=paths.corpus_id,
+            study_id=study_id,
+            chain_name=manifest.chain_name,
+            dataset_id=dataset_id,
+            dataset_name=manifest.dataset_name,
         ),
     )
     if mismatches:

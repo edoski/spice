@@ -10,6 +10,7 @@ from optuna.storages import RDBStorage
 
 from ..config.models import TuneConfig, TunedParameterSet
 from ..core.errors import MissingStateError, StateConflictError, StateLayoutError
+from ..corpus.metadata import DatasetManifest
 from ..modeling.tuned_config import coerce_tuned_parameter_set
 from .engine import db_url
 from .study_manifest import (
@@ -30,6 +31,7 @@ from .study_models import (
     build_trial_record,
     trial_params_payload,
 )
+from .workflow_paths import WorkflowPaths
 
 
 def study_storage(db_path: Path) -> RDBStorage:
@@ -39,8 +41,18 @@ def study_storage(db_path: Path) -> RDBStorage:
     )
 
 
-def open_tuning_study(db_path: Path, *, config: TuneConfig) -> OpenStudy:
-    requested_manifest = manifest_from_tune_config(config)
+def open_tuning_study(
+    db_path: Path,
+    *,
+    config: TuneConfig,
+    paths: WorkflowPaths,
+    corpus_manifest: DatasetManifest,
+) -> OpenStudy:
+    requested_manifest = manifest_from_tune_config(
+        config,
+        paths=paths,
+        corpus_manifest=corpus_manifest,
+    )
     stored_manifest = try_load_study_manifest(db_path)
     if stored_manifest is None:
         insert_study_manifest(db_path, manifest=requested_manifest)

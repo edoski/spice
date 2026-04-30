@@ -40,6 +40,9 @@ _SELECTION_FIELD_NAMES = frozenset().union(
 _SELECTION_GROUP_KEYS = _SELECTION_FIELD_NAMES & frozenset(named_group_keys())
 _SURFACE_FIELDS = frozenset(SurfaceFrame.model_fields)
 TEST_EVALUATION_DATE = date(2025, 11, 9)
+TEST_DATASET_ID = "cor_9a73b1e88edb488afb1e"
+TEST_STUDY_ID = "std_test"
+TEST_ARTIFACT_ID = "art_test"
 _IDENTITY_FIELDS = {
     "chain": "name",
     "dataset": "name",
@@ -82,19 +85,6 @@ def _spec_name_for_payload(group: str, default_name: str, payload: Mapping[str, 
     return identity_value if isinstance(identity_value, str) else default_name
 
 
-def _set_surface_evaluation_delay(
-    surface_payload: dict[str, object],
-    delay_seconds: object,
-) -> None:
-    if delay_seconds is None:
-        return
-    evaluation = surface_payload.get("evaluation")
-    if isinstance(evaluation, Mapping):
-        surface_payload["evaluation"] = {**evaluation, "delay_seconds": delay_seconds}
-    else:
-        surface_payload["evaluation"] = {"id": evaluation, "delay_seconds": delay_seconds}
-
-
 @pytest.fixture
 def model_workflow_override():
     def _override(
@@ -104,6 +94,7 @@ def model_workflow_override():
         max_delay_seconds: int = 36,
         delay_seconds: int | None = None,
     ) -> dict[str, object]:
+        del delay_seconds
         problem = _named_group_copy("current_row_nominal", "problem")
         problem["id"] = "test_problem"
         problem["lookback_seconds"] = lookback_seconds
@@ -139,7 +130,6 @@ def model_workflow_override():
                 "arrival_rate_per_second": 0.02,
                 "repetitions": 3,
                 "seed": 2026,
-                "delay_seconds": max_delay_seconds if delay_seconds is None else delay_seconds,
             },
             "tuning": {
                 "trial_count": 2,
@@ -241,6 +231,21 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
         surface_name = f"test_{workflow.value}"
         override_payload = dict(override or {})
         selection_values: dict[str, object] = {"storage_root": workspace_root / "outputs"}
+        if workflow is WorkflowTask.TUNE:
+            selection_values["dataset_id"] = TEST_DATASET_ID
+        elif workflow is WorkflowTask.TRAIN:
+            if variant == "tuned":
+                selection_values["study_id"] = TEST_STUDY_ID
+            else:
+                selection_values["dataset_id"] = TEST_DATASET_ID
+        elif workflow is WorkflowTask.EVALUATE:
+            selection_values.update(
+                {
+                    "artifact_id": TEST_ARTIFACT_ID,
+                    "dataset_id": TEST_DATASET_ID,
+                    "evaluation": "poisson_replay_2h",
+                }
+            )
         selection_values.update(
             {
                 key: value
@@ -261,10 +266,9 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
                 if isinstance(value, Mapping):
                     payload = dict(value)
                     if key == "evaluation":
-                        _set_surface_evaluation_delay(
-                            surface_payload,
-                            payload.pop("delay_seconds", None),
-                        )
+                        resolved_delay = payload.pop("delay_seconds", None)
+                        if resolved_delay is not None and "delay_seconds" in workflow_fields:
+                            selection_values["delay_seconds"] = resolved_delay
                     spec_name = _spec_name_for_payload(
                         key,
                         f"test_{workflow.value}_{key}",
@@ -320,8 +324,14 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
                     f"Override key {key!r} is not valid for {workflow.value} workflow"
                 )
             raise ValueError(f"Unsupported test workflow override key: {key}")
-        _write_named_spec(conf_root, group="surface", name=surface_name, payload=surface_payload)
-        selection_values["surface"] = surface_name
+        if workflow is not WorkflowTask.EVALUATE:
+            _write_named_spec(
+                conf_root,
+                group="surface",
+                name=surface_name,
+                payload=surface_payload,
+            )
+            selection_values["surface"] = surface_name
         selection_type = workflow_selection_type(workflow)
         selection = cast(WorkflowSelection, selection_type.model_validate(selection_values))
         return resolve_workflow_config(

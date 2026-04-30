@@ -24,19 +24,23 @@ _STANDARD_DIMENSIONS = frozenset(
     }
 )
 _DIMENSION_FIELDS = {
-    "data": frozenset({"surface", "chain"}),
+    "data": frozenset({"surface", "chain", "dataset_id"}),
     "features": frozenset({"features", "surface"}),
     "models": frozenset({"model", "tuning_space"}),
     "scoring": frozenset({"objective", "evaluation"}),
     "runtime": frozenset(
         {
+            "dataset_id",
             "training",
             "split",
             "tuning",
             "study",
+            "study_id",
+            "artifact_id",
             "trial_count",
             "variant",
             "delay_seconds",
+            "batch_size",
         }
     ),
 }
@@ -110,21 +114,35 @@ class BenchmarkStep(BaseModel):
     set: dict[str, object] = Field(default_factory=dict)
     dimensions: dict[str, list[SetDimensionEntry]] = Field(default_factory=dict)
     after: list[AfterDependency] = Field(default_factory=lambda: [])
+    artifact_from: str | None = None
 
     @model_validator(mode="after")
     def validate_step(self) -> BenchmarkStep:
         if self.workflow not in _MODEL_WORKFLOWS:
             raise ValueError(f"benchmark step workflow {self.workflow.value} is not supported")
         _reject_lists(self.set, label=f"step {self.id} set")
+        _validate_workflow_fields(
+            self.workflow,
+            self.set,
+            label=f"step {self.id} set",
+        )
         unknown_dimensions = sorted(set(self.dimensions) - _STANDARD_DIMENSIONS)
         if unknown_dimensions:
             raise ValueError("unknown step dimensions: " + ", ".join(unknown_dimensions))
         if "problems" in self.dimensions:
             raise ValueError("step dimensions do not support problems")
+        if self.artifact_from is not None and self.workflow is not WorkflowTask.EVALUATE:
+            raise ValueError("artifact_from is only valid on evaluate steps")
         for name, entries in self.dimensions.items():
             if not entries:
                 raise ValueError(f"step dimension {name} cannot be empty")
             _validate_dimension_set_fields(name, [entry.set for entry in entries])
+            for entry in entries:
+                _validate_workflow_fields(
+                    self.workflow,
+                    entry.set,
+                    label=f"step dimension {name}",
+                )
         return self
 
 
@@ -182,6 +200,19 @@ def _validate_dimension_set_fields(name: str, patches: Sequence[Mapping[str, obj
         if unknown:
             raise ValueError(f"dimension {name} does not support fields: " + ", ".join(unknown))
         _reject_lists(patch, label=f"dimension {name}")
+
+
+def _validate_workflow_fields(
+    workflow: WorkflowTask,
+    patch: Mapping[str, object],
+    *,
+    label: str,
+) -> None:
+    unknown = sorted(set(patch) - set(workflow_selection_fields(workflow)))
+    if unknown:
+        raise ValueError(
+            f"{label} for {workflow.value} does not support fields: " + ", ".join(unknown)
+        )
 
 
 def _reject_lists(payload: Mapping[str, object], *, label: str) -> None:
