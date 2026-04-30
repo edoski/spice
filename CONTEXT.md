@@ -88,6 +88,10 @@ _Avoid_: logits, prediction tensor
 Modeling-owned module that produces the metric set used by a policy-only objective during training.
 _Avoid_: objective evaluator, objective callback
 
+**Temporal Accounting**:
+Evaluation-owned module that computes realized, baseline, optimum, and economic metrics for selected temporal fee decisions.
+_Avoid_: fee accounting, replay accounting
+
 **CLI Selection Layer**:
 Operator-edge module that turns explicit CLI values into workflow selections and local-or-submitted workflow command plans.
 _Avoid_: CLI request builder
@@ -122,6 +126,7 @@ _Avoid_: execution backend
 - A **Training Fit Policy** is internal to the **Training Runner** and does not change model math or callback ownership.
 - A **Decoded Result ABI** is produced by a prediction contract and accepted by evaluator contracts by decoded-result id.
 - An **Objective Metric Source** turns validation metrics or model-bound evaluator scoring into objective metrics for the **Training Runner**.
+- **Temporal Accounting** is shared by evaluator adapters after they select temporal decision events.
 - The **CLI Selection Layer** builds **Workflow Selections** from operator options and resolves local-or-submitted command plans.
 - A **Benchmark Collection Resolver** consumes an evaluate **Workflow Config** and an **Execution Session** to produce a collected benchmark evaluation.
 - An **Execution Session** is opened for one explicit execution target and used by submission, following, remote transfer, and benchmark collection.

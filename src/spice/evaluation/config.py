@@ -33,3 +33,13 @@ class PoissonReplayEvaluatorConfig(EvaluatorConfig):
         if value != "poisson_replay_2h":
             raise ValueError("evaluation.id must be poisson_replay_2h")
         return value
+
+
+class FullTemporalReplayEvaluatorConfig(EvaluatorConfig):
+    @field_validator("id")
+    @classmethod
+    def validate_full_temporal_id(cls, value: str) -> str:
+        value = EvaluatorConfig.validate_id(value)
+        if value != "full_temporal_replay":
+            raise ValueError("evaluation.id must be full_temporal_replay")
+        return value

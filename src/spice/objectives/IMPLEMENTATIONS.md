@@ -22,7 +22,7 @@ This is the simplest objective: it optimizes the same metric produced by the pre
 
 ## Evaluation Objective
 
-`id: evaluation` selects an evaluator metric from validation-sample scoring. `modeling.objective_metrics` runs the model-bound scoring path. Current checked-in specs maximize `profit_over_baseline` under Poisson replay benchmarks.
+`id: evaluation` selects an evaluator metric from validation-sample scoring. `modeling.objective_metrics` runs the model-bound scoring path. Current checked-in specs maximize `profit_over_baseline` under Poisson replay or full temporal replay benchmarks.
 
 ```text
 validation samples
@@ -56,6 +56,7 @@ Evaluate workflow can run a selected diagnostic evaluator directly; artifact sem
 | --- | --- | --- | --- |
 | `validation_total_loss` | validation | `total_loss` | minimize |
 | `profit_poisson_replay_2h` | evaluation | `profit_over_baseline` | maximize |
+| `profit_full_temporal_replay` | evaluation | `profit_over_baseline` | maximize |
 
 ## Failure Modes
 

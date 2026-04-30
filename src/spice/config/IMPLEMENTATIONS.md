@@ -17,7 +17,7 @@ YAML is user-facing. Pydantic models are the internal boundary. Compiled contrac
 
 ## Local Specs
 
-Local specs are small named configs such as `model/lstm.yaml`, `problem/current_row_nominal.yaml`, or `evaluation/poisson_replay_2h.yaml`.
+Local specs are small named configs such as `model/lstm.yaml`, `problem/current_row_nominal.yaml`, `evaluation/poisson_replay_2h.yaml`, or `evaluation/full_temporal_replay.yaml`.
 
 Resolution uses the same pattern across registries:
 

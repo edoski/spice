@@ -3,9 +3,10 @@
 `results.csv` is the committed ledger for current benchmark results. One row is one
 completed artifact evaluation under one evaluator and delay.
 
-The ledger records modern evaluator results only. Current result rows use
-`evaluation=poisson_replay_2h`; historical `paper_replay_2h` results stay in
-notes such as `PROGRESS.md` until rerun under current semantics.
+The ledger records modern evaluator results only. Current result rows may use
+`evaluation=poisson_replay_2h` or `evaluation=full_temporal_replay`; historical
+`paper_replay_2h` results stay in notes such as `PROGRESS.md` until rerun under
+current semantics.
 
 ## Row Contract
 
@@ -22,6 +23,7 @@ Required evaluator metric columns:
 - `profit_over_baseline`
 - `cost_over_optimum`
 - `baseline_cost_over_optimum`
+- `exact_optimum_hit_rate`
 
 Optional existing ML metric columns:
 
@@ -32,7 +34,6 @@ Optional existing ML metric columns:
 - `regression_loss`
 - `log_fee_mae`
 - `log_fee_mse`
-- `exact_optimum_hit_rate`
 
 `log_fee_mae` and `log_fee_mse` are measured in unnormalized log-fee units. They are
 prediction-family diagnostics, not raw-fee economic metrics.

@@ -2,7 +2,7 @@
 
 _Last verified: 2026-04-28 08:12 CEST_
 
-Current runnable code uses evaluator `poisson_replay_2h` and objective `profit_poisson_replay_2h`. Older evaluator ids in this file are historical remote-run evidence only.
+Current runnable defaults use evaluator `poisson_replay_2h` and objective `profit_poisson_replay_2h`. The sibling evaluator `full_temporal_replay` and objective `profit_full_temporal_replay` are available for deterministic all-supplied-sample temporal replay. Older evaluator ids in this file are historical remote-run evidence only.
 
 ## Status Snapshot
 
@@ -33,7 +33,8 @@ Current corpus status:
 - Slot-spacing comparison problem: `current_row_recent_median`.
 - Compiler: `observed_time_window`.
 - Execution policy: `strict_deadline_miss`.
-- Primary evaluator: `poisson_replay_2h`, reporting event-mean `profit_over_baseline` and `cost_over_optimum`.
+- Default evaluator: `poisson_replay_2h`, reporting event-mean `profit_over_baseline` and `cost_over_optimum`.
+- Sibling evaluator: `full_temporal_replay`, scoring every supplied sample once through the same Temporal Accounting metrics.
 
 Historical remote results below use removed runnable paths such as `same_block_closed`, `block_open_lagged`, and `estimated_block`. They remain useful as thesis evidence, not as current config targets.
 
@@ -223,17 +224,17 @@ GPU-hour policy:
 
 - Do not tune every structural sweep cell. Run `large_capacity_hpo` as the broad calibration search for the current canonical feature set, rerun it only after a material feature promotion, then run structural sweeps as fixed train/evaluate grids.
 - If tuned parameters should be reused outside their exact study identity, first materialize explicit model/training presets from the selected HPO results. Current benchmark YAML does not automatically transplant best parameters across different problem/features cells.
-- Keep `poisson_replay_2h` as the canonical benchmark evaluator for new claims.
+- Keep `poisson_replay_2h` as the default benchmark evaluator. Use `evaluator_objective_grid` when comparing Poisson replay against full temporal replay.
 
 Metrics plan:
 
-- Domain replay metrics stay in evaluators and benchmark collection. `poisson_replay_2h` is the current canonical domain result.
+- Domain replay metrics stay in evaluators and benchmark collection. `poisson_replay_2h` is the default domain result; `full_temporal_replay` is the deterministic sibling result.
 - Pre-benchmark v1 ML metrics: add `macro_f1` for both offset-output prediction families and `log_fee_mae` / `log_fee_mse` for `min_block_fee_multitask`, then persist them through `benchmarks/results.csv`. Do not do a broader metric redesign before this benchmark wave.
 
 ### Benchmarking Rules
 
 - Treat `paper_replay_2h` results as historical remote evidence until rerun under current local evaluator names.
-- Treat `poisson_replay_2h` as the current canonical evaluator for new local benchmark claims.
+- Treat `poisson_replay_2h` as the current default evaluator for new local benchmark claims unless the claim is explicitly about full temporal replay or evaluator/objective comparison.
 - Do not read notebook rollout/fullset diagnostics as equivalent to one-shot replay.
 - Do not claim exact professor-pipeline parity; preprocessing, split construction, evaluator semantics, and checkpoint selection remain partially unresolved.
 
@@ -263,7 +264,7 @@ Both names are historical evidence only after the safe refactor. Current runnabl
 
 ### Current Evaluators
 
-`poisson_replay_2h` is the primary evaluator for current work. Removed total-ratio and fullset evaluator ids in historical notes are not runnable current configs.
+`poisson_replay_2h` is the default evaluator for current work. `full_temporal_replay` is the objective-capable sibling evaluator that scores every supplied sample once. Removed total-ratio and older fullset evaluator ids in historical notes are not runnable current configs.
 
 Replay is a one-shot decoded-offset benchmark: the model commits to one decoded choice from the current row. Notebook-style rollout is a sequential re-decision policy and is easier to do well on, so it is diagnostic only.
 

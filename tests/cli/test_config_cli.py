@@ -121,7 +121,10 @@ def test_config_public_commands_only(isolate_conf_root) -> None:
 
     evaluation_result = runner.invoke(app, ["config", "list", "evaluation"])
     assert evaluation_result.exit_code == 0, evaluation_result.stdout
-    assert evaluation_result.stdout.splitlines() == ["poisson_replay_2h"]
+    assert evaluation_result.stdout.splitlines() == [
+        "full_temporal_replay",
+        "poisson_replay_2h",
+    ]
 
     acquisition_result = runner.invoke(app, ["config", "list", "acquisition"])
     assert acquisition_result.exit_code != 0

@@ -60,6 +60,27 @@ def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root)
     ):
         load_named_group("aliased_problem", "problem")
 
+    aliased_evaluation = conf_root / "evaluation" / "aliased_evaluation.yaml"
+    aliased_evaluation.write_text(
+        yaml.safe_dump(
+            {
+                "id": "poisson_replay_2h",
+                "window_seconds": 7200,
+                "arrival_rate_per_second": 0.01,
+                "repetitions": 3,
+                "seed": 2026,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ConfigResolutionError,
+        match="evaluation id must match spec name: aliased_evaluation",
+    ):
+        load_named_group("aliased_evaluation", "evaluation")
+
 
 def test_surface_refs_and_selection_defaults_resolve(
     tmp_path: Path,
@@ -279,6 +300,70 @@ def test_benchmark_objective_requires_matching_evaluation(
             WorkflowTask.TRAIN,
             TrainWorkflowSelection(surface="mismatch", storage_root=tmp_path / "outputs"),
         )
+
+
+def test_full_temporal_replay_objective_requires_matching_train_evaluation(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    isolate_conf_root()
+
+    train_config = cast(
+        TrainConfig,
+        resolve_workflow_config(
+            WorkflowTask.TRAIN,
+            TrainWorkflowSelection(
+                surface="current_row_fee_dynamics",
+                objective="profit_full_temporal_replay",
+                evaluation="full_temporal_replay",
+                storage_root=tmp_path / "train_outputs",
+            ),
+        ),
+    )
+    assert train_config.objective.benchmark_id == "full_temporal_replay"
+    assert train_config.evaluation is not None
+    assert train_config.evaluation.id == "full_temporal_replay"
+
+    with pytest.raises(
+        ConfigResolutionError,
+        match=(
+            "objective profit_full_temporal_replay requires evaluation "
+            "full_temporal_replay, got poisson_replay_2h"
+        ),
+    ):
+        resolve_workflow_config(
+            WorkflowTask.TRAIN,
+            TrainWorkflowSelection(
+                surface="current_row_fee_dynamics",
+                objective="profit_full_temporal_replay",
+                evaluation="poisson_replay_2h",
+                storage_root=tmp_path / "mismatch_outputs",
+            ),
+        )
+
+
+def test_evaluate_allows_objective_and_diagnostic_evaluator_to_differ(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    isolate_conf_root()
+
+    config = cast(
+        EvaluateConfig,
+        resolve_workflow_config(
+            WorkflowTask.EVALUATE,
+            EvaluateWorkflowSelection(
+                surface="current_row_fee_dynamics",
+                objective="profit_poisson_replay_2h",
+                evaluation="full_temporal_replay",
+                storage_root=tmp_path / "outputs",
+            ),
+        ),
+    )
+
+    assert config.objective.benchmark_id == "poisson_replay_2h"
+    assert config.evaluation is not None
+    assert config.evaluation.id == "full_temporal_replay"
 
 
 def test_selection_overrides_allow_problem_features_and_evaluation_selection(

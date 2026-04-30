@@ -231,7 +231,7 @@ spice pull artifact --chain ethereum --dataset icdcs_2026 --features core_fee_dy
 | Dataset builders | `fixed_sequence_temporal` |
 | Model families | `lstm`, `transformer`, `transformer_lstm` |
 | Prediction families | `min_block_fee_multitask` |
-| Evaluator | `poisson_replay_2h` |
+| Evaluators | `poisson_replay_2h`, `full_temporal_replay` |
 | Remote target | `disi_l40` |
 
 ## Output Layout

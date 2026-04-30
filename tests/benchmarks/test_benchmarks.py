@@ -147,6 +147,75 @@ def test_polygon_local_trends_ablation_expands_expected_plan() -> None:
     )
 
 
+def test_evaluator_objective_grid_expands_cross_evaluation_plan() -> None:
+    plan = plan_benchmark("evaluator_objective_grid")
+
+    assert len(plan) == 54
+    assert {entry.step_id for entry in plan} == {
+        "train_poisson_objective",
+        "train_full_objective",
+        "evaluate_poisson_artifact_with_poisson",
+        "evaluate_poisson_artifact_with_full",
+        "evaluate_full_artifact_with_poisson",
+        "evaluate_full_artifact_with_full",
+    }
+    train_entries = [entry for entry in plan if entry.workflow.value == "train"]
+    evaluate_entries = [entry for entry in plan if entry.workflow.value == "evaluate"]
+    assert len(train_entries) == 18
+    assert len(evaluate_entries) == 36
+
+    configs = [cast(ModelWorkflowConfig, entry.config) for entry in plan]
+    assert {config.chain.name for config in configs} == {
+        "ethereum",
+        "polygon",
+        "avalanche",
+    }
+    assert {config.model.id for config in configs} == {
+        "lstm",
+        "transformer",
+        "transformer_lstm",
+    }
+    assert {config.study.name for config in configs} == {"evaluator_objective_grid"}
+
+    poisson_full = next(
+        entry
+        for entry in plan
+        if entry.step_id == "evaluate_poisson_artifact_with_full"
+        and cast(ModelWorkflowConfig, entry.config).chain.name == "ethereum"
+        and cast(ModelWorkflowConfig, entry.config).model.id == "lstm"
+    )
+    poisson_full_config = cast(ModelWorkflowConfig, poisson_full.config)
+    assert poisson_full_config.objective.benchmark_id == "poisson_replay_2h"
+    assert poisson_full_config.evaluation is not None
+    assert poisson_full_config.evaluation.id == "full_temporal_replay"
+    assert poisson_full.depends_on == (
+        "evaluator_objective_grid."
+        "data-chain-ethereum."
+        "models-model-lstm__tuning_space-lstm_large_capacity."
+        "problems-current_row_nominal."
+        "train_poisson_objective",
+    )
+
+    full_poisson = next(
+        entry
+        for entry in plan
+        if entry.step_id == "evaluate_full_artifact_with_poisson"
+        and cast(ModelWorkflowConfig, entry.config).chain.name == "ethereum"
+        and cast(ModelWorkflowConfig, entry.config).model.id == "lstm"
+    )
+    full_poisson_config = cast(ModelWorkflowConfig, full_poisson.config)
+    assert full_poisson_config.objective.benchmark_id == "full_temporal_replay"
+    assert full_poisson_config.evaluation is not None
+    assert full_poisson_config.evaluation.id == "poisson_replay_2h"
+    assert full_poisson.depends_on == (
+        "evaluator_objective_grid."
+        "data-chain-ethereum."
+        "models-model-lstm__tuning_space-lstm_large_capacity."
+        "problems-current_row_nominal."
+        "train_full_objective",
+    )
+
+
 def test_benchmark_rejects_invalid_problem_grid(isolate_conf_root) -> None:
     conf_root = isolate_conf_root()
     _write_benchmark(

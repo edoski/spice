@@ -14,7 +14,7 @@ model outputs
   -> EvaluationSummary
 ```
 
-The current evaluator accepts `DecodedOffsets`. It interprets offsets through temporal rows and the execution policy.
+Current evaluators accept `DecodedOffsets`. They interpret offsets through temporal rows and the execution policy.
 
 ## Evaluation Contract
 
@@ -38,31 +38,44 @@ Problem stores keep fees in log space. Evaluators exponentiate before economic r
 fee = exp(log_base_fee)
 ```
 
-Ratios are computed on real fee values, not log values. Fee accounting is private to the Poisson replay evaluator while it is the only economic evaluator.
+Ratios are computed on real fee values, not log values. Temporal Accounting is shared by evaluator adapters after they select temporal decision events.
 
-## Poisson Replay
+## Temporal Accounting
 
-`poisson_replay_2h` simulates randomly timed transaction opportunities. Each repetition picks a uniform replay window, samples exponential inter-arrival times, maps each arrival to the latest sample at or before that timestamp, realizes decoded offsets, and compares realized fee to baseline and optimum.
+Temporal Accounting receives selected sample positions and computes realized, baseline, and optimum fee outcomes.
 
 ```text
-arrivals
-  -> sample positions
-  -> decoded offsets
+selected positions
   -> execution policy
   -> realized rows
-  -> event-mean fee ratios
+  -> fee ratios and sums
 ```
 
-Duplicate selected samples can occur when several arrivals map to the same sample. They count as repeated events.
-
-Run metrics include:
+Shared metrics include:
 
 | Metric | Formula idea |
 | --- | --- |
 | `profit_over_baseline` | Mean `(baseline - realized) / baseline` per event. |
 | `cost_over_optimum` | Mean `(realized - optimum) / optimum` per event. |
 | `baseline_cost_over_optimum` | Mean `(baseline - optimum) / optimum` per event. |
+| `exact_optimum_hit_rate` | Fraction of events whose realized row equals the optimum row. |
 | Fee sums | Realized, baseline, optimum totals. |
+
+## Poisson Replay
+
+`poisson_replay_2h` simulates randomly timed transaction opportunities. Each repetition picks a uniform replay window, samples exponential inter-arrival times, maps each arrival to the latest sample at or before that timestamp, then uses Temporal Accounting.
+
+```text
+arrivals
+  -> sample positions
+  -> Temporal Accounting
+```
+
+Duplicate selected samples can occur when several arrivals map to the same sample. They count as repeated events.
+
+## Full Temporal Replay
+
+`full_temporal_replay` selects every supplied sample position exactly once, then uses Temporal Accounting. In train and tune objectives, supplied samples are validation samples. In the evaluate workflow, supplied samples are held-out evaluation-window samples.
 
 ## Objective Link
 
@@ -72,7 +85,7 @@ Evaluation objectives call evaluator scoring on validation samples during traini
 
 | Failure | Meaning |
 | --- | --- |
-| Unknown evaluation id | Only `poisson_replay_2h` is supported. |
+| Unknown evaluation id | Evaluator id is not one of the trusted adapters. |
 | Decoded-result id mismatch | Evaluator cannot interpret prediction output. |
 | Empty selected positions | No events to score. |
 | Non-positive fee total | Economic ratio denominator invalid. |
@@ -81,4 +94,4 @@ Evaluation objectives call evaluator scoring on validation samples during traini
 
 ## Extension Pattern
 
-A future second evaluator should declare its accepted decoded-result id, metric descriptors, primary metric, and direction. Add shared fee-accounting only when that second evaluator needs it.
+A future evaluator should declare its accepted decoded-result id, metric descriptors, primary metric, and direction. Reuse Temporal Accounting when the evaluator scores selected temporal decisions.

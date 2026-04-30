@@ -162,6 +162,8 @@ _GROUP_SPECS = (
         directory="evaluation",
         seed_name="poisson_replay_2h",
         validate=coerce_evaluator_config,
+        identity_field="id",
+        seed_from_requested_name=True,
         public=True,
     ),
     GroupSpec(

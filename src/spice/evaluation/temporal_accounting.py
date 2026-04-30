@@ -1,4 +1,4 @@
-"""Replay-specific cost aggregation helpers."""
+"""Temporal decision accounting shared by evaluator adapters."""
 
 from __future__ import annotations
 
@@ -15,15 +15,17 @@ from .contracts import EvaluationRun, EvaluationSummary, IntVector
 PROFIT_OVER_BASELINE = "profit_over_baseline"
 COST_OVER_OPTIMUM = "cost_over_optimum"
 BASELINE_COST_OVER_OPTIMUM = "baseline_cost_over_optimum"
-_REPLAY_RATIO_METRIC_IDS = (
+EXACT_OPTIMUM_HIT_RATE = "exact_optimum_hit_rate"
+_TEMPORAL_RATIO_METRIC_IDS = (
     PROFIT_OVER_BASELINE,
     COST_OVER_OPTIMUM,
     BASELINE_COST_OVER_OPTIMUM,
+    EXACT_OPTIMUM_HIT_RATE,
 )
 
 
 @dataclass(frozen=True, slots=True)
-class _ReplayCostSummary:
+class _TemporalCostSummary:
     n_events: int
     realized_fee_sum: float
     baseline_fee_sum: float
@@ -32,12 +34,12 @@ class _ReplayCostSummary:
 
 
 @dataclass(frozen=True, slots=True)
-class ReplayRun:
+class TemporalAccountingRun:
     run: EvaluationRun
     event_metric_sums: dict[str, float]
 
 
-def summarize_selected_costs(
+def summarize_selected_temporal_decisions(
     store: CompiledProblemStore,
     execution_policy: CompiledExecutionPolicyContract,
     decoded_offsets: DecodedOffsets,
@@ -45,7 +47,7 @@ def summarize_selected_costs(
     selected_positions: IntVector,
     *,
     metadata: dict[str, str | int | float],
-) -> ReplayRun:
+) -> TemporalAccountingRun:
     if len(decoded_offsets) != int(sample_indices.shape[0]):
         raise ValueError("decoded_offsets must align with sample_indices")
     if selected_positions.size == 0:
@@ -79,7 +81,8 @@ def summarize_selected_costs(
     profit_values = (baseline_fees - realized_fees) / baseline_fees
     cost_values = (realized_fees - optimum_fees) / optimum_fees
     baseline_cost_values = (baseline_fees - optimum_fees) / optimum_fees
-    costs = _ReplayCostSummary(
+    exact_hits = realized.realized_rows == realized.optimum_rows
+    costs = _TemporalCostSummary(
         n_events=int(selected_positions.shape[0]),
         realized_fee_sum=realized_total,
         baseline_fee_sum=baseline_total,
@@ -88,6 +91,7 @@ def summarize_selected_costs(
             PROFIT_OVER_BASELINE: float(profit_values.sum()),
             COST_OVER_OPTIMUM: float(cost_values.sum()),
             BASELINE_COST_OVER_OPTIMUM: float(baseline_cost_values.sum()),
+            EXACT_OPTIMUM_HIT_RATE: float(exact_hits.sum()),
         },
     )
     aggregated_metrics = _event_mean_metrics(costs)
@@ -104,11 +108,11 @@ def summarize_selected_costs(
             "overflow_count": int(realized.overflow_mask.sum()),
         },
     )
-    return ReplayRun(run=run, event_metric_sums=costs.event_metric_sums)
+    return TemporalAccountingRun(run=run, event_metric_sums=costs.event_metric_sums)
 
 
-def summarize_runs(
-    runs: list[ReplayRun],
+def summarize_temporal_accounting_runs(
+    runs: list[TemporalAccountingRun],
 ) -> EvaluationSummary:
     if not runs:
         raise ValueError("evaluation produced no runs")
@@ -122,14 +126,14 @@ def summarize_runs(
     if optimum_fee_sum <= 0.0:
         raise ValueError("optimum fee sum must be positive")
     total_events = sum(run.n_events for run in public_runs)
-    costs = _ReplayCostSummary(
+    costs = _TemporalCostSummary(
         n_events=total_events,
         realized_fee_sum=realized_fee_sum,
         baseline_fee_sum=baseline_fee_sum,
         optimum_fee_sum=optimum_fee_sum,
         event_metric_sums={
             metric_id: sum(run.event_metric_sums[metric_id] for run in runs)
-            for metric_id in _REPLAY_RATIO_METRIC_IDS
+            for metric_id in _TEMPORAL_RATIO_METRIC_IDS
         },
     )
     aggregated_metrics = _event_mean_metrics(costs)
@@ -152,6 +156,9 @@ def summarize_runs(
             "baseline_cost_over_optimum": _summarize_window_metric(
                 [run.metrics["baseline_cost_over_optimum"] for run in public_runs]
             ),
+            "exact_optimum_hit_rate": _summarize_window_metric(
+                [run.metrics["exact_optimum_hit_rate"] for run in public_runs]
+            ),
         }
         if len(public_runs) > 1
         else {},
@@ -167,7 +174,7 @@ def _summarize_window_metric(values: list[float]) -> WindowMetricSummary:
     )
 
 
-def _event_mean_metrics(costs: _ReplayCostSummary) -> dict[str, float]:
+def _event_mean_metrics(costs: _TemporalCostSummary) -> dict[str, float]:
     return {
         PROFIT_OVER_BASELINE: _event_metric_mean(
             costs.event_metric_sums,
@@ -182,6 +189,11 @@ def _event_mean_metrics(costs: _ReplayCostSummary) -> dict[str, float]:
         BASELINE_COST_OVER_OPTIMUM: _event_metric_mean(
             costs.event_metric_sums,
             BASELINE_COST_OVER_OPTIMUM,
+            costs.n_events,
+        ),
+        EXACT_OPTIMUM_HIT_RATE: _event_metric_mean(
+            costs.event_metric_sums,
+            EXACT_OPTIMUM_HIT_RATE,
             costs.n_events,
         ),
     }

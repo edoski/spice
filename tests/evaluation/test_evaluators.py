@@ -21,6 +21,7 @@ from spice.evaluation.sampling import (
 from spice.prediction import MetricDescriptor, MetricSet
 from spice.prediction.decoded_offsets import DecodedOffsets
 from spice.temporal import (
+    CompiledExecutionPolicyContract,
     coerce_execution_policy_config,
     compile_execution_policy_contract,
 )
@@ -52,6 +53,21 @@ def _store() -> CompiledProblemStore:
     )
 
 
+def _overflow_store() -> CompiledProblemStore:
+    return CompiledProblemStore(
+        feature_matrix=np.zeros((10, 1), dtype=np.float32),
+        log_base_fees=np.log(
+            np.array([100, 90, 80, 60, 55, 70, 50, 45, 40, 35], dtype=np.float32)
+        ).astype(np.float32, copy=False),
+        timestamps=(np.arange(10, dtype=np.int64) * 1800).astype(np.int64, copy=False),
+        anchor_rows=np.array([1, 4], dtype=np.int64),
+        context_start_rows=np.array([0, 3], dtype=np.int64),
+        candidate_start_rows=np.array([2, 5], dtype=np.int64),
+        candidate_end_rows=np.array([3, 7], dtype=np.int64),
+        max_candidate_slots=3,
+    )
+
+
 def _poisson_config() -> dict[str, object]:
     return {
         "id": "poisson_replay_2h",
@@ -62,13 +78,17 @@ def _poisson_config() -> dict[str, object]:
     }
 
 
+def _full_config() -> dict[str, object]:
+    return {"id": "full_temporal_replay"}
+
+
 def _execution_policy():
     return compile_execution_policy_contract(
         coerce_execution_policy_config({"id": "strict_deadline_miss"})
     )
 
 
-def test_evaluator_config_is_poisson_only_without_engine_sampler_or_aggregation() -> None:
+def test_evaluator_config_supports_explicit_temporal_replay_specs() -> None:
     config = coerce_evaluator_config(_poisson_config())
     contract = compile_evaluator_contract(config)
 
@@ -76,15 +96,22 @@ def test_evaluator_config_is_poisson_only_without_engine_sampler_or_aggregation(
     assert contract.evaluation_id == "poisson_replay_2h"
     assert contract.config_payload == _poisson_config()
 
+    full_config = coerce_evaluator_config(_full_config())
+    full_contract = compile_evaluator_contract(full_config)
+
+    assert full_config.id == "full_temporal_replay"
+    assert full_contract.evaluation_id == "full_temporal_replay"
+    assert full_contract.config_payload == _full_config()
+
     with pytest.raises(ConfigResolutionError, match="Extra inputs"):
         coerce_evaluator_config({**_poisson_config(), "engine": "replay"})
 
-    with pytest.raises(ConfigResolutionError, match="poisson_replay_2h"):
+    with pytest.raises(ConfigResolutionError, match="poisson_replay_2h, full_temporal_replay"):
         coerce_evaluator_config({**_poisson_config(), "id": "other_evaluation"})
 
 
 def test_evaluator_compile_requires_concrete_poisson_config() -> None:
-    with pytest.raises(ConfigResolutionError, match="poisson_replay_2h"):
+    with pytest.raises(ConfigResolutionError, match="poisson_replay_2h, full_temporal_replay"):
         compile_evaluator_contract(EvaluatorConfig(id="base"))
 
 
@@ -164,6 +191,49 @@ def test_poisson_replay_uses_event_mean_economic_metrics() -> None:
     assert summary.metrics.values == pytest.approx(expected)
 
 
+def test_full_temporal_replay_scores_every_supplied_sample_once() -> None:
+    store = _store()
+    sample_indices = np.arange(store.n_samples, dtype=np.int64)
+    offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
+    evaluator = compile_evaluator_contract(coerce_evaluator_config(_full_config()))
+
+    summary = evaluator.run(store, _execution_policy(), offsets, sample_indices)
+    expected = _expected_selected_metrics(
+        store,
+        _execution_policy(),
+        offsets,
+        sample_indices,
+        np.arange(sample_indices.shape[0], dtype=np.int64),
+    )
+
+    assert summary.total_events == store.n_samples
+    assert summary.total_events == expected.pop("total_events")
+    assert summary.runs[0].n_events == store.n_samples
+    assert summary.runs[0].metadata["mode"] == "full_temporal_replay"
+    assert summary.metrics.values == pytest.approx(expected)
+
+
+def test_full_temporal_replay_accounting_resolves_policy_overflow() -> None:
+    store = _overflow_store()
+    sample_indices = np.arange(store.n_samples, dtype=np.int64)
+    offsets = DecodedOffsets(torch.tensor([2, 1], dtype=torch.int64))
+    execution_policy = _execution_policy()
+    evaluator = compile_evaluator_contract(coerce_evaluator_config(_full_config()))
+
+    summary = evaluator.run(store, execution_policy, offsets, sample_indices)
+    expected = _expected_selected_metrics(
+        store,
+        execution_policy,
+        offsets,
+        sample_indices,
+        np.arange(sample_indices.shape[0], dtype=np.int64),
+    )
+
+    assert summary.runs[0].metadata["overflow_count"] == 1
+    assert summary.total_events == expected.pop("total_events")
+    assert summary.metrics.values == pytest.approx(expected)
+
+
 def test_poisson_replay_handles_non_chronological_sample_indices() -> None:
     store = _store()
     forward_indices = np.arange(store.n_samples, dtype=np.int64)
@@ -211,6 +281,7 @@ def _expected_poisson_metrics(
     profit_sum = 0.0
     cost_sum = 0.0
     baseline_cost_sum = 0.0
+    exact_hit_sum = 0.0
 
     for _ in range(int(config["repetitions"])):
         window_start = float(rng.uniform(first_timestamp, latest_start))
@@ -228,28 +299,72 @@ def _expected_poisson_metrics(
         ]
         if selected_positions.size == 0:
             continue
-        selected_samples = sample_indices[selected_positions]
-        windows = store.candidate_windows(selected_samples)
-        selected_offsets = offsets.select(selected_positions).astype(np.int64, copy=False)
-        realized_rows = windows.baseline_rows + selected_offsets
-        realized_fees = np.exp(store.log_base_fees[realized_rows].astype(np.float64))
-        baseline_fees = np.exp(store.log_base_fees[windows.baseline_rows].astype(np.float64))
-        optimum_fees = np.exp(store.log_base_fees[windows.optimum_rows].astype(np.float64))
+        selected = _expected_selected_metrics(
+            store,
+            _execution_policy(),
+            offsets,
+            sample_indices,
+            selected_positions,
+        )
 
-        total_events += int(selected_positions.shape[0])
-        realized_fee_sum += float(realized_fees.sum())
-        baseline_fee_sum += float(baseline_fees.sum())
-        optimum_fee_sum += float(optimum_fees.sum())
-        profit_sum += float(((baseline_fees - realized_fees) / baseline_fees).sum())
-        cost_sum += float(((realized_fees - optimum_fees) / optimum_fees).sum())
-        baseline_cost_sum += float(((baseline_fees - optimum_fees) / optimum_fees).sum())
+        total_events += int(selected["total_events"])
+        realized_fee_sum += float(selected["realized_fee_sum"])
+        baseline_fee_sum += float(selected["baseline_fee_sum"])
+        optimum_fee_sum += float(selected["optimum_fee_sum"])
+        profit_sum += float(selected["profit_over_baseline"]) * int(selected["total_events"])
+        cost_sum += float(selected["cost_over_optimum"]) * int(selected["total_events"])
+        baseline_cost_sum += (
+            float(selected["baseline_cost_over_optimum"]) * int(selected["total_events"])
+        )
+        exact_hit_sum += float(selected["exact_optimum_hit_rate"]) * int(
+            selected["total_events"]
+        )
 
     return {
         "profit_over_baseline": profit_sum / total_events,
         "cost_over_optimum": cost_sum / total_events,
         "baseline_cost_over_optimum": baseline_cost_sum / total_events,
+        "exact_optimum_hit_rate": exact_hit_sum / total_events,
         "realized_fee_sum": realized_fee_sum,
         "baseline_fee_sum": baseline_fee_sum,
         "optimum_fee_sum": optimum_fee_sum,
+        "total_events": total_events,
+    }
+
+
+def _expected_selected_metrics(
+    store: CompiledProblemStore,
+    execution_policy: CompiledExecutionPolicyContract,
+    offsets: DecodedOffsets,
+    sample_indices: np.ndarray,
+    selected_positions: np.ndarray,
+) -> dict[str, float | int]:
+    realized = execution_policy.realize_selections(
+        store,
+        offsets,
+        sample_indices,
+        selected_positions,
+    )
+    realized_fees = np.exp(store.log_base_fees[realized.realized_rows].astype(np.float64))
+    baseline_fees = np.exp(store.log_base_fees[realized.baseline_rows].astype(np.float64))
+    optimum_fees = np.exp(store.log_base_fees[realized.optimum_rows].astype(np.float64))
+    total_events = int(selected_positions.shape[0])
+
+    return {
+        "profit_over_baseline": float(((baseline_fees - realized_fees) / baseline_fees).sum())
+        / total_events,
+        "cost_over_optimum": float(((realized_fees - optimum_fees) / optimum_fees).sum())
+        / total_events,
+        "baseline_cost_over_optimum": float(
+            ((baseline_fees - optimum_fees) / optimum_fees).sum()
+        )
+        / total_events,
+        "exact_optimum_hit_rate": float(
+            (realized.realized_rows == realized.optimum_rows).sum()
+        )
+        / total_events,
+        "realized_fee_sum": float(realized_fees.sum()),
+        "baseline_fee_sum": float(baseline_fees.sum()),
+        "optimum_fee_sum": float(optimum_fees.sum()),
         "total_events": total_events,
     }

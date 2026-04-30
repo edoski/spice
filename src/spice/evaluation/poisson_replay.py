@@ -11,12 +11,15 @@ from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
 from .config import PoissonReplayEvaluatorConfig
 from .contracts import CompiledEvaluatorContract, EvaluationSummary, IntVector, RunEvaluatorFn
-from .metrics import REPLAY_METRIC_DESCRIPTORS
-from .replay_summary import summarize_runs, summarize_selected_costs
+from .metrics import TEMPORAL_REPLAY_METRIC_DESCRIPTORS
 from .sampling import (
     chronological_sample_view,
     sample_poisson_arrivals,
     select_sample_positions_for_arrivals,
+)
+from .temporal_accounting import (
+    summarize_selected_temporal_decisions,
+    summarize_temporal_accounting_runs,
 )
 
 
@@ -61,7 +64,7 @@ def run_poisson_replay(
         if selected_positions.size == 0:
             continue
         runs.append(
-            summarize_selected_costs(
+            summarize_selected_temporal_decisions(
                 store,
                 execution_policy,
                 decoded_offsets,
@@ -80,7 +83,7 @@ def run_poisson_replay(
             "poisson_arrivals evaluation produced no valid arrivals; "
             "adjust the benchmark rate or window"
         )
-    return summarize_runs(runs)
+    return summarize_temporal_accounting_runs(runs)
 
 
 def compile_poisson_replay_evaluator_contract(
@@ -103,7 +106,7 @@ def compile_poisson_replay_evaluator_contract(
     resolved_run_fn: RunEvaluatorFn = run_fn
     return CompiledEvaluatorContract(
         evaluation_id=config.id,
-        metric_descriptors=REPLAY_METRIC_DESCRIPTORS,
+        metric_descriptors=TEMPORAL_REPLAY_METRIC_DESCRIPTORS,
         primary_metric_id="profit_over_baseline",
         direction="maximize",
         config_payload=config.model_dump(mode="json", exclude_none=True),

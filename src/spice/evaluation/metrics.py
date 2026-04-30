@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..prediction.base import MetricDescriptor
 
-REPLAY_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
+TEMPORAL_REPLAY_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
     MetricDescriptor(
         id="profit_over_baseline",
         label="profit over baseline",
@@ -18,6 +18,11 @@ REPLAY_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
     MetricDescriptor(
         id="baseline_cost_over_optimum",
         label="baseline cost over optimum",
+        role="secondary",
+    ),
+    MetricDescriptor(
+        id="exact_optimum_hit_rate",
+        label="exact optimum hit rate",
         role="secondary",
     ),
     MetricDescriptor(
