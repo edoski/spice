@@ -184,7 +184,22 @@ LSTM search:
 - `head_hidden_dim: [256, 512, 1024]`.
 - `dropout: [0.0, 0.1, 0.2, 0.3]`.
 
-Launch decisions remain deferred until all three current 1M corpora are validated and pushed to remote.
+Launch decisions are now governed by the feature-set stabilization sequence below. Feature-set changes define the benchmark surface, so broad structural sweeps should wait until the input feature set is stable.
+
+Feature-set stabilization sequence:
+
+1. Finish the submitted `local_trends_ablation_grid` before changing feature configs again.
+2. If final held-out evaluations do not contradict the current pattern, promote the restored safe local-trend outputs into canonical `core_fee_dynamics`. This means `core_fee_dynamics` becomes the expanded safe fee-dynamics set; do not keep a long-term separate `core_fee_dynamics_local_trends` axis unless a concrete diagnostic need remains.
+3. Rerun `safe_baseline_grid` and `large_capacity_hpo` once on the promoted `core_fee_dynamics` definition. These runs establish the first clean post-promotion baseline and tuned reference.
+4. After that, run a focused priority-fee local-trends feature ablation. Candidate outputs should stay inside the current safe data boundary: lagged/public `eth_feeHistory` priority-fee summaries only, with no private mempool, same-row, or bundle contents. Start narrow: priority-fee p50 and spread deltas/lags/rolling stats before expanding p10/p90 or adding many combinations.
+5. If the priority-fee local-trends ablation materially improves held-out evaluation, expand canonical `core_fee_dynamics` again and rerun `safe_baseline_grid` plus `large_capacity_hpo`. If it is neutral or noisy, keep it as diagnostic evidence only and leave canonical `core_fee_dynamics` unchanged.
+6. Only after feature-set stabilization should the broader structural sweeps run: `slot_spacing_sweep`, `lookback_window_sweep`, `delay_degradation_sweep`, and optionally `elapsed_position_ablation`.
+
+Priority-fee local-trends rationale:
+
+- Base fee moves mechanically; priority-fee percentiles and spread can capture the urgency layer of the fee market before base fee fully reacts.
+- MEV/private orderflow is not a leakage problem if the selected inputs remain lagged public `eth_feeHistory` summaries, but it can make priority-fee signals incomplete or chain-dependent because bundles may pay through private routes or coinbase transfers.
+- Same-row priority-fee statistics remain forbidden because they are finalized current-block facts. Use `prev_*` sources and explicit lag/warmup policy only.
 
 Benchmark sweep operator flow:
 
@@ -198,6 +213,7 @@ Configured sweep specs awaiting launch decisions:
 
 - `safe_baseline_grid`: untuned ETH/POL/AVAX by LSTM/Transformer/Transformer-LSTM on `current_row_fee_dynamics`, `core_fee_dynamics`, default 1M `current_row_nominal`, and `poisson_replay_2h`.
 - `large_capacity_hpo`: bounded calibration HPO over the same 3x3 chain/model grid, large-capacity tuning spaces, 40 trials per cell, tuned train, and tuned `poisson_replay_2h` evaluation.
+- Priority-fee local-trends ablation: planned focused feature ablation after the promoted local-trends baseline/HPO runs. It should compare canonical `core_fee_dynamics` against a narrow priority-fee trend extension before any broad structural sweeps.
 - `lookback_window_sweep`: fixed train/evaluate grid over ETH/POL/AVAX, LSTM/Transformer/Transformer-LSTM, and `600s`/`900s`/`1200s` lookbacks. No per-cell HPO.
 - `slot_spacing_sweep`: fixed train/evaluate comparison of `current_row_nominal` and `current_row_recent_median` across the same 3x3 safe grid. No per-cell HPO.
 - `elapsed_position_ablation`: fixed train/evaluate comparison of `core_fee_dynamics` against `core_fee_dynamics_elapsed_position` across the same 3x3 safe grid.
@@ -205,7 +221,7 @@ Configured sweep specs awaiting launch decisions:
 
 GPU-hour policy:
 
-- Do not tune every structural sweep cell. Run `large_capacity_hpo` as the broad calibration search, then run structural sweeps as fixed train/evaluate grids.
+- Do not tune every structural sweep cell. Run `large_capacity_hpo` as the broad calibration search for the current canonical feature set, rerun it only after a material feature promotion, then run structural sweeps as fixed train/evaluate grids.
 - If tuned parameters should be reused outside their exact study identity, first materialize explicit model/training presets from the selected HPO results. Current benchmark YAML does not automatically transplant best parameters across different problem/features cells.
 - Keep `poisson_replay_2h` as the canonical benchmark evaluator for new claims.
 
