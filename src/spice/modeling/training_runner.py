@@ -12,37 +12,33 @@ import torch
 from numpy.typing import NDArray
 
 from ..config.models import TrainingConfig
-from ..core.errors import SpiceOperatorError
 from ..core.files import write_path_atomic
 from ..objectives import CompiledObjectiveContract
 from ..prediction import CompiledPredictionContract, MetricSet
 from ..prediction.contracts import PredictionBatch
 from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
+from ._epoch_execution import run_epoch
+from ._fit_policy import CompletedEpoch, TrainingEpochProgress, TrainingFitPolicy
 from ._runtime import (
-    autocast_context,
     build_cuda_modeling_runtime,
-    compute_device_resident_budget,
     configure_torch_backends,
-    measure_forward_device_resident_budget,
-    peak_cuda_reserved_bytes,
-    reset_cuda_peak_memory,
-    run_model_forward_pass,
     set_global_seed,
-    snapshot_cuda_memory,
 )
-from .batch_plan import BatchSource, build_prediction_batch_plan
+from .batch_plan import build_prediction_batch_plan
 from .families.base import ModelConfig
 from .families.registry import (
     resolve_model_compile_enabled,
     resolve_model_training_precision,
 )
+from .forward_runtime import run_planned_prediction_forward
 from .models import TemporalModel
 from .objective_metrics import (
     CompiledObjectiveMetricSource,
     ObjectiveMetricEvaluationContext,
 )
-from .representations import CompiledRepresentationContract, RepresentationRuntimeContext
+from .representations import CompiledRepresentationContract
+from .training_runtime import plan_training_runtime
 
 IntVector = NDArray[np.int64]
 
@@ -57,19 +53,6 @@ class TrainingResult:
     objective_history: list[MetricSet]
     best_checkpoint_path: Path | None
     prediction_training_state: object | None
-
-
-@dataclass(frozen=True, slots=True)
-class TrainingEpochProgress:
-    epoch: int
-    max_epochs: int
-    train_metrics: MetricSet
-    validation_metrics: MetricSet
-    objective_metrics: MetricSet
-    objective_metric_id: str
-    direction: str
-    best_epoch: int
-    best_objective_value: float
 
 
 EpochEndCallback = Callable[[TrainingEpochProgress], None]
@@ -111,55 +94,6 @@ class TrainingMetricEvaluationSpec:
     training_config: TrainingConfig
 
 
-def _unwrap_compiled_model(model: TemporalModel) -> TemporalModel:
-    return cast(TemporalModel, getattr(model, "_orig_mod", model))
-
-
-def _is_improvement(
-    *,
-    current_epoch: int,
-    best_epoch: int,
-    history: list[MetricSet],
-    direction: str,
-    metric_id: str,
-    min_delta: float,
-) -> bool:
-    if best_epoch == 0:
-        return True
-    current_value = history[current_epoch - 1].require(metric_id)
-    best_value = history[best_epoch - 1].require(metric_id)
-    if direction == "maximize":
-        return current_value > best_value + min_delta
-    return current_value < best_value - min_delta
-
-
-def _all_metrics_finite(metrics: MetricSet) -> bool:
-    return all(np.isfinite(value) for value in metrics.values.values())
-
-
-def _nonfinite_metric_error(
-    *,
-    epoch: int,
-    phase: str,
-    best_epoch: int,
-) -> SpiceOperatorError:
-    if best_epoch > 0:
-        return SpiceOperatorError(
-            f"Non-finite {phase} metrics at epoch {epoch}; "
-            f"stopping and preserving best_epoch={best_epoch}"
-        )
-    return SpiceOperatorError(
-        f"Non-finite {phase} metrics at epoch {epoch} before any valid checkpoint"
-    )
-
-
-def _clone_cpu_state(model: TemporalModel) -> dict[str, torch.Tensor]:
-    return {
-        key: value.detach().cpu().clone()
-        for key, value in model.state_dict().items()
-    }
-
-
 def _checkpoint_path(
     artifact_dir: Path,
     *,
@@ -175,177 +109,6 @@ def _write_checkpoint(path: Path, state_dict: dict[str, torch.Tensor]) -> None:
         torch.save(state_dict, tmp_path)
 
     write_path_atomic(path, _write)
-
-
-def _build_grad_scaler(
-    *,
-    resolved_device: torch.device,
-    precision: str,
-) -> object | None:
-    if resolved_device.type != "cuda" or precision != "16-mixed":
-        return None
-    return torch.cuda.amp.GradScaler()
-
-
-def _host_streaming_runtime_context(
-    runtime_context: RepresentationRuntimeContext,
-) -> RepresentationRuntimeContext:
-    return runtime_context.with_device_memory_budget(0)
-
-
-def _run_probe_training_step(
-    model: TemporalModel,
-    *,
-    loader: BatchSource[PredictionBatch],
-    resolved_device: torch.device,
-    precision: str,
-    prediction_contract: CompiledPredictionContract,
-    prediction_training_state: object | None,
-    optimizer: torch.optim.Optimizer,
-    grad_scaler: object | None,
-    gradient_clip_norm: float | None,
-) -> None:
-    batch = next(iter(loader))
-    device_batch = batch.to_device(resolved_device)
-    optimizer.zero_grad(set_to_none=True)
-    with autocast_context(resolved_device=resolved_device, precision=precision):
-        outputs = model(**device_batch.model_kwargs())
-        loss, _ = prediction_contract.compute_batch_loss_and_state(
-            outputs,
-            device_batch.targets,
-            training_state=prediction_training_state,
-        )
-    if grad_scaler is not None:
-        scaler = cast("torch.cuda.amp.GradScaler", grad_scaler)
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        if gradient_clip_norm is not None:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
-        scaler.step(optimizer)
-        scaler.update()
-    else:
-        loss.backward()
-        if gradient_clip_norm is not None:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
-        optimizer.step()
-    optimizer.zero_grad(set_to_none=True)
-    torch.cuda.synchronize(resolved_device)
-
-
-def _planned_training_runtime_context(
-    model: TemporalModel,
-    *,
-    prediction_contract: CompiledPredictionContract,
-    execution_policy: CompiledExecutionPolicyContract,
-    representation_contract: CompiledRepresentationContract,
-    store: CompiledProblemStore,
-    train_sample_indices: IntVector,
-    base_runtime_context: RepresentationRuntimeContext,
-    resolved_device: torch.device,
-    training_config: TrainingConfig,
-    precision: str,
-) -> RepresentationRuntimeContext:
-    warmup_context = _host_streaming_runtime_context(base_runtime_context)
-    warmup_plan = build_prediction_batch_plan(
-        store,
-        train_sample_indices,
-        representation_contract=representation_contract,
-        prediction_contract=prediction_contract,
-        execution_policy=execution_policy,
-        runtime_context=warmup_context,
-        resolved_device=resolved_device,
-        seed=training_config.seed,
-        shuffle=False,
-    )
-    warmup_state = _clone_cpu_state(_unwrap_compiled_model(model))
-    warmup_optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=training_config.learning_rate,
-        weight_decay=training_config.weight_decay,
-    )
-    warmup_grad_scaler = _build_grad_scaler(
-        resolved_device=resolved_device,
-        precision=precision,
-    )
-    warmup_prediction_state = prediction_contract.fit_training_state(
-        store,
-        train_sample_indices,
-        execution_policy=execution_policy,
-    )
-    baseline_memory = snapshot_cuda_memory(resolved_device)
-    reset_cuda_peak_memory(resolved_device)
-    _run_probe_training_step(
-        model,
-        loader=warmup_plan.source,
-        resolved_device=resolved_device,
-        precision=precision,
-        prediction_contract=prediction_contract,
-        prediction_training_state=warmup_prediction_state,
-        optimizer=warmup_optimizer,
-        grad_scaler=warmup_grad_scaler,
-        gradient_clip_norm=training_config.gradient_clip_norm,
-    )
-    budget = compute_device_resident_budget(
-        free_bytes=baseline_memory.free_bytes,
-        baseline_reserved_bytes=baseline_memory.reserved_bytes,
-        peak_reserved_bytes=peak_cuda_reserved_bytes(resolved_device),
-        total_bytes=baseline_memory.total_bytes,
-    )
-    _unwrap_compiled_model(model).load_state_dict(warmup_state)
-    del warmup_plan, warmup_optimizer, warmup_grad_scaler, warmup_prediction_state
-    torch.cuda.empty_cache()
-    return base_runtime_context.with_device_memory_budget(budget)
-
-
-def _run_epoch(
-    model: TemporalModel,
-    *,
-    loader: BatchSource[PredictionBatch],
-    resolved_device: torch.device,
-    precision: str,
-    prediction_contract: CompiledPredictionContract,
-    prediction_training_state: object | None,
-    optimizer: torch.optim.Optimizer | None,
-    grad_scaler: object | None,
-    gradient_clip_norm: float | None,
-    training: bool,
-) -> MetricSet:
-    accumulator = prediction_contract.create_epoch_accumulator()
-    if training:
-        model.train()
-    else:
-        model.eval()
-    grad_enabled = training
-    with torch.set_grad_enabled(grad_enabled):
-        for _batch_idx, batch in enumerate(loader):
-            device_batch = batch.to_device(resolved_device)
-            if optimizer is not None:
-                optimizer.zero_grad(set_to_none=True)
-            with autocast_context(resolved_device=resolved_device, precision=precision):
-                outputs = model(**device_batch.model_kwargs())
-                loss, batch_state = prediction_contract.compute_batch_loss_and_state(
-                    outputs,
-                    device_batch.targets,
-                    training_state=prediction_training_state,
-                )
-            accumulator.update(batch_state)
-            if training:
-                if optimizer is None:
-                    raise RuntimeError("optimizer is required for training epochs")
-                if grad_scaler is not None:
-                    scaler = cast("torch.cuda.amp.GradScaler", grad_scaler)
-                    scaler.scale(loss).backward()
-                    scaler.unscale_(optimizer)
-                    if gradient_clip_norm is not None:
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    loss.backward()
-                    if gradient_clip_norm is not None:
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
-                    optimizer.step()
-    return accumulator.finalize()
 
 
 def run_training_fit(
@@ -370,18 +133,18 @@ def run_training_fit(
     spec.model.to(runtime.resolved_device)
     fit_model = cast(TemporalModel, torch.compile(spec.model) if compile_enabled else spec.model)
 
-    train_history: list[MetricSet] = []
-    validation_history: list[MetricSet] = []
-    objective_history: list[MetricSet] = []
-    best_state: dict[str, torch.Tensor] | None = None
-    best_epoch = 0
-    epochs_without_improvement = 0
+    policy = TrainingFitPolicy.create(
+        objective_contract=spec.objective_contract,
+        max_epochs=spec.training_config.max_epochs,
+        patience=spec.training_config.early_stopping.patience,
+        min_delta=spec.training_config.early_stopping.min_delta,
+    )
 
     with configure_torch_backends(
         resolved_device=runtime.resolved_device,
         deterministic=spec.training_config.deterministic,
     ):
-        planned_runtime_context = _planned_training_runtime_context(
+        training_runtime_plan = plan_training_runtime(
             fit_model,
             prediction_contract=spec.prediction_contract,
             execution_policy=spec.execution_policy,
@@ -393,6 +156,8 @@ def run_training_fit(
             training_config=spec.training_config,
             precision=precision,
         )
+        planned_runtime_context = training_runtime_plan.runtime_context
+        prediction_training_state = training_runtime_plan.prediction_training_state
         train_batch_plan = build_prediction_batch_plan(
             spec.store,
             spec.train_sample_indices,
@@ -415,22 +180,13 @@ def run_training_fit(
             seed=spec.training_config.seed,
             shuffle=False,
         )
-        prediction_training_state = spec.prediction_contract.fit_training_state(
-            spec.store,
-            spec.train_sample_indices,
-            execution_policy=spec.execution_policy,
-        )
         optimizer = torch.optim.AdamW(
             fit_model.parameters(),
             lr=spec.training_config.learning_rate,
             weight_decay=spec.training_config.weight_decay,
         )
-        grad_scaler = _build_grad_scaler(
-            resolved_device=runtime.resolved_device,
-            precision=precision,
-        )
         for epoch in range(1, spec.training_config.max_epochs + 1):
-            train_metrics = _run_epoch(
+            train_metrics = run_epoch(
                 fit_model,
                 loader=train_batch_plan.source,
                 resolved_device=runtime.resolved_device,
@@ -438,21 +194,22 @@ def run_training_fit(
                 prediction_contract=spec.prediction_contract,
                 prediction_training_state=prediction_training_state,
                 optimizer=optimizer,
-                grad_scaler=grad_scaler,
                 gradient_clip_norm=spec.training_config.gradient_clip_norm,
                 training=True,
             )
-            if not _all_metrics_finite(train_metrics):
-                if best_epoch > 0:
-                    if active_callbacks.on_early_stop is not None:
-                        active_callbacks.on_early_stop(epoch, best_epoch)
-                    break
-                raise _nonfinite_metric_error(
-                    epoch=epoch,
-                    phase="train",
-                    best_epoch=best_epoch,
-                )
-            validation_metrics = _run_epoch(
+            train_decision = policy.handle_nonfinite_metrics(
+                epoch=epoch,
+                phase="train",
+                metrics=train_metrics,
+            )
+            if train_decision is not None:
+                if (
+                    train_decision.early_stop is not None
+                    and active_callbacks.on_early_stop is not None
+                ):
+                    active_callbacks.on_early_stop(*train_decision.early_stop)
+                break
+            validation_metrics = run_epoch(
                 fit_model,
                 loader=validation_batch_plan.source,
                 resolved_device=runtime.resolved_device,
@@ -460,20 +217,21 @@ def run_training_fit(
                 prediction_contract=spec.prediction_contract,
                 prediction_training_state=prediction_training_state,
                 optimizer=None,
-                grad_scaler=None,
                 gradient_clip_norm=None,
                 training=False,
             )
-            if not _all_metrics_finite(validation_metrics):
-                if best_epoch > 0:
-                    if active_callbacks.on_early_stop is not None:
-                        active_callbacks.on_early_stop(epoch, best_epoch)
-                    break
-                raise _nonfinite_metric_error(
-                    epoch=epoch,
-                    phase="validation",
-                    best_epoch=best_epoch,
-                )
+            validation_decision = policy.handle_nonfinite_metrics(
+                epoch=epoch,
+                phase="validation",
+                metrics=validation_metrics,
+            )
+            if validation_decision is not None:
+                if (
+                    validation_decision.early_stop is not None
+                    and active_callbacks.on_early_stop is not None
+                ):
+                    active_callbacks.on_early_stop(*validation_decision.early_stop)
+                break
             objective_metrics = spec.objective_metric_source.evaluate_metrics(
                 validation_metrics,
                 context=ObjectiveMetricEvaluationContext(
@@ -487,62 +245,39 @@ def run_training_fit(
                     batch_size=spec.training_config.batch_size,
                 ),
             )
-            if not _all_metrics_finite(objective_metrics):
-                if best_epoch > 0:
-                    if active_callbacks.on_early_stop is not None:
-                        active_callbacks.on_early_stop(epoch, best_epoch)
-                    break
-                raise _nonfinite_metric_error(
+            objective_decision = policy.handle_nonfinite_metrics(
+                epoch=epoch,
+                phase="objective",
+                metrics=objective_metrics,
+            )
+            if objective_decision is not None:
+                if (
+                    objective_decision.early_stop is not None
+                    and active_callbacks.on_early_stop is not None
+                ):
+                    active_callbacks.on_early_stop(*objective_decision.early_stop)
+                break
+            fit_decision = policy.record_completed_epoch(
+                CompletedEpoch(
                     epoch=epoch,
-                    phase="objective",
-                    best_epoch=best_epoch,
-                )
-            objective_history.append(objective_metrics)
-            train_history.append(train_metrics)
-            validation_history.append(validation_metrics)
+                    train_metrics=train_metrics,
+                    validation_metrics=validation_metrics,
+                    objective_metrics=objective_metrics,
+                ),
+                model=fit_model,
+            )
+            if fit_decision.progress is not None and active_callbacks.on_epoch_end is not None:
+                active_callbacks.on_epoch_end(fit_decision.progress)
 
-            if _is_improvement(
-                current_epoch=epoch,
-                best_epoch=best_epoch,
-                history=objective_history,
-                direction=spec.objective_contract.direction,
-                metric_id=spec.objective_contract.metric_id,
-                min_delta=spec.training_config.early_stopping.min_delta,
-            ):
-                best_state = _clone_cpu_state(_unwrap_compiled_model(fit_model))
-                best_epoch = epoch
-                epochs_without_improvement = 0
-            else:
-                epochs_without_improvement += 1
-
-            best_value = spec.objective_contract.value(objective_history[best_epoch - 1])
-            if active_callbacks.on_epoch_end is not None:
-                active_callbacks.on_epoch_end(
-                    TrainingEpochProgress(
-                        epoch=epoch,
-                        max_epochs=spec.training_config.max_epochs,
-                        train_metrics=train_metrics,
-                        validation_metrics=validation_metrics,
-                        objective_metrics=objective_metrics,
-                        objective_metric_id=spec.objective_contract.metric_id,
-                        direction=spec.objective_contract.direction,
-                        best_epoch=best_epoch,
-                        best_objective_value=best_value,
-                    )
-                )
-
-            if epochs_without_improvement >= spec.training_config.early_stopping.patience:
-                if active_callbacks.on_early_stop is not None:
-                    active_callbacks.on_early_stop(epoch, best_epoch)
+            if fit_decision.should_stop:
+                if (
+                    fit_decision.early_stop is not None
+                    and active_callbacks.on_early_stop is not None
+                ):
+                    active_callbacks.on_early_stop(*fit_decision.early_stop)
                 break
 
-    if best_state is None:
-        best_epoch = _best_epoch_from_objective_history(
-            objective_history,
-            objective_contract=spec.objective_contract,
-        )
-        best_state = _clone_cpu_state(_unwrap_compiled_model(fit_model))
-    best_value = spec.objective_contract.value(objective_history[best_epoch - 1])
+    best_epoch, best_state, best_value = policy.finalized_best(model=fit_model)
     spec.model.load_state_dict(best_state)
     best_checkpoint_path = _checkpoint_path(
         spec.artifact_dir,
@@ -556,32 +291,12 @@ def run_training_fit(
         best_epoch=best_epoch,
         objective_metric_id=spec.objective_contract.metric_id,
         best_objective_value=best_value,
-        train_history=train_history,
-        validation_history=validation_history,
-        objective_history=objective_history,
+        train_history=policy.train_history,
+        validation_history=policy.validation_history,
+        objective_history=policy.objective_history,
         best_checkpoint_path=best_checkpoint_path,
         prediction_training_state=prediction_training_state,
     )
-
-
-def _best_epoch_from_objective_history(
-    history: list[MetricSet],
-    *,
-    objective_contract: CompiledObjectiveContract,
-) -> int:
-    if not history:
-        return 1
-    if objective_contract.direction == "maximize":
-        winner = max(
-            range(len(history)),
-            key=lambda index: objective_contract.value(history[index]),
-        )
-    else:
-        winner = min(
-            range(len(history)),
-            key=lambda index: objective_contract.value(history[index]),
-        )
-    return winner + 1
 
 
 def evaluate_training_metrics(spec: TrainingMetricEvaluationSpec) -> MetricSet:
@@ -607,39 +322,17 @@ def evaluate_training_metrics(spec: TrainingMetricEvaluationSpec) -> MetricSet:
         resolved_device=runtime.resolved_device,
         deterministic=spec.training_config.deterministic,
     ):
-        warmup_plan = build_prediction_batch_plan(
-            spec.store,
-            spec.sample_indices,
-            representation_contract=spec.representation_contract,
-            prediction_contract=spec.prediction_contract,
-            execution_policy=spec.execution_policy,
-            runtime_context=_host_streaming_runtime_context(runtime.representation_runtime_context),
-            resolved_device=runtime.resolved_device,
-            seed=spec.training_config.seed,
-        )
-        planned_runtime_context = runtime.representation_runtime_context.with_device_memory_budget(
-            measure_forward_device_resident_budget(
-                cast(TemporalModel, spec.model),
-                loader=warmup_plan.source,
-                resolved_device=runtime.resolved_device,
-                precision=precision,
-            )
-        )
-        batch_plan = build_prediction_batch_plan(
-            spec.store,
-            spec.sample_indices,
-            representation_contract=spec.representation_contract,
-            prediction_contract=spec.prediction_contract,
-            execution_policy=spec.execution_policy,
-            runtime_context=planned_runtime_context,
-            resolved_device=runtime.resolved_device,
-            seed=spec.training_config.seed,
-        )
-        run_model_forward_pass(
+        run_planned_prediction_forward(
             cast(TemporalModel, spec.model),
-            loader=batch_plan.source,
+            store=spec.store,
+            sample_indices=spec.sample_indices,
+            representation_contract=spec.representation_contract,
+            prediction_contract=spec.prediction_contract,
+            execution_policy=spec.execution_policy,
+            base_runtime_context=runtime.representation_runtime_context,
             resolved_device=runtime.resolved_device,
             precision=precision,
+            seed=spec.training_config.seed,
             on_outputs=_accumulate,
         )
     return accumulator.finalize()

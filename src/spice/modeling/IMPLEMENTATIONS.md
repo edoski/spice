@@ -53,7 +53,11 @@ Batch Plan binds representation batches with prediction targets, orders samples 
 
 ## Training Loop
 
-Training is CUDA-only. It sets seeds, configures deterministic behavior when requested, probes memory, and chooses device-resident batch storage when possible.
+Training is CUDA-only. It sets seeds, configures deterministic behavior when requested, plans runtime memory, and chooses device-resident batch storage when possible.
+
+`training_runtime.plan_training_runtime()` performs the gradient-bearing warmup: unshuffled host Batch Plan, temporary AdamW, one probe step, CUDA budget calculation, model-state restore, and cache cleanup. The returned prediction training state is semantic-immutable and reused for train, validation, returned training results, and split metrics.
+
+`_epoch_execution` owns the mechanics inside a train or validation epoch. `_fit_policy` owns finite-metric behavior, objective history, strict `min_delta`, best-state tracking, progress payloads, and patience stopping. `training_runner.run_training_fit()` still calls callbacks, writes the atomic best checkpoint, reloads the best state, and assembles the public result.
 
 ```text
 for epoch:
@@ -66,7 +70,7 @@ for epoch:
     apply early stopping
 ```
 
-Optimizer is AdamW. Mixed precision uses CUDA support when enabled. Best checkpoint reload happens before final artifact persistence.
+Optimizer is AdamW. Registered model families resolve training precision to `32-true`, and the runtime only supports that precision. Best checkpoint reload happens before final artifact persistence.
 
 ## Beginner Theory: Loss, Backpropagation, And Optimization
 
@@ -84,7 +88,7 @@ AdamW is the current optimizer. Adam keeps moving averages of gradients and squa
 
 Gradient clipping limits the total gradient norm before the optimizer step. This does not change the loss function. It prevents one unusually large batch from producing a very large update that destabilizes training.
 
-Mixed precision stores or computes selected tensors in lower precision on CUDA hardware. The reason is throughput and memory: smaller numeric formats can run faster and fit larger batches. The risk is numerical range, so the implementation uses CUDA-supported precision choices and scaler behavior where needed.
+Mixed precision is intentionally not part of the current modeling runtime. A future precision policy would need an explicit design pass because lower precision can change numeric behavior, not just speed.
 
 Early stopping is a model-selection rule. If the objective metric stops improving by at least `min_delta` for `patience` epochs, training stops and the best checkpoint is reloaded. This keeps the persisted artifact tied to the best validation objective, not the final epoch by accident.
 
@@ -101,6 +105,8 @@ sample_indices
 ```
 
 `DecodedOffsets` is the current candidate-offset decoded result ABI consumed by evaluators.
+
+Forward-only inference and split-metric passes use `forward_runtime`: host warmup Batch Plan with device budget `0`, CUDA forward memory measurement, final Batch Plan with the measured budget, then model forward execution. Normal forward measurement does not clear CUDA cache; cache clearing is limited to Batch Plan OOM fallback and destructive training-probe cleanup.
 
 ## Scoring Service
 

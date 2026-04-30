@@ -18,6 +18,8 @@ Prediction configs compile into contracts. Contracts prepare targets, define out
 
 Prediction code may import temporal stores because targets are built from temporal examples. Core rendering must not import prediction. Shared masking logic lives in `masking.py` so families apply candidate masks consistently.
 
+Prediction training state is semantic-immutable. `fit_training_state()` returns reusable facts derived from the training split. Loss computation may cache device/dtype views on that state, but it must not mutate semantic tensors or depend on batch call order.
+
 ## Extension Points
 
 Add a prediction family when target semantics change. Add shared helpers only when multiple families need the same mathematically generic operation.

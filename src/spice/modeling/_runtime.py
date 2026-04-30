@@ -110,22 +110,13 @@ def configure_torch_backends(
             torch.backends.cuda.matmul.allow_tf32 = previous_cuda_matmul_allow_tf32
 
 
-def autocast_context(
+def precision_context(
     *,
-    resolved_device: torch.device,
     precision: str,
 ):
     if precision == "32-true":
         return nullcontext()
-    if precision == "16-mixed":
-        if resolved_device.type != "cuda":
-            raise ValueError("fp16 mixed precision is only supported on CUDA")
-        return torch.autocast(device_type="cuda", dtype=torch.float16)
-    if precision == "bf16-mixed":
-        if resolved_device.type != "cuda":
-            raise ValueError("bf16 mixed precision is only supported on CUDA")
-        return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-    raise ValueError(f"Unsupported resolved precision: {precision}")
+    raise ValueError(f"Unsupported modeling precision: {precision}. Only 32-true is supported.")
 
 
 def require_cuda_device(
@@ -225,7 +216,7 @@ def run_model_forward_pass(
     with torch.no_grad():
         for batch in loader:
             device_batch = cast(ForwardBatchT, batch.to_device(resolved_device))
-            with autocast_context(resolved_device=resolved_device, precision=precision):
+            with precision_context(precision=precision):
                 outputs = model(**device_batch.model_kwargs())
             on_outputs(device_batch, outputs)
 
@@ -243,7 +234,7 @@ def measure_forward_device_resident_budget(
     with torch.no_grad():
         batch = next(iter(loader))
         device_batch = cast(ForwardBatchT, batch.to_device(resolved_device))
-        with autocast_context(resolved_device=resolved_device, precision=precision):
+        with precision_context(precision=precision):
             _ = model(**device_batch.model_kwargs())
     torch.cuda.synchronize(_cuda_device_index(resolved_device))
     return compute_device_resident_budget(

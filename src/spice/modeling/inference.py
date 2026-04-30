@@ -13,12 +13,10 @@ from ..temporal.problem_store import CompiledProblemStore, IntVector
 from ._runtime import (
     build_cuda_modeling_runtime,
     configure_torch_backends,
-    measure_forward_device_resident_budget,
-    run_model_forward_pass,
 )
-from .batch_plan import build_model_input_batch_plan
 from .families.base import ModelConfig
 from .families.registry import resolve_model_training_precision
+from .forward_runtime import run_planned_model_input_forward
 from .models import TemporalModel
 from .representations import CompiledRepresentationContract
 
@@ -56,35 +54,15 @@ def predict_with_model(
         resolved_device=runtime.resolved_device,
         deterministic=None,
     ):
-        warmup_plan = build_model_input_batch_plan(
-            store,
-            sample_indices,
-            representation_contract=representation_contract,
-            runtime_context=runtime.representation_runtime_context.with_device_memory_budget(0),
-            resolved_device=runtime.resolved_device,
-            seed=0,
-        )
-        planned_runtime_context = runtime.representation_runtime_context.with_device_memory_budget(
-            measure_forward_device_resident_budget(
-                model,
-                loader=warmup_plan.source,
-                resolved_device=runtime.resolved_device,
-                precision=precision,
-            )
-        )
-        batch_plan = build_model_input_batch_plan(
-            store,
-            sample_indices,
-            representation_contract=representation_contract,
-            runtime_context=planned_runtime_context,
-            resolved_device=runtime.resolved_device,
-            seed=0,
-        )
-        run_model_forward_pass(
+        run_planned_model_input_forward(
             model,
-            loader=batch_plan.source,
+            store=store,
+            sample_indices=sample_indices,
+            representation_contract=representation_contract,
+            base_runtime_context=runtime.representation_runtime_context,
             resolved_device=runtime.resolved_device,
             precision=precision,
+            seed=0,
             on_outputs=_decode_batch,
         )
     return predictions

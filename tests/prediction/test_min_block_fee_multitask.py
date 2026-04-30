@@ -279,6 +279,84 @@ def test_min_block_fee_multitask_macro_f1_and_log_fee_errors() -> None:
     assert metrics.require("log_fee_mse") == pytest_approx(1.5)
 
 
+def test_min_block_fee_training_state_resolve_preserves_semantic_tensors() -> None:
+    training_state = MinBlockFeeTrainingState(
+        class_weights=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32),
+        fee_mean=torch.tensor(1.5, dtype=torch.float32),
+        fee_std=torch.tensor(2.5, dtype=torch.float32),
+    )
+    class_weights = training_state.class_weights.clone()
+    fee_mean = training_state.fee_mean.clone()
+    fee_std = training_state.fee_std.clone()
+
+    first = training_state.resolve(device=torch.device("cpu"), dtype=torch.float64)
+    second = training_state.resolve(device=torch.device("cpu"), dtype=torch.float64)
+
+    assert first is second
+    assert torch.equal(training_state.class_weights, class_weights)
+    assert torch.equal(training_state.fee_mean, fee_mean)
+    assert torch.equal(training_state.fee_std, fee_std)
+    assert training_state.class_weights.dtype == torch.float32
+
+
+def test_reused_training_state_matches_independently_refit_state_loss_and_metrics() -> None:
+    store = _build_store()
+    contract = _contract()
+    execution_policy = _execution_policy()
+    sample_indices = np.arange(store.n_samples, dtype=np.int64)
+    prepared_targets = contract.prepare_targets(
+        store,
+        sample_indices,
+        execution_policy=execution_policy,
+    )
+    batch = cast(
+        MinBlockFeeTargetBatch,
+        prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64)),
+    )
+    outputs = ModelOutputs(
+        heads={
+            OFFSET_LOGITS_HEAD_ID: torch.tensor(
+                [
+                    [3.0, 0.0, 0.0],
+                    [0.5, 3.0, 0.0],
+                    [0.1, 0.2, 2.5],
+                    [2.2, 1.0, 0.0],
+                ],
+                dtype=torch.float32,
+            ),
+            MIN_LOG_FEE_HEAD_ID: torch.zeros((store.n_samples, 1), dtype=torch.float32),
+        }
+    )
+    reused_state = contract.fit_training_state(
+        store,
+        sample_indices,
+        execution_policy=execution_policy,
+    )
+    refit_state = contract.fit_training_state(
+        store,
+        sample_indices,
+        execution_policy=execution_policy,
+    )
+
+    reused_loss, reused_batch_state = contract.compute_batch_loss_and_state(
+        outputs,
+        batch,
+        training_state=reused_state,
+    )
+    refit_loss, refit_batch_state = contract.compute_batch_loss_and_state(
+        outputs,
+        batch,
+        training_state=refit_state,
+    )
+    reused_accumulator = contract.create_epoch_accumulator()
+    refit_accumulator = contract.create_epoch_accumulator()
+    reused_accumulator.update(reused_batch_state)
+    refit_accumulator.update(refit_batch_state)
+
+    assert reused_loss.item() == pytest_approx(refit_loss.item())
+    assert reused_accumulator.finalize().values == refit_accumulator.finalize().values
+
+
 def create_metric_accumulator():
     contract = _contract()
     return contract.create_epoch_accumulator()

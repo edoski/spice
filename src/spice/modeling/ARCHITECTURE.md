@@ -95,7 +95,11 @@ modeling/
   dataset_builders/       tensorization strategies and runtime metadata
   families/               neural network family configs/builders/tuning hooks
   batch_plan.py           training/inference batch planning
+  forward_runtime.py      forward-only warmup, memory measurement, and execution
+  training_runtime.py     training warmup, budget planning, and prediction state fitting
   training_runner.py      fit and split metric execution
+  _epoch_execution.py     private train/validation batch mechanics
+  _fit_policy.py          private best-state and early-stop policy
   objective_metrics.py    objective metric production during training
   inference.py            model prediction over prepared stores
   scoring.py              model inference -> evaluator bridge
@@ -108,3 +112,5 @@ modeling/
 ## Extension Points
 
 Add a model family for a new neural architecture. Add a dataset builder for a new tensorization strategy. Add scoring behavior only when it is generic model-to-evaluator bridging; evaluator-specific scoring belongs in `evaluation`.
+
+Runtime planning is intentionally split from fit policy. `forward_runtime.py` owns forward-only host warmup and measured final batch planning for inference and split metrics. `training_runtime.py` owns the destructive gradient-bearing probe, restores model state, clears CUDA cache after that probe, and returns one reusable prediction training state. `training_runner.py` remains the public fit interface and keeps callback, checkpoint, and result assembly ownership.

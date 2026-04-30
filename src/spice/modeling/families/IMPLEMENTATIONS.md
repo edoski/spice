@@ -85,7 +85,7 @@ Important constraints:
 | `d_model` divisible by `nhead` | Multi-head attention splits hidden dimensions evenly. |
 | Padding mask supplied | Attention must ignore padded rows. |
 
-Large CUDA runs can use model compilation. Precision uses bf16 when supported, otherwise fp16 where configured.
+Large CUDA runs can use model compilation when the family enables it. Current registered families resolve training precision to `32-true`; no family currently opts into bf16 or fp16 mixed precision.
 
 ## `transformer_lstm`
 

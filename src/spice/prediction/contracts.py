@@ -71,6 +71,9 @@ FitTrainingStateFn = Callable[
     [CompiledProblemStore, IntVector, CompiledExecutionPolicyContract],
     object | None,
 ]
+# Training state is reusable semantic state. Implementations may cache
+# device/dtype views during loss computation, but semantic values must not
+# mutate or depend on batch call order.
 PrepareTargetsFn = Callable[
     [CompiledProblemStore, IntVector, CompiledExecutionPolicyContract],
     PreparedPredictionTargets,

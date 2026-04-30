@@ -50,6 +50,8 @@ prediction metrics: train/validation loss, accuracy, profit-like diagnostics
 evaluation metrics: replay or rollout economics over decoded offsets
 ```
 
+The `min_block_fee_multitask` training state stores semantic CPU tensors for class weights and fee normalization. Runtime loss calls may resolve cached device/dtype views, but those cached views must not change the semantic tensors. This lets Training Runtime Plan fit the state once and reuse it across probe, train, validation, returned result metadata, and split metrics.
+
 ## Failure Modes
 
 | Failure | Meaning |

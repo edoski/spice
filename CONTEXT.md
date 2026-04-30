@@ -68,6 +68,18 @@ _Avoid_: batch source
 Fit execution module that owns runtime setup, epoch execution, objective tracking, checkpoint selection, and split metric evaluation.
 _Avoid_: training loop helper
 
+**Forward Runtime Plan**:
+Modeling module that owns forward-only host warmup, CUDA memory measurement, final batch planning, and model forward execution.
+_Avoid_: ad hoc inference probe
+
+**Training Runtime Plan**:
+Modeling module that owns the destructive gradient-bearing training probe, restores model state, and returns the reusable prediction training state plus planned runtime context.
+_Avoid_: warmup side effect
+
+**Training Fit Policy**:
+Training Runner internal policy for finite metrics, history append order, objective improvement, best-state tracking, progress payloads, and early-stop decisions.
+_Avoid_: callback logic
+
 **Decoded Result ABI**:
 Typed prediction output contract consumed by evaluators after model inference.
 _Avoid_: logits, prediction tensor
@@ -105,6 +117,9 @@ _Avoid_: execution backend
 - An **Artifact Inference Context** validates a trained artifact against an evaluate **Workflow Config** and prepares model scoring inputs.
 - A **Training Runner** consumes prepared training data and produces fitted model state plus runtime training metrics.
 - A **Batch Plan** is built by the **Training Runner** and inference paths after runtime memory budget is known.
+- A **Forward Runtime Plan** builds the warmup and final **Batch Plans** for inference and split-metric forward passes.
+- A **Training Runtime Plan** gives the **Training Runner** a measured training runtime budget and one reusable prediction training state.
+- A **Training Fit Policy** is internal to the **Training Runner** and does not change model math or callback ownership.
 - A **Decoded Result ABI** is produced by a prediction contract and accepted by evaluator contracts by decoded-result id.
 - An **Objective Metric Source** turns validation metrics or model-bound evaluator scoring into objective metrics for the **Training Runner**.
 - The **CLI Selection Layer** builds **Workflow Selections** from operator options and resolves local-or-submitted command plans.

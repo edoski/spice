@@ -19,6 +19,7 @@ from spice.modeling.training_runner import (
     evaluate_training_metrics,
     run_training_fit,
 )
+from spice.modeling.training_runtime import TrainingRuntimePlan
 from spice.objectives import CompiledObjectiveContract
 from spice.prediction import MetricSet
 
@@ -87,8 +88,11 @@ def _patch_training_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda **_: nullcontext(),
     )
     monkeypatch.setattr(
-        "spice.modeling.training_runner._planned_training_runtime_context",
-        lambda *_, base_runtime_context, **__: base_runtime_context,
+        "spice.modeling.training_runner.plan_training_runtime",
+        lambda *_, base_runtime_context, **__: TrainingRuntimePlan(
+            runtime_context=base_runtime_context,
+            prediction_training_state=None,
+        ),
     )
     monkeypatch.setattr(
         "spice.modeling.training_runner.build_prediction_batch_plan",
@@ -163,14 +167,17 @@ def test_training_checkpoint_state_and_best_epoch_ignore_sub_delta_best(
         lambda **_: nullcontext(),
     )
     monkeypatch.setattr(
-        "spice.modeling.training_runner._planned_training_runtime_context",
-        lambda *_, base_runtime_context, **__: base_runtime_context,
+        "spice.modeling.training_runner.plan_training_runtime",
+        lambda *_, base_runtime_context, **__: TrainingRuntimePlan(
+            runtime_context=base_runtime_context,
+            prediction_training_state=None,
+        ),
     )
     monkeypatch.setattr(
         "spice.modeling.training_runner.build_prediction_batch_plan",
         lambda *_, **__: SimpleNamespace(source=[0]),
     )
-    monkeypatch.setattr("spice.modeling.training_runner._run_epoch", fake_run_epoch)
+    monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
 
     prediction_contract = SimpleNamespace(fit_training_state=lambda *_, **__: None)
     objective_contract = CompiledObjectiveContract(
@@ -267,14 +274,17 @@ def test_training_stops_on_nonfinite_validation_metrics_and_preserves_best_check
         lambda **_: nullcontext(),
     )
     monkeypatch.setattr(
-        "spice.modeling.training_runner._planned_training_runtime_context",
-        lambda *_, base_runtime_context, **__: base_runtime_context,
+        "spice.modeling.training_runner.plan_training_runtime",
+        lambda *_, base_runtime_context, **__: TrainingRuntimePlan(
+            runtime_context=base_runtime_context,
+            prediction_training_state=None,
+        ),
     )
     monkeypatch.setattr(
         "spice.modeling.training_runner.build_prediction_batch_plan",
         lambda *_, **__: SimpleNamespace(source=[0]),
     )
-    monkeypatch.setattr("spice.modeling.training_runner._run_epoch", fake_run_epoch)
+    monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
 
     prediction_contract = SimpleNamespace(fit_training_state=lambda *_, **__: None)
     objective_contract = CompiledObjectiveContract(
@@ -348,7 +358,7 @@ def test_training_raises_on_nonfinite_metrics_before_first_checkpoint(
         return MetricSet({"score": value})
 
     _patch_training_runtime(monkeypatch)
-    monkeypatch.setattr("spice.modeling.training_runner._run_epoch", fake_run_epoch)
+    monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
 
     def evaluate_objective(validation_metrics, context):
         if phase == "objective":
@@ -389,7 +399,7 @@ def test_training_stops_on_nonfinite_metrics_after_checkpoint(
         return MetricSet({"score": value})
 
     _patch_training_runtime(monkeypatch)
-    monkeypatch.setattr("spice.modeling.training_runner._run_epoch", fake_run_epoch)
+    monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
 
     def evaluate_objective(validation_metrics, context):
         if phase == "objective" and epoch_state["epoch"] == 2:
@@ -444,22 +454,6 @@ def test_evaluate_training_metrics_uses_batch_plan_and_prediction_training_state
         lambda **_: nullcontext(),
     )
 
-    plan_sources = [[SimpleNamespace(targets="warmup")], [SimpleNamespace(targets="metrics")]]
-    planned_budgets: list[int | None] = []
-
-    def fake_build_prediction_batch_plan(*_args, runtime_context, **_kwargs):
-        planned_budgets.append(runtime_context.available_device_memory_bytes)
-        return SimpleNamespace(source=plan_sources[len(planned_budgets) - 1])
-
-    monkeypatch.setattr(
-        "spice.modeling.training_runner.build_prediction_batch_plan",
-        fake_build_prediction_batch_plan,
-    )
-    monkeypatch.setattr(
-        "spice.modeling.training_runner.measure_forward_device_resident_budget",
-        lambda *_, **__: 77,
-    )
-
     seen_training_states: list[object | None] = []
 
     class Accumulator:
@@ -481,14 +475,15 @@ def test_evaluate_training_metrics_uses_batch_plan_and_prediction_training_state
         ),
     )
 
-    def fake_run_model_forward_pass(_model, *, loader, on_outputs, **_kwargs):
-        assert loader == plan_sources[1]
-        for batch in loader:
-            on_outputs(batch, outputs=SimpleNamespace())
+    forward_calls = []
+
+    def fake_run_planned_prediction_forward(_model, *, on_outputs, **kwargs):
+        forward_calls.append(kwargs)
+        on_outputs(SimpleNamespace(targets="metrics"), outputs=SimpleNamespace())
 
     monkeypatch.setattr(
-        "spice.modeling.training_runner.run_model_forward_pass",
-        fake_run_model_forward_pass,
+        "spice.modeling.training_runner.run_planned_prediction_forward",
+        fake_run_planned_prediction_forward,
     )
 
     metrics = evaluate_training_metrics(
@@ -505,6 +500,7 @@ def test_evaluate_training_metrics_uses_batch_plan_and_prediction_training_state
         )
     )
 
-    assert planned_budgets == [0, 77]
+    assert forward_calls[0]["base_runtime_context"] is runtime.representation_runtime_context
+    assert forward_calls[0]["seed"] == 1
     assert seen_training_states == [prediction_state]
     assert metrics.require("score") == 2.5
