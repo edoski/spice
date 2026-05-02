@@ -53,9 +53,11 @@ dataset_builder.id       -> dataset-builder config type
 model.id                 -> model-family config type
 problem.compiler.id      -> problem compiler config type
 problem.execution_policy.id   -> execution-policy config type
+training.input_normalization.id -> input-normalization config type
+objective.id             -> objective config shape
 ```
 
-So config group typed loading and resolved snapshot hydration call owner coercers. This keeps all implementation-selection knowledge in the owning domain.
+So config group typed loading and resolved snapshot hydration call owner coercers. Config-facing coercer envelope errors normalize to `ConfigResolutionError`, and already typed configs keep object identity. This keeps all implementation-selection knowledge in the owning domain.
 
 ## Surface Resolution
 

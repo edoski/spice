@@ -29,6 +29,7 @@ mapping / EvaluatorConfig
 coerce_evaluator_config()
   - dispatch by evaluation.id
   - validate concrete evaluator config
+  - report config-facing envelope errors as ConfigResolutionError
         |
         v
 compile_evaluator_contract()

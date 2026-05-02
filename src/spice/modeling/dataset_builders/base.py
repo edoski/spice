@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
 import polars as pl
 from pydantic import Field, field_validator, model_validator
 
-from ...core.errors import ConfigResolutionError
-from ...core.specs import lookup_local_spec, require_mapping_id, require_spec_config
+from ...core.specs import (
+    lookup_local_spec,
+    owner_payload,
+    owner_payload_id,
+    require_spec_config,
+)
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import DatasetBuilderSemantics
@@ -200,27 +204,30 @@ def validate_feature_prerequisites(
 
 def coerce_builder_runtime_metadata(
     builder_id: str,
-    payload: Mapping[str, object] | BuilderRuntimeMetadata,
+    payload: object,
 ) -> BuilderRuntimeMetadata:
-    raw_payload = (
-        payload.model_dump(mode="json")
-        if isinstance(payload, BuilderRuntimeMetadata)
-        else dict(payload)
+    if isinstance(payload, BuilderRuntimeMetadata):
+        return payload
+    return dataset_builder_spec(builder_id).runtime_metadata_type.model_validate(
+        owner_payload(
+            payload,
+            owner="builder runtime metadata",
+            config_type=BuilderRuntimeMetadata,
+        )
     )
-    return dataset_builder_spec(builder_id).runtime_metadata_type.model_validate(raw_payload)
 
 
 def coerce_dataset_builder_config(
-    payload: Mapping[str, object] | DatasetBuilderConfig,
+    payload: object,
 ) -> DatasetBuilderConfig:
     if isinstance(payload, DatasetBuilderConfig):
-        raw_payload = payload.model_dump(mode="json")
-        builder_id = payload.id
-    elif isinstance(payload, Mapping):
-        raw_payload = dict(payload)
-        builder_id = require_mapping_id(raw_payload, "dataset_builder.id")
-    else:
-        raise ConfigResolutionError("dataset_builder must be a mapping or config model")
+        return payload
+    raw_payload, builder_id = owner_payload_id(
+        payload,
+        owner="dataset_builder",
+        config_type=DatasetBuilderConfig,
+        id_label="dataset_builder.id",
+    )
     return dataset_builder_spec(builder_id).config_type.model_validate(raw_payload)
 
 

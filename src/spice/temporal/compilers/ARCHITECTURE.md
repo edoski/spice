@@ -12,6 +12,8 @@ A temporal compiler is a label-construction engine. It answers: for each decisio
 
 Compiler config validates user intent. The local registry maps compiler id to compile hooks and runtime metadata codecs. The compiled problem contract then builds stores for training and delay-specific stores for evaluation.
 
+Config-facing compiler and observed-time-window slot-spacing payload errors normalize to `ConfigResolutionError`. Runtime metadata codecs keep their runtime metadata error domain.
+
 ## Invariants
 
 Compilers must publish feature prerequisites. They must serialize runtime metadata through compiler-owned codecs. Dataset builders and workflows must call compiler contracts rather than inspect concrete compiler types.

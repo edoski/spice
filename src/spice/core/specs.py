@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TypeVar
+from typing import TypeVar, cast
+
+from pydantic import BaseModel
 
 from .errors import ConfigResolutionError
 
 SpecIdT = TypeVar("SpecIdT")
 SpecT = TypeVar("SpecT")
 ConfigT = TypeVar("ConfigT")
+ConfigModelT = TypeVar("ConfigModelT", bound=BaseModel)
 
 
 def require_mapping_id(payload: Mapping[str, object], field_label: str) -> str:
@@ -19,6 +22,34 @@ def require_mapping_id(payload: Mapping[str, object], field_label: str) -> str:
     if not value:
         raise ConfigResolutionError(f"{field_label} must be a non-empty string")
     return value
+
+
+def owner_payload(
+    payload: object,
+    *,
+    owner: str,
+    config_type: type[ConfigModelT],
+) -> dict[str, object]:
+    if isinstance(payload, config_type):
+        return cast(dict[str, object], payload.model_dump(mode="json"))
+    if isinstance(payload, BaseModel):
+        raise ConfigResolutionError(
+            f"{owner} must be a mapping or {config_type.__name__}"
+        )
+    if isinstance(payload, Mapping):
+        return dict(payload)
+    raise ConfigResolutionError(f"{owner} must be a mapping or {config_type.__name__}")
+
+
+def owner_payload_id(
+    payload: object,
+    *,
+    owner: str,
+    config_type: type[ConfigModelT],
+    id_label: str,
+) -> tuple[dict[str, object], str]:
+    raw_payload = owner_payload(payload, owner=owner, config_type=config_type)
+    return raw_payload, require_mapping_id(raw_payload, id_label)
 
 
 def lookup_local_spec(

@@ -37,6 +37,8 @@ Input-normalization configs use `id` as the implementation selector. The local r
 id -> config_type -> concrete compile hook -> CompiledInputNormalizationContract
 ```
 
+Config-facing input-normalization coercion normalizes invalid payload envelopes to `ConfigResolutionError` and returns already typed configs unchanged.
+
 ## Theory
 
 Normalization stabilizes model training by putting features on comparable scales. Temporal normalization must avoid leakage: statistics should be fit from allowed training rows, not future evaluation rows.

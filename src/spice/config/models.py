@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
 from pathlib import Path
@@ -17,6 +16,7 @@ from pydantic import (
 )
 
 from ..core.errors import ConfigResolutionError
+from ..core.specs import owner_payload
 from ..core.validation import validate_path_segment
 from ..evaluation import EvaluatorConfig
 from ..features import validate_feature_selection
@@ -101,28 +101,18 @@ class ProblemSpec(ConfigModel):
         return validate_path_segment(value, label="problem.id")
 
 
-def coerce_problem_spec(payload: Mapping[str, object] | ProblemSpec) -> ProblemSpec:
+def coerce_problem_spec(payload: object) -> ProblemSpec:
     from ..temporal.compilers import coerce_problem_compiler_config
 
-    raw_payload = (
-        payload.model_dump(mode="json") if isinstance(payload, ProblemSpec) else dict(payload)
-    )
+    if isinstance(payload, ProblemSpec):
+        return payload
+    raw_payload = owner_payload(payload, owner="problem", config_type=ProblemSpec)
     raw_compiler = raw_payload.get("compiler")
     if raw_compiler is None:
         raise ConfigResolutionError("problem.compiler is required")
-    if not isinstance(raw_compiler, Mapping) and not isinstance(
-        raw_compiler,
-        ProblemCompilerConfig,
-    ):
-        raise ConfigResolutionError("problem.compiler must be a mapping")
     raw_execution_policy = raw_payload.get("execution_policy")
     if raw_execution_policy is None:
         raise ConfigResolutionError("problem.execution_policy is required")
-    if not isinstance(raw_execution_policy, Mapping) and not isinstance(
-        raw_execution_policy,
-        ExecutionPolicyConfig,
-    ):
-        raise ConfigResolutionError("problem.execution_policy must be a mapping")
     from ..temporal.execution_policy import coerce_execution_policy_config
 
     raw_payload["compiler"] = coerce_problem_compiler_config(raw_compiler)
@@ -170,11 +160,7 @@ class TrainingConfig(ConfigModel):
 
         if value is None:
             return _default_input_normalization_config()
-        if isinstance(value, Mapping):
-            return coerce_input_normalization_config(value)
-        if isinstance(value, InputNormalizationConfig):
-            return coerce_input_normalization_config(value)
-        raise ValueError("training.input_normalization must be a mapping or config model")
+        return coerce_input_normalization_config(value)
 
 
 def _default_input_normalization_config() -> InputNormalizationConfig:
@@ -232,11 +218,12 @@ class FeaturesConfig(ConfigModel):
         return self
 
 
-def coerce_features_config(payload: Mapping[str, object] | FeaturesConfig) -> FeaturesConfig:
-    raw_payload = (
-        payload.model_dump(mode="json") if isinstance(payload, FeaturesConfig) else dict(payload)
+def coerce_features_config(payload: object) -> FeaturesConfig:
+    if isinstance(payload, FeaturesConfig):
+        return payload
+    return FeaturesConfig.model_validate(
+        owner_payload(payload, owner="features", config_type=FeaturesConfig)
     )
-    return FeaturesConfig.model_validate(raw_payload)
 
 
 class PredictionConfig(ConfigModel):

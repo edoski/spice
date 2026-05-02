@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -10,8 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import field_validator
 
-from ...core.errors import ConfigResolutionError
-from ...core.specs import lookup_local_spec, require_mapping_id, require_spec_config
+from ...core.specs import lookup_local_spec, owner_payload_id, require_spec_config
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import ExecutionPolicySemantics
@@ -174,18 +173,16 @@ def execution_policy_spec(policy_id: str) -> ExecutionPolicySpec:
 
 
 def coerce_execution_policy_config(
-    payload: Mapping[str, object] | ExecutionPolicyConfig,
+    payload: object,
 ) -> ExecutionPolicyConfig:
     if isinstance(payload, ExecutionPolicyConfig):
-        raw_payload = payload.model_dump(mode="json")
-        policy_id = payload.id
-    elif isinstance(payload, Mapping):
-        raw_payload = dict(payload)
-        policy_id = require_mapping_id(raw_payload, "problem.execution_policy.id")
-    else:
-        raise ConfigResolutionError(
-            "problem.execution_policy must be a mapping or config model"
-        )
+        return payload
+    raw_payload, policy_id = owner_payload_id(
+        payload,
+        owner="problem.execution_policy",
+        config_type=ExecutionPolicyConfig,
+        id_label="problem.execution_policy.id",
+    )
     return execution_policy_spec(policy_id).config_type.model_validate(raw_payload)
 
 

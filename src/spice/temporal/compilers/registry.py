@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from ...core.specs import lookup_local_spec, require_mapping_id
+from ...core.specs import lookup_local_spec, owner_payload_id
 from .base import ProblemCompilerConfig
 
 if TYPE_CHECKING:
@@ -86,14 +86,16 @@ def problem_compiler_spec(compiler_id: str) -> ProblemCompilerSpec:
 
 
 def coerce_problem_compiler_config(
-    payload: Mapping[str, object] | ProblemCompilerConfig,
+    payload: object,
 ) -> ProblemCompilerConfig:
     if isinstance(payload, ProblemCompilerConfig):
-        raw_payload = payload.model_dump(mode="json")
-        compiler_id = payload.id
-    else:
-        raw_payload = dict(payload)
-        compiler_id = require_mapping_id(raw_payload, "problem.compiler.id")
+        return payload
+    raw_payload, compiler_id = owner_payload_id(
+        payload,
+        owner="problem.compiler",
+        config_type=ProblemCompilerConfig,
+        id_label="problem.compiler.id",
+    )
     return problem_compiler_spec(compiler_id).config_type.model_validate(raw_payload)
 
 

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar
 
 from ..core.errors import ConfigResolutionError
+from ..core.specs import lookup_local_spec, owner_payload_id, require_spec_config
 from .config import (
     EvaluatorConfig,
     FullTemporalReplayEvaluatorConfig,
@@ -42,23 +43,17 @@ _EVALUATOR_SPECS: dict[str, _EvaluatorSpec] = {
 
 
 def coerce_evaluator_config(
-    payload: Mapping[str, object] | EvaluatorConfig,
+    payload: object,
 ) -> EvaluatorConfig:
     if isinstance(payload, EvaluatorConfig):
-        raw_payload = payload.model_dump(mode="json")
-    elif isinstance(payload, Mapping):
-        raw_payload = dict(payload)
-    else:
-        raise ConfigResolutionError("evaluation must be a mapping or config model")
-    evaluator_id = raw_payload.get("id")
-    if not isinstance(evaluator_id, str):
-        raise ConfigResolutionError("evaluation.id must be a string")
-    spec = _EVALUATOR_SPECS.get(evaluator_id)
-    if spec is None:
-        raise ConfigResolutionError(
-            "unknown evaluation.id "
-            f"{evaluator_id}; expected one of: {', '.join(_EVALUATOR_SPECS)}"
-        )
+        return payload
+    raw_payload, evaluator_id = owner_payload_id(
+        payload,
+        owner="evaluation",
+        config_type=EvaluatorConfig,
+        id_label="evaluation.id",
+    )
+    spec = lookup_local_spec(_EVALUATOR_SPECS, evaluator_id, "evaluation.id")
     try:
         return spec.config_type.model_validate(raw_payload)
     except ValueError as exc:
@@ -68,12 +63,7 @@ def coerce_evaluator_config(
 def compile_evaluator_contract(
     evaluator_config: EvaluatorConfig,
 ) -> CompiledEvaluatorContract:
-    spec = _EVALUATOR_SPECS.get(evaluator_config.id)
-    if spec is None:
-        raise ConfigResolutionError(
-            "unknown evaluation.id "
-            f"{evaluator_config.id}; expected one of: {', '.join(_EVALUATOR_SPECS)}"
-        )
+    spec = lookup_local_spec(_EVALUATOR_SPECS, evaluator_config.id, "evaluation.id")
     return spec.compile_contract(evaluator_config)
 
 
@@ -81,8 +71,4 @@ def _require_config(
     config: EvaluatorConfig,
     config_type: type[EvaluatorConfigT],
 ) -> EvaluatorConfigT:
-    if not isinstance(config, config_type):
-        raise ConfigResolutionError(
-            f"evaluation config {config.id} must be {config_type.__name__}"
-        )
-    return config
+    return require_spec_config(config, config_type, "evaluation config")

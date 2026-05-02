@@ -14,6 +14,12 @@ Local implementation registries use three core helpers:
 require_mapping_id(payload, field_label)
   -> validate that a mapping has a non-empty "id"
 
+owner_payload(payload, owner, config_type)
+  -> normalize a config-facing mapping/config envelope or raise ConfigResolutionError
+
+owner_payload_id(payload, owner, config_type, id_label)
+  -> normalize the envelope and require its id in one step
+
 lookup_local_spec(specs, spec_id, field_label)
   -> select a local spec or raise a clear ConfigResolutionError
 
@@ -25,12 +31,14 @@ The pattern is:
 
 ```text
 payload -> owner coercer -> concrete config
-config.id / config.engine -> local spec
+config.id -> local spec
 spec.config_type + config -> require_spec_config
 concrete config -> compile hook
 ```
 
 This keeps validation at the config boundary and keeps compile dispatch simple. It also avoids defensive serialize/revalidate wrappers that hide architecture drift.
+
+Owner coercers return already typed config objects unchanged. Raw payload handling stays at the owner coercer edge, and invalid config-facing envelopes become `ConfigResolutionError`.
 
 ## Error Vocabulary
 

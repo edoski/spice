@@ -45,3 +45,5 @@ check decoded-result id -> predict -> evaluate -> return metrics
 ```
 
 This keeps Optuna and training loops from knowing evaluator internals.
+
+Config-facing objective coercion normalizes invalid payload envelopes to `ConfigResolutionError` and returns already typed objective configs unchanged.

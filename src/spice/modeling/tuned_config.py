@@ -16,20 +16,27 @@ from ..config.models import (
     TuningTrainingSearchSpace,
 )
 from ..core.errors import ConfigResolutionError
-from ..core.specs import require_mapping_id
+from ..core.specs import owner_payload, require_mapping_id
 from .families.registry import model_spec
 
 
 def coerce_tuning_space_config(
-    payload: Mapping[str, object] | TuningSpaceConfig | None,
+    payload: object,
     *,
     model_config,
     problem_config: ProblemSpec | None = None,
 ) -> TuningSpaceConfig | None:
     if payload is None:
         return None
-    raw_payload = (
-        payload.model_dump(mode="json") if isinstance(payload, TuningSpaceConfig) else dict(payload)
+    if isinstance(payload, TuningSpaceConfig):
+        spec = model_spec(payload.model.id)
+        if spec.validate_tuning_space is not None:
+            spec.validate_tuning_space(model_config, payload.model)
+        return payload
+    raw_payload = owner_payload(
+        payload,
+        owner="tuning_space",
+        config_type=TuningSpaceConfig,
     )
     if "model" not in raw_payload:
         raise ConfigResolutionError("tuning_space.model is required")
@@ -61,12 +68,18 @@ def coerce_tuning_space_config(
 
 
 def coerce_tuned_parameter_set(
-    payload: Mapping[str, object] | TunedParameterSet,
+    payload: object,
     *,
     model_id: str | None = None,
 ) -> TunedParameterSet:
-    raw_payload = (
-        payload.model_dump(mode="json") if isinstance(payload, TunedParameterSet) else dict(payload)
+    if isinstance(payload, TunedParameterSet):
+        if model_id is not None and payload.model is not None and payload.model.id != model_id:
+            raise ConfigResolutionError("Tuned model params id does not match model.id")
+        return payload
+    raw_payload = owner_payload(
+        payload,
+        owner="tuned parameters",
+        config_type=TunedParameterSet,
     )
     training_payload = raw_payload.get("training")
     problem_payload = raw_payload.get("problem")
@@ -151,4 +164,3 @@ def _coerce_problem_tuning_space(
             "problem_config is required when tuning_space.problem is provided"
         )
     return TuningProblemSearchSpace.model_validate(payload)
-

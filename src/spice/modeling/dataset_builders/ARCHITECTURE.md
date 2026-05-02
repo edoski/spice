@@ -46,6 +46,8 @@ compile_dataset_builder_contract(config)
 
 The registry does not serialize and revalidate a concrete config during compile. Coercion validates. Compile dispatch asserts the invariant.
 
+Config-facing dataset-builder and builder-runtime-metadata envelope failures use `ConfigResolutionError`. Already typed configs are returned unchanged.
+
 ## Runtime Metadata
 
 Runtime metadata exists because some builders learn non-model assumptions during training. Examples include sequence length, calibrated timing assumptions, or compiler runtime metadata.

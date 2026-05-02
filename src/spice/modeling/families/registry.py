@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar, cast
 
 import optuna
 import torch
 
-from ...core.errors import ConfigResolutionError
-from ...core.specs import lookup_local_spec, require_mapping_id
+from ...core.specs import lookup_local_spec, owner_payload_id
 from ...prediction import PredictionOutputSpec
 from ..models import TemporalModel
 from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
@@ -49,15 +48,15 @@ def model_spec(model_id: str) -> ModelSpec[Any, Any, Any]:
     return lookup_local_spec(_model_spec_loaders(), model_id, "model.id")()
 
 
-def coerce_model_config(payload: Mapping[str, object] | ModelConfig[str]) -> ModelConfig[str]:
+def coerce_model_config(payload: object) -> ModelConfig[str]:
     if isinstance(payload, ModelConfig):
-        raw_payload = payload.model_dump(mode="json")
-        model_id = payload.id
-    elif isinstance(payload, Mapping):
-        raw_payload = dict(payload)
-        model_id = require_mapping_id(raw_payload, "model.id")
-    else:
-        raise ConfigResolutionError("model must be a mapping")
+        return payload
+    raw_payload, model_id = owner_payload_id(
+        payload,
+        owner="model",
+        config_type=ModelConfig,
+        id_label="model.id",
+    )
     return model_spec(model_id).model_config_type.model_validate(raw_payload)
 
 

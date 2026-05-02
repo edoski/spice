@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal
@@ -10,6 +9,7 @@ from typing import Literal
 from pydantic import field_validator, model_validator
 
 from ..core.errors import ConfigResolutionError
+from ..core.specs import owner_payload
 from ..core.validation import validate_path_segment
 from ..evaluation import EvaluatorConfig
 from ..modeling.families.base import ConfigModel
@@ -80,13 +80,13 @@ class CompiledObjectiveContract:
 
 
 def coerce_objective_config(
-    payload: Mapping[str, object] | ObjectiveConfig,
+    payload: object,
 ) -> ObjectiveConfig:
     if isinstance(payload, ObjectiveConfig):
         return payload
-    if not isinstance(payload, Mapping):
-        raise ConfigResolutionError("objective must be a mapping")
-    return ObjectiveConfig.model_validate(dict(payload))
+    return ObjectiveConfig.model_validate(
+        owner_payload(payload, owner="objective", config_type=ObjectiveConfig)
+    )
 
 
 def compile_objective_contract(

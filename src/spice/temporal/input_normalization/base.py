@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from pydantic import field_validator
 
-from ...core.errors import ConfigResolutionError
-from ...core.specs import lookup_local_spec, require_mapping_id, require_spec_config
+from ...core.specs import lookup_local_spec, owner_payload_id, require_spec_config
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import InputNormalizationSemantics
@@ -110,18 +109,16 @@ def input_normalization_spec(normalization_id: str) -> InputNormalizationSpec:
 
 
 def coerce_input_normalization_config(
-    payload: Mapping[str, object] | InputNormalizationConfig,
+    payload: object,
 ) -> InputNormalizationConfig:
     if isinstance(payload, InputNormalizationConfig):
-        raw_payload = payload.model_dump(mode="json")
-        normalization_id = payload.id
-    elif isinstance(payload, Mapping):
-        raw_payload = dict(payload)
-        normalization_id = require_mapping_id(raw_payload, "training.input_normalization.id")
-    else:
-        raise ConfigResolutionError(
-            "training.input_normalization must be a mapping or config model"
-        )
+        return payload
+    raw_payload, normalization_id = owner_payload_id(
+        payload,
+        owner="training.input_normalization",
+        config_type=InputNormalizationConfig,
+        id_label="training.input_normalization.id",
+    )
     return input_normalization_spec(normalization_id).config_type.model_validate(raw_payload)
 
 

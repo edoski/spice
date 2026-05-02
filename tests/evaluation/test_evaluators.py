@@ -111,12 +111,12 @@ def test_evaluator_config_supports_explicit_temporal_replay_specs() -> None:
     with pytest.raises(ConfigResolutionError, match="Extra inputs"):
         coerce_evaluator_config({**_poisson_config(), "engine": "replay"})
 
-    with pytest.raises(ConfigResolutionError, match="poisson_replay_2h, full_temporal_replay"):
+    with pytest.raises(ConfigResolutionError, match="Known values"):
         coerce_evaluator_config({**_poisson_config(), "id": "other_evaluation"})
 
 
 def test_evaluator_compile_requires_concrete_poisson_config() -> None:
-    with pytest.raises(ConfigResolutionError, match="poisson_replay_2h, full_temporal_replay"):
+    with pytest.raises(ConfigResolutionError, match="Known values"):
         compile_evaluator_contract(EvaluatorConfig(id="base"))
 
 

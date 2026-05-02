@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import SerializeAsAny, field_validator
 
-from ...core.specs import lookup_local_spec, require_mapping_id
+from ...core.specs import lookup_local_spec, owner_payload_id
 from ...features import (
     CompiledFeatureContract,
     ResolvedFeatureTable,
@@ -138,14 +138,12 @@ class ObservedTimeWindowCompilerConfig(ProblemCompilerConfig):
         value: object,
     ) -> ObservedTimeWindowSlotSpacingConfig:
         if isinstance(value, ObservedTimeWindowSlotSpacingConfig):
-            raw_payload = value.model_dump(mode="json")
-        elif isinstance(value, Mapping):
-            raw_payload = dict(value)
-        else:
-            raise ValueError("observed_time_window.slot_spacing must be a mapping")
-        slot_spacing_id = require_mapping_id(
-            raw_payload,
-            "observed_time_window.slot_spacing.id",
+            return value
+        raw_payload, slot_spacing_id = owner_payload_id(
+            value,
+            owner="observed_time_window.slot_spacing",
+            config_type=ObservedTimeWindowSlotSpacingConfig,
+            id_label="observed_time_window.slot_spacing.id",
         )
         return _slot_spacing_spec(slot_spacing_id).config_type.model_validate(
             raw_payload
