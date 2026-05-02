@@ -40,7 +40,7 @@ metrics      shared metric descriptors, metric sets, and window summaries
 prediction   targets, losses, training metric production, decoded-result kinds
 evaluation   decision-quality scoring over decoded results
 objectives   scalar metrics for training/tuning decisions
-benchmarks   benchmark specs, workflow-selection plans, run state, collection
+benchmarks   benchmark specs, durable plan entries, run state, collection
 storage      identities, roots, SQLite state, lifecycle, catalog
 execution    explicit remote targets, resolved workflow execution, transfer
 workflows    task orchestration
@@ -79,7 +79,7 @@ Checked-in YAML configs are validated through package-owned coercers. Runtime ar
 ```text
 spice/
   acquisition/      raw block acquisition adapters
-  benchmarks/       benchmark schema, planning, run state, collection
+  benchmarks/       benchmark schema, plan materialization, run state, collection
   cli/              command-line adapter
   conf/             checked-in YAML specs
   config/           config registry, surfaces, resolved workflow snapshots

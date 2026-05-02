@@ -68,12 +68,12 @@ _Avoid_: scenario
 One workflow action inside a benchmark case.
 _Avoid_: task
 
-**Benchmark Workflow Selection**:
-One expanded workflow selection plus benchmark metadata such as run id and dependencies.
-_Avoid_: benchmark row
+**Benchmark Plan Entry**:
+One durable executable benchmark row with run id, dependencies, selection ledger, and a Resolved Workflow Snapshot.
+_Avoid_: benchmark workflow selection, expanded row
 
 **Benchmark Plan Materialization**:
-Benchmark module that turns expanded Benchmark Workflow Selections into executable plan entries by deriving dependency-produced root ids and resolving Workflow Config snapshots.
+Benchmark module that turns Benchmark Specs, Cases, and Steps into Benchmark Plan Entries by expanding dimensions, matching dependencies, deriving dependency-produced root ids, and resolving Workflow Config snapshots.
 _Avoid_: benchmark compilation helper, id patching
 
 **Benchmark Run**:
@@ -231,10 +231,10 @@ _Avoid_: execution backend
 - An **Evaluation Config Snapshot** freezes evaluator config provenance for persisted artifact evaluation state without representing the whole evaluate Workflow Config.
 - A **Benchmark** contains one or more **Benchmark Cases**.
 - A **Benchmark Case** contains one or more **Benchmark Steps**.
-- A **Benchmark Step** expands into one or more **Benchmark Workflow Selections**.
-- **Benchmark Plan Materialization** resolves dependency-produced root ids before producing plan entries with **Resolved Workflow Snapshots**.
+- A **Benchmark Step** contributes one or more **Benchmark Plan Entries** through **Benchmark Plan Materialization**.
+- **Benchmark Plan Materialization** resolves dependency-produced root ids before producing **Benchmark Plan Entries** with **Resolved Workflow Snapshots**.
 - **Benchmark Plan Execution** creates a **Benchmark Run** first, then submits the exact persisted plan.
-- A **Benchmark Run** records **Benchmark Workflow Selections**, submissions, and one **Benchmark Collection Snapshot**.
+- A **Benchmark Run** records **Benchmark Plan Entries**, submissions, and one **Benchmark Collection Snapshot**.
 - A **Benchmark Collection Snapshot** contains **Benchmark Result Records** for all expected collected evaluate steps after **Evaluation Execution Provenance** matches the submitted execution ref.
 - The **Benchmark Result Index** projects **Benchmark Result Records** for query and CSV export.
 - A **Storage Selector** resolves existing persisted roots through the catalog before consumers build paths.

@@ -33,7 +33,7 @@ The config package should not train models, evaluate predictions, acquire blocks
 
 ## Workflow Selection
 
-A workflow selection is unresolved workflow intent. CLI commands and benchmark plans build selections from user-facing choices. Resolution applies the selection to a surface, then loads named config groups and owner coercers to produce a workflow config.
+A workflow selection is unresolved workflow intent. CLI commands build selections from user-facing choices, and benchmark materialization may build them internally while producing durable plan entries. Resolution applies the selection to a surface, then loads named config groups and owner coercers to produce a workflow config.
 
 Selections usually refer to problem specs by name. Benchmark problem grids may supply an inline `ProblemSpec`; this still uses the same resolution path, and the resolved workflow config stores the full executable problem.
 

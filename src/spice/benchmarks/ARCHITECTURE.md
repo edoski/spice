@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`benchmarks` owns checked-in benchmark specs, workflow-selection expansion, dependency-aware plan materialization, durable run-state files, remote submission orchestration, all-or-nothing collection, SQLite indexing, read-only queries, and CSV export.
+`benchmarks` owns checked-in benchmark specs, dependency-aware plan materialization, durable run-state files, remote submission orchestration, all-or-nothing collection, SQLite indexing, read-only queries, and CSV export.
 
 The benchmark domain should not live under config. It uses config resolution, but its own concepts are benchmark cases, steps, runs, submissions, collections, and result rows.
 
@@ -12,13 +12,10 @@ The benchmark domain should not live under config. It uses config resolution, bu
 benchmark YAML spec
     |
     v
-BenchmarkSpec
-    |
-    v
-expanded Benchmark Workflow Selections
-    |
-    v
 Benchmark Plan Materialization
+    |
+    v
+Benchmark Plan Entries
     |
     v
 durable run dir: metadata.json + plan.jsonl
@@ -33,15 +30,14 @@ collect all expected evaluate results -> collection.json
 results.sqlite projection -> CSV export/query
 ```
 
-Planning builds typed workflow selections. **Benchmark Plan Materialization** derives dependency-produced root ids, calls normal workflow resolution, and produces plan entries with resolved workflow snapshots. Inline problem grids produce inline `ProblemSpec` values during planning; plan JSON stores the selected problem id, while the resolved workflow config stores the full executable problem.
+**Benchmark Plan Materialization** expands dimensions, matches local dependencies and `artifact_from` step references, derives dependency-produced root ids, calls normal workflow resolution, and produces durable plan entries with resolved workflow snapshots. Inline problem grids produce inline `ProblemSpec` values during materialization; plan JSON stores the selected problem id, while the resolved workflow config stores the full executable problem.
 
 ## Module Map
 
 ```text
 benchmarks/
   schema.py      benchmark YAML schema
-  planning.py    dimension expansion and workflow-selection rows
-  materialization.py  dependency root-id materialization and config resolution
+  materialization.py  spec expansion, dependency matching, root-id materialization, and config resolution
   models.py      benchmark plan data models
   result_records.py  collection snapshot and result records
   result_store.py    low-level SQLite result projection

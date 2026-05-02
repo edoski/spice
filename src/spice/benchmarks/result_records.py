@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ..config.models import WorkflowTask
 from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary
-from .models import LoadedBenchmarkPlanEntry
+from .models import BenchmarkPlanEntry
 from .runs import BenchmarkSubmissionRecord, format_datetime
 
 
@@ -41,7 +41,7 @@ class BenchmarkResultRecord(BaseModel):
     external_dependencies: tuple[str, ...]
     dimension_labels: dict[str, str]
     selection: dict[str, object]
-    artifact_from: str | None
+    artifact_from_run_id: str | None
 
     job_id: str
     execution_ref: str
@@ -95,7 +95,7 @@ class BenchmarkCollectionSnapshot(BaseModel):
 
 def build_benchmark_result_record(
     *,
-    entry: LoadedBenchmarkPlanEntry,
+    entry: BenchmarkPlanEntry,
     submission: BenchmarkSubmissionRecord,
     evaluation: LoadedEvaluationSummary,
     training: LoadedTrainingSummary | None,
@@ -128,7 +128,7 @@ def build_benchmark_result_record(
         external_dependencies=entry.external_dependencies,
         dimension_labels=dict(entry.dimension_labels),
         selection=dict(entry.selection),
-        artifact_from=entry.artifact_from,
+        artifact_from_run_id=entry.artifact_from_run_id,
         job_id=submission.job_id,
         execution_ref=submission.execution_ref,
         git_commit=submission.git_commit,

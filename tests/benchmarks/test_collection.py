@@ -49,7 +49,7 @@ def _write_evaluate_run(run_dir: Path, config) -> None:
         depends_on=(),
         external_dependencies=(),
         dimension_labels={"models": "lstm"},
-        artifact_from=None,
+        artifact_from_run_id=None,
         selection={
             "artifact_id": config.artifact_id,
             "dataset_id": config.dataset_id,
@@ -151,7 +151,7 @@ def test_benchmark_plan_jsonl_round_trips_plan_entry(tmp_path: Path) -> None:
         depends_on=("case.train",),
         external_dependencies=("afterok:42",),
         dimension_labels={"features": "core"},
-        artifact_from="case.train",
+        artifact_from_run_id="case.train",
         selection={
             "surface": "current_row_fee_dynamics",
             "artifact_id": config.artifact_id,
@@ -170,7 +170,7 @@ def test_benchmark_plan_jsonl_round_trips_plan_entry(tmp_path: Path) -> None:
     assert restored.depends_on == ("case.train",)
     assert restored.external_dependencies == ("afterok:42",)
     assert restored.dimension_labels == {"features": "core"}
-    assert restored.artifact_from == "case.train"
+    assert restored.artifact_from_run_id == "case.train"
     assert restored.selection == entry.selection
     assert restored.config.model_dump(mode="json") == config.model_dump(mode="json")
 
@@ -190,7 +190,7 @@ def test_benchmark_plan_jsonl_rejects_non_list_dependencies(tmp_path: Path) -> N
         depends_on=(),
         external_dependencies=(),
         dimension_labels={},
-        artifact_from=None,
+        artifact_from_run_id=None,
         selection={},
         config=config,
     )
@@ -209,7 +209,7 @@ def test_benchmark_plan_jsonl_rejects_non_list_dependencies(tmp_path: Path) -> N
         lambda payload: payload.__setitem__("run_id", 123),
         lambda payload: payload.__setitem__("depends_on", [123]),
         lambda payload: payload.__setitem__("dimension_labels", {"models": 123}),
-        lambda payload: payload.__setitem__("artifact_from", 123),
+        lambda payload: payload.__setitem__("artifact_from_run_id", 123),
     ],
 )
 def test_benchmark_plan_jsonl_rejects_non_string_identity_fields(
@@ -230,7 +230,7 @@ def test_benchmark_plan_jsonl_rejects_non_string_identity_fields(
         depends_on=(),
         external_dependencies=(),
         dimension_labels={"models": "lstm"},
-        artifact_from="case.train",
+        artifact_from_run_id="case.train",
         selection={},
         config=config,
     )
@@ -349,7 +349,7 @@ def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
         depends_on=(),
         external_dependencies=(),
         dimension_labels={},
-        artifact_from=None,
+        artifact_from_run_id=None,
         selection={"artifact_id": config.artifact_id},
         config=config,
     )

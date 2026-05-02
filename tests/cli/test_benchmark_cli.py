@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import yaml
 from typer.testing import CliRunner
@@ -37,7 +38,7 @@ def _benchmark_record() -> BenchmarkResultRecord:
         external_dependencies=(),
         dimension_labels={"models": "lstm"},
         selection={"surface": "current_row_fee_dynamics"},
-        artifact_from="case.train",
+        artifact_from_run_id="case.train",
         job_id="42",
         execution_ref="slurm:42",
         git_commit="abc123",
@@ -198,7 +199,7 @@ def test_benchmark_submit_uses_persisted_plan(
             calls.append((task.value, "disi_l40", dependency))
             return ExecutionJobSubmission(
                 task=task,
-                target=self.target,
+                target=cast(Any, self.target),
                 job_id=job_id,
                 log_path=Path(f"/tmp/spice-{task.value}-{job_id}.out"),
             )

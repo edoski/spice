@@ -17,7 +17,7 @@ from ..config.workflow_snapshots import (
     workflow_config_snapshot_payload,
 )
 from ..core.errors import SpiceOperatorError
-from .models import BenchmarkPlanEntry, LoadedBenchmarkPlanEntry
+from .models import BenchmarkPlanEntry
 
 PLAN_FILENAME = "plan.jsonl"
 SUBMISSION_FILENAME = "submission.jsonl"
@@ -67,18 +67,18 @@ def plan_entry_json_dict(entry: BenchmarkPlanEntry) -> dict[str, object]:
         "external_dependencies": list(entry.external_dependencies),
         "dimension_labels": dict(entry.dimension_labels),
         "selection": dict(entry.selection),
-        "artifact_from": entry.artifact_from,
+        "artifact_from_run_id": entry.artifact_from_run_id,
         "config": workflow_config_snapshot_payload(entry.config),
     }
 
 
-def load_plan_jsonl(run_dir: Path) -> list[LoadedBenchmarkPlanEntry]:
-    entries: list[LoadedBenchmarkPlanEntry] = []
+def load_plan_jsonl(run_dir: Path) -> list[BenchmarkPlanEntry]:
+    entries: list[BenchmarkPlanEntry] = []
     for payload in read_jsonl(run_dir / PLAN_FILENAME):
         workflow = WorkflowTask(string_payload(payload.get("workflow"), label="workflow"))
         config_payload = mapping_payload(payload["config"], label="config")
         entries.append(
-            LoadedBenchmarkPlanEntry(
+            BenchmarkPlanEntry(
                 run_id=string_payload(payload.get("run_id"), label="run_id"),
                 case_id=string_payload(payload.get("case_id"), label="case_id"),
                 step_id=string_payload(payload.get("step_id"), label="step_id"),
@@ -99,7 +99,10 @@ def load_plan_jsonl(run_dir: Path) -> list[LoadedBenchmarkPlanEntry]:
                     label="dimension_labels",
                 ),
                 selection=dict(mapping_payload(payload.get("selection", {}), label="selection")),
-                artifact_from=_optional_string(payload.get("artifact_from")),
+                artifact_from_run_id=_optional_string(
+                    required_payload(payload, "artifact_from_run_id"),
+                    label="artifact_from_run_id",
+                ),
                 config=hydrate_workflow_config_snapshot(workflow, config_payload),
             )
         )
@@ -188,6 +191,12 @@ def mapping_payload(value: object, *, label: str) -> dict[str, object]:
     return cast(dict[str, object], value)
 
 
+def required_payload(payload: dict[str, object], key: str) -> object:
+    if key not in payload:
+        raise SpiceOperatorError(f"benchmark {key} is required")
+    return payload[key]
+
+
 def sequence_payload(value: object) -> list[object]:
     if not isinstance(value, list):
         raise SpiceOperatorError("benchmark JSONL field must be a list")
@@ -211,7 +220,7 @@ def string_mapping_payload(value: dict[str, object], *, label: str) -> dict[str,
     return strings
 
 
-def _optional_string(value: object) -> str | None:
+def _optional_string(value: object, *, label: str) -> str | None:
     if value is None:
         return None
-    return string_payload(value, label="artifact_from")
+    return string_payload(value, label=label)

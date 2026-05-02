@@ -9,8 +9,8 @@ from pathlib import Path
 
 from ..core.errors import SpiceOperatorError
 from ..execution.session import ExecutionSession, open_execution_session
-from .compilation import plan_benchmark
-from .models import LoadedBenchmarkPlanEntry
+from .materialization import plan_benchmark
+from .models import BenchmarkPlanEntry
 from .runs import (
     BenchmarkSubmissionRecord,
     append_submission_jsonl,
@@ -62,7 +62,7 @@ def submit_benchmark_run(run_dir: Path) -> list[SubmittedBenchmarkWorkflow]:
 
 
 def _submit_benchmark_entries(
-    entries: list[LoadedBenchmarkPlanEntry],
+    entries: list[BenchmarkPlanEntry],
     *,
     run_dir: Path,
     session: ExecutionSession,

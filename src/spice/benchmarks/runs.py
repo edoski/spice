@@ -10,7 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from ..core.validation import validate_path_segment
-from .models import LoadedBenchmarkPlanEntry
+from .models import BenchmarkPlanEntry
 from .run_state_codec import (
     BenchmarkRunMetadata,
     BenchmarkSubmissionRecord,
@@ -53,7 +53,7 @@ class BenchmarkRun(BaseModel):
 
     run_dir: Path
     metadata: BenchmarkRunMetadata
-    plan: tuple[LoadedBenchmarkPlanEntry, ...]
+    plan: tuple[BenchmarkPlanEntry, ...]
     submissions: dict[str, BenchmarkSubmissionRecord]
     has_collection: bool
 

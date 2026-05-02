@@ -3,9 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from spice.benchmarks.materialization import materialize_benchmark_plan
-from spice.benchmarks.planning import plan_benchmark_workflow_selections
 from spice.benchmarks.schema import BenchmarkSpec
-from spice.config import EvaluateConfig, TrainConfig, WorkflowTask
+from spice.config import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.storage.catalog import CatalogStudyRecord
 from spice.storage.catalog.registry import STUDY_ROOT_SPEC
 from spice.storage.engine import state_db_path
@@ -17,7 +16,7 @@ ETH_DATASET_ID = "cor_9a73b1e88edb488afb1e"
 
 def _materialize(payload: dict[str, object]):
     spec = BenchmarkSpec.model_validate(payload)
-    return materialize_benchmark_plan(plan_benchmark_workflow_selections(spec))
+    return materialize_benchmark_plan(spec)
 
 
 def test_materialization_injects_study_id_for_tuned_train_dependency(
@@ -52,6 +51,7 @@ def test_materialization_injects_study_id_for_tuned_train_dependency(
     tune = next(entry for entry in entries if entry.workflow is WorkflowTask.TUNE)
     train = next(entry for entry in entries if entry.workflow is WorkflowTask.TRAIN)
 
+    assert isinstance(tune.config, TuneConfig)
     assert isinstance(train.config, TrainConfig)
     assert train.config.study_id == produced_study_id(tune.config)
     assert train.config.dataset_id is None
@@ -95,7 +95,7 @@ def test_materialization_injects_artifact_and_dataset_for_artifact_from(
 
     assert isinstance(train.config, TrainConfig)
     assert isinstance(evaluate.config, EvaluateConfig)
-    assert evaluate.artifact_from == train.run_id
+    assert evaluate.artifact_from_run_id == train.run_id
     assert evaluate.config.dataset_id == ETH_DATASET_ID
     assert evaluate.config.artifact_id == produced_artifact_id(
         train.config,
@@ -256,6 +256,7 @@ def test_materialization_preserves_selection_ledger_context(
 
     evaluate = next(entry for entry in entries if entry.workflow is WorkflowTask.EVALUATE)
 
+    assert isinstance(evaluate.config, EvaluateConfig)
     assert evaluate.selection["surface"] == "current_row_fee_dynamics"
     assert evaluate.selection["objective"] == "validation_total_loss"
     assert evaluate.selection["dataset_id"] == ETH_DATASET_ID

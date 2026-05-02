@@ -38,7 +38,7 @@ def _record(
         external_dependencies=(),
         dimension_labels={"models": "lstm"},
         selection={"surface": "current_row_fee_dynamics"},
-        artifact_from="case.train",
+        artifact_from_run_id="case.train",
         job_id="42",
         execution_ref="slurm:42",
         git_commit="abc123",

@@ -3,7 +3,7 @@
 """Benchmark public interface."""
 
 from .collection import collect_benchmark_run  # noqa: E402
-from .compilation import plan_benchmark
+from .materialization import plan_benchmark
 from .result_index import (  # noqa: E402
     BenchmarkResultSummary,
     benchmark_result_index_counts,

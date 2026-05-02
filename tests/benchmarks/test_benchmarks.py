@@ -108,7 +108,7 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
     )
     assert train.config.model_dump()["study_id"]
     assert isinstance(evaluate.config, EvaluateConfig)
-    assert evaluate.artifact_from == evaluate.depends_on[0]
+    assert evaluate.artifact_from_run_id == evaluate.depends_on[0]
     assert evaluate.config.dataset_id == ETH_DATASET_ID
     assert evaluate.config.artifact_id.startswith("art_")
     assert evaluate.config.delay_seconds == 36
@@ -138,7 +138,7 @@ def test_packaged_benchmark_yamls_keep_expected_shapes() -> None:
         assert evaluate_entries
         assert train_entries
         assert all(isinstance(entry.config, EvaluateConfig) for entry in evaluate_entries)
-        assert all(entry.artifact_from in entry.depends_on for entry in evaluate_entries)
+        assert all(entry.artifact_from_run_id in entry.depends_on for entry in evaluate_entries)
 
 
 def test_evaluator_objective_grid_keeps_cross_evaluation_bindings() -> None:
