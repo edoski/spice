@@ -20,7 +20,7 @@ def test_device_storage_budget_rejects_invalid_values() -> None:
     with pytest.raises(ValueError, match="measured device storage budget"):
         DeviceStorageBudget(phase="measured", bytes=None)
     with pytest.raises(ValueError, match="phase is unsupported"):
-        DeviceStorageBudget(phase="legacy", bytes=1)  # type: ignore[arg-type]
+        DeviceStorageBudget(phase="unknown", bytes=1)  # type: ignore[arg-type]
 
 
 def test_measured_runtime_context_uses_host_warmup_then_measured_budget() -> None:

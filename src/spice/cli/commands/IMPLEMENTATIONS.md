@@ -85,7 +85,7 @@ Benchmark commands use the same config resolution stack:
 | `benchmark show <run-dir>` | Print read-only run state. |
 | `benchmark index rebuild/show/list` | Rebuild and inspect the SQLite benchmark result projection. |
 
-Run dirs plus `collection.json` are source of truth. `benchmarks/results.sqlite` is rebuildable query state. `benchmarks/results.csv` is export-only.
+Run dirs plus `collection.json` are source of truth. `benchmarks/results.sqlite` is rebuildable query state. CSV outputs are named exports for specific table, figure, appendix, or analysis inputs.
 
 ## Invariants
 

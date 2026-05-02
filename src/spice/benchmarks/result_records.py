@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -29,15 +28,6 @@ class WindowMetricRecord(BaseModel):
     metric_id: str
     mean: float
     std: float
-
-
-class EvaluationRunRecord(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    ordinal: int
-    n_events: int
-    metrics: dict[str, float]
-    metadata: dict[str, str | int | float]
 
 
 class BenchmarkResultRecord(BaseModel):
@@ -88,7 +78,6 @@ class BenchmarkResultRecord(BaseModel):
 
     metrics: tuple[MetricValueRecord, ...]
     window_metrics: tuple[WindowMetricRecord, ...]
-    evaluation_runs: tuple[EvaluationRunRecord, ...]
 
 
 class BenchmarkCollectionSnapshot(BaseModel):
@@ -175,27 +164,4 @@ def build_benchmark_result_record(
             WindowMetricRecord(metric_id=metric_id, mean=summary.mean, std=summary.std)
             for metric_id, summary in runtime.window_metrics.items()
         ),
-        evaluation_runs=tuple(
-            EvaluationRunRecord(
-                ordinal=ordinal,
-                n_events=run.n_events,
-                metrics=dict(run.metrics),
-                metadata=_metadata_payload(run.metadata),
-            )
-            for ordinal, run in enumerate(runtime.runs, start=1)
-        ),
     )
-
-
-def _metadata_payload(values: dict[str, Any]) -> dict[str, str | int | float]:
-    return {key: _metadata_value(value) for key, value in values.items()}
-
-
-def _metadata_value(value: object) -> str | int | float:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return value
-    return str(value)

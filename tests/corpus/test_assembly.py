@@ -387,6 +387,81 @@ def test_evaluation_split_extension_reuses_whole_existing_chunks(tmp_path) -> No
     assert load_block_frame(result.path)["block_number"].to_list() == [101, 102, 103, 104]
 
 
+def test_evaluation_split_rebuilds_stale_cached_block_range(tmp_path) -> None:
+    output_dir = tmp_path / "evaluation"
+    working_dir = tmp_path / "work"
+    materialization = CorpusSplitMaterializationSpec(
+        chain_name="ethereum",
+        expected_chain_id=1,
+        chunk_size=2,
+    )
+    write_block_dataset_dir(
+        output_dir,
+        frame=canonicalize_block_frame(
+            pl.DataFrame(
+                make_block_rows(4, start_block=100, start_timestamp=0, chain_id=1)
+            )
+        ),
+        chunk_size=2,
+        chain_name="ethereum",
+    )
+    plan = BlockPullPlan(
+        window=TimestampRange(start=1_000, end=1_048),
+        block_range=BlockRange(start=100, end=104),
+        expected_rows=4,
+    )
+    requests: list[tuple[int, int]] = []
+
+    class Source:
+        async def get_block_rows(self, start: int, end: int):
+            requests.append((start, end))
+            return make_block_rows(
+                end - start,
+                start_block=start,
+                start_timestamp=1_000 + (start - 100) * 12,
+                chain_id=1,
+            )
+
+        def plan_block_range(
+            self,
+            block_range: BlockRange,
+            *,
+            window: TimestampRange,
+        ) -> BlockPullPlan:
+            return BlockPullPlan(
+                window=window,
+                block_range=block_range,
+                expected_rows=block_range.count,
+            )
+
+    session = CorpusSplitMaterializationSession(
+        materialization=materialization,
+        block_source=Source(),
+        controller=AcquisitionPullController(
+            configured_batch_size=2,
+            min_batch_size=1,
+            concurrency_rungs=(1,),
+            configured_concurrency=1,
+        ),
+    )
+    result = asyncio.run(
+        session.fulfill(
+            CorpusSplitIntent(
+                kind=CorpusSplitKind.EVALUATION,
+                output_dir=output_dir,
+                working_dir=working_dir,
+                plan=plan,
+            ),
+        )
+    )
+
+    assert result.outcome is CorpusSplitOutcome.REBUILT
+    assert requests == [(100, 102), (102, 104)]
+    frame = load_block_frame(result.path)
+    assert frame["block_number"].to_list() == [100, 101, 102, 103]
+    assert frame["timestamp"].to_list() == [1_000, 1_012, 1_024, 1_036]
+
+
 def _exercise_short_history_refill(
     tmp_path,
     monkeypatch,

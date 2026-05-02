@@ -12,6 +12,7 @@ from pathlib import Path
 from sqlalchemy import ColumnElement, and_, delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
+from ..core.errors import SpiceOperatorError
 from ..storage.engine import create_sqlite_engine, ensure_table_shapes
 from .result_records import BenchmarkCollectionSnapshot, BenchmarkResultRecord
 from .result_schema import benchmark_runs, metadata, metric_values, result_observations
@@ -253,9 +254,16 @@ def list_indexed_results(
                 for metric in conn.execute(metric_statement).mappings():
                     if metric["source"] not in {"training_test", "evaluation"}:
                         continue
-                    metrics_by_observation[str(metric["observation_id"])][
-                        str(metric["metric_id"])
-                    ] = float(metric["value"])
+                    observation_id = str(metric["observation_id"])
+                    metric_id = str(metric["metric_id"])
+                    if metric_id in metrics_by_observation[observation_id]:
+                        raise SpiceOperatorError(
+                            "Benchmark result metric id collision across sources: "
+                            f"{metric_id}"
+                        )
+                    metrics_by_observation[observation_id][metric_id] = float(
+                        metric["value"]
+                    )
             return [
                 IndexedBenchmarkResult(
                     run_id=str(row["run_id"]),

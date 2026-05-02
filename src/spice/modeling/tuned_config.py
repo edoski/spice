@@ -33,16 +33,9 @@ def coerce_tuning_space_config(
     if payload is None:
         return None
     if isinstance(payload, TuningSpaceConfig):
-        spec = model_spec(payload.model.id)
-        if isinstance(payload.model, spec.tuning_space_type):
-            if spec.validate_tuning_space is not None:
-                spec.validate_tuning_space(model_config, payload.model)
-            return payload
         training_payload = payload.training
         problem_payload = payload.problem
         model_payload = payload.model
-        if payload.model.id != model_config.id:
-            raise ConfigResolutionError("tuning_space.model.id must match model.id")
     else:
         raw_payload = owner_payload(
             payload,

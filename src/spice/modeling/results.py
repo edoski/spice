@@ -198,8 +198,11 @@ class EvaluationConfigSnapshot:
     def from_payload(cls, payload: Mapping[str, object]) -> EvaluationConfigSnapshot:
         from ..evaluation import coerce_evaluator_config
 
-        config = coerce_evaluator_config(dict(payload))
+        raw_payload = dict(payload)
+        config = coerce_evaluator_config(raw_payload)
         normalized = config.model_dump(mode="json", exclude_none=True)
+        if raw_payload != normalized:
+            raise ValueError("evaluation config snapshot payload is not canonical JSON")
         return cls(_freeze_json_object(normalized))
 
     def payload(self) -> JsonObject:

@@ -100,7 +100,7 @@ evaluation objective
 
 For train and tune, an evaluation objective must name the same benchmark as the selected evaluation config. Evaluate workflow can run a diagnostic evaluator directly; the artifact still validates against the training semantics stored in its manifest.
 
-Runtime evaluator contracts and evaluation summaries carry typed evaluator configs. Artifact storage codecs serialize and hydrate those configs at the persisted-state boundary.
+Runtime evaluator contracts carry typed evaluator configs. Persisted evaluation summaries carry immutable Evaluation Config Snapshots, and artifact storage codecs serialize and hydrate those snapshots at the persisted-state boundary.
 
 ## Config Boundary Errors
 

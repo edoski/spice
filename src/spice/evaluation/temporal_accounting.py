@@ -23,13 +23,6 @@ from .temporal_replay_results import (
     TemporalReplayWindowMetric,
 )
 
-_WINDOW_METRIC_IDS = (
-    PROFIT_OVER_BASELINE,
-    COST_OVER_OPTIMUM,
-    BASELINE_COST_OVER_OPTIMUM,
-    EXACT_OPTIMUM_HIT_RATE,
-)
-
 
 @dataclass(frozen=True, slots=True)
 class _TemporalCostSummary:

@@ -142,14 +142,11 @@ def test_owner_coercers_preserve_typed_config_identity() -> None:
     assert coerce_input_normalization_config(
         training.input_normalization
     ) is training.input_normalization
-    assert (
-        coerce_tuning_space_config(
-            tuning_space,
-            model_config=model,
-            problem_config=problem,
-        )
-        is tuning_space
-    )
+    assert coerce_tuning_space_config(
+        tuning_space,
+        model_config=model,
+        problem_config=problem,
+    ) == tuning_space
     assert (
         coerce_tuned_parameter_set(tuned_parameters, model_id="lstm")
         is tuned_parameters

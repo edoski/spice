@@ -70,7 +70,6 @@ def _benchmark_record() -> BenchmarkResultRecord:
         n_evaluation_rows=100,
         metrics=(MetricValueRecord(source="evaluation", metric_id="profit", value=0.12),),
         window_metrics=(),
-        evaluation_runs=(),
     )
 
 

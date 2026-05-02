@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
 
 from ..acquisition import BlockRange, TimestampRange
-from .validation import BlockDatasetValidationReport
 
 
 class SplitFulfillmentAction(StrEnum):
@@ -34,7 +32,6 @@ class SplitTarget:
 
 @dataclass(frozen=True, slots=True)
 class SplitDatasetFacts:
-    path: Path
     status: str
     first_block_number: int | None
     last_block_number: int | None
@@ -54,18 +51,6 @@ class SplitFulfillmentDecision:
     pull_ranges: tuple[SplitPullRange, ...] = ()
     reusable_range: BlockRange | None = None
     error_message: str | None = None
-
-
-def split_dataset_facts(
-    path: Path,
-    validation: BlockDatasetValidationReport,
-) -> SplitDatasetFacts:
-    return SplitDatasetFacts(
-        path=path,
-        status=validation.status,
-        first_block_number=validation.first_block_number,
-        last_block_number=validation.last_block_number,
-    )
 
 
 def plan_history_split_fulfillment(
@@ -121,6 +106,8 @@ def plan_evaluation_split_fulfillment(
     existing: SplitDatasetFacts | None,
     staged: SplitDatasetFacts | None,
     staged_matches_target: bool,
+    existing_matches_target: bool,
+    existing_reusable_range_matches_target_window: bool,
 ) -> SplitFulfillmentDecision:
     if staged is not None:
         invalid = _invalid_staged_decision("evaluation", staged)
@@ -140,6 +127,8 @@ def plan_evaluation_split_fulfillment(
         target_end = target.block_range.end
 
         if existing_start == target_start and existing_end == target_end:
+            if not existing_matches_target:
+                return _full_materialization_decision("evaluation", existing=existing)
             return SplitFulfillmentDecision(
                 action=SplitFulfillmentAction.REUSE_CACHED,
                 outcome=SplitFulfillmentOutcome.REUSED,
@@ -149,6 +138,8 @@ def plan_evaluation_split_fulfillment(
         overlap_start = max(existing_start, target_start)
         overlap_end = min(existing_end, target_end)
         if overlap_end > overlap_start:
+            if not existing_reusable_range_matches_target_window:
+                return _full_materialization_decision("evaluation", existing=existing)
             pull_ranges: list[SplitPullRange] = []
             if target_start < overlap_start:
                 pull_ranges.append(

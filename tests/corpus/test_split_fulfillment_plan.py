@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from spice.acquisition import BlockRange, TimestampRange
@@ -25,7 +23,6 @@ def _target(kind: str, start: int, end: int) -> SplitTarget:
 
 def _facts(start: int, end: int, *, status: str = "clean") -> SplitDatasetFacts:
     return SplitDatasetFacts(
-        path=Path(f"/dataset/{start}-{end}"),
         status=status,
         first_block_number=start,
         last_block_number=end - 1,
@@ -111,12 +108,16 @@ def test_evaluation_decision_requires_exact_cached_reuse() -> None:
         existing=_facts(100, 120),
         staged=None,
         staged_matches_target=False,
+        existing_matches_target=True,
+        existing_reusable_range_matches_target_window=True,
     )
     superset = plan_evaluation_split_fulfillment(
         _target("evaluation", 100, 120),
         existing=_facts(90, 130),
         staged=None,
         staged_matches_target=False,
+        existing_matches_target=False,
+        existing_reusable_range_matches_target_window=True,
     )
 
     assert exact.action is SplitFulfillmentAction.REUSE_CACHED
@@ -125,12 +126,28 @@ def test_evaluation_decision_requires_exact_cached_reuse() -> None:
     assert superset.pull_ranges == ()
 
 
+def test_evaluation_decision_rebuilds_exact_block_range_when_window_is_stale() -> None:
+    decision = plan_evaluation_split_fulfillment(
+        _target("evaluation", 100, 120),
+        existing=_facts(100, 120),
+        staged=None,
+        staged_matches_target=False,
+        existing_matches_target=False,
+        existing_reusable_range_matches_target_window=False,
+    )
+
+    assert decision.action is SplitFulfillmentAction.MATERIALIZE_FULL
+    assert decision.outcome is SplitFulfillmentOutcome.REBUILT
+
+
 def test_evaluation_decision_extends_middle_overlap_with_prefix_and_suffix() -> None:
     decision = plan_evaluation_split_fulfillment(
         _target("evaluation", 100, 120),
         existing=_facts(105, 115),
         staged=None,
         staged_matches_target=False,
+        existing_matches_target=False,
+        existing_reusable_range_matches_target_window=True,
     )
 
     assert decision.action is SplitFulfillmentAction.EXTEND_CACHED
@@ -141,12 +158,28 @@ def test_evaluation_decision_extends_middle_overlap_with_prefix_and_suffix() -> 
     ]
 
 
+def test_evaluation_decision_rebuilds_when_overlap_window_is_stale() -> None:
+    decision = plan_evaluation_split_fulfillment(
+        _target("evaluation", 100, 120),
+        existing=_facts(105, 115),
+        staged=None,
+        staged_matches_target=False,
+        existing_matches_target=False,
+        existing_reusable_range_matches_target_window=False,
+    )
+
+    assert decision.action is SplitFulfillmentAction.MATERIALIZE_FULL
+    assert decision.outcome is SplitFulfillmentOutcome.REBUILT
+
+
 def test_evaluation_decision_rebuilds_when_existing_has_no_overlap() -> None:
     decision = plan_evaluation_split_fulfillment(
         _target("evaluation", 100, 120),
         existing=_facts(130, 150),
         staged=None,
         staged_matches_target=False,
+        existing_matches_target=False,
+        existing_reusable_range_matches_target_window=False,
     )
 
     assert decision.action is SplitFulfillmentAction.MATERIALIZE_FULL
@@ -155,7 +188,6 @@ def test_evaluation_decision_rebuilds_when_existing_has_no_overlap() -> None:
 
 def test_decision_requires_ranges_on_clean_facts() -> None:
     facts = SplitDatasetFacts(
-        path=Path("/dataset/missing"),
         status="clean",
         first_block_number=None,
         last_block_number=None,

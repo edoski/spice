@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import TypeAdapter
 
+from ..core.errors import StateLayoutError
 from ..features import FeaturePrerequisites
 from ..prediction import MetricDescriptor
 from ..semantics import ArtifactSemantics, StudySemantics
@@ -32,7 +33,14 @@ def artifact_semantics_payload(semantics: ArtifactSemantics) -> dict[str, object
 
 
 def artifact_semantics_from_payload(payload: dict[str, object]) -> ArtifactSemantics:
-    return type_adapter_value(_ARTIFACT_SEMANTICS_ADAPTER, payload, label="semantics payload")
+    semantics = type_adapter_value(
+        _ARTIFACT_SEMANTICS_ADAPTER,
+        payload,
+        label="semantics payload",
+    )
+    if payload != artifact_semantics_payload(semantics):
+        raise StateLayoutError("Invalid semantics payload payload: payload is not canonical JSON")
+    return semantics
 
 
 def study_semantics_payload(semantics: StudySemantics) -> dict[str, object]:
@@ -44,4 +52,11 @@ def study_semantics_payload(semantics: StudySemantics) -> dict[str, object]:
 
 
 def study_semantics_from_payload(payload: dict[str, object]) -> StudySemantics:
-    return type_adapter_value(_STUDY_SEMANTICS_ADAPTER, payload, label="semantics payload")
+    semantics = type_adapter_value(
+        _STUDY_SEMANTICS_ADAPTER,
+        payload,
+        label="semantics payload",
+    )
+    if payload != study_semantics_payload(semantics):
+        raise StateLayoutError("Invalid semantics payload payload: payload is not canonical JSON")
+    return semantics

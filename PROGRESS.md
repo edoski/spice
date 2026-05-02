@@ -97,9 +97,9 @@ Distilled historical conclusions:
 
 ### Open Benchmark Decisions
 
-- Preserve the completed remote HPO wave as historical `paper_replay_2h` total-ratio evidence; do not append it to `benchmarks/results.csv` unless rerun or re-evaluated under current evaluator semantics.
+- Preserve the completed remote HPO wave as historical `paper_replay_2h` total-ratio evidence; do not export it into named current CSV artifacts unless rerun or re-evaluated under current evaluator semantics.
 - Reconcile local and remote code before launching the next sweep.
-- Preserve the unsafe same-block reference as archived professor-like evidence; do not keep it runnable in local architecture.
+- Preserve the unsafe same-block reference as an explicit runnable leakage comparator for A/B tests, not as a default or deployable feature set.
 - Treat `safe_best` as a historical role. Do not promote it to default architecture without rerunning under current safe-only configs.
 
 ### Planned Benchmark Sweeps
@@ -208,7 +208,7 @@ Benchmark sweep operator flow:
 - Create the exact remote workflow DAG with `spice benchmark plan <name> --target disi_l40`. This writes `outputs/benchmarks/runs/<name>/<timestamp>/metadata.json` and `plan.jsonl`.
 - Submit with `spice benchmark submit outputs/benchmarks/runs/<name>/<timestamp>`. This records the remote git commit and Slurm submission records in `submission.jsonl`.
 - Collect only after the sweep has finished: `spice benchmark collect outputs/benchmarks/runs/<name>/<timestamp>`. Collection is all-or-nothing and requires each persisted evaluation summary to match the submitted `execution_ref`.
-- Export human-readable results with `spice benchmark index export --output benchmarks/results.csv`. Rebuild/query thesis result state with `spice benchmark index rebuild` and `spice benchmark index list`.
+- Export human-readable results with explicit names such as `spice benchmark index export --output benchmarks/exports/table_1_main_results.csv`. Rebuild/query thesis result state with `spice benchmark index rebuild` and `spice benchmark index list`.
 
 Deferred architecture roadmap after the current cleanup sweep:
 
@@ -235,7 +235,7 @@ GPU-hour policy:
 Metrics plan:
 
 - Domain replay metrics stay in evaluators and benchmark collection. `poisson_replay_2h` is the default domain result; `full_temporal_replay` is the deterministic sibling result.
-- Pre-benchmark v1 ML metrics: add `macro_f1` for both offset-output prediction families and `log_fee_mae` / `log_fee_mse` for `min_block_fee_multitask`, then persist them through `benchmarks/results.csv`. Do not do a broader metric redesign before this benchmark wave.
+- Pre-benchmark v1 ML metrics: add `macro_f1` for both offset-output prediction families and `log_fee_mae` / `log_fee_mse` for `min_block_fee_multitask`, then expose them through named CSV exports. Do not do a broader metric redesign before this benchmark wave.
 
 ### Benchmarking Rules
 
@@ -297,7 +297,7 @@ Internship 1 baseline replication is economically supported on this benchmark co
 
 Internship 1 optimization is partially supported by time-feature ablations, interval-estimator experiments, and the current HPO wave. Lookback sweeps, sample-count sweeps, slot-spacing sweeps, and larger model-capacity searches remain to run.
 
-Thesis / Internship 2 direction remains aligned with uncertainty quantification and dynamic prediction-window sizing. Thesis-scale expansion should record completed current benchmark results in `benchmarks/results.csv`.
+Thesis / Internship 2 direction remains aligned with uncertainty quantification and dynamic prediction-window sizing. Thesis-scale expansion should record completed current benchmark results in `results.sqlite` and export explicit CSV files per figure, table, appendix, or analysis slice.
 
 ### Candidate Ideas
 
@@ -322,4 +322,4 @@ Thesis / Internship 2 direction remains aligned with uncertainty quantification 
 - Put planned benchmark work in `Planned Benchmark Sweeps`.
 - Put speculative feature work in `Candidate Ideas`.
 - Do not mix local current config names with remote old-branch preset names without stating which context applies.
-- Keep completed experiment detail out of this file unless it changes an active decision; use `benchmarks/results.csv` for durable current-result provenance.
+- Keep completed experiment detail out of this file unless it changes an active decision; use benchmark run dirs plus `results.sqlite` for durable current-result provenance and named CSV files for paper/thesis artifacts.

@@ -203,6 +203,46 @@ def test_benchmark_plan_jsonl_rejects_non_list_dependencies(tmp_path: Path) -> N
         load_plan_jsonl(run_dir)
 
 
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda payload: payload.__setitem__("run_id", 123),
+        lambda payload: payload.__setitem__("depends_on", [123]),
+        lambda payload: payload.__setitem__("dimension_labels", {"models": 123}),
+        lambda payload: payload.__setitem__("artifact_from", 123),
+    ],
+)
+def test_benchmark_plan_jsonl_rejects_non_string_identity_fields(
+    tmp_path: Path,
+    mutate,
+) -> None:
+    config = _evaluate_config(tmp_path)
+    run_dir = create_benchmark_run_dir(
+        "bad_plan",
+        target="disi_l40",
+        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
+    )
+    entry = BenchmarkPlanEntry(
+        run_id="case.evaluate",
+        case_id="case",
+        step_id="evaluate",
+        workflow=WorkflowTask.EVALUATE,
+        depends_on=(),
+        external_dependencies=(),
+        dimension_labels={"models": "lstm"},
+        artifact_from="case.train",
+        selection={},
+        config=config,
+    )
+    write_plan_jsonl(run_dir, [entry])
+    payload = json.loads((run_dir / "plan.jsonl").read_text(encoding="utf-8"))
+    mutate(payload)
+    (run_dir / "plan.jsonl").write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    with pytest.raises(SpiceOperatorError, match="must be a string"):
+        load_plan_jsonl(run_dir)
+
+
 def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
     tmp_path: Path,
     monkeypatch,

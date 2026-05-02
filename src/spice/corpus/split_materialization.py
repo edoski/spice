@@ -23,6 +23,7 @@ from .contract import CanonicalBlockRow, canonicalize_block_frame
 from .io import iter_block_files, load_block_frame, write_block_file
 from .metadata import has_block_files
 from .split_fulfillment_plan import (
+    SplitDatasetFacts,
     SplitFulfillmentAction,
     SplitFulfillmentDecision,
     SplitFulfillmentOutcome,
@@ -30,7 +31,6 @@ from .split_fulfillment_plan import (
     SplitTarget,
     plan_evaluation_split_fulfillment,
     plan_history_split_fulfillment,
-    split_dataset_facts,
 )
 from .validation import (
     BlockDatasetValidationReport,
@@ -49,7 +49,6 @@ class CorpusSplitMaterializationSpec:
 @dataclass(slots=True)
 class ExistingDatasetState:
     path: Path
-    frame: pl.DataFrame | None
     validation: BlockDatasetValidationReport
     file_count: int
 
@@ -188,7 +187,6 @@ def load_existing_dataset(
     except Exception as exc:
         return ExistingDatasetState(
             path=path,
-            frame=None,
             validation=BlockDatasetValidationReport(
                 dataset_path=path,
                 status="error",
@@ -198,7 +196,6 @@ def load_existing_dataset(
         )
     return ExistingDatasetState(
         path=path,
-        frame=frame,
         validation=validate_contiguous_block_frame(
             frame,
             dataset_path=path,
@@ -240,7 +237,11 @@ def staged_result(
 def split_facts(existing: ExistingDatasetState | None):
     if existing is None:
         return None
-    return split_dataset_facts(existing.path, existing.validation)
+    return SplitDatasetFacts(
+        status=existing.validation.status,
+        first_block_number=existing.validation.first_block_number,
+        last_block_number=existing.validation.last_block_number,
+    )
 
 
 def split_outcome(outcome: SplitFulfillmentOutcome) -> CorpusSplitOutcome:
@@ -576,6 +577,39 @@ def staged_matches_target(
     return True
 
 
+def existing_matches_target(
+    existing: ExistingDatasetState | None,
+    validate_result: ValidationCallback,
+) -> bool:
+    if existing is None or existing.validation.status != "clean":
+        return False
+    validation = existing.validation.model_copy(deep=True)
+    try:
+        validate_result(validation, existing.path)
+    except ValueError:
+        return False
+    return True
+
+
+def reusable_range_matches_target_window(
+    existing: ExistingDatasetState | None,
+    *,
+    block_range: BlockRange | None,
+    window: TimestampRange,
+) -> bool:
+    if existing is None or block_range is None:
+        return False
+    frame = filter_block_range(load_block_frame(existing.path), block_range)
+    if frame.height == 0:
+        return False
+    timestamps: list[int] = []
+    for value in frame["timestamp"].to_list():
+        if type(value) is not int:
+            return False
+        timestamps.append(value)
+    return min(timestamps) >= window.start and max(timestamps) < window.end
+
+
 def reject_invalid_staged(decision: SplitFulfillmentDecision, staged: ExistingDatasetState) -> None:
     if decision.error_message is None:
         raise RuntimeError("Cannot resume invalid staged split dataset")
@@ -644,8 +678,6 @@ async def _ensure_history_split(
     if decision.action is SplitFulfillmentAction.EXTEND_CACHED:
         if existing is None:
             raise RuntimeError("history extension decision requires existing dataset")
-        if existing.frame is None:
-            raise RuntimeError("clean history validation requires an in-memory frame")
         if len(decision.pull_ranges) != 1:
             raise RuntimeError("history extension decision requires one prefix pull range")
         emit(decision.status_message)
@@ -722,6 +754,12 @@ async def _ensure_evaluation_split(
         existing=split_facts(existing),
         staged=split_facts(staged),
         staged_matches_target=staged_matches_target(staged, validate_result),
+        existing_matches_target=existing_matches_target(existing, validate_result),
+        existing_reusable_range_matches_target_window=reusable_range_matches_target_window(
+            existing,
+            block_range=evaluation_plan.block_range,
+            window=evaluation_plan.window,
+        ),
     )
 
     if decision.action is SplitFulfillmentAction.REJECT_INVALID_STAGED:
@@ -752,8 +790,6 @@ async def _ensure_evaluation_split(
     if decision.action is SplitFulfillmentAction.EXTEND_CACHED:
         if existing is None:
             raise RuntimeError("evaluation extension decision requires existing dataset")
-        if existing.frame is None:
-            raise RuntimeError("clean evaluation validation requires an in-memory frame")
         if decision.reusable_range is None:
             raise RuntimeError("evaluation extension decision requires reusable range")
         source_dirs: list[Path] = []

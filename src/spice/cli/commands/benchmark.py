@@ -152,8 +152,8 @@ def benchmark_index_list_command(
 def benchmark_index_export_command(
     output: Annotated[
         Path,
-        typer.Option("--output", help="CSV output path."),
-    ] = Path("benchmarks") / "results.csv",
+        typer.Option("--output", help="Named CSV output path."),
+    ],
     benchmark: Annotated[str | None, typer.Option("--benchmark")] = None,
     chain: Annotated[str | None, typer.Option("--chain")] = None,
     model: Annotated[str | None, typer.Option("--model")] = None,

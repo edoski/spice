@@ -4,6 +4,8 @@ import csv
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from spice.benchmarks.ledger import export_results_csv
 from spice.benchmarks.result_index import (
     list_benchmark_results,
@@ -18,6 +20,7 @@ from spice.benchmarks.result_records import (
 from spice.benchmarks.result_store import index_counts
 from spice.benchmarks.runs import create_benchmark_run_dir, write_collection_snapshot
 from spice.config import WorkflowTask
+from spice.core.errors import SpiceOperatorError
 
 
 def _record(
@@ -71,7 +74,6 @@ def _record(
             MetricValueRecord(source="training_test", metric_id="total_loss", value=0.3),
         ),
         window_metrics=(),
-        evaluation_runs=(),
     )
 
 
@@ -158,6 +160,26 @@ def test_index_query_and_export_use_normalized_rows_not_payload_json(tmp_path: P
 
     assert [summary.artifact_id for summary in summaries] == ["artifact-1"]
     assert rows[0]["artifact_id"] == "artifact-1"
+
+
+def test_index_query_rejects_metric_id_collision_across_sources(tmp_path: Path) -> None:
+    index_path = tmp_path / "results.sqlite"
+    snapshot = _snapshot(tmp_path / "runs" / "bench" / "one", run_id="case.evaluate")
+    record = snapshot.records[0].model_copy(
+        update={
+            "metrics": (
+                MetricValueRecord(source="evaluation", metric_id="shared", value=0.12),
+                MetricValueRecord(source="training_test", metric_id="shared", value=0.3),
+            )
+        }
+    )
+    upsert_benchmark_collection_snapshot(
+        snapshot.model_copy(update={"records": (record,)}),
+        index_path=index_path,
+    )
+
+    with pytest.raises(SpiceOperatorError, match="metric id collision"):
+        list_benchmark_results(index_path=index_path, benchmark="bench")
 
 
 def test_index_list_limits_newest_results(tmp_path: Path) -> None:

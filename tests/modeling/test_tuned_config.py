@@ -12,7 +12,7 @@ from spice.config import (
     coerce_problem_spec,
     resolve_workflow_config,
 )
-from spice.config.models import TunedTrainingParams, TuningProblemSearchSpace
+from spice.config.models import TunedTrainingParams, TuningProblemSearchSpace, TuningSpaceConfig
 from spice.core.errors import ConfigResolutionError
 from spice.modeling.families.lstm import (
     LstmModelConfig,
@@ -22,6 +22,7 @@ from spice.modeling.families.registry import apply_model_tuned_parameters
 from spice.modeling.families.transformer import (
     TransformerModelConfig,
     TransformerTunedModelParams,
+    TransformerTuningSpaceModelConfig,
 )
 from spice.modeling.families.transformer_lstm import (
     TransformerLstmModelConfig,
@@ -376,6 +377,17 @@ def test_tuning_space_rejects_model_id_mismatch() -> None:
         )
 
 
+def test_typed_tuning_space_rejects_model_id_mismatch() -> None:
+    with pytest.raises(ConfigResolutionError, match="tuning_space.model.id must match model.id"):
+        coerce_tuning_space_config(
+            TuningSpaceConfig(
+                model=TransformerTuningSpaceModelConfig(d_model=[256], nhead=[4])
+            ),
+            model_config=_lstm_model(),
+            problem_config=_problem(),
+        )
+
+
 def test_tuning_space_requires_problem_context_for_typed_problem_group() -> None:
     with pytest.raises(ConfigResolutionError, match="problem_config is required"):
         coerce_tuning_space_config(
@@ -383,6 +395,18 @@ def test_tuning_space_requires_problem_context_for_typed_problem_group() -> None
                 "model": {"id": "transformer"},
                 "problem": TuningProblemSearchSpace(lookback_seconds=[900]),
             },
+            model_config=_transformer_model(),
+            problem_config=None,
+        )
+
+
+def test_typed_tuning_space_requires_problem_context_for_typed_problem_group() -> None:
+    with pytest.raises(ConfigResolutionError, match="problem_config is required"):
+        coerce_tuning_space_config(
+            TuningSpaceConfig(
+                model=TransformerTuningSpaceModelConfig(),
+                problem=TuningProblemSearchSpace(lookback_seconds=[900]),
+            ),
             model_config=_transformer_model(),
             problem_config=None,
         )

@@ -9,8 +9,6 @@ from pathlib import Path
 
 from .result_store import BENCHMARK_RESULT_INDEX_PATH, IndexedBenchmarkResult, list_indexed_results
 
-BENCHMARK_LEDGER_PATH = Path("benchmarks") / "results.csv"
-
 LEDGER_COLUMNS = (
     "recorded_at_utc",
     "git_commit",
@@ -48,7 +46,7 @@ LEDGER_COLUMNS = (
 
 def export_results_csv(
     *,
-    output_path: Path = BENCHMARK_LEDGER_PATH,
+    output_path: Path,
     index_path: Path = BENCHMARK_RESULT_INDEX_PATH,
     benchmark: str | None = None,
     chain: str | None = None,

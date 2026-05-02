@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import cast
 
 import pytest
 
@@ -63,6 +64,10 @@ from spice.storage.artifact_codecs import (
 )
 from spice.storage.engine import DATASET_ROOT_KIND, ensure_state_db
 from spice.storage.schema import DATASET_TABLES
+from spice.storage.semantics_codecs import (
+    artifact_semantics_from_payload,
+    artifact_semantics_payload,
+)
 from spice.temporal.compilers.observed_time_window import ObservedTimeWindowRuntimeMetadata
 from spice.temporal.contracts import compile_problem_contract
 from spice.temporal.scaling import ScalerStats
@@ -467,6 +472,28 @@ def test_evaluation_config_snapshot_freezes_storage_identity() -> None:
             "seed": 2026,
         }
     )
+
+
+def test_evaluation_config_snapshot_rejects_non_canonical_payload() -> None:
+    with pytest.raises(ValueError, match="canonical JSON"):
+        EvaluationConfigSnapshot.from_payload(
+            {
+                "id": "poisson_replay_2h",
+                "window_seconds": "7200",
+                "repetitions": 50,
+                "arrival_rate_per_second": 0.05,
+                "seed": 2026,
+            }
+        )
+
+
+def test_artifact_semantics_payload_rejects_loose_scalar_types() -> None:
+    payload = artifact_semantics_payload(_manifest().semantics)
+    problem_payload = cast(dict[str, object], payload["problem"])
+    problem_payload["sample_count"] = "24"
+
+    with pytest.raises(StateLayoutError, match="semantics payload"):
+        artifact_semantics_from_payload(payload)
 
 
 def test_evaluation_run_listing_rejects_non_artifact_root_kind(tmp_path) -> None:

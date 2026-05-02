@@ -75,28 +75,29 @@ def plan_entry_json_dict(entry: BenchmarkPlanEntry) -> dict[str, object]:
 def load_plan_jsonl(run_dir: Path) -> list[LoadedBenchmarkPlanEntry]:
     entries: list[LoadedBenchmarkPlanEntry] = []
     for payload in read_jsonl(run_dir / PLAN_FILENAME):
-        workflow = WorkflowTask(str(payload["workflow"]))
+        workflow = WorkflowTask(string_payload(payload.get("workflow"), label="workflow"))
         config_payload = mapping_payload(payload["config"], label="config")
         entries.append(
             LoadedBenchmarkPlanEntry(
-                run_id=str(payload["run_id"]),
-                case_id=str(payload["case_id"]),
-                step_id=str(payload["step_id"]),
+                run_id=string_payload(payload.get("run_id"), label="run_id"),
+                case_id=string_payload(payload.get("case_id"), label="case_id"),
+                step_id=string_payload(payload.get("step_id"), label="step_id"),
                 workflow=workflow,
-                depends_on=tuple(
-                    str(value) for value in sequence_payload(payload.get("depends_on", []))
+                depends_on=string_tuple_payload(
+                    payload.get("depends_on", []),
+                    label="depends_on",
                 ),
-                external_dependencies=tuple(
-                    str(value)
-                    for value in sequence_payload(payload.get("external_dependencies", []))
+                external_dependencies=string_tuple_payload(
+                    payload.get("external_dependencies", []),
+                    label="external_dependencies",
                 ),
-                dimension_labels={
-                    str(key): str(value)
-                    for key, value in mapping_payload(
+                dimension_labels=string_mapping_payload(
+                    mapping_payload(
                         payload.get("dimension_labels", {}),
                         label="dimension_labels",
-                    ).items()
-                },
+                    ),
+                    label="dimension_labels",
+                ),
                 selection=dict(mapping_payload(payload.get("selection", {}), label="selection")),
                 artifact_from=_optional_string(payload.get("artifact_from")),
                 config=hydrate_workflow_config_snapshot(workflow, config_payload),
@@ -193,7 +194,24 @@ def sequence_payload(value: object) -> list[object]:
     return cast(list[object], value)
 
 
+def string_payload(value: object, *, label: str) -> str:
+    if not isinstance(value, str):
+        raise SpiceOperatorError(f"benchmark {label} must be a string")
+    return value
+
+
+def string_tuple_payload(value: object, *, label: str) -> tuple[str, ...]:
+    return tuple(string_payload(item, label=f"{label} item") for item in sequence_payload(value))
+
+
+def string_mapping_payload(value: dict[str, object], *, label: str) -> dict[str, str]:
+    strings: dict[str, str] = {}
+    for key, item in value.items():
+        strings[key] = string_payload(item, label=f"{label}.{key}")
+    return strings
+
+
 def _optional_string(value: object) -> str | None:
     if value is None:
         return None
-    return str(value)
+    return string_payload(value, label="artifact_from")

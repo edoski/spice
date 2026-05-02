@@ -93,7 +93,7 @@ One summary-level benchmark observation from a collected evaluate result, includ
 _Avoid_: raw replay dump, CSV row
 
 **Benchmark Result Index**:
-Rebuildable SQLite projection over Benchmark Collection Snapshots used for small operator queries and CSV export. Run dirs remain source of truth.
+Rebuildable SQLite projection over Benchmark Collection Snapshots used for small operator queries and named CSV exports. Run dirs remain source of truth.
 _Avoid_: canonical results database
 
 **Storage Selector**:
@@ -123,6 +123,10 @@ _Avoid_: record dict, sync payload
 **Corpus Assembly**:
 Acquisition-to-corpus policy that plans block windows, materializes history/evaluation splits, writes corpus provenance, and publishes a corpus root.
 _Avoid_: corpus builders
+
+**Corpus Acquisition Stage**:
+Corpus module that owns hidden acquisition staging roots, split sequencing, state database staging, commit cleanup, and preserve-on-failure behavior during acquisition.
+_Avoid_: staging helper, acquire workflow body
 
 **Corpus Capability Planning**:
 Corpus policy that compiles feature/problem capability requirements, plans acquisition windows, counts valid temporal capability samples, and decides bounded history refills.

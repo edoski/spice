@@ -147,7 +147,7 @@ def test_core_fee_dynamics_fingerprint_includes_shared_engine() -> None:
     )
 
 
-def test_default_core_fee_dynamics_excludes_time_since_start_signal() -> None:
+def test_default_core_fee_dynamics_excludes_elapsed_position_signal() -> None:
     payload = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
     outputs = cast(list[str], payload["outputs"])
 
@@ -173,7 +173,7 @@ def test_compiled_contract_rejects_baseline_elapsed_position_output() -> None:
         contract.build_table(_frame())
 
 
-def test_elapsed_position_ablation_config_adds_time_since_start_signal() -> None:
+def test_elapsed_position_ablation_config_adds_elapsed_seconds_signal() -> None:
     baseline = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
     ablation = cast(
         dict[str, object],
@@ -189,13 +189,12 @@ def test_elapsed_position_ablation_config_adds_time_since_start_signal() -> None
     coerce_features_config(ablation)
 
 
-def test_core_fee_dynamics_config_includes_restored_safe_local_trends() -> None:
+def test_core_fee_dynamics_config_matches_canonical_safe_outputs() -> None:
     baseline = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
     baseline_outputs = cast(list[str], baseline["outputs"])
 
     assert tuple(baseline_outputs) == CORE_FEE_DYNAMICS_OUTPUTS
     assert "elapsed_seconds" not in baseline_outputs
-    assert "time_since_start" not in baseline_outputs
     assert "prev_priority_fee_p50" not in baseline_outputs
     assert "dlog_base_fee" in baseline_outputs
     assert "prev_gas_utilization_lag6" in baseline_outputs
@@ -203,19 +202,19 @@ def test_core_fee_dynamics_config_includes_restored_safe_local_trends() -> None:
     coerce_features_config(baseline)
 
 
-def test_core_fee_dynamics_source_columns_do_not_require_fee_history() -> None:
+def test_core_fee_dynamics_source_columns_follow_selected_feature_family() -> None:
     baseline_contract = _contract(list(CORE_FEE_DYNAMICS_OUTPUTS))
     priority_contract = _contract(
         [*CORE_FEE_DYNAMICS_OUTPUTS, "prev_priority_fee_p50"],
         features_id="core_fee_dynamics_with_priority_fee",
     )
 
-    assert "fee_history_gas_used_ratio" not in baseline_contract.required_source_columns
     assert "priority_fee_p50" not in baseline_contract.required_source_columns
+    assert "gas_used" in baseline_contract.required_source_columns
     assert "priority_fee_p50" in priority_contract.required_source_columns
 
 
-def test_core_fee_dynamics_restored_local_trends_build_finite_aligned_table() -> None:
+def test_core_fee_dynamics_local_trends_build_finite_aligned_table() -> None:
     contract = _contract(
         [
             "dlog_base_fee",

@@ -1,8 +1,8 @@
 # Benchmark Results
 
 Benchmark run directories are the audit source of truth. `results.sqlite` is a
-rebuildable query index over completed run snapshots. `results.csv` is an explicit
-human-readable export from that index, not durable state.
+rebuildable query index over completed run snapshots. CSV files are named
+human-readable exports from that index, not durable state.
 
 The ledger records modern evaluator results only. Current result rows may use
 `evaluation=poisson_replay_2h` or `evaluation=full_temporal_replay`; historical
@@ -59,10 +59,17 @@ Operator flow:
 spice benchmark plan lookback_window_sweep --target disi_l40
 spice benchmark submit outputs/benchmarks/runs/lookback_window_sweep/<timestamp>
 spice benchmark collect outputs/benchmarks/runs/lookback_window_sweep/<timestamp>
-spice benchmark index export --output benchmarks/results.csv
+spice benchmark index export --output benchmarks/exports/figure_3_model_comparison.csv
 spice benchmark index rebuild
 spice benchmark index list --benchmark lookback_window_sweep
 ```
+
+Use explicit CSV names for paper and thesis artifacts: one export per table,
+figure, appendix, or analysis slice. For example, write
+`benchmarks/exports/table_1_main_results.csv` for a table input and
+`benchmarks/exports/figure_3_model_comparison.csv` for a plotting input. Regenerate
+these files from `results.sqlite`; do not treat a generic `results.csv` as the
+canonical benchmark ledger.
 
 Collection is all-or-nothing. If an expected evaluation summary is missing,
 ambiguous, or does not match the submitted `execution_ref`, collection raises and

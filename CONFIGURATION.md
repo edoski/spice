@@ -129,7 +129,7 @@ match its submitted execution provenance, then writes `collection.json` and upse
 
 ```bash
 spice benchmark collect outputs/benchmarks/runs/lookback_window_sweep/<timestamp>
-spice benchmark index export --output benchmarks/results.csv
+spice benchmark index export --output benchmarks/exports/figure_3_model_comparison.csv
 spice benchmark index rebuild
 spice benchmark index list --benchmark lookback_window_sweep
 ```
