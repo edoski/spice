@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import typer
-
 from .commands.benchmark import app as benchmark_app
 from .commands.config import app as config_app
 from .commands.storage import delete_app, refresh_app, show_app
@@ -14,8 +12,9 @@ from .commands.workflows import (
     train_command,
     tune_command,
 )
+from .errors import OperatorTyper
 
-app = typer.Typer(
+app = OperatorTyper(
     name="spice",
     help="SPICE workflow CLI.",
     epilog="Example:\n  spice acquire --surface current_row_fee_dynamics",

@@ -5,14 +5,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-import click
-
 if TYPE_CHECKING:
     from ..storage.catalog import CatalogArtifactRecord, CatalogStudyRecord
 
 
-class SpiceOperatorError(click.ClickException):
+class SpiceOperatorError(Exception):
     """Base error for operator-facing failures that should render without a traceback."""
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
 
 
 class ConfigResolutionError(SpiceOperatorError):

@@ -28,6 +28,8 @@ Workflow commands run acquisition locally and submit CUDA workflows to remote ex
 
 Workflow command modules pass sparse operator option dictionaries to config resolution before running local acquire or handing a resolved workflow snapshot to an **Execution Session**. Config owns the workflow-selection field shape and validation.
 
+CLI command registration adapts `SpiceOperatorError` into Typer/Click operator errors at the command seam. Core errors stay plain project exceptions; parse errors remain Typer-owned.
+
 ## Remote Target Boundary
 
 ```text

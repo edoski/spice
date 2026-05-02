@@ -10,10 +10,11 @@ from typing import Annotated
 
 import typer
 
+from ..errors import OperatorTyper
 from ..options import DEFAULT_REMOTE_TARGET, RemoteTargetOption
 
-app = typer.Typer(help="Plan, submit, collect, and export benchmark runs.", no_args_is_help=True)
-index_app = typer.Typer(
+app = OperatorTyper(help="Plan, submit, collect, and export benchmark runs.", no_args_is_help=True)
+index_app = OperatorTyper(
     help="Maintain and inspect the benchmark result index.",
     no_args_is_help=True,
 )

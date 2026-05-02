@@ -158,6 +158,8 @@ def test_config_public_commands_only(isolate_conf_root) -> None:
 
     acquisition_result = runner.invoke(app, ["config", "list", "acquisition"])
     assert acquisition_result.exit_code != 0
+    assert isinstance(acquisition_result.exception, SystemExit)
+    assert "Unsupported config group: acquisition" in acquisition_result.stderr
 
     builder_result = runner.invoke(app, ["config", "list", "dataset-builder"])
     assert builder_result.exit_code == 0, builder_result.stdout
@@ -323,3 +325,56 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
         "submit workflow=train job_id=12345 log=/remote/logs/spice-train-12345.out"
         in result.stdout
     )
+
+
+def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:
+    from spice.cli.commands import workflows as workflow_commands
+
+    def _fake_resolve(task: WorkflowTask, values) -> object:
+        del task, values
+        return TrainConfig.model_construct(workflow=WorkflowTask.TRAIN)
+
+    class FakeSession:
+        target = SimpleNamespace(spec=SimpleNamespace(follow_by_default=True))
+
+        def submit_workflow(
+            self,
+            task: WorkflowTask,
+            *,
+            config,
+            dependency: str | None = None,
+        ) -> ExecutionJobSubmission:
+            del config, dependency
+            return ExecutionJobSubmission(
+                task=task,
+                target=cast(Any, self.target),
+                job_id="12345",
+                log_path=Path("/remote/logs/spice-train-12345.out"),
+            )
+
+        def follow_job(self, _submission: ExecutionJobSubmission) -> str:
+            return "FAILED"
+
+    monkeypatch.setattr(workflow_commands, "resolve_workflow_command_config", _fake_resolve)
+    monkeypatch.setattr(
+        workflow_commands,
+        "open_execution_session",
+        lambda _target: FakeSession(),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "train",
+            "--surface",
+            "current_row_fee_dynamics",
+            "--dataset-id",
+            "cor_9a73b1e88edb488afb1e",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, SystemExit)
+    assert "submit workflow=train job_id=12345" in result.stdout
+    assert "submit finished job_id=12345 state=FAILED" in result.stdout
+    assert "Job 12345 ended with state FAILED" in result.stderr

@@ -11,8 +11,9 @@ import typer
 
 from ...config.registry import public_group_help
 from ...core.errors import SpiceOperatorError
+from ..errors import OperatorTyper
 
-app = typer.Typer(
+app = OperatorTyper(
     help="Query and edit saved YAML config specs.",
     no_args_is_help=True,
 )

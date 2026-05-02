@@ -23,6 +23,7 @@ from ...storage.operator import (
     show_storage,
 )
 from ...storage.selectors import ArtifactSelector, DatasetSelector, StudySelector
+from ..errors import OperatorTyper
 from ..options import (
     ChainFilterOption,
     DatasetFilterOption,
@@ -38,7 +39,7 @@ from ..options import (
     resolve_storage_root,
 )
 
-show_app = typer.Typer(
+show_app = OperatorTyper(
     help="Query stored datasets, studies, and artifacts.",
     epilog=(
         "Example:\n"
@@ -46,11 +47,11 @@ show_app = typer.Typer(
     ),
     no_args_is_help=True,
 )
-delete_app = typer.Typer(
+delete_app = OperatorTyper(
     help="Delete stored datasets, studies, and artifacts.",
     no_args_is_help=True,
 )
-refresh_app = typer.Typer(
+refresh_app = OperatorTyper(
     help="Rebuild derived storage indexes.",
     no_args_is_help=True,
 )

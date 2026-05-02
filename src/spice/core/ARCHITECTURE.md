@@ -48,11 +48,11 @@ Owner coercers return already typed config objects unchanged. Raw payload handli
 ConfigResolutionError  user/config selection or YAML or snapshot resolution problem
 StateLayoutError       malformed persisted state or root-kind mismatch
 MissingStateError      expected persisted state is absent
-SpiceOperatorError     operational failure reported to the CLI/user
+SpiceOperatorError     plain project exception for operator-facing failures
 StateConflictError     safe write would overwrite disallowed existing state
 ```
 
-Using the right error type matters because command layers format these failures differently and tests assert specific failure policies.
+Using the right error type matters because command layers format these failures differently and tests assert specific failure policies. CLI rendering lives in `cli`; core errors do not import Click or Typer.
 
 ## Filesystem Primitives
 

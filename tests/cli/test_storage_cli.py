@@ -58,6 +58,7 @@ def test_show_writes_success_to_stdout_and_ambiguous_detail_to_stderr(tmp_path: 
     )
 
     assert failure.exit_code != 0
+    assert isinstance(failure.exception, SystemExit)
     assert "artifact matches" not in failure.stdout
     assert "--detail requires exactly one artifact match" in failure.stderr
 

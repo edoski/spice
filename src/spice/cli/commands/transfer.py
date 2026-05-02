@@ -11,6 +11,7 @@ from ...execution.transfer import (
     pull_artifact_from_cluster,
     push_dataset_to_cluster,
 )
+from ..errors import OperatorTyper
 from ..options import (
     DEFAULT_REMOTE_TARGET,
     RemoteTargetOption,
@@ -18,15 +19,15 @@ from ..options import (
     resolve_storage_root,
 )
 
-push_app = typer.Typer(
+push_app = OperatorTyper(
     help="Copy one local root into cluster storage.",
     no_args_is_help=True,
 )
-pull_app = typer.Typer(
+pull_app = OperatorTyper(
     help="Copy one cluster root into local storage.",
     no_args_is_help=True,
 )
-app = typer.Typer(
+app = OperatorTyper(
     help="Copy storage roots between local and cluster storage.",
     no_args_is_help=True,
 )

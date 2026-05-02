@@ -271,6 +271,8 @@ def test_benchmark_collect_failure_writes_no_cli_state(monkeypatch, tmp_path: Pa
     result = runner.invoke(app, ["benchmark", "collect", str(run_dir)])
 
     assert result.exit_code != 0
+    assert isinstance(result.exception, SystemExit)
+    assert "missing evaluation summary" in result.stderr
     assert not (run_dir / "collection.json").exists()
 
 
