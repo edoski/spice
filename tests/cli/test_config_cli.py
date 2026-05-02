@@ -270,12 +270,12 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
 
     events: list[tuple[str, object]] = []
 
-    def _fake_resolve(task: WorkflowTask, selection) -> object:
-        events.append(("resolve", (task, selection)))
+    def _fake_resolve(task: WorkflowTask, values) -> object:
+        events.append(("resolve", (task, values)))
         return TrainConfig.model_construct(
             workflow=WorkflowTask.TRAIN,
-            study=SimpleNamespace(name=selection.study),
-            artifact=SimpleNamespace(variant=SimpleNamespace(value=selection.variant)),
+            study=SimpleNamespace(name=values["study"]),
+            artifact=SimpleNamespace(variant=SimpleNamespace(value=values["variant"])),
         )
 
     class FakeSession:
@@ -296,7 +296,7 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
                 log_path=Path("/remote/logs/spice-train-12345.out"),
             )
 
-    monkeypatch.setattr(workflow_commands, "resolve_workflow_config", _fake_resolve)
+    monkeypatch.setattr(workflow_commands, "resolve_workflow_command_config", _fake_resolve)
     monkeypatch.setattr(
         workflow_commands,
         "open_execution_session",
@@ -318,10 +318,10 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
 
     assert result.exit_code == 0, result.stdout
     assert [event[0] for event in events] == ["resolve", "submit"]
-    resolved_task, selection = cast(tuple[WorkflowTask, Any], events[0][1])
+    resolved_task, values = cast(tuple[WorkflowTask, dict[str, object | None]], events[0][1])
     assert resolved_task is WorkflowTask.TRAIN
-    assert selection.study == "default"
-    assert selection.variant == "baseline"
+    assert values["study"] == "default"
+    assert values["variant"] == "baseline"
     submitted_task, submitted_config, target_name, dependency = cast(
         tuple[WorkflowTask, object, str, str | None],
         events[1][1],

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, TypeVar, overload
 
@@ -57,9 +58,10 @@ from .selections import (
     TrainWorkflowSelection,
     TuneWorkflowSelection,
     WorkflowSelection,
+    workflow_selection_from_values,
     workflow_selection_type,
 )
-from .surfaces import SurfaceFrame, apply_selection_overrides, load_surface_frame
+from .surfaces import SurfaceFrame, apply_surface_selection_overrides, load_surface_frame
 
 _TUNING_SPACE_GROUP = "tuning_space"
 ConfigModelT = TypeVar("ConfigModelT", bound=ConfigModel)
@@ -89,6 +91,53 @@ class ModelWorkflowSpine:
     split: SplitConfig
     tuning: TuningConfig | None
     tuning_space: TuningSpaceConfig | None
+
+
+@overload
+def resolve_workflow_command_config(
+    workflow_kind: Literal[WorkflowTask.ACQUIRE],
+    values: Mapping[str, object | None],
+) -> AcquireConfig: ...
+
+
+@overload
+def resolve_workflow_command_config(
+    workflow_kind: Literal[WorkflowTask.TRAIN],
+    values: Mapping[str, object | None],
+) -> TrainConfig: ...
+
+
+@overload
+def resolve_workflow_command_config(
+    workflow_kind: Literal[WorkflowTask.TUNE],
+    values: Mapping[str, object | None],
+) -> TuneConfig: ...
+
+
+@overload
+def resolve_workflow_command_config(
+    workflow_kind: Literal[WorkflowTask.EVALUATE],
+    values: Mapping[str, object | None],
+) -> EvaluateConfig: ...
+
+
+@overload
+def resolve_workflow_command_config(
+    workflow_kind: WorkflowTask,
+    values: Mapping[str, object | None],
+) -> WorkflowConfig: ...
+
+
+def resolve_workflow_command_config(
+    workflow_kind: WorkflowTask,
+    values: Mapping[str, object | None],
+) -> WorkflowConfig:
+    """Resolve sparse command values into one validated workflow config."""
+
+    return resolve_workflow_config(
+        workflow_kind,
+        workflow_selection_from_values(workflow_kind, values),
+    )
 
 
 def load_named_tuning_space(
@@ -159,7 +208,7 @@ def resolve_workflow_config(
         if selection.surface is None:
             raise ConfigResolutionError("surface is required")
         assert selection.surface is not None
-        frame = apply_selection_overrides(
+        frame = apply_surface_selection_overrides(
             load_surface_frame(selection.surface),
             selection,
         )

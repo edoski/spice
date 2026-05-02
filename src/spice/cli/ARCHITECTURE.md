@@ -26,7 +26,7 @@ workflow/service result rendered to stdout
 
 Workflow commands run acquisition locally and submit CUDA workflows to remote execution. Transfer commands call execution transfer services. Config commands call config registry APIs.
 
-Workflow command modules instantiate typed **Workflow Selections** directly from operator options, then call config resolution before running local acquire or handing a resolved workflow snapshot to an **Execution Session**.
+Workflow command modules pass sparse operator option dictionaries to config resolution before running local acquire or handing a resolved workflow snapshot to an **Execution Session**. Config owns the workflow-selection field shape and validation.
 
 ## Remote Target Boundary
 

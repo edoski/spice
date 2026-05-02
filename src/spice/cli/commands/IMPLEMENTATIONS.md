@@ -13,7 +13,7 @@ terminal command
 
 The CLI should be ergonomic. Lower layers should stay explicit and typed.
 
-Workflow commands keep explicit Typer signatures, build typed **Workflow Selections** from CLI values in-place, then call config resolution before local acquire or remote submission.
+Workflow commands keep explicit Typer signatures, collect sparse option values, then call config-owned workflow command resolution before local acquire or remote submission.
 
 ## Workflow Commands
 

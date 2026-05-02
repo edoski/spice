@@ -65,6 +65,8 @@ Overrides replace selected surface fields before final resolution. The result is
 
 Surface resolution is a typed construction path. Once named groups and overrides have been resolved, `resolution.py` instantiates the workflow config from typed pieces. It does not round-trip through raw resolved snapshot hydration.
 
+Command workflow resolution starts from sparse operator values. `workflow_selection_from_values()` drops unsupported and unset fields for the selected workflow, validates the matching `WorkflowSelection`, and `resolve_workflow_command_config()` resolves that selection into the concrete workflow config. CLI commands pass option dictionaries to this config-owned path instead of constructing selection models locally.
+
 ## Resolved Workflow Hydration
 
 Resolved snapshot hydration is the raw-payload path for already materialized train, tune, and evaluate configs. It validates the snapshot workflow marker, then uses owner coercers to rebuild concrete nested configs.

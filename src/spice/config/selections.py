@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TypeAlias
+from typing import Literal, TypeAlias, overload
 
 from pydantic import Field
 
@@ -65,7 +65,7 @@ WorkflowSelection: TypeAlias = (
 )
 
 
-def workflow_selection_type(workflow: WorkflowTask) -> type[ConfigModel]:
+def workflow_selection_type(workflow: WorkflowTask) -> type[WorkflowSelection]:
     if workflow is WorkflowTask.ACQUIRE:
         return AcquireWorkflowSelection
     if workflow is WorkflowTask.TRAIN:
@@ -75,6 +75,50 @@ def workflow_selection_type(workflow: WorkflowTask) -> type[ConfigModel]:
     if workflow is WorkflowTask.EVALUATE:
         return EvaluateWorkflowSelection
     raise ConfigResolutionError(f"Unsupported workflow: {workflow.value}")
+
+
+@overload
+def workflow_selection_from_values(
+    workflow: Literal[WorkflowTask.ACQUIRE],
+    values: Mapping[str, object | None],
+) -> AcquireWorkflowSelection: ...
+
+
+@overload
+def workflow_selection_from_values(
+    workflow: Literal[WorkflowTask.TRAIN],
+    values: Mapping[str, object | None],
+) -> TrainWorkflowSelection: ...
+
+
+@overload
+def workflow_selection_from_values(
+    workflow: Literal[WorkflowTask.TUNE],
+    values: Mapping[str, object | None],
+) -> TuneWorkflowSelection: ...
+
+
+@overload
+def workflow_selection_from_values(
+    workflow: Literal[WorkflowTask.EVALUATE],
+    values: Mapping[str, object | None],
+) -> EvaluateWorkflowSelection: ...
+
+
+@overload
+def workflow_selection_from_values(
+    workflow: WorkflowTask,
+    values: Mapping[str, object | None],
+) -> WorkflowSelection: ...
+
+
+def workflow_selection_from_values(
+    workflow: WorkflowTask,
+    values: Mapping[str, object | None],
+) -> WorkflowSelection:
+    return workflow_selection_type(workflow).model_validate(
+        workflow_selection_payload(workflow, values)
+    )
 
 
 def workflow_selection_fields(workflow: WorkflowTask) -> tuple[str, ...]:

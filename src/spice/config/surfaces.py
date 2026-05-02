@@ -7,7 +7,11 @@ from typing import TypeVar, cast
 from ..modeling.families.base import ConfigModel
 from .models import ArtifactConfig, ProblemSpec, StorageSpec, StudyConfig
 from .registry import load_surface_frame as _load_surface_frame
-from .selections import WorkflowSelectionBase
+from .selections import (
+    AcquireWorkflowSelection,
+    TrainWorkflowSelection,
+    TuneWorkflowSelection,
+)
 
 ConfigT = TypeVar("ConfigT", bound=ConfigModel)
 
@@ -76,9 +80,12 @@ def load_surface_frame(name: str) -> SurfaceFrame:
     return _load_surface_frame(name)
 
 
-def apply_selection_overrides(
+SurfaceWorkflowSelection = AcquireWorkflowSelection | TrainWorkflowSelection | TuneWorkflowSelection
+
+
+def apply_surface_selection_overrides(
     frame: SurfaceFrame,
-    selection: WorkflowSelectionBase,
+    selection: SurfaceWorkflowSelection,
 ) -> SurfaceFrame:
     updates: dict[str, object] = {}
     if selection.chain is not None:

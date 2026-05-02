@@ -16,8 +16,7 @@ from ..config.models import ProblemSpec, WorkflowTask, coerce_problem_spec
 from ..config.registry import load_problem_spec
 from ..config.selections import (
     WorkflowSelection,
-    workflow_selection_fields,
-    workflow_selection_type,
+    workflow_selection_from_values,
 )
 from ..core.errors import ConfigResolutionError
 from .schema import (
@@ -147,14 +146,8 @@ def _expand_case(case: BenchmarkCase) -> list[_ExpandedStep]:
 def _workflow_selection(expanded: _ExpandedStep) -> WorkflowSelection:
     workflow = expanded.workflow
     row = expanded.row
-    workflow_fields = frozenset(workflow_selection_fields(workflow))
     try:
-        selection = cast(
-            WorkflowSelection,
-            workflow_selection_type(workflow).model_validate(
-                {key: value for key, value in row.items() if key in workflow_fields}
-            ),
-        )
+        selection = workflow_selection_from_values(workflow, row)
         if workflow is not WorkflowTask.EVALUATE and getattr(selection, "surface", None) is None:
             raise ConfigResolutionError("surface is required")
         return selection

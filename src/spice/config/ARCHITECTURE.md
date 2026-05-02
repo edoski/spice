@@ -93,7 +93,7 @@ Tuned-parameter application is a typed transform. It rebuilds `TrainConfig` or `
 
 ## Public API Boundary
 
-`spice.config` exports resolved config types, workflow selection types, `resolve_workflow_config()`, workflow snapshot codecs, and config-owned coercers such as `coerce_problem_spec()` and `coerce_features_config()`.
+`spice.config` exports resolved config types, workflow selection types, `resolve_workflow_config()`, `resolve_workflow_command_config()`, workflow snapshot codecs, and config-owned coercers such as `coerce_problem_spec()` and `coerce_features_config()`.
 
 It does not re-export dataset-builder coercion. Dataset-builder config coercion belongs to `spice.modeling.dataset_builders`.
 
