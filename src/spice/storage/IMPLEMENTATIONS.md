@@ -46,7 +46,7 @@ SQLite connections enable foreign keys, WAL, and busy timeout.
 
 ## Payload Codecs
 
-`storage.payloads` owns generic SQLite payload stores plus raw persisted-payload validation helpers. Domain codecs keep artifact, corpus, study, and semantics field meaning, but use shared payload helpers so malformed state consistently raises `StateLayoutError`.
+`storage.payloads` owns generic SQLite payload stores plus raw persisted-payload validation helpers. Root-local payload codecs for corpus, study, and artifact state use strict `PayloadModel` envelopes at the SQLite boundary so malformed state consistently raises `StateLayoutError`. Semantic payloads use TypeAdapter canonical round trips because they persist dataclass contract bundles rather than root table envelopes.
 
 ## Deterministic IDs
 

@@ -54,16 +54,36 @@ def _study_config_from_name(study_name: object) -> StudyConfig | None:
     return StudyConfig(name=string_payload(study_name, label="artifact_manifest.study_name"))
 
 
-def _metric_descriptor_payload(descriptor: MetricDescriptor) -> dict[str, str]:
-    return {
-        "id": descriptor.id,
-        "label": descriptor.label,
-        "role": descriptor.role,
-    }
+class MetricDescriptorPayload(PayloadModel):
+    id: str
+    label: str
+    role: str
+
+    @classmethod
+    def from_descriptor(cls, descriptor: MetricDescriptor) -> MetricDescriptorPayload:
+        return cls(
+            id=descriptor.id,
+            label=descriptor.label,
+            role=descriptor.role,
+        )
+
+    def to_descriptor(self) -> MetricDescriptor:
+        return MetricDescriptor(
+            id=self.id,
+            label=self.label,
+            role=cast(Any, self.role),
+        )
 
 
-def _metric_descriptor_from_payload(payload: object) -> MetricDescriptor:
-    mapping = mapping_payload(payload, label="evaluation_summary.metric_descriptor")
+def _metric_descriptor_payload(descriptor: MetricDescriptor) -> MetricDescriptorPayload:
+    return MetricDescriptorPayload.from_descriptor(descriptor)
+
+
+def _metric_descriptor_from_payload(payload: MetricDescriptorPayload) -> MetricDescriptor:
+    mapping = mapping_payload(
+        payload.model_dump(mode="json"),
+        label="evaluation_summary.metric_descriptor",
+    )
     return MetricDescriptor(
         id=string_payload(mapping["id"], label="evaluation_summary.metric_descriptor.id"),
         label=string_payload(
@@ -282,7 +302,7 @@ class EvaluationSummaryPayload(PayloadModel):
     evaluation_id: str
     evaluation_config: dict[str, object]
     execution_provenance: EvaluationExecutionProvenancePayload | None = None
-    metric_descriptors: list[dict[str, str]]
+    metric_descriptors: list[MetricDescriptorPayload]
     n_history_rows: int
     n_evaluation_rows: int
     sample_count: int

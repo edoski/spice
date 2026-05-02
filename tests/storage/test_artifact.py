@@ -59,6 +59,8 @@ from spice.storage.artifact import (
 )
 from spice.storage.artifact_codecs import (
     evaluation_run_from_payload,
+    evaluation_summary_from_payload,
+    evaluation_summary_payload,
     training_summary_from_payload,
 )
 from spice.storage.engine import DATASET_ROOT_KIND, ensure_state_db
@@ -319,6 +321,15 @@ def test_evaluation_run_payload_rejects_loose_scalar_types() -> None:
                 "metadata": {"mode": True},
             }
         )
+
+
+def test_evaluation_summary_payload_rejects_extra_metric_descriptor_keys() -> None:
+    payload = evaluation_summary_payload(_evaluation_summary(0.2))
+    descriptor = cast(dict[str, object], payload["metric_descriptors"][0])
+    descriptor["extra"] = "nope"
+
+    with pytest.raises(StateLayoutError, match="Invalid evaluation summary payload"):
+        evaluation_summary_from_payload(payload, runs=[])
 
 
 def _evaluation_summary(value: float, *, seed: int = 2026) -> EvaluationRuntimeSummary:

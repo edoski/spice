@@ -63,7 +63,7 @@ def test_dataset_manifest_rejects_missing_chain_runtime(
     finally:
         engine.dispose()
 
-    with pytest.raises(StateLayoutError, match="chain.runtime is required"):
+    with pytest.raises(StateLayoutError, match="Invalid dataset manifest payload"):
         load_dataset_manifest(db_path)
 
 

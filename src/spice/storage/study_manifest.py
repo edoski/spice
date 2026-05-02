@@ -8,49 +8,23 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from ..config.models import (
-    PredictionConfig,
-    ProblemSpec,
-    SplitConfig,
     TrainConfig,
-    TrainingConfig,
     TuneConfig,
-    TuningSearchConfig,
-    TuningSpaceConfig,
-    coerce_features_config,
-    coerce_problem_spec,
 )
-from ..core.errors import (
-    MissingStateError,
-    StateConflictError,
-    StateLayoutError,
-)
+from ..core.errors import MissingStateError, StateConflictError
 from ..corpus.metadata import DatasetManifest
 from ..modeling._training_context import compile_training_context
-from ..modeling.dataset_builders import coerce_dataset_builder_config
-from ..modeling.families.base import ModelConfig
-from ..modeling.families.registry import coerce_model_config
-from ..modeling.tuned_config import coerce_tuning_space_config
-from ..objectives import coerce_objective_config
 from ..semantics import StudySemantics
 from .engine import STUDY_ROOT_KIND, create_state_engine, ensure_state_db, require_root_kind
 from .identity import (
     IdentityModel,
-    identity_payload,
     study_definition_identity_from_manifest,
     study_definition_identity_from_tuned_config,
     study_manifest_identity,
 )
-from .payloads import (
-    PayloadCodec,
-    SingletonPayloadStore,
-    bool_payload,
-    decode_payload,
-    int_payload,
-    mapping_payload,
-    string_payload,
-)
+from .payloads import PayloadCodec, SingletonPayloadStore
 from .schema import STUDY_TABLES, study_manifest
-from .semantics_codecs import study_semantics_from_payload, study_semantics_payload
+from .study_manifest_codecs import study_manifest_from_payload, study_manifest_payload
 from .study_models import StudyManifest
 
 if TYPE_CHECKING:
@@ -62,8 +36,8 @@ STUDY_SAMPLER_NAME = "TPESampler"
 _STUDY_MANIFEST_STORE = SingletonPayloadStore(
     table=study_manifest,
     codec=PayloadCodec(
-        encode=lambda manifest: manifest_payload(manifest),
-        decode=lambda payload: manifest_from_payload(payload),
+        encode=study_manifest_payload,
+        decode=study_manifest_from_payload,
     ),
 )
 
@@ -228,100 +202,5 @@ def _identity_field_mismatches(
     return mismatches
 
 
-def manifest_payload(manifest: StudyManifest) -> dict[str, object]:
-    return {
-        **identity_payload(study_manifest_identity(manifest)),
-        "semantics": study_semantics_payload(manifest.semantics),
-    }
-
-
-def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
-    return decode_payload("study manifest", lambda: _decode_manifest(payload))
-
-
-def _decode_manifest(payload: dict[str, object]) -> StudyManifest:
-    definition = mapping_payload(payload["definition"], label="study.definition")
-    model = coerce_model_config(
-        mapping_payload(definition["model"], label="study.definition.model")
-    )
-    problem = coerce_problem_spec(
-        mapping_payload(definition["problem"], label="study.definition.problem")
-    )
-    prediction = PredictionConfig.model_validate(
-        mapping_payload(definition["prediction"], label="study.definition.prediction")
-    )
-    semantics_payload = mapping_payload(payload["semantics"], label="study.semantics")
-    return StudyManifest(
-        study_id=string_payload(definition["study_id"], label="study.definition.study_id"),
-        dataset_builder=coerce_dataset_builder_config(
-            mapping_payload(
-                definition["dataset_builder"],
-                label="study.definition.dataset_builder",
-            )
-        ),
-        prediction=prediction,
-        objective=coerce_objective_config(
-            mapping_payload(definition["objective"], label="study.definition.objective")
-        ),
-        study_name=string_payload(
-            definition["study_name"],
-            label="study.definition.study_name",
-        ),
-        chain_name=string_payload(
-            definition["chain_name"],
-            label="study.definition.chain_name",
-        ),
-        dataset_id=string_payload(
-            definition["dataset_id"],
-            label="study.definition.dataset_id",
-        ),
-        dataset_name=string_payload(
-            definition["dataset_name"],
-            label="study.definition.dataset_name",
-        ),
-        problem=problem,
-        features=coerce_features_config(
-            mapping_payload(definition["features"], label="study.definition.features")
-        ),
-        model=model,
-        split=SplitConfig.model_validate(
-            mapping_payload(definition["split"], label="study.definition.split")
-        ),
-        training=TrainingConfig.model_validate(
-            mapping_payload(definition["training"], label="study.definition.training")
-        ),
-        tuning=TuningSearchConfig.model_validate(
-            mapping_payload(definition["tuning"], label="study.definition.tuning")
-        ),
-        sampler_name=string_payload(payload["sampler_name"], label="sampler_name"),
-        sampler_seed=int_payload(payload["sampler_seed"], label="sampler_seed"),
-        pruner_name=string_payload(payload["pruner_name"], label="pruner_name"),
-        enable_pruning=bool_payload(payload["enable_pruning"], label="enable_pruning"),
-        tuning_space=coerce_study_tuning_space(
-            definition["tuning_space"],
-            model=model,
-            problem=problem,
-        ),
-        semantics=study_semantics_from_payload(semantics_payload),
-    )
-
-
-def coerce_study_tuning_space(
-    payload: object,
-    *,
-    model: ModelConfig,
-    problem: ProblemSpec,
-) -> TuningSpaceConfig:
-    tuning_space = coerce_tuning_space_config(
-        mapping_payload(payload, label="study.tuning_space"),
-        model_config=model,
-        problem_config=problem,
-    )
-    if tuning_space is None:
-        raise StateLayoutError("Study tuning_space payload is required")
-    return tuning_space
-
-
 def pruner_name(enable_pruning: bool) -> str:
     return "MedianPruner" if enable_pruning else "NopPruner"
-

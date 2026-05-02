@@ -74,11 +74,13 @@ storage/
   schema.py          root-local state schema
   selectors.py       typed catalog selectors
   payloads.py        generic payload stores/codecs
+  corpus_codecs.py   corpus-root payload ABI
   artifact_codecs.py artifact-root payload ABI
   semantics_codecs.py persisted semantic-contract payload ABI
   corpus.py          corpus-root persistence
+  study_manifest_codecs.py study-root manifest payload ABI
   study_manifest.py  study-root manifest persistence
-  study_models.py    study payload models/codecs
+  study_models.py    study runtime read models
   study_optuna.py    Optuna storage integration
   artifact.py        artifact-root persistence
   workflow_roots.py  workflow-facing roots, producer identity, and root operations
