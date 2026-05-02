@@ -1,17 +1,17 @@
-"""Pure corpus split fulfillment decisions."""
+"""Internal corpus split fulfillment policy."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
 
-from ..acquisition import BlockRange, TimestampRange
+from ...acquisition import BlockRange, TimestampRange
 
 
 class SplitFulfillmentAction(StrEnum):
     REUSE_STAGED = "reuse_staged"
-    REUSE_CACHED = "reuse_cached"
-    EXTEND_CACHED = "extend_cached"
+    REUSE_COMMITTED = "reuse_committed"
+    EXTEND_COMMITTED = "extend_committed"
     MATERIALIZE_FULL = "materialize_full"
     REJECT_INVALID_STAGED = "reject_invalid_staged"
 
@@ -79,16 +79,16 @@ def plan_history_split_fulfillment(
 
         if existing_end == target_end and existing_start <= target_start:
             return SplitFulfillmentDecision(
-                action=SplitFulfillmentAction.REUSE_CACHED,
+                action=SplitFulfillmentAction.REUSE_COMMITTED,
                 outcome=SplitFulfillmentOutcome.REUSED,
-                status_message="history reused cached dataset",
+                status_message="history reused committed dataset",
             )
 
         if existing_end == target_end and existing_start > target_start:
             return SplitFulfillmentDecision(
-                action=SplitFulfillmentAction.EXTEND_CACHED,
+                action=SplitFulfillmentAction.EXTEND_COMMITTED,
                 outcome=SplitFulfillmentOutcome.EXTENDED,
-                status_message="history extending cached dataset",
+                status_message="history extending committed dataset",
                 pull_ranges=(
                     SplitPullRange(
                         label="history-prefix",
@@ -130,9 +130,9 @@ def plan_evaluation_split_fulfillment(
             if not existing_matches_target:
                 return _full_materialization_decision("evaluation", existing=existing)
             return SplitFulfillmentDecision(
-                action=SplitFulfillmentAction.REUSE_CACHED,
+                action=SplitFulfillmentAction.REUSE_COMMITTED,
                 outcome=SplitFulfillmentOutcome.REUSED,
-                status_message="evaluation reused cached dataset",
+                status_message="evaluation reused committed dataset",
             )
 
         overlap_start = max(existing_start, target_start)
@@ -156,9 +156,9 @@ def plan_evaluation_split_fulfillment(
                     )
                 )
             return SplitFulfillmentDecision(
-                action=SplitFulfillmentAction.EXTEND_CACHED,
+                action=SplitFulfillmentAction.EXTEND_COMMITTED,
                 outcome=SplitFulfillmentOutcome.EXTENDED,
-                status_message="evaluation extending cached dataset",
+                status_message="evaluation extending committed dataset",
                 pull_ranges=tuple(pull_ranges),
                 reusable_range=BlockRange(start=overlap_start, end=overlap_end),
             )

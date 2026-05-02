@@ -141,7 +141,7 @@ Corpus policy that compiles feature/problem capability requirements, plans acqui
 _Avoid_: history helper, acquisition scheduler
 
 **Corpus Split Materialization**:
-Corpus module that fulfills Split Intents through a materialization session, reusing, extending, rebuilding, and validating canonical history/evaluation block datasets. A pure fulfillment plan chooses staged reuse, cached reuse, extension, or full materialization; the session executes IO. Extension reuses whole clean parquet chunks and rewrites only missing or edge ranges.
+Corpus module that fulfills Split Intents through a materialization session, reusing, extending, rebuilding, and validating canonical history/evaluation block datasets. It owns internal fulfillment policy, staged/committed fact collection, target matching, pull execution, parquet IO, and validation. Extension reuses whole clean parquet chunks and rewrites only missing or edge ranges.
 _Avoid_: parquet helper, acquisition pull
 
 **Split Intent**:

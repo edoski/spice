@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import polars as pl
 
@@ -19,7 +20,7 @@ def test_validate_contiguous_block_frame_reports_shape_errors() -> None:
         chain_id=2,
     )
     rows[2]["block_number"] = rows[1]["block_number"]
-    rows[3]["block_number"] = rows[2]["block_number"] + 2
+    rows[3]["block_number"] = cast(int, rows[2]["block_number"]) + 2
     report = validate_contiguous_block_frame(
         pl.DataFrame(rows),
         dataset_path=Path("/tmp/history"),

@@ -1,4 +1,4 @@
-"""Corpus split materialization helpers."""
+"""Corpus split materialization session."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from shutil import copy2
 
 import polars as pl
 
-from ..acquisition import (
+from ...acquisition import (
     AcquisitionPullController,
     BlockPullPlan,
     BlockRange,
@@ -18,11 +18,16 @@ from ..acquisition import (
     TimestampRange,
     pull_block_range,
 )
-from ..core.files import remove_path
-from .contract import CanonicalBlockRow, canonicalize_block_frame
-from .io import iter_block_files, load_block_frame, write_block_file
-from .metadata import has_block_files
-from .split_fulfillment_plan import (
+from ...core.files import remove_path
+from ..contract import CanonicalBlockRow, canonicalize_block_frame
+from ..io import iter_block_files, load_block_frame, write_block_file
+from ..metadata import has_block_files
+from ..validation import (
+    BlockDatasetValidationReport,
+    validate_contiguous_block_frame,
+    validate_exact_window_frame,
+)
+from ._policy import (
     SplitDatasetFacts,
     SplitFulfillmentAction,
     SplitFulfillmentDecision,
@@ -31,11 +36,6 @@ from .split_fulfillment_plan import (
     SplitTarget,
     plan_evaluation_split_fulfillment,
     plan_history_split_fulfillment,
-)
-from .validation import (
-    BlockDatasetValidationReport,
-    validate_contiguous_block_frame,
-    validate_exact_window_frame,
 )
 
 
@@ -668,14 +668,14 @@ async def _ensure_history_split(
             outcome=split_outcome(decision.outcome),
         )
 
-    if decision.action is SplitFulfillmentAction.REUSE_CACHED:
+    if decision.action is SplitFulfillmentAction.REUSE_COMMITTED:
         if existing is None:
-            raise RuntimeError("history cached reuse decision requires existing dataset")
+            raise RuntimeError("history committed reuse decision requires existing dataset")
         emit(decision.status_message)
         validate_history_result(existing.validation, history_plan=history_plan)
         return reused_result(existing)
 
-    if decision.action is SplitFulfillmentAction.EXTEND_CACHED:
+    if decision.action is SplitFulfillmentAction.EXTEND_COMMITTED:
         if existing is None:
             raise RuntimeError("history extension decision requires existing dataset")
         if len(decision.pull_ranges) != 1:
@@ -779,15 +779,15 @@ async def _ensure_evaluation_split(
             outcome=split_outcome(decision.outcome),
         )
 
-    if decision.action is SplitFulfillmentAction.REUSE_CACHED:
+    if decision.action is SplitFulfillmentAction.REUSE_COMMITTED:
         if existing is None:
-            raise RuntimeError("evaluation cached reuse decision requires existing dataset")
+            raise RuntimeError("evaluation committed reuse decision requires existing dataset")
         validation = existing.validation.model_copy(deep=True)
         emit(decision.status_message)
         validate_result(validation, existing.path)
         return reused_result(existing, validation=validation)
 
-    if decision.action is SplitFulfillmentAction.EXTEND_CACHED:
+    if decision.action is SplitFulfillmentAction.EXTEND_COMMITTED:
         if existing is None:
             raise RuntimeError("evaluation extension decision requires existing dataset")
         if decision.reusable_range is None:

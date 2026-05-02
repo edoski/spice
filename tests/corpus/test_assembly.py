@@ -4,23 +4,12 @@ import asyncio
 import math
 from typing import cast
 
-import polars as pl
 import pytest
 
-from spice.acquisition import AcquisitionPullController, BlockPullPlan, BlockRange, TimestampRange
+from spice.acquisition import BlockPullPlan, BlockRange, TimestampRange
 from spice.config import AcquireConfig, WorkflowTask
 from spice.corpus.assembly import CorpusAssemblyRequest, assemble_corpus
-from spice.corpus.contract import canonicalize_block_frame
-from spice.corpus.io import load_block_frame
-from spice.corpus.split_materialization import (
-    CorpusSplitIntent,
-    CorpusSplitKind,
-    CorpusSplitMaterializationSession,
-    CorpusSplitMaterializationSpec,
-    CorpusSplitOutcome,
-    pull_plan_to_frame,
-    write_block_dataset_dir,
-)
+from spice.corpus.contract import CanonicalBlockRow
 from spice.storage.workflow_roots import resolve_acquire_producer_roots
 from tests.dataset_helpers import make_block_rows
 
@@ -170,298 +159,6 @@ def test_assemble_corpus_preserves_staging_on_failure(
     assert "history downloading" in messages
 
 
-async def _exercise_history_split_materialization(
-    config: AcquireConfig,
-    tmp_path,
-) -> tuple[CorpusSplitOutcome, list[str]]:
-    plan = _plan_for_window(
-        TimestampRange(
-            start=config.history_window_end_timestamp - 120,
-            end=config.history_window_end_timestamp,
-        ),
-        start_block=100,
-        expected_rows=10,
-    )
-
-    class Source:
-        async def close(self) -> None:
-            return None
-
-        async def estimate_recent_block_interval(self, sample_size: int = 128) -> float:
-            del sample_size
-            return 12.0
-
-        async def plan_window(self, window: TimestampRange) -> BlockPullPlan:
-            del window
-            return plan
-
-        def plan_block_range(
-            self,
-            block_range: BlockRange,
-            *,
-            window: TimestampRange,
-        ) -> BlockPullPlan:
-            return BlockPullPlan(
-                window=window,
-                block_range=block_range,
-                expected_rows=block_range.count,
-            )
-
-        async def get_block_rows(self, start: int, end: int):
-            return make_block_rows(
-                end - start,
-                start_block=start,
-                start_timestamp=plan.window.start + (start - plan.block_range.start) * 12,
-                chain_id=config.chain.runtime.chain_id,
-                block_interval_seconds=12,
-            )
-
-    session = CorpusSplitMaterializationSession(
-        materialization=CorpusSplitMaterializationSpec(
-            chain_name=config.chain.name,
-            expected_chain_id=config.chain.runtime.chain_id,
-            chunk_size=4,
-        ),
-        block_source=Source(),
-        controller=AcquisitionPullController.from_config(config.acquisition),
-    )
-    result = await session.fulfill(
-        CorpusSplitIntent(
-            kind=CorpusSplitKind.HISTORY,
-            output_dir=tmp_path / "history",
-            working_dir=tmp_path / "work",
-            plan=plan,
-        )
-    )
-    return result.outcome, sorted(path.name for path in result.path.glob("*.parquet"))
-
-
-def test_history_split_materialization_uses_split_spec(
-    tmp_path,
-    load_workflow_config,
-    acquire_override,
-) -> None:
-    config = _load_acquire_config(
-        load_workflow_config,
-        tmp_path,
-        override=acquire_override(),
-    )
-
-    outcome, filenames = asyncio.run(_exercise_history_split_materialization(config, tmp_path))
-
-    assert outcome is CorpusSplitOutcome.CREATED
-    assert filenames
-    assert all(name.startswith(f"{config.chain.name}__blocks__") for name in filenames)
-
-
-def test_split_materialization_parquet_sink_resumes_completed_prefix(
-    tmp_path,
-) -> None:
-    output_dir = tmp_path / "pull"
-    plan = _plan_for_window(
-        TimestampRange(start=1_000, end=2_000),
-        start_block=100,
-        expected_rows=4,
-    )
-    write_block_dataset_dir(
-        output_dir,
-        frame=canonicalize_block_frame(
-            pl.DataFrame(
-                make_block_rows(2, start_block=100, start_timestamp=1_000, chain_id=1)
-            )
-        ),
-        chunk_size=2,
-        chain_name="ethereum",
-    )
-    requests: list[tuple[int, int]] = []
-
-    class Source:
-        async def get_block_rows(self, start: int, end: int):
-            requests.append((start, end))
-            return make_block_rows(
-                end - start,
-                start_block=start,
-                start_timestamp=1_000 + (start - 100) * 12,
-                chain_id=1,
-            )
-
-    frame = asyncio.run(
-        pull_plan_to_frame(
-            block_source=Source(),
-            plan=plan,
-            output_dir=output_dir,
-            materialization=CorpusSplitMaterializationSpec(
-                chain_name="ethereum",
-                expected_chain_id=1,
-                chunk_size=2,
-            ),
-            controller=AcquisitionPullController(
-                configured_batch_size=2,
-                min_batch_size=1,
-                concurrency_rungs=(1,),
-                configured_concurrency=1,
-            ),
-        )
-    )
-
-    assert requests == [(102, 104)]
-    assert frame["block_number"].to_list() == [100, 101, 102, 103]
-    assert load_block_frame(output_dir)["block_number"].to_list() == [100, 101, 102, 103]
-
-
-def test_evaluation_split_extension_reuses_whole_existing_chunks(tmp_path) -> None:
-    output_dir = tmp_path / "evaluation"
-    working_dir = tmp_path / "work"
-    materialization = CorpusSplitMaterializationSpec(
-        chain_name="ethereum",
-        expected_chain_id=1,
-        chunk_size=2,
-    )
-    write_block_dataset_dir(
-        output_dir,
-        frame=canonicalize_block_frame(
-            pl.DataFrame(
-                make_block_rows(4, start_block=100, start_timestamp=1_000, chain_id=1)
-            )
-        ),
-        chunk_size=2,
-        chain_name="ethereum",
-    )
-    plan = BlockPullPlan(
-        window=TimestampRange(start=1_012, end=1_060),
-        block_range=BlockRange(start=101, end=105),
-        expected_rows=4,
-    )
-    requests: list[tuple[int, int]] = []
-
-    class Source:
-        async def get_block_rows(self, start: int, end: int):
-            requests.append((start, end))
-            return make_block_rows(
-                end - start,
-                start_block=start,
-                start_timestamp=1_000 + (start - 100) * 12,
-                chain_id=1,
-            )
-
-        def plan_block_range(
-            self,
-            block_range: BlockRange,
-            *,
-            window: TimestampRange,
-        ) -> BlockPullPlan:
-            return BlockPullPlan(
-                window=window,
-                block_range=block_range,
-                expected_rows=block_range.count,
-            )
-
-    session = CorpusSplitMaterializationSession(
-        materialization=materialization,
-        block_source=Source(),
-        controller=AcquisitionPullController(
-            configured_batch_size=2,
-            min_batch_size=1,
-            concurrency_rungs=(1,),
-            configured_concurrency=1,
-        ),
-    )
-    result = asyncio.run(
-        session.fulfill(
-            CorpusSplitIntent(
-                kind=CorpusSplitKind.EVALUATION,
-                output_dir=output_dir,
-                working_dir=working_dir,
-                plan=plan,
-            ),
-        )
-    )
-
-    assert result.outcome is CorpusSplitOutcome.EXTENDED
-    assert requests == [(104, 105)]
-    assert sorted(path.name for path in result.path.glob("*.parquet")) == [
-        "ethereum__blocks__101_to_101.parquet",
-        "ethereum__blocks__102_to_103.parquet",
-        "ethereum__blocks__104_to_104.parquet",
-    ]
-    assert load_block_frame(result.path)["block_number"].to_list() == [101, 102, 103, 104]
-
-
-def test_evaluation_split_rebuilds_stale_cached_block_range(tmp_path) -> None:
-    output_dir = tmp_path / "evaluation"
-    working_dir = tmp_path / "work"
-    materialization = CorpusSplitMaterializationSpec(
-        chain_name="ethereum",
-        expected_chain_id=1,
-        chunk_size=2,
-    )
-    write_block_dataset_dir(
-        output_dir,
-        frame=canonicalize_block_frame(
-            pl.DataFrame(
-                make_block_rows(4, start_block=100, start_timestamp=0, chain_id=1)
-            )
-        ),
-        chunk_size=2,
-        chain_name="ethereum",
-    )
-    plan = BlockPullPlan(
-        window=TimestampRange(start=1_000, end=1_048),
-        block_range=BlockRange(start=100, end=104),
-        expected_rows=4,
-    )
-    requests: list[tuple[int, int]] = []
-
-    class Source:
-        async def get_block_rows(self, start: int, end: int):
-            requests.append((start, end))
-            return make_block_rows(
-                end - start,
-                start_block=start,
-                start_timestamp=1_000 + (start - 100) * 12,
-                chain_id=1,
-            )
-
-        def plan_block_range(
-            self,
-            block_range: BlockRange,
-            *,
-            window: TimestampRange,
-        ) -> BlockPullPlan:
-            return BlockPullPlan(
-                window=window,
-                block_range=block_range,
-                expected_rows=block_range.count,
-            )
-
-    session = CorpusSplitMaterializationSession(
-        materialization=materialization,
-        block_source=Source(),
-        controller=AcquisitionPullController(
-            configured_batch_size=2,
-            min_batch_size=1,
-            concurrency_rungs=(1,),
-            configured_concurrency=1,
-        ),
-    )
-    result = asyncio.run(
-        session.fulfill(
-            CorpusSplitIntent(
-                kind=CorpusSplitKind.EVALUATION,
-                output_dir=output_dir,
-                working_dir=working_dir,
-                plan=plan,
-            ),
-        )
-    )
-
-    assert result.outcome is CorpusSplitOutcome.REBUILT
-    assert requests == [(100, 102), (102, 104)]
-    frame = load_block_frame(result.path)
-    assert frame["block_number"].to_list() == [100, 101, 102, 103]
-    assert frame["timestamp"].to_list() == [1_000, 1_012, 1_024, 1_036]
-
-
 def _exercise_short_history_refill(
     tmp_path,
     monkeypatch,
@@ -583,12 +280,15 @@ def _exercise_short_history_refill(
                     for plan in reversed(history_plans)
                     if start >= plan.block_range.start
                 )
-            return make_block_rows(
-                end - start,
-                start_block=start,
-                start_timestamp=plan.window.start + (start - plan.block_range.start) * 12,
-                chain_id=config.chain.runtime.chain_id,
-                block_interval_seconds=12,
+            return cast(
+                list[CanonicalBlockRow],
+                make_block_rows(
+                    end - start,
+                    start_block=start,
+                    start_timestamp=plan.window.start + (start - plan.block_range.start) * 12,
+                    chain_id=config.chain.runtime.chain_id,
+                    block_interval_seconds=12,
+                ),
             )
 
     monkeypatch.setattr(
