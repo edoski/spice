@@ -135,16 +135,16 @@ def benchmark_index_list_command(
         typer.Option("--index", help="Benchmark result index path."),
     ] = Path("benchmarks") / "results.sqlite",
 ) -> None:
-    from ...benchmarks.result_query import BenchmarkResultQuery, list_benchmark_results
+    from ...benchmarks.result_index import list_benchmark_results
 
-    query = BenchmarkResultQuery(
+    for row in list_benchmark_results(
+        index_path=index_path,
         benchmark=benchmark,
         chain=chain,
         model=model,
         evaluation=evaluation,
         limit=limit,
-    )
-    for row in list_benchmark_results(query, index_path=index_path):
+    ):
         _echo_json(asdict(row))
 
 

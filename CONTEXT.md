@@ -93,12 +93,8 @@ One summary-level benchmark observation from a collected evaluate result, includ
 _Avoid_: raw replay dump, CSV row
 
 **Benchmark Result Index**:
-Rebuildable SQLite projection over Benchmark Collection Snapshots used for query and export. Run dirs remain source of truth.
+Rebuildable SQLite projection over Benchmark Collection Snapshots used for small operator queries and CSV export. Run dirs remain source of truth.
 _Avoid_: canonical results database
-
-**Benchmark Result Query**:
-Read-only filter interface over the Benchmark Result Index for small operator queries.
-_Avoid_: CLI SQL
 
 **Storage Selector**:
 A typed query for one existing catalog record, preferably by exact root id: dataset, study, or artifact.
@@ -225,7 +221,6 @@ _Avoid_: execution backend
 - A **Benchmark Run** records **Benchmark Workflow Selections**, submissions, and one **Benchmark Collection Snapshot**.
 - A **Benchmark Collection Snapshot** contains **Benchmark Result Records** for all expected collected evaluate steps after **Evaluation Execution Provenance** matches the submitted execution ref.
 - The **Benchmark Result Index** projects **Benchmark Result Records** for query and CSV export.
-- **Benchmark Result Query** reads the **Benchmark Result Index** without owning SQL in the CLI.
 - A **Storage Selector** resolves existing persisted roots through the catalog before consumers build paths.
 - A **Root Handle** is the workflow-facing result of resolving a **Storage Selector** or produced-root identity.
 - A **Produced Root Handle** is derived from **Producer Root Identity** and canonical storage layout.

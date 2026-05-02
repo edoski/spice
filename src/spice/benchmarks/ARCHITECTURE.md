@@ -45,8 +45,7 @@ benchmarks/
   models.py      benchmark plan data models
   result_records.py  collection snapshot and result records
   result_store.py    low-level SQLite result projection
-  result_index.py    index upsert/rebuild operations
-  result_query.py    read-only result query interface
+  result_index.py    index upsert/rebuild/count/query operations
   __init__.py    benchmark API
   run_state_codec.py  benchmark-local metadata/plan/submission/collection codecs
   runs.py        run-dir lifecycle and public run-state facade

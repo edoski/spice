@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,9 +15,23 @@ from .result_store import (
     BENCHMARK_RESULT_INDEX_PATH,
     ensure_result_index,
     index_counts,
+    list_indexed_results,
     upsert_collection_snapshot,
 )
 from .runs import BENCHMARK_RUNS_ROOT, collection_snapshot_path, load_collection_snapshot
+
+
+@dataclass(frozen=True, slots=True)
+class BenchmarkResultSummary:
+    run_id: str
+    artifact_id: str
+    evaluation_storage_id: str
+    chain: str
+    model: str
+    evaluation: str
+    delay_seconds: int
+    sample_count: int
+    total_events: int
 
 
 def upsert_benchmark_collection_snapshot(
@@ -53,6 +68,38 @@ def benchmark_result_index_counts(
     index_path: Path = BENCHMARK_RESULT_INDEX_PATH,
 ) -> dict[str, int]:
     return index_counts(index_path)
+
+
+def list_benchmark_results(
+    *,
+    index_path: Path = BENCHMARK_RESULT_INDEX_PATH,
+    benchmark: str | None = None,
+    chain: str | None = None,
+    model: str | None = None,
+    evaluation: str | None = None,
+    limit: int | None = None,
+) -> list[BenchmarkResultSummary]:
+    return [
+        BenchmarkResultSummary(
+            run_id=row.run_id,
+            artifact_id=row.artifact_id,
+            evaluation_storage_id=row.evaluation_storage_id,
+            chain=row.chain_name,
+            model=row.model_id,
+            evaluation=row.evaluation_id,
+            delay_seconds=row.delay_seconds,
+            sample_count=row.sample_count,
+            total_events=row.total_events,
+        )
+        for row in list_indexed_results(
+            index_path,
+            benchmark=benchmark,
+            chain=chain,
+            model=model,
+            evaluation=evaluation,
+            limit=limit,
+        )
+    ]
 
 
 def _benchmark_run_dirs(runs_root: Path) -> list[Path]:

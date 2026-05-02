@@ -6,10 +6,10 @@ from pathlib import Path
 
 from spice.benchmarks.ledger import export_results_csv
 from spice.benchmarks.result_index import (
+    list_benchmark_results,
     rebuild_benchmark_result_index,
     upsert_benchmark_collection_snapshot,
 )
-from spice.benchmarks.result_query import BenchmarkResultQuery, list_benchmark_results
 from spice.benchmarks.result_records import (
     BenchmarkCollectionSnapshot,
     BenchmarkResultRecord,
@@ -20,7 +20,12 @@ from spice.benchmarks.runs import create_benchmark_run_dir, write_collection_sna
 from spice.config import WorkflowTask
 
 
-def _record(*, run_id: str, metric_id: str = "new_metric") -> BenchmarkResultRecord:
+def _record(
+    *,
+    run_id: str,
+    metric_id: str = "new_metric",
+    recorded_at_utc: str = "2026-05-01T11:00:00Z",
+) -> BenchmarkResultRecord:
     return BenchmarkResultRecord(
         run_id=run_id,
         case_id="case",
@@ -56,7 +61,7 @@ def _record(*, run_id: str, metric_id: str = "new_metric") -> BenchmarkResultRec
         variant="baseline",
         study_id=None,
         study_name=None,
-        recorded_at_utc="2026-05-01T11:00:00Z",
+        recorded_at_utc=recorded_at_utc,
         sample_count=123,
         total_events=7,
         n_history_rows=200,
@@ -70,7 +75,12 @@ def _record(*, run_id: str, metric_id: str = "new_metric") -> BenchmarkResultRec
     )
 
 
-def _snapshot(run_dir: Path, *, run_id: str) -> BenchmarkCollectionSnapshot:
+def _snapshot(
+    run_dir: Path,
+    *,
+    run_id: str,
+    recorded_at_utc: str = "2026-05-01T11:00:00Z",
+) -> BenchmarkCollectionSnapshot:
     return BenchmarkCollectionSnapshot(
         benchmark="bench",
         run_dir=str(run_dir),
@@ -78,7 +88,7 @@ def _snapshot(run_dir: Path, *, run_id: str) -> BenchmarkCollectionSnapshot:
         run_created_at_utc="2026-05-01T10:00:00Z",
         collected_at_utc="2026-05-01T11:05:00Z",
         expected_evaluate_count=1,
-        records=(_record(run_id=run_id),),
+        records=(_record(run_id=run_id, recorded_at_utc=recorded_at_utc),),
     )
 
 
@@ -92,8 +102,10 @@ def test_result_index_keeps_observations_per_benchmark_run(tmp_path: Path) -> No
 
     assert index_counts(index_path) == {"runs": 2, "observations": 2, "metrics": 4}
     rows = list_benchmark_results(
-        BenchmarkResultQuery(benchmark="bench", chain="ethereum", model="lstm"),
         index_path=index_path,
+        benchmark="bench",
+        chain="ethereum",
+        model="lstm",
     )
     assert [row.artifact_id for row in rows] == ["artifact-1", "artifact-1"]
 
@@ -139,10 +151,31 @@ def test_index_query_and_export_use_normalized_rows_not_payload_json(tmp_path: P
         connection.execute("update result_observations set payload_json = ?", ('{"broken": true}',))
 
     summaries = list_benchmark_results(
-        BenchmarkResultQuery(benchmark="bench"),
         index_path=index_path,
+        benchmark="bench",
     )
     rows = export_results_csv(output_path=output_path, index_path=index_path)
 
     assert [summary.artifact_id for summary in summaries] == ["artifact-1"]
     assert rows[0]["artifact_id"] == "artifact-1"
+
+
+def test_index_list_limits_newest_results(tmp_path: Path) -> None:
+    index_path = tmp_path / "results.sqlite"
+    for run_id, recorded_at_utc in (
+        ("old.evaluate", "2026-05-01T11:00:00Z"),
+        ("new.evaluate", "2026-05-01T11:02:00Z"),
+        ("middle.evaluate", "2026-05-01T11:01:00Z"),
+    ):
+        upsert_benchmark_collection_snapshot(
+            _snapshot(
+                tmp_path / "runs" / "bench" / run_id,
+                run_id=run_id,
+                recorded_at_utc=recorded_at_utc,
+            ),
+            index_path=index_path,
+        )
+
+    rows = list_benchmark_results(index_path=index_path, benchmark="bench", limit=2)
+
+    assert [row.run_id for row in rows] == ["new.evaluate", "middle.evaluate"]
