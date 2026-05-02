@@ -24,6 +24,10 @@ _Avoid_: output path, generated selector
 Executable typed configuration produced by resolving a workflow selection.
 _Avoid_: resolved request
 
+**Resolved Workflow Hydration**:
+Config module that turns a raw Resolved Workflow Snapshot back into a typed train, tune, or evaluate Workflow Config through owner coercers, without re-resolving a Surface.
+_Avoid_: workflow config coercion, surface replay
+
 **Resolved Workflow Snapshot**:
 Durable JSON payload for a resolved train, tune, or evaluate Workflow Config, loaded through owner coercers without re-resolving surfaces.
 _Avoid_: config dump, hydrated request
@@ -31,6 +35,10 @@ _Avoid_: config dump, hydrated request
 **Config Group**:
 A named collection of YAML specs for one kind of selectable configuration.
 _Avoid_: config bucket, config folder
+
+**Config Group Loading**:
+Config registry Interface that loads named Config Group entries either as canonical raw payloads for editing/display or as typed owner configs for workflow resolution.
+_Avoid_: YAML helper, generic config loader
 
 **Problem Spec**:
 The typed temporal problem definition selected by a workflow.
@@ -197,6 +205,8 @@ _Avoid_: execution backend
 - A **Workflow Selection** may override values from its **Surface**.
 - A **Workflow Config** is produced from exactly one **Workflow Selection**.
 - A **Resolved Workflow Snapshot** persists a resolved train, tune, or evaluate **Workflow Config** for remote execution or later benchmark collection.
+- **Resolved Workflow Hydration** loads **Resolved Workflow Snapshots** directly and does not run **Surface** resolution.
+- **Config Group Loading** feeds **Surface** resolution and raw config display/edit paths through separate Interfaces.
 - A **Problem Spec** can be selected by name or supplied inline by benchmark problem grids.
 - A **Benchmark** contains one or more **Benchmark Cases**.
 - A **Benchmark Case** contains one or more **Benchmark Steps**.

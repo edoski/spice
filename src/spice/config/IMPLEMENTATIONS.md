@@ -51,11 +51,15 @@ overrides: model=lstm_icdcs_2026, delay_seconds=36
 
 Overrides replace selected surface fields before final resolution. The result is a typed acquire, train, tune, or evaluate config.
 
-## Workflow Hydration
+Surface resolution is a typed construction path. Once named groups and overrides have been resolved, `resolution.py` instantiates the workflow config from typed pieces. It does not round-trip through raw resolved snapshot hydration.
 
-Acquire configs contain corpus acquisition fields: chain, dataset, provider, acquisition, features, and problem.
+## Resolved Workflow Hydration
 
-Model workflow configs contain training/evaluation fields: chain, dataset, problem, model, dataset builder, features, prediction, objective, optional evaluation, storage, artifact, split, training, study, tuning, and tuning space depending on workflow.
+Resolved snapshot hydration is the raw-payload path for already materialized train, tune, and evaluate configs. It validates the snapshot workflow marker, then uses owner coercers to rebuild concrete nested configs.
+
+Acquire is excluded from snapshot hydration. Acquire configs contain provider/acquisition concerns and are produced through surface resolution.
+
+Model workflow snapshots contain training/evaluation fields: chain, dataset, problem, model, dataset builder, features, prediction, objective, optional evaluation, storage, artifact, split, training, study, tuning, and tuning space depending on workflow.
 
 Evaluation date expands into concrete UTC windows:
 

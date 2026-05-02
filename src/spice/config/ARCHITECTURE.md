@@ -37,21 +37,33 @@ A workflow selection is unresolved workflow intent. CLI commands and benchmark p
 
 Selections usually refer to problem specs by name. Benchmark problem grids may supply an inline `ProblemSpec`; this still uses the same resolution path, and the resolved workflow config stores the full executable problem.
 
+## Config Group Loading
+
+Config groups have two loading needs. Raw canonical payload loading serves CLI show/edit, templates, fixture mutation, and durable YAML output. Typed loading serves workflow resolution, where a named config group must become the owner package's concrete config model before entering a workflow config.
+
+The registry owns named group lookup and identity checks. Owner packages own concrete dispatch inside a group.
+
 ## Owner Coercion
 
 Generic Pydantic validation cannot always reconstruct concrete nested types. The owning package knows which selector maps to which concrete type:
 
 ```text
-evaluation.engine        -> evaluation config type
+evaluation.id            -> evaluation config type
 dataset_builder.id       -> dataset-builder config type
 model.id                 -> model-family config type
 problem.compiler.id      -> problem compiler config type
 problem.execution_policy.id   -> execution-policy config type
 ```
 
-So config resolution and snapshot loading call owner coercers. This keeps all implementation-selection knowledge in the owning domain.
+So config group typed loading and resolved snapshot hydration call owner coercers. This keeps all implementation-selection knowledge in the owning domain.
 
-## Resolved Workflow Snapshot Codec
+## Surface Resolution
+
+Surface resolution is the fresh path from Workflow Selection to Workflow Config. It applies selection overrides, loads named config groups, calls owner coercers, and instantiates `AcquireConfig`, `TrainConfig`, `TuneConfig`, or `EvaluateConfig` from already typed pieces.
+
+Surface resolution does not hydrate raw resolved snapshots. Resolved snapshots are already past selection and surface ownership.
+
+## Resolved Workflow Hydration
 
 Remote execution, benchmark run persistence, and tuned-parameter reapplication do not re-resolve surfaces. They serialize or load an already resolved config snapshot:
 
@@ -71,7 +83,7 @@ hydrate_workflow_config_snapshot()
 owner coercers reconstruct concrete nested configs
 ```
 
-The snapshot codec is intentionally resolved-snapshot-only. It supports train, tune, and evaluate. Acquire has different acquisition/provider concerns and is resolved through normal workflow resolution.
+Resolved Workflow Hydration is intentionally snapshot-only. It supports train, tune, and evaluate. Acquire has different acquisition/provider concerns and is resolved through Surface resolution.
 
 ## Public API Boundary
 

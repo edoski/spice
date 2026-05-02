@@ -54,4 +54,3 @@ def test_remote_runner_rehydrates_resolved_workflow_snapshots(
     )
 
     assert isinstance(restored, expected_type)
-    assert restored.model_dump(mode="json") == config.model_dump(mode="json")

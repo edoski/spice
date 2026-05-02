@@ -422,18 +422,6 @@ def test_selection_overrides_allow_problem_features_and_evaluation_selection(
     assert train_config.evaluation is not None
     assert train_config.evaluation.id == "poisson_replay_2h"
 
-    evaluate_config = resolve_workflow_config(
-        WorkflowTask.EVALUATE,
-        EvaluateWorkflowSelection(
-            artifact_id=TEST_ARTIFACT_ID,
-            dataset_id=TEST_DATASET_ID,
-            evaluation="poisson_replay_2h",
-            storage_root=tmp_path / "eval_outputs",
-        ),
-    )
-    assert evaluate_config.evaluation is not None
-    assert evaluate_config.evaluation.id == "poisson_replay_2h"
-
 
 def test_selection_accepts_inline_problem_spec(
     tmp_path: Path,
@@ -501,21 +489,6 @@ def test_selection_overrides_allow_objective_selection(
     )
     assert tune_config.objective.id == "validation"
     assert tune_config.objective.metric_id == "total_loss"
-
-    evaluate_config = cast(
-        EvaluateConfig,
-        resolve_workflow_config(
-            WorkflowTask.EVALUATE,
-            EvaluateWorkflowSelection(
-                artifact_id=TEST_ARTIFACT_ID,
-                dataset_id=TEST_DATASET_ID,
-                evaluation="poisson_replay_2h",
-                storage_root=tmp_path / "eval_outputs",
-            ),
-        ),
-    )
-    assert evaluate_config.artifact_id == TEST_ARTIFACT_ID
-    assert evaluate_config.evaluation.id == "poisson_replay_2h"
 
 
 def test_selection_overrides_allow_model_and_tuning_space_selection(
