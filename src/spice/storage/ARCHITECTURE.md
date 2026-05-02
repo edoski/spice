@@ -81,7 +81,7 @@ storage/
   study_manifest_codecs.py study-root manifest payload ABI
   study_manifest.py  study-root manifest persistence
   study_models.py    study runtime read models
-  study_optuna.py    Optuna storage integration
+  study_optuna.py    Optuna storage adapter and read access
   artifact.py        artifact-root persistence
   workflow_roots.py  workflow-facing roots, producer identity, and root operations
   lifecycle.py       staging, promotion, partial commit, delete cascade

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import optuna
 from optuna.storages import RDBStorage
@@ -16,79 +15,23 @@ from ..core.errors import (
     StateConflictError,
     StateLayoutError,
 )
-from ..corpus.metadata import DatasetManifest
 from ..modeling.tuned_config import coerce_tuned_parameter_set
 from .engine import db_url
-from .study_manifest import (
-    diff_study_manifests,
-    insert_study_manifest,
-    load_study_manifest,
-    manifest_from_tune_config,
-    try_load_study_manifest,
-)
+from .study_manifest import load_study_manifest
 from .study_models import (
-    TRIAL_BEST_EPOCH_KEY,
     TRIAL_PARAMS_KEY,
-    OpenStudy,
     StudyManifest,
     StudySummary,
     StudyTrialRecord,
     build_study_summary,
     build_trial_record,
-    trial_params_payload,
 )
-
-if TYPE_CHECKING:
-    from .workflow_roots import CorpusRootHandle, StudyRootHandle
 
 
 def study_storage(db_path: Path) -> RDBStorage:
     return RDBStorage(
         url=db_url(db_path),
         engine_kwargs={"connect_args": {"timeout": 5}},
-    )
-
-
-def open_tuning_study(
-    study: StudyRootHandle,
-    *,
-    config: TuneConfig,
-    corpus: CorpusRootHandle,
-    corpus_manifest: DatasetManifest,
-) -> OpenStudy:
-    requested_manifest = manifest_from_tune_config(
-        config,
-        corpus=corpus,
-        study=study,
-        corpus_manifest=corpus_manifest,
-    )
-    db_path = study.state_db_path
-    stored_manifest = try_load_study_manifest(db_path)
-    if stored_manifest is None:
-        insert_study_manifest(db_path, manifest=requested_manifest)
-        manifest = requested_manifest
-    else:
-        mismatches = diff_study_manifests(stored_manifest, requested_manifest)
-        if mismatches:
-            raise StateConflictError(
-                "Existing study definition does not match current definition: "
-                + ", ".join(mismatches)
-            )
-        manifest = stored_manifest
-    materialized_study = load_or_create_materialized_study(db_path, config=config)
-    existing_trial_count = len(materialized_study.trials)
-    target_trial_count = config.tuning.trial_count
-    if target_trial_count < existing_trial_count:
-        raise StateConflictError(
-            "Requested trial_count is lower than existing study size: "
-            f"requested {target_trial_count}, existing {existing_trial_count}"
-        )
-    return OpenStudy(
-        manifest=manifest,
-        study=materialized_study,
-        existing_trial_count=existing_trial_count,
-        target_trial_count=target_trial_count,
-        remaining_trial_count=target_trial_count - existing_trial_count,
     )
 
 
@@ -111,14 +54,6 @@ def load_study_summary(db_path: Path) -> StudySummary:
 def list_trial_records(db_path: Path) -> list[StudyTrialRecord]:
     manifest, study = _load_verified_study(db_path)
     return [build_trial_record(trial, model_id=manifest.model_id) for trial in study.trials]
-
-
-def record_trial_params(trial: optuna.Trial, params: TunedParameterSet) -> None:
-    trial.set_user_attr(TRIAL_PARAMS_KEY, trial_params_payload(params))
-
-
-def record_trial_best_epoch(trial: optuna.Trial, best_epoch: int) -> None:
-    trial.set_user_attr(TRIAL_BEST_EPOCH_KEY, best_epoch)
 
 
 def load_materialized_study(db_path: Path, *, study_name: str) -> optuna.Study:

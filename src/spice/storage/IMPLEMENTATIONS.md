@@ -84,7 +84,7 @@ Training state stores one summary and ordered epoch rows. Evaluation state store
 
 ## Study State
 
-Study state stores a SPICE study manifest and Optuna's RDB tables in the same SQLite file. The study manifest validates that resumed tuning belongs to the same study definition. Trial attributes store sampled params and best epoch.
+Study state stores a SPICE study manifest and Optuna's RDB tables in the same SQLite file. The study manifest validates that resumed tuning belongs to the same study definition. Trial attributes store sampled params and best epoch. `storage.study_optuna` owns the RDB adapter and study read APIs; `modeling.tuning_execution` owns opening execution, running trials, and writing per-trial execution metadata.
 
 ## Staging And Commit
 

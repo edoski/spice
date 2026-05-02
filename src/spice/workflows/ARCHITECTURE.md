@@ -58,10 +58,9 @@ Train uses complete-root staging because it produces a full artifact root.
 TuneConfig
   -> resolve consumed dataset root through catalog
   -> derive produced study root
-  -> build trial training specs
+  -> build max-search coverage spec
   -> validate corpus coverage
-  -> materialize or update study state
-  -> run trials
+  -> delegate study opening and trial execution to modeling.tuning_execution
   -> reindex study root after materialization
 ```
 

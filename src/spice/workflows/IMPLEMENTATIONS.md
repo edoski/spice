@@ -54,16 +54,13 @@ Tune creates or resumes a study root.
 ```text
 resolve study identity
   -> validate corpus coverage for tuned search space
-  -> open Optuna study
-  -> for each trial:
-       sample params
-       apply params
-       train in trial dir
-       report objective
-  -> store best trial in study DB
+  -> open tuning execution
+  -> delegate trial execution to modeling
+  -> report trial and best-trial callbacks
+  -> reindex study root
 ```
 
-Trial artifacts are not persisted as final artifacts. The study stores sampled params and best epoch metadata.
+Trial artifacts are not persisted as final artifacts. The study stores sampled params and best epoch metadata through Tuning Execution.
 
 ## Evaluate
 

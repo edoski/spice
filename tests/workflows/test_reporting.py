@@ -4,13 +4,12 @@ from io import StringIO
 from types import SimpleNamespace
 from typing import cast
 
-from optuna.trial import TrialState
-
 from spice.config import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.core.reporting import Reporter
 from spice.evaluation import EvaluationSummary, coerce_evaluator_config
 from spice.metrics import MetricDescriptor, MetricSet
 from spice.modeling.training_runner import TrainingEpochProgress
+from spice.modeling.tuning_execution import TuningTrialProgress
 from spice.storage.workflow_roots import ArtifactRootHandle, CorpusRootHandle, StudyRootHandle
 from spice.workflows import evaluate as evaluate_workflow
 from spice.workflows import train as train_workflow
@@ -491,29 +490,6 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
     output = StringIO()
     reporter = Reporter(stream=output)
 
-    class FakeStudy:
-        def __init__(self) -> None:
-            self.trials: list[SimpleNamespace] = []
-            self.best_trial: SimpleNamespace | None = None
-
-        def optimize(self, objective, *, n_trials: int, timeout, callbacks) -> None:
-            del objective, timeout
-            values = (0.2, 0.35)
-            epochs = (2, 3)
-            for number in range(n_trials):
-                trial = SimpleNamespace(
-                    number=number,
-                    state=TrialState.COMPLETE,
-                    value=values[number],
-                    user_attrs={"spice_best_epoch": epochs[number]},
-                )
-                self.trials.append(trial)
-                if self.best_trial is None or trial.value > self.best_trial.value:
-                    self.best_trial = trial
-                for callback in callbacks:
-                    callback(self, trial)
-
-    fake_study = FakeStudy()
     corpus = corpus_handle(
         tmp_path / "outputs",
         chain_name=config.chain.name,
@@ -542,7 +518,7 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
     )
     monkeypatch.setattr(
         tune_workflow,
-        "_coverage_spec",
+        "build_tuning_coverage_spec",
         lambda *_args, **_kwargs: SimpleNamespace(
             problem_contract=object(),
             feature_contract=object(),
@@ -552,16 +528,39 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
     monkeypatch.setattr(tune_workflow, "validate_corpus_coverage", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         tune_workflow,
-        "open_tuning_study",
+        "open_tuning_execution",
         lambda *_args, **_kwargs: SimpleNamespace(
             manifest=object(),
-            study=fake_study,
+            study=object(),
             existing_trial_count=0,
             target_trial_count=2,
             remaining_trial_count=2,
         ),
     )
-    monkeypatch.setattr(tune_workflow, "build_study_summary", lambda *_args, **_kwargs: object())
+
+    def fake_run_tuning_execution(_opened, *, callbacks, **_kwargs):
+        callbacks.on_study_start(2)
+        callbacks.on_trial_complete(
+            TuningTrialProgress(
+                number=0,
+                total_trials=2,
+                state="COMPLETE",
+                value=0.2,
+                best_epoch=2,
+            )
+        )
+        callbacks.on_trial_complete(
+            TuningTrialProgress(
+                number=1,
+                total_trials=2,
+                state="COMPLETE",
+                value=0.35,
+                best_epoch=3,
+            )
+        )
+        return object()
+
+    monkeypatch.setattr(tune_workflow, "run_tuning_execution", fake_run_tuning_execution)
     monkeypatch.setattr(StudyRootHandle, "reindex", lambda _self: None)
     monkeypatch.setattr(
         tune_workflow,
@@ -635,13 +634,13 @@ def test_tune_workflow_accepts_id_resolved_corpus_chain(
         assert corpus_manifest.chain.name == "polygon"
         return SimpleNamespace(problem_contract=object(), feature_contract=object())
 
-    monkeypatch.setattr(tune_workflow, "_coverage_spec", fake_coverage_spec)
+    monkeypatch.setattr(tune_workflow, "build_tuning_coverage_spec", fake_coverage_spec)
     monkeypatch.setattr(tune_workflow, "training_coverage_requirement", lambda *_args: object())
     monkeypatch.setattr(tune_workflow, "validate_corpus_coverage", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(StudyRootHandle, "reindex", lambda _self: None)
     monkeypatch.setattr(
         tune_workflow,
-        "open_tuning_study",
+        "open_tuning_execution",
         lambda *_args, **_kwargs: SimpleNamespace(
             manifest=object(),
             study=SimpleNamespace(trials=[]),
@@ -650,7 +649,7 @@ def test_tune_workflow_accepts_id_resolved_corpus_chain(
             remaining_trial_count=0,
         ),
     )
-    monkeypatch.setattr(tune_workflow, "build_study_summary", lambda *_args: object())
+    monkeypatch.setattr(tune_workflow, "run_tuning_execution", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(
         tune_workflow,
         "study_result_fields",

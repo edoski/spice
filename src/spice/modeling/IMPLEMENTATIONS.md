@@ -137,11 +137,11 @@ Evaluate workflow reconstructs trained semantics from the artifact manifest, val
 
 ## Tuning
 
-Tuning uses Optuna. Each trial samples typed params, applies them to the base config, trains in a trial directory without persisting an artifact, records best epoch metadata, and returns the selected objective metric.
+Tuning Execution uses Optuna. `modeling.tuning_execution` opens or resumes the storage-backed study, validates that the requested trial count can extend existing state, samples typed params, applies them to the base config, trains each trial in a temporary artifact directory, records sampled params and best epoch metadata, and returns the selected objective metric.
 
 The lifecycle is: tuning space -> shared categorical sampler -> model-family adapter -> typed tuned params -> validated copy of the base model config. Training and problem parameters use the same shared sampler. Architecture-specific derivations stay in the family adapter.
 
-Study state stores the study manifest and Optuna tables. Trial user attributes record sampled params and best epoch.
+Study state stores the study manifest and Optuna tables. Trial user attributes record sampled params and best epoch. The tune workflow supplies reporting callbacks; it does not own trial execution.
 
 ## Failure Modes
 

@@ -69,6 +69,8 @@ Artifact inference validation is centralized in `modeling.artifact_inference`. I
 
 Artifact training and temporary tuning trials use separate training-spec entrypoints so artifact identity and study identity stay explicit at the workflow seam.
 
+Tuning Execution is centralized in `modeling.tuning_execution`. It opens compatible study state, validates resume counts, runs Optuna trials in temporary artifact directories, records trial metadata, and returns storage-owned study summaries. Workflows only resolve roots, validate coverage, attach reporter callbacks, and reindex.
+
 ## Dataset Builders
 
 Dataset builders adapt canonical block frames into model-ready training and inference datasets. They own tensorization policy, split behavior, builder runtime metadata, scaler fitting inputs, and inference-time reconstruction from the artifact Temporal Capability. They do not own corpus IO, feature semantics, prediction losses, or evaluator metrics.
@@ -112,6 +114,7 @@ modeling/
   artifacts.py            artifact loading/validation helpers
   artifact_inference.py   artifact validation -> inference scoring context
   persisted_training.py   training artifact write path
+  tuning_execution.py     study opening, trial execution, and summary production
 ```
 
 ## Extension Points

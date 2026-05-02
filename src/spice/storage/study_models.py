@@ -132,15 +132,6 @@ class StudySummary:
     best_trial: TrialSummary | None
 
 
-@dataclass(frozen=True, slots=True)
-class OpenStudy:
-    manifest: StudyManifest
-    study: optuna.Study
-    existing_trial_count: int
-    target_trial_count: int
-    remaining_trial_count: int
-
-
 def params_from_trial(trial: FrozenTrial, *, model_id: str) -> TunedParameterSet:
     payload = trial.user_attrs.get(TRIAL_PARAMS_KEY)
     if not isinstance(payload, dict):

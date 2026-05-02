@@ -56,6 +56,10 @@ _Avoid_: feature allow-list, output slice
 Typed value carried by trained artifacts that bundles the problem compiler runtime metadata with the artifact action width and maximum supported delay.
 _Avoid_: max slots, compiler metadata payload
 
+**Tuning Execution**:
+Modeling-owned runtime that opens a compatible study, runs Optuna trials, writes trial metadata, and returns the storage-owned study summary.
+_Avoid_: tune workflow objective, study storage helper
+
 **Benchmark**:
 A named matrix of workflow selections used to compare experiment variants.
 _Avoid_: experiment batch
