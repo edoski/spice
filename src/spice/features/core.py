@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
@@ -85,6 +84,7 @@ class FeatureSpec:
 class FeatureCatalog:
     sources: dict[str, SourceSpec]
     features: dict[str, FeatureSpec]
+    allowed_outputs: tuple[str, ...]
     fingerprint_sources: tuple[Path, ...]
 
 
@@ -179,12 +179,11 @@ def build_feature_table(
     features_id: str,
     catalog: FeatureCatalog,
     feature_names: tuple[str, ...],
-    allowed_feature_names: tuple[str, ...],
 ) -> ResolvedFeatureTable:
     validate_feature_names(
         features_id,
         feature_names,
-        known_feature_names=allowed_feature_names,
+        known_feature_names=catalog.allowed_outputs,
     )
     sorted_blocks = blocks.sort("block_number")
     ordered_features = _dependency_order(feature_names, catalog=catalog)
@@ -366,50 +365,3 @@ def _dependency_order(
 def _float_column(blocks: pl.DataFrame, column: str) -> FloatVector:
     return blocks[column].cast(pl.Float64).to_numpy().astype(np.float64, copy=False)
 
-
-def shifted_column(blocks: pl.DataFrame, column: str, *, lag: int = 1) -> FloatVector:
-    return shift(_float_column(blocks, column), lag=lag)
-
-
-def shift(values: FloatVector, *, lag: int = 1) -> FloatVector:
-    if lag <= 0:
-        raise ValueError("lag must be positive")
-    result = np.full(values.shape[0], np.nan, dtype=np.float64)
-    if values.size > lag:
-        result[lag:] = values[:-lag]
-    return result
-
-
-def rolling_stat(values: FloatVector, *, window: int, stat: str, ddof: int = 0) -> FloatVector:
-    if values.size == 0:
-        return np.empty(0, dtype=np.float64)
-    series = pl.Series(values)
-    if stat == "mean":
-        result = series.rolling_mean(window_size=window, min_samples=window)
-    elif stat == "std":
-        result = series.rolling_std(window_size=window, min_samples=window, ddof=ddof)
-    elif stat == "min":
-        result = series.rolling_min(window_size=window, min_samples=window)
-    else:  # pragma: no cover
-        raise ValueError(f"Unsupported rolling stat: {stat}")
-    return result.to_numpy().astype(np.float64, copy=False)
-
-
-def hour_sin(timestamps: IntVector) -> FloatVector:
-    hours = (timestamps // 3600) % 24
-    return np.sin(2.0 * math.pi * hours.astype(np.float64, copy=False) / 24.0)
-
-
-def hour_cos(timestamps: IntVector) -> FloatVector:
-    hours = (timestamps // 3600) % 24
-    return np.cos(2.0 * math.pi * hours.astype(np.float64, copy=False) / 24.0)
-
-
-def dow_sin(timestamps: IntVector) -> FloatVector:
-    days = ((timestamps // 86_400) + 4) % 7
-    return np.sin(2.0 * math.pi * days.astype(np.float64, copy=False) / 7.0)
-
-
-def dow_cos(timestamps: IntVector) -> FloatVector:
-    days = ((timestamps // 86_400) + 4) % 7
-    return np.cos(2.0 * math.pi * days.astype(np.float64, copy=False) / 7.0)

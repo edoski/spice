@@ -48,6 +48,10 @@ _Avoid_: YAML helper, generic config loader
 The typed temporal problem definition selected by a workflow.
 _Avoid_: problem config, problem preset
 
+**Feature Catalog**:
+Registered feature implementation selected by `features.id`. It owns source availability, formulas, selectable outputs, prerequisites, and fingerprint sources for one feature set.
+_Avoid_: feature allow-list, output slice
+
 **Temporal Capability**:
 Typed value carried by trained artifacts that bundles the problem compiler runtime metadata with the artifact action width and maximum supported delay.
 _Avoid_: max slots, compiler metadata payload

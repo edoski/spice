@@ -26,9 +26,11 @@ ResolvedFeatureTable
 
 `FeatureSpec` owns formulas over source and feature dependencies. The default catalog is `core_fee_dynamics`.
 
-## `core_fee_dynamics`
+## Catalog Family
 
-The current catalog is protocol-first and includes the safe local-trend signals that improved the 1M A/B grid. Output sets are composed from explicit Python groups so YAML specs can stay fully expanded while tests verify they match the canonical composition.
+`core_fee_dynamics` is a catalog family with separate registered catalogs for the safe baseline, unsafe same-block comparator, priority-fee extension, and elapsed-position ablation. Each registered catalog owns its selectable outputs and fingerprint sources. Shared formulas live in private family helpers; the registry does not slice one broad catalog with external allow-lists.
+
+The safe `core_fee_dynamics` catalog is protocol-first and includes the safe local-trend signals that improved the 1M A/B grid. Output sets are composed from explicit Python groups so YAML specs can stay fully expanded while tests verify they match the canonical composition.
 
 | Group | Outputs | Reason |
 | --- | --- | --- |
@@ -43,11 +45,11 @@ The current catalog is protocol-first and includes the safe local-trend signals 
 
 All previous-block facts are lagged inside their `SourceSpec`, not ad hoc in dataset builders or models. That keeps causality local to the source that owns availability. The current-row gas/tx groups are separate Python output groups used only by the unsafe leakage comparator.
 
-`core_fee_dynamics_unsafe` is the same no-priority feature concept with finalized gas and tx-count facts exposed from the current row. It is not deployable; it exists as an explicit same-block leakage comparator.
+`core_fee_dynamics_unsafe` is a separate no-priority catalog with finalized gas and tx-count facts exposed from the current row. It is not deployable; it exists as an explicit same-block leakage comparator.
 
-`core_fee_dynamics_with_priority_fee` extends canonical `core_fee_dynamics` with lagged public priority-fee p10/p50/p90/spread scalars plus p50/spread local trend features.
+`core_fee_dynamics_with_priority_fee` is a separate catalog that extends canonical `core_fee_dynamics` with lagged public priority-fee p10/p50/p90/spread scalars plus p50/spread local trend features.
 
-`elapsed_seconds` remains implemented only for the `core_fee_dynamics_elapsed_position` ablation spec. It measures timestamp distance from the first row in the materialized feature table. It is not part of the default catalog because it can encode corpus position, long-term regime, or split-specific trends rather than reusable fee dynamics.
+`elapsed_seconds` remains implemented only for the separate `core_fee_dynamics_elapsed_position` ablation catalog. It measures timestamp distance from the first row in the materialized feature table. It is not part of the default catalog because it can encode corpus position, long-term regime, or split-specific trends rather than reusable fee dynamics.
 
 ## Invariants
 
@@ -57,4 +59,4 @@ Feature matrices are `float32` and finite. Warmup rows use finite placeholders t
 
 ## Fingerprints
 
-Fingerprints hash the features id, selected output names, and implementation source files. They do not hash output paths. This makes artifacts sensitive to feature logic while keeping storage location irrelevant.
+Fingerprints hash the features id, selected output names, and each catalog's implementation source files. They do not hash output paths. Splitting a family catalog can naturally change fingerprints because the source layout is part of the feature ABI.

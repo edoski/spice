@@ -17,14 +17,21 @@ from spice.features import (
     validate_feature_selection,
 )
 from spice.features import core as feature_core
-from spice.features.sets import core_fee_dynamics as core_fee_dynamics_module
-from spice.features.sets.core_fee_dynamics import (
-    CORE_FEE_DYNAMICS,
+from spice.features.sets.core_fee_dynamics import _shared as shared_module
+from spice.features.sets.core_fee_dynamics import safe as safe_module
+from spice.features.sets.core_fee_dynamics.elapsed_position import (
     CORE_FEE_DYNAMICS_ELAPSED_POSITION_OUTPUTS,
-    CORE_FEE_DYNAMICS_OUTPUTS,
+)
+from spice.features.sets.core_fee_dynamics.priority_fee import (
     CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS,
-    CORE_FEE_DYNAMICS_UNSAFE_OUTPUTS,
     PRIORITY_FEE_OUTPUTS,
+)
+from spice.features.sets.core_fee_dynamics.safe import (
+    CORE_FEE_DYNAMICS,
+    CORE_FEE_DYNAMICS_OUTPUTS,
+)
+from spice.features.sets.core_fee_dynamics.unsafe import (
+    CORE_FEE_DYNAMICS_UNSAFE_OUTPUTS,
 )
 
 
@@ -139,10 +146,12 @@ def test_core_fee_dynamics_rejects_priority_fee_outputs() -> None:
 
 
 def test_core_fee_dynamics_fingerprint_includes_shared_engine() -> None:
-    assert core_fee_dynamics_module.__file__ is not None
+    assert safe_module.__file__ is not None
+    assert shared_module.__file__ is not None
     assert feature_core.__file__ is not None
     assert CORE_FEE_DYNAMICS.fingerprint_sources == (
-        Path(core_fee_dynamics_module.__file__).resolve(),
+        Path(safe_module.__file__).resolve(),
+        Path(shared_module.__file__).resolve(),
         Path(feature_core.__file__).resolve(),
     )
 

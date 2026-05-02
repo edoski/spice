@@ -40,19 +40,17 @@ class CompiledFeatureContract:
         )
 
     def build_table(self, blocks: pl.DataFrame) -> ResolvedFeatureTable:
-        entry = feature_entry(self.features_id)
+        catalog = feature_entry(self.features_id)
         return build_feature_table(
             blocks,
             features_id=self.features_id,
-            catalog=entry.catalog,
+            catalog=catalog,
             feature_names=self.feature_names,
-            allowed_feature_names=entry.allowed_outputs,
         )
 
 
 def compile_feature_contract(*, features: FeaturesConfig) -> CompiledFeatureContract:
-    entry = feature_entry(features.id)
-    catalog = entry.catalog
+    catalog = feature_entry(features.id)
     feature_names = tuple(features.outputs)
     return CompiledFeatureContract(
         features_id=features.id,

@@ -50,11 +50,11 @@ Provider: `publicnode`.
 
 Dataset: `icdcs_2026`.
 
-Features: `core_fee_dynamics` is the canonical no-priority safe set. `core_fee_dynamics_unsafe` is an explicit leakage comparator with same-block gas/tx facts; it is runnable for A/B tests, not a deployable/default feature set. `core_fee_dynamics_with_priority_fee` adds lagged priority-fee scalars and p50/spread local trends. `core_fee_dynamics_elapsed_position` is the elapsed-position ablation spec; it is identical to `core_fee_dynamics` plus `elapsed_seconds`, a corpus-position signal.
+Features: `core_fee_dynamics` is the canonical no-priority safe catalog. `core_fee_dynamics_unsafe` is an explicit leakage comparator catalog with same-block gas/tx facts; it is runnable for A/B tests, not a deployable/default feature set. `core_fee_dynamics_with_priority_fee` adds lagged priority-fee scalars and p50/spread local trends. `core_fee_dynamics_elapsed_position` is the elapsed-position ablation catalog; it is identical to `core_fee_dynamics` plus `elapsed_seconds`, a corpus-position signal.
 
 `core_fee_dynamics` selects safe fee, gas-pressure, local trend, cadence/calendar, rolling log-fee, and tx-count outputs. It does not include priority-fee, elapsed-time/corpus-position, raw block author/proposer, or same-block finalized gas/tx outputs.
 
-Feature YAML files remain explicit operator specs. The canonical Python feature-output composition owns the expected tuples for baseline, unsafe current-row facts, priority-fee, and elapsed-position variants; tests keep YAML and composition aligned.
+Feature YAML files remain explicit operator specs. Each registered feature catalog owns its expected output tuple and fingerprint source files; tests keep YAML and catalog ownership aligned.
 
 Problems:
 
