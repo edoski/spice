@@ -57,7 +57,9 @@ training.input_normalization.id -> input-normalization config type
 objective.id             -> objective config shape
 ```
 
-So config group typed loading and resolved snapshot hydration call owner coercers. Config-facing coercer envelope errors normalize to `ConfigResolutionError`, and already typed configs keep object identity. This keeps all implementation-selection knowledge in the owning domain.
+So config group typed loading, resolved snapshot hydration, and typed tuned-parameter transforms call owner coercers. Config-facing coercer envelope errors normalize to `ConfigResolutionError`.
+
+A Concrete Owner Config is the concrete local-spec config selected by an owner id. Owner coercers preserve identity only for Concrete Owner Config instances. Abstract typed selector configs are redispatched by id and validated as the concrete type before runtime code sees them. This keeps all implementation-selection knowledge in the owning domain.
 
 ## Surface Resolution
 
@@ -67,7 +69,7 @@ Surface resolution does not hydrate raw resolved snapshots. Resolved snapshots a
 
 ## Resolved Workflow Hydration
 
-Remote execution, benchmark run persistence, and tuned-parameter reapplication do not re-resolve surfaces. They serialize or load an already resolved config snapshot:
+Remote execution and benchmark run persistence do not re-resolve surfaces. They serialize or load an already resolved config snapshot:
 
 ```text
 resolved Train/Tune/Evaluate config
@@ -76,7 +78,7 @@ resolved Train/Tune/Evaluate config
 workflow_config_snapshot_json()
         |
         v
-remote runner, benchmark plan JSONL, or tuned-param materialization
+remote runner or benchmark plan JSONL
         |
         v
 hydrate_workflow_config_snapshot()
@@ -86,6 +88,8 @@ owner coercers reconstruct concrete nested configs
 ```
 
 Resolved Workflow Hydration is intentionally snapshot-only. It supports train, tune, and evaluate. Acquire has different acquisition/provider concerns and is resolved through Surface resolution.
+
+Tuned-parameter application is a typed transform. It rebuilds `TrainConfig` or `TuneConfig` from validated concrete nested configs and does not call snapshot hydration.
 
 ## Public API Boundary
 

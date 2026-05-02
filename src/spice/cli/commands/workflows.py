@@ -15,13 +15,14 @@ from ...config.command_selection import (
     build_train_command_selection,
     build_tune_command_selection,
 )
-from ...config.models import AcquireConfig, WorkflowTask
+from ...config.models import AcquireConfig, EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from ...config.resolution import WorkflowConfig, resolve_workflow_config
 from ...config.selections import (
     TrainWorkflowSelection,
     TuneWorkflowSelection,
     WorkflowSelection,
 )
+from ...config.workflow_snapshots import ResolvedWorkflowConfig
 from ...core.errors import SpiceOperatorError
 from ...execution.session import ExecutionSession, open_execution_session
 from ..options import DEFAULT_REMOTE_TARGET, RemoteTargetOption
@@ -44,7 +45,7 @@ def _output_option(*param_decls: str, metavar: str, help: str) -> object:
 def _submit_selected_workflow(
     *,
     task: WorkflowTask,
-    config: WorkflowConfig,
+    config: ResolvedWorkflowConfig,
     session: ExecutionSession,
     dependency: str | None,
     detach: bool,
@@ -116,11 +117,14 @@ def _build_model_workflow_config(
     *,
     task: WorkflowTask,
     selection: ModelWorkflowSelection,
-) -> WorkflowConfig:
-    return _resolve_selection_for_task(
+) -> TrainConfig | TuneConfig:
+    config = _resolve_selection_for_task(
         task,
         selection,
     )
+    if not isinstance(config, (TrainConfig, TuneConfig)):
+        raise TypeError("model workflow selection resolved to non-model config")
+    return config
 
 
 def _build_evaluate_workflow_config(
@@ -130,8 +134,8 @@ def _build_evaluate_workflow_config(
     evaluation: str | None,
     delay_seconds: int | None,
     batch_size: int | None,
-) -> WorkflowConfig:
-    return _resolve_selection_for_task(
+) -> EvaluateConfig:
+    config = _resolve_selection_for_task(
         WorkflowTask.EVALUATE,
         build_evaluate_command_selection(
             artifact_id=artifact_id,
@@ -141,6 +145,9 @@ def _build_evaluate_workflow_config(
             batch_size=batch_size,
         ),
     )
+    if not isinstance(config, EvaluateConfig):
+        raise TypeError("evaluate selection resolved to non-evaluate config")
+    return config
 
 
 def _submit_model_workflow(

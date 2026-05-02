@@ -272,7 +272,8 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
 
     def _fake_resolve(task: WorkflowTask, selection) -> object:
         events.append(("resolve", (task, selection)))
-        return SimpleNamespace(
+        return TrainConfig.model_construct(
+            workflow=WorkflowTask.TRAIN,
             study=SimpleNamespace(name=selection.study),
             artifact=SimpleNamespace(variant=SimpleNamespace(value=selection.variant)),
         )

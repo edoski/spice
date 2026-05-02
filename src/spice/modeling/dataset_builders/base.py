@@ -14,6 +14,7 @@ from ...core.specs import (
     owner_payload,
     owner_payload_id,
     require_spec_config,
+    validate_owner_config,
 )
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
@@ -40,6 +41,14 @@ class FixedSequenceTemporalDatasetBuilderConfig(DatasetBuilderConfig):
     id: str = "fixed_sequence_temporal"
     min_sequence_length: int = Field(default=64, gt=0)
     max_sequence_length: int = Field(default=4096, gt=0)
+
+    @field_validator("id")
+    @classmethod
+    def validate_fixed_sequence_temporal_id(cls, value: str) -> str:
+        value = DatasetBuilderConfig.validate_id(value)
+        if value != "fixed_sequence_temporal":
+            raise ValueError("dataset_builder.id must be fixed_sequence_temporal")
+        return value
 
     @model_validator(mode="after")
     def validate_sequence_bounds(self) -> FixedSequenceTemporalDatasetBuilderConfig:
@@ -206,29 +215,32 @@ def coerce_builder_runtime_metadata(
     builder_id: str,
     payload: object,
 ) -> BuilderRuntimeMetadata:
-    if isinstance(payload, BuilderRuntimeMetadata):
+    spec = dataset_builder_spec(builder_id)
+    if isinstance(payload, spec.runtime_metadata_type):
         return payload
-    return dataset_builder_spec(builder_id).runtime_metadata_type.model_validate(
+    return validate_owner_config(
         owner_payload(
             payload,
             owner="builder runtime metadata",
             config_type=BuilderRuntimeMetadata,
-        )
+        ),
+        spec.runtime_metadata_type,
     )
 
 
 def coerce_dataset_builder_config(
     payload: object,
 ) -> DatasetBuilderConfig:
-    if isinstance(payload, DatasetBuilderConfig):
-        return payload
     raw_payload, builder_id = owner_payload_id(
         payload,
         owner="dataset_builder",
         config_type=DatasetBuilderConfig,
         id_label="dataset_builder.id",
     )
-    return dataset_builder_spec(builder_id).config_type.model_validate(raw_payload)
+    spec = dataset_builder_spec(builder_id)
+    if isinstance(payload, spec.config_type):
+        return payload
+    return validate_owner_config(raw_payload, spec.config_type)
 
 
 def compile_dataset_builder_contract(

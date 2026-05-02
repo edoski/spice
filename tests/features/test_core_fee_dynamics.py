@@ -9,6 +9,7 @@ import pytest
 
 from spice.config import coerce_features_config
 from spice.config.registry import load_named_group_payload
+from spice.core.errors import ConfigResolutionError
 from spice.features import (
     CompiledFeatureContract,
     FeaturePrerequisites,
@@ -210,7 +211,10 @@ def test_feature_selection_validation_rejects_unknown_outputs() -> None:
 
 
 def test_core_fee_dynamics_rejects_priority_fee_outputs() -> None:
-    with pytest.raises(ValueError, match="Unknown feature outputs: prev_priority_fee_p50"):
+    with pytest.raises(
+        ConfigResolutionError,
+        match="Unknown feature outputs: prev_priority_fee_p50",
+    ):
         coerce_features_config(
             {
                 "id": "core_fee_dynamics",
@@ -240,7 +244,7 @@ def test_default_core_fee_dynamics_excludes_time_since_start_signal() -> None:
     outputs = cast(list[str], payload["outputs"])
 
     assert "elapsed_seconds" not in outputs
-    with pytest.raises(ValueError, match="Unknown feature outputs: elapsed_seconds"):
+    with pytest.raises(ConfigResolutionError, match="Unknown feature outputs: elapsed_seconds"):
         coerce_features_config(
             {
                 "id": "core_fee_dynamics",

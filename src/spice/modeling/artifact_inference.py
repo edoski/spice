@@ -99,6 +99,8 @@ def prepare_artifact_inference_context(
         store=prepared.store,
         sample_indices=prepared.sample_indices,
         batch_size=config.batch_size,
+        deterministic=manifest.training.deterministic,
+        seed=manifest.training.seed,
     )
     return ArtifactInferenceContext(
         loaded_artifact=loaded_artifact,

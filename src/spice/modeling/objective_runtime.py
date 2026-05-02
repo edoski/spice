@@ -50,7 +50,9 @@ def compile_objective_runtime(
             contract=contract,
             evaluate_metrics_fn=lambda validation_metrics, context: validation_metrics,
         )
-    evaluator_contract = compile_evaluator_contract(_require_evaluation(contract, evaluation))
+    if evaluation is None:
+        raise ConfigResolutionError("evaluation objective runtime requires evaluation config")
+    evaluator_contract = compile_evaluator_contract(evaluation)
     _require_metric_descriptor(
         contract.metric_id,
         evaluator_contract.metric_descriptors,
@@ -82,16 +84,3 @@ def _require_metric_descriptor(
     raise ConfigResolutionError(
         f"objective metric {metric_id} is not declared by {owner} metrics. Known metrics: {known}"
     )
-
-
-def _require_evaluation(
-    contract: CompiledObjectiveContract,
-    evaluation: EvaluatorConfig | None,
-) -> EvaluatorConfig:
-    if evaluation is None:
-        raise TypeError("evaluation objective runtime requires evaluation config")
-    if contract.benchmark_id != evaluation.id:
-        raise TypeError(
-            f"objective benchmark {contract.benchmark_id} does not match evaluation {evaluation.id}"
-        )
-    return evaluation

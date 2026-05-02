@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import SerializeAsAny, field_validator
 
-from ...core.specs import lookup_local_spec, owner_payload_id
+from ...core.specs import lookup_local_spec, owner_payload_id, validate_owner_config
+from ...core.validation import validate_path_segment
 from ...features import (
     CompiledFeatureContract,
     ResolvedFeatureTable,
@@ -31,17 +32,38 @@ if TYPE_CHECKING:
 class ObservedTimeWindowSlotSpacingConfig(ConfigModel):
     id: str
 
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return validate_path_segment(value, label="observed_time_window.slot_spacing.id")
+
 
 class ObservedTimeWindowNominalSlotSpacingConfig(
     ObservedTimeWindowSlotSpacingConfig
 ):
     id: str = "nominal"
 
+    @field_validator("id")
+    @classmethod
+    def validate_nominal_id(cls, value: str) -> str:
+        value = ObservedTimeWindowSlotSpacingConfig.validate_id(value)
+        if value != "nominal":
+            raise ValueError("observed_time_window.slot_spacing.id must be nominal")
+        return value
+
 
 class ObservedTimeWindowRecentMedianSlotSpacingConfig(
     ObservedTimeWindowSlotSpacingConfig
 ):
     id: str = "recent_median"
+
+    @field_validator("id")
+    @classmethod
+    def validate_recent_median_id(cls, value: str) -> str:
+        value = ObservedTimeWindowSlotSpacingConfig.validate_id(value)
+        if value != "recent_median":
+            raise ValueError("observed_time_window.slot_spacing.id must be recent_median")
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,23 +153,30 @@ class ObservedTimeWindowCompilerConfig(ProblemCompilerConfig):
     id: str = "observed_time_window"
     slot_spacing: SerializeAsAny[ObservedTimeWindowSlotSpacingConfig]
 
+    @field_validator("id")
+    @classmethod
+    def validate_observed_time_window_id(cls, value: str) -> str:
+        value = ProblemCompilerConfig.validate_id(value)
+        if value != "observed_time_window":
+            raise ValueError("problem.compiler.id must be observed_time_window")
+        return value
+
     @field_validator("slot_spacing", mode="before")
     @classmethod
     def validate_slot_spacing(
         cls,
         value: object,
     ) -> ObservedTimeWindowSlotSpacingConfig:
-        if isinstance(value, ObservedTimeWindowSlotSpacingConfig):
-            return value
         raw_payload, slot_spacing_id = owner_payload_id(
             value,
             owner="observed_time_window.slot_spacing",
             config_type=ObservedTimeWindowSlotSpacingConfig,
             id_label="observed_time_window.slot_spacing.id",
         )
-        return _slot_spacing_spec(slot_spacing_id).config_type.model_validate(
-            raw_payload
-        )
+        spec = _slot_spacing_spec(slot_spacing_id)
+        if isinstance(value, spec.config_type):
+            return value
+        return validate_owner_config(raw_payload, spec.config_type)
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,11 +278,11 @@ class ObservedTimeWindowCompiledProblemContract(CompiledProblemContract):
 
 def compile_problem(
     problem: ProblemSpec,
+    compiler_config: ObservedTimeWindowCompilerConfig,
     feature_contract: CompiledFeatureContract,
     execution_policy: CompiledExecutionPolicyContract,
     chain_runtime: ChainRuntimeSpec | None,
 ) -> CompiledProblemContract:
-    compiler_config = ObservedTimeWindowCompilerConfig.model_validate(problem.compiler)
     nominal_block_time_seconds = (
         None if chain_runtime is None else float(chain_runtime.nominal_block_time_seconds)
     )

@@ -12,6 +12,7 @@ from ..prediction.decoded_offsets import DecodedOffsets, require_decoded_offsets
 from ..prediction.decoding import DecodedPredictionResult
 from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
+from .config import EvaluatorConfig
 from .contracts import CompiledEvaluatorContract, EvaluationSummary, IntVector
 from .metrics import TEMPORAL_REPLAY_METRIC_DESCRIPTORS
 from .temporal_accounting import (
@@ -39,7 +40,7 @@ class TemporalReplayAdapter(Protocol):
 def compile_temporal_replay_evaluator_contract(
     *,
     evaluation_id: str,
-    config_payload: Mapping[str, object],
+    config: EvaluatorConfig,
     adapter: TemporalReplayAdapter,
 ) -> CompiledEvaluatorContract:
     def run_fn(
@@ -61,7 +62,7 @@ def compile_temporal_replay_evaluator_contract(
         metric_descriptors=TEMPORAL_REPLAY_METRIC_DESCRIPTORS,
         primary_metric_id="profit_over_baseline",
         direction="maximize",
-        config_payload=dict(config_payload),
+        config=config,
         accepted_decoded_result_id=DecodedOffsets.decoded_result_id,
         run_fn=run_fn,
     )

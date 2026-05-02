@@ -24,6 +24,10 @@ _Avoid_: output path, generated selector
 Executable typed configuration produced by resolving a workflow selection.
 _Avoid_: resolved request
 
+**Concrete Owner Config**:
+The concrete local-spec config type selected by an owner id and safe for owner coercers to preserve by identity.
+_Avoid_: selector base config, typed payload
+
 **Resolved Workflow Hydration**:
 Config module that turns a raw Resolved Workflow Snapshot back into a typed train, tune, or evaluate Workflow Config through owner coercers, without re-resolving a Surface.
 _Avoid_: workflow config coercion, surface replay

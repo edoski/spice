@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 import optuna
 
 from ..config.models import (
@@ -16,7 +14,13 @@ from ..config.models import (
     TuningTrainingSearchSpace,
 )
 from ..core.errors import ConfigResolutionError
-from ..core.specs import owner_payload, require_mapping_id
+from ..core.specs import (
+    owner_payload,
+    owner_payload_id,
+    require_spec_config,
+    validate_owner_config,
+)
+from .families.base import ModelTuningSpaceConfig, TunedModelParams
 from .families.registry import model_spec
 
 
@@ -30,34 +34,59 @@ def coerce_tuning_space_config(
         return None
     if isinstance(payload, TuningSpaceConfig):
         spec = model_spec(payload.model.id)
-        if spec.validate_tuning_space is not None:
-            spec.validate_tuning_space(model_config, payload.model)
-        return payload
-    raw_payload = owner_payload(
-        payload,
-        owner="tuning_space",
-        config_type=TuningSpaceConfig,
+        if isinstance(payload.model, spec.tuning_space_type):
+            if spec.validate_tuning_space is not None:
+                spec.validate_tuning_space(model_config, payload.model)
+            return payload
+        training_payload = payload.training
+        problem_payload = payload.problem
+        model_payload = payload.model
+    else:
+        raw_payload = owner_payload(
+            payload,
+            owner="tuning_space",
+            config_type=TuningSpaceConfig,
+        )
+        if "model" not in raw_payload:
+            raise ConfigResolutionError("tuning_space.model is required")
+        training_payload = raw_payload.get("training")
+        problem_payload = raw_payload.get("problem")
+        model_payload = raw_payload["model"]
+    raw_model_payload, model_id = owner_payload_id(
+        model_payload,
+        owner="tuning_space.model",
+        config_type=ModelTuningSpaceConfig,
+        id_label="tuning_space.model.id",
     )
-    if "model" not in raw_payload:
-        raise ConfigResolutionError("tuning_space.model is required")
-    raw_model_payload = raw_payload["model"]
-    if not isinstance(raw_model_payload, Mapping):
-        raise ConfigResolutionError("tuning_space.model must be a mapping")
-    model_id = require_mapping_id(raw_model_payload, "tuning_space.model.id")
     spec = model_spec(model_id)
-    training_payload = raw_payload.get("training")
-    problem_payload = raw_payload.get("problem")
     training = (
         None
         if training_payload is None
-        else TuningTrainingSearchSpace.model_validate(training_payload)
+        else training_payload
+        if isinstance(training_payload, TuningTrainingSearchSpace)
+        else validate_owner_config(
+            owner_payload(
+                training_payload,
+                owner="tuning_space.training",
+                config_type=TuningTrainingSearchSpace,
+            ),
+            TuningTrainingSearchSpace,
+        )
     )
     problem = (
         None
         if problem_payload is None
         else _coerce_problem_tuning_space(problem_payload, problem_config=problem_config)
     )
-    model = spec.tuning_space_type.model_validate(dict(raw_model_payload))
+    model: ModelTuningSpaceConfig[str]
+    if isinstance(model_payload, spec.tuning_space_type):
+        model = require_spec_config(
+            model_payload,
+            spec.tuning_space_type,
+            "tuning_space.model",
+        )
+    else:
+        model = validate_owner_config(raw_model_payload, spec.tuning_space_type)
     if spec.validate_tuning_space is not None:
         spec.validate_tuning_space(model_config, model)
     return TuningSpaceConfig(
@@ -73,32 +102,72 @@ def coerce_tuned_parameter_set(
     model_id: str | None = None,
 ) -> TunedParameterSet:
     if isinstance(payload, TunedParameterSet):
-        if model_id is not None and payload.model is not None and payload.model.id != model_id:
-            raise ConfigResolutionError("Tuned model params id does not match model.id")
-        return payload
-    raw_payload = owner_payload(
-        payload,
-        owner="tuned parameters",
-        config_type=TunedParameterSet,
-    )
-    training_payload = raw_payload.get("training")
-    problem_payload = raw_payload.get("problem")
-    model_payload = raw_payload.get("model")
+        training_payload = payload.training
+        problem_payload = payload.problem
+        model_payload = payload.model
+    else:
+        raw_payload = owner_payload(
+            payload,
+            owner="tuned parameters",
+            config_type=TunedParameterSet,
+        )
+        training_payload = raw_payload.get("training")
+        problem_payload = raw_payload.get("problem")
+        model_payload = raw_payload.get("model")
     training = (
-        None if training_payload is None else TunedTrainingParams.model_validate(training_payload)
+        None
+        if training_payload is None
+        else training_payload
+        if isinstance(training_payload, TunedTrainingParams)
+        else validate_owner_config(
+            owner_payload(
+                training_payload,
+                owner="tuned parameters.training",
+                config_type=TunedTrainingParams,
+            ),
+            TunedTrainingParams,
+        )
     )
     problem = (
-        None if problem_payload is None else TunedProblemParams.model_validate(problem_payload)
+        None
+        if problem_payload is None
+        else problem_payload
+        if isinstance(problem_payload, TunedProblemParams)
+        else validate_owner_config(
+            owner_payload(
+                problem_payload,
+                owner="tuned parameters.problem",
+                config_type=TunedProblemParams,
+            ),
+            TunedProblemParams,
+        )
     )
-    model = None
+    model: TunedModelParams[str] | None = None
     if model_payload is not None:
-        if not isinstance(model_payload, Mapping):
-            raise ConfigResolutionError("tuned model params must be a mapping")
-        resolved_model_id = require_mapping_id(model_payload, "model.id")
+        raw_model_payload, resolved_model_id = owner_payload_id(
+            model_payload,
+            owner="tuned model params",
+            config_type=TunedModelParams,
+            id_label="model.id",
+        )
         spec = model_spec(resolved_model_id)
-        model = spec.tuned_params_type.model_validate(dict(model_payload))
+        if isinstance(model_payload, spec.tuned_params_type):
+            model = require_spec_config(
+                model_payload,
+                spec.tuned_params_type,
+                "tuned model params",
+            )
+        else:
+            model = validate_owner_config(raw_model_payload, spec.tuned_params_type)
         if model_id is not None and resolved_model_id != model_id:
             raise ConfigResolutionError("Tuned model params id does not match model.id")
+    if (
+        isinstance(payload, TunedParameterSet)
+        and training is payload.training
+        and problem is payload.problem
+        and model is payload.model
+    ):
+        return payload
     return TunedParameterSet(training=training, problem=problem, model=model)
 
 
@@ -133,7 +202,7 @@ def sample_tuned_parameters(
                 )
             )
         if training_values:
-            training_params = TunedTrainingParams.model_validate(training_values)
+            training_params = validate_owner_config(training_values, TunedTrainingParams)
     if tuning_space.problem is not None:
         problem_values: dict[str, int] = {}
         if tuning_space.problem.lookback_seconds is not None:
@@ -144,7 +213,7 @@ def sample_tuned_parameters(
                 )
             )
         if problem_values:
-            problem_params = TunedProblemParams.model_validate(problem_values)
+            problem_params = validate_owner_config(problem_values, TunedProblemParams)
     spec = model_spec(tuning_space.model.id)
     model_params = spec.sample_model_params(trial, tuning_space.model)
     return TunedParameterSet(
@@ -163,4 +232,13 @@ def _coerce_problem_tuning_space(
         raise ConfigResolutionError(
             "problem_config is required when tuning_space.problem is provided"
         )
-    return TuningProblemSearchSpace.model_validate(payload)
+    if isinstance(payload, TuningProblemSearchSpace):
+        return payload
+    return validate_owner_config(
+        owner_payload(
+            payload,
+            owner="tuning_space.problem",
+            config_type=TuningProblemSearchSpace,
+        ),
+        TuningProblemSearchSpace,
+    )

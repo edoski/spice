@@ -40,7 +40,15 @@ from .identity import (
     study_definition_identity_from_tuned_config,
     study_manifest_identity,
 )
-from .payloads import PayloadCodec, SingletonPayloadStore, mapping_payload
+from .payloads import (
+    PayloadCodec,
+    SingletonPayloadStore,
+    bool_payload,
+    decode_payload,
+    int_payload,
+    mapping_payload,
+    string_payload,
+)
 from .schema import STUDY_TABLES, study_manifest
 from .semantics_codecs import study_semantics_from_payload, study_semantics_payload
 from .study_models import StudyManifest
@@ -228,6 +236,10 @@ def manifest_payload(manifest: StudyManifest) -> dict[str, object]:
 
 
 def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
+    return decode_payload("study manifest", lambda: _decode_manifest(payload))
+
+
+def _decode_manifest(payload: dict[str, object]) -> StudyManifest:
     definition = mapping_payload(payload["definition"], label="study.definition")
     model = coerce_model_config(
         mapping_payload(definition["model"], label="study.definition.model")
@@ -240,7 +252,7 @@ def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
     )
     semantics_payload = mapping_payload(payload["semantics"], label="study.semantics")
     return StudyManifest(
-        study_id=str(definition["study_id"]),
+        study_id=string_payload(definition["study_id"], label="study.definition.study_id"),
         dataset_builder=coerce_dataset_builder_config(
             mapping_payload(
                 definition["dataset_builder"],
@@ -251,10 +263,22 @@ def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
         objective=coerce_objective_config(
             mapping_payload(definition["objective"], label="study.definition.objective")
         ),
-        study_name=str(definition["study_name"]),
-        chain_name=str(definition["chain_name"]),
-        dataset_id=str(definition["dataset_id"]),
-        dataset_name=str(definition["dataset_name"]),
+        study_name=string_payload(
+            definition["study_name"],
+            label="study.definition.study_name",
+        ),
+        chain_name=string_payload(
+            definition["chain_name"],
+            label="study.definition.chain_name",
+        ),
+        dataset_id=string_payload(
+            definition["dataset_id"],
+            label="study.definition.dataset_id",
+        ),
+        dataset_name=string_payload(
+            definition["dataset_name"],
+            label="study.definition.dataset_name",
+        ),
         problem=problem,
         features=coerce_features_config(
             mapping_payload(definition["features"], label="study.definition.features")
@@ -269,10 +293,10 @@ def manifest_from_payload(payload: dict[str, object]) -> StudyManifest:
         tuning=TuningSearchConfig.model_validate(
             mapping_payload(definition["tuning"], label="study.definition.tuning")
         ),
-        sampler_name=str(payload["sampler_name"]),
+        sampler_name=string_payload(payload["sampler_name"], label="sampler_name"),
         sampler_seed=coerce_int(payload["sampler_seed"], label="sampler_seed"),
-        pruner_name=str(payload["pruner_name"]),
-        enable_pruning=bool(payload["enable_pruning"]),
+        pruner_name=string_payload(payload["pruner_name"], label="pruner_name"),
+        enable_pruning=bool_payload(payload["enable_pruning"], label="enable_pruning"),
         tuning_space=coerce_study_tuning_space(
             definition["tuning_space"],
             model=model,
@@ -303,6 +327,4 @@ def pruner_name(enable_pruning: bool) -> str:
 
 
 def coerce_int(value: object, *, label: str) -> int:
-    if not isinstance(value, int):
-        raise StateLayoutError(f"{label} must be an integer")
-    return value
+    return int_payload(value, label=label)

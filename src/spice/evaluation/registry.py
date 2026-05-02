@@ -6,8 +6,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar
 
-from ..core.errors import ConfigResolutionError
-from ..core.specs import lookup_local_spec, owner_payload_id, require_spec_config
+from ..core.specs import (
+    lookup_local_spec,
+    owner_payload_id,
+    require_spec_config,
+    validate_owner_config,
+)
 from .config import (
     EvaluatorConfig,
     FullTemporalReplayEvaluatorConfig,
@@ -45,8 +49,6 @@ _EVALUATOR_SPECS: dict[str, _EvaluatorSpec] = {
 def coerce_evaluator_config(
     payload: object,
 ) -> EvaluatorConfig:
-    if isinstance(payload, EvaluatorConfig):
-        return payload
     raw_payload, evaluator_id = owner_payload_id(
         payload,
         owner="evaluation",
@@ -54,10 +56,9 @@ def coerce_evaluator_config(
         id_label="evaluation.id",
     )
     spec = lookup_local_spec(_EVALUATOR_SPECS, evaluator_id, "evaluation.id")
-    try:
-        return spec.config_type.model_validate(raw_payload)
-    except ValueError as exc:
-        raise ConfigResolutionError(str(exc)) from exc
+    if isinstance(payload, spec.config_type):
+        return payload
+    return validate_owner_config(raw_payload, spec.config_type)
 
 
 def compile_evaluator_contract(

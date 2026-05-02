@@ -42,6 +42,6 @@ def compile_full_temporal_replay_evaluator_contract(
 ) -> CompiledEvaluatorContract:
     return compile_temporal_replay_evaluator_contract(
         evaluation_id=config.id,
-        config_payload=config.model_dump(mode="json", exclude_none=True),
+        config=config,
         adapter=FullTemporalReplayAdapter(config),
     )

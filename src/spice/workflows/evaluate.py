@@ -57,7 +57,7 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
         evaluation=evaluation,
         delay_seconds=inference_context.delay_seconds,
         evaluation_id=inference_context.evaluator_contract.evaluation_id,
-        evaluation_config=inference_context.evaluator_contract.config_payload,
+        evaluation_config=inference_context.evaluator_contract.config,
         metric_descriptors=inference_context.evaluator_contract.metric_descriptors,
         execution_provenance=_current_execution_provenance(),
     )

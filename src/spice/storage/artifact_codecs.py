@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import BaseModel, ConfigDict
 
 from ..config.models import (
     ArtifactVariant,
@@ -15,8 +15,7 @@ from ..config.models import (
     coerce_features_config,
     coerce_problem_spec,
 )
-from ..core.errors import StateLayoutError
-from ..evaluation import EvaluationRun
+from ..evaluation import EvaluationRun, coerce_evaluator_config
 from ..modeling.dataset_builders import (
     coerce_builder_runtime_metadata,
     coerce_dataset_builder_config,
@@ -25,7 +24,7 @@ from ..modeling.families.registry import coerce_model_config
 from ..objectives import coerce_objective_config
 from ..prediction import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..temporal.scaling import ScalerStats
-from .payloads import mapping_payload
+from .payloads import decode_payload, mapping_payload, string_payload
 from .semantics_codecs import artifact_semantics_from_payload, artifact_semantics_payload
 
 if TYPE_CHECKING:
@@ -41,14 +40,6 @@ class CodecPayloadModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-_EVALUATION_RUN_ADAPTER = TypeAdapter(EvaluationRun)
-def _adapter_payload(adapter: object, value: object) -> dict[str, object]:
-    payload = cast(TypeAdapter[Any], adapter).dump_python(value, mode="json")
-    if not isinstance(payload, dict):
-        raise StateLayoutError("Expected adapter to serialize to a mapping payload")
-    return cast(dict[str, object], payload)
-
-
 def _metric_values_payload(metrics: MetricSet) -> dict[str, float]:
     return dict(metrics.values)
 
@@ -56,7 +47,7 @@ def _metric_values_payload(metrics: MetricSet) -> dict[str, float]:
 def _study_config_from_name(study_name: object) -> StudyConfig | None:
     if study_name is None:
         return None
-    return StudyConfig(name=str(study_name))
+    return StudyConfig(name=string_payload(study_name, label="artifact_manifest.study_name"))
 
 
 def _metric_descriptor_payload(descriptor: MetricDescriptor) -> dict[str, str]:
@@ -70,9 +61,18 @@ def _metric_descriptor_payload(descriptor: MetricDescriptor) -> dict[str, str]:
 def _metric_descriptor_from_payload(payload: object) -> MetricDescriptor:
     mapping = mapping_payload(payload, label="evaluation_summary.metric_descriptor")
     return MetricDescriptor(
-        id=str(mapping["id"]),
-        label=str(mapping["label"]),
-        role=cast(Any, str(mapping["role"])),
+        id=string_payload(mapping["id"], label="evaluation_summary.metric_descriptor.id"),
+        label=string_payload(
+            mapping["label"],
+            label="evaluation_summary.metric_descriptor.label",
+        ),
+        role=cast(
+            Any,
+            string_payload(
+                mapping["role"],
+                label="evaluation_summary.metric_descriptor.role",
+            ),
+        ),
     )
 
 
@@ -221,6 +221,42 @@ class TrainingEpochPayload(CodecPayloadModel):
         )
 
 
+class EvaluationRunPayload(CodecPayloadModel):
+    n_events: int
+    metrics: dict[str, float]
+    metadata: dict[str, str | int | float]
+
+    @classmethod
+    def from_run(cls, run: EvaluationRun) -> EvaluationRunPayload:
+        return cls(
+            n_events=run.n_events,
+            metrics=dict(run.metrics),
+            metadata={key: _metadata_value(value) for key, value in run.metadata.items()},
+        )
+
+    def to_run(self) -> EvaluationRun:
+        return EvaluationRun(
+            n_events=self.n_events,
+            metrics=dict(self.metrics),
+            metadata=dict(self.metadata),
+        )
+
+
+class WindowMetricSummaryPayload(CodecPayloadModel):
+    mean: float
+    std: float
+
+    @classmethod
+    def from_summary(
+        cls,
+        summary: WindowMetricSummary,
+    ) -> WindowMetricSummaryPayload:
+        return cls(mean=summary.mean, std=summary.std)
+
+    def to_summary(self) -> WindowMetricSummary:
+        return WindowMetricSummary(mean=self.mean, std=self.std)
+
+
 class EvaluationExecutionProvenancePayload(CodecPayloadModel):
     execution_ref: str
     job_id: str | None = None
@@ -234,12 +270,12 @@ class EvaluationSummaryPayload(CodecPayloadModel):
     evaluation_id: str
     evaluation_config: dict[str, object]
     execution_provenance: EvaluationExecutionProvenancePayload | None = None
-    metric_descriptors: tuple[dict[str, str], ...]
+    metric_descriptors: list[dict[str, str]]
     n_history_rows: int
     n_evaluation_rows: int
     sample_count: int
     metrics: dict[str, float]
-    window_metrics: dict[str, WindowMetricSummary]
+    window_metrics: dict[str, WindowMetricSummaryPayload]
     total_events: int
 
     @classmethod
@@ -247,19 +283,25 @@ class EvaluationSummaryPayload(CodecPayloadModel):
         return cls(
             delay_seconds=summary.delay_seconds,
             evaluation_id=summary.evaluation_id,
-            evaluation_config=dict(summary.evaluation_config),
+            evaluation_config=summary.evaluation_config.model_dump(
+                mode="json",
+                exclude_none=True,
+            ),
             execution_provenance=_execution_provenance_payload(
                 summary.execution_provenance
             ),
-            metric_descriptors=tuple(
+            metric_descriptors=[
                 _metric_descriptor_payload(descriptor)
                 for descriptor in summary.metric_descriptors
-            ),
+            ],
             n_history_rows=summary.n_history_rows,
             n_evaluation_rows=summary.n_evaluation_rows,
             sample_count=summary.sample_count,
             metrics=_metric_values_payload(summary.metrics),
-            window_metrics=dict(summary.window_metrics),
+            window_metrics={
+                metric_id: WindowMetricSummaryPayload.from_summary(window_metric)
+                for metric_id, window_metric in summary.window_metrics.items()
+            },
             total_events=summary.total_events,
         )
 
@@ -269,7 +311,7 @@ class EvaluationSummaryPayload(CodecPayloadModel):
         return EvaluationRuntimeSummary(
             delay_seconds=self.delay_seconds,
             evaluation_id=self.evaluation_id,
-            evaluation_config=dict(self.evaluation_config),
+            evaluation_config=coerce_evaluator_config(self.evaluation_config),
             execution_provenance=_execution_provenance_from_payload(
                 self.execution_provenance
             ),
@@ -281,7 +323,10 @@ class EvaluationSummaryPayload(CodecPayloadModel):
             n_evaluation_rows=self.n_evaluation_rows,
             sample_count=self.sample_count,
             metrics=MetricSet(values=self.metrics),
-            window_metrics=dict(self.window_metrics),
+            window_metrics={
+                metric_id: window_metric.to_summary()
+                for metric_id, window_metric in self.window_metrics.items()
+            },
             total_events=self.total_events,
             runs=runs,
         )
@@ -295,7 +340,10 @@ def artifact_manifest_payload(manifest: TrainingArtifactManifest) -> dict[str, o
 
 
 def artifact_manifest_from_payload(payload: dict[str, object]):
-    return ArtifactManifestPayload.model_validate(payload).to_manifest()
+    return decode_payload(
+        "artifact manifest",
+        lambda: ArtifactManifestPayload.model_validate(payload, strict=True).to_manifest(),
+    )
 
 
 def training_summary_payload(summary: TrainingRuntimeSummary) -> dict[str, object]:
@@ -306,7 +354,10 @@ def training_summary_payload(summary: TrainingRuntimeSummary) -> dict[str, objec
 
 
 def training_summary_from_payload(payload: dict[str, object]):
-    return TrainingSummaryPayload.model_validate(payload).to_runtime()
+    return decode_payload(
+        "training summary",
+        lambda: TrainingSummaryPayload.model_validate(payload, strict=True).to_runtime(),
+    )
 
 
 def training_epoch_payload(record: TrainingEpochRecord) -> dict[str, object]:
@@ -317,7 +368,10 @@ def training_epoch_payload(record: TrainingEpochRecord) -> dict[str, object]:
 
 
 def training_epoch_from_payload(payload: dict[str, object], *, epoch: int):
-    return TrainingEpochPayload.model_validate(payload).to_record(epoch=epoch)
+    return decode_payload(
+        "training epoch",
+        lambda: TrainingEpochPayload.model_validate(payload, strict=True).to_record(epoch=epoch),
+    )
 
 
 def evaluation_summary_payload(summary: EvaluationRuntimeSummary) -> dict[str, object]:
@@ -332,20 +386,26 @@ def evaluation_summary_from_payload(
     *,
     runs: list[EvaluationRun],
 ):
-    return EvaluationSummaryPayload.model_validate(payload).to_runtime(runs=runs)
+    return decode_payload(
+        "evaluation summary",
+        lambda: EvaluationSummaryPayload.model_validate(payload, strict=True).to_runtime(
+            runs=runs
+        ),
+    )
 
 
 def evaluation_run_payload(run: EvaluationRun) -> dict[str, object]:
-    normalized = EvaluationRun(
-        n_events=run.n_events,
-        metrics=dict(run.metrics),
-        metadata={key: _metadata_value(value) for key, value in run.metadata.items()},
+    return cast(
+        dict[str, object],
+        EvaluationRunPayload.from_run(run).model_dump(mode="json"),
     )
-    return _adapter_payload(_EVALUATION_RUN_ADAPTER, normalized)
 
 
 def evaluation_run_from_payload(payload: dict[str, object]):
-    return cast(EvaluationRun, _EVALUATION_RUN_ADAPTER.validate_python(payload))
+    return decode_payload(
+        "evaluation run",
+        lambda: EvaluationRunPayload.model_validate(payload, strict=True).to_run(),
+    )
 
 
 def _execution_provenance_payload(

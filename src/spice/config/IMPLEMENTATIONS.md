@@ -15,6 +15,8 @@ authored YAML
 
 YAML is user-facing. Pydantic models are the internal boundary. Compiled contracts are executable objects used by modeling, acquisition, and evaluation.
 
+A Concrete Owner Config is the concrete local-spec config selected by an owner id. Owner coercers may preserve that object by identity. Abstract typed selector configs are redispatched by id and validated against the concrete type before runtime modules receive them.
+
 ## Local Specs
 
 Local specs are small named configs such as `model/lstm.yaml`, `problem/current_row_nominal.yaml`, `evaluation/poisson_replay_2h.yaml`, or `evaluation/full_temporal_replay.yaml`.
@@ -69,6 +71,8 @@ Resolved snapshot hydration is the raw-payload path for already materialized tra
 
 Acquire is excluded from snapshot hydration. Acquire configs contain provider/acquisition concerns and are produced through surface resolution.
 
+Tuned-parameter application is not snapshot hydration. It is a typed train/tune config transform that applies tuned params through owner-family validators and rebuilds the workflow config directly.
+
 Model workflow snapshots contain training/evaluation fields: chain, dataset, problem, model, dataset builder, features, prediction, objective, optional evaluation, storage, artifact, split, training, study, tuning, and tuning space depending on workflow.
 
 Evaluation date expands into concrete UTC windows:
@@ -95,6 +99,8 @@ evaluation objective
 ```
 
 For train and tune, an evaluation objective must name the same benchmark as the selected evaluation config. Evaluate workflow can run a diagnostic evaluator directly; the artifact still validates against the training semantics stored in its manifest.
+
+Runtime evaluator contracts and evaluation summaries carry typed evaluator configs. Artifact storage codecs serialize and hydrate those configs at the persisted-state boundary.
 
 ## Config Boundary Errors
 

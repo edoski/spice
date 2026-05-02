@@ -10,7 +10,12 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import field_validator
 
-from ...core.specs import lookup_local_spec, owner_payload_id, require_spec_config
+from ...core.specs import (
+    lookup_local_spec,
+    owner_payload_id,
+    require_spec_config,
+    validate_owner_config,
+)
 from ...core.validation import validate_path_segment
 from ...modeling.families.base import ConfigModel
 from ...semantics import ExecutionPolicySemantics
@@ -175,15 +180,16 @@ def execution_policy_spec(policy_id: str) -> ExecutionPolicySpec:
 def coerce_execution_policy_config(
     payload: object,
 ) -> ExecutionPolicyConfig:
-    if isinstance(payload, ExecutionPolicyConfig):
-        return payload
     raw_payload, policy_id = owner_payload_id(
         payload,
         owner="problem.execution_policy",
         config_type=ExecutionPolicyConfig,
         id_label="problem.execution_policy.id",
     )
-    return execution_policy_spec(policy_id).config_type.model_validate(raw_payload)
+    spec = execution_policy_spec(policy_id)
+    if isinstance(payload, spec.config_type):
+        return payload
+    return validate_owner_config(raw_payload, spec.config_type)
 
 
 def compile_execution_policy_contract(

@@ -8,7 +8,7 @@ from optuna.trial import TrialState
 
 from spice.config import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.core.reporting import Reporter
-from spice.evaluation import EvaluationSummary
+from spice.evaluation import EvaluationSummary, coerce_evaluator_config
 from spice.modeling.training_runner import TrainingEpochProgress
 from spice.prediction import MetricDescriptor, MetricSet
 from spice.storage.workflow_roots import ArtifactRootHandle, CorpusRootHandle, StudyRootHandle
@@ -94,7 +94,15 @@ def test_evaluate_workflow_delegates_artifact_inference_preparation(
     prepared = SimpleNamespace(n_history_rows=10, n_evaluation_rows=5, sample_count=2)
     evaluator_contract = SimpleNamespace(
         evaluation_id="poisson_replay_2h",
-        config_payload={"id": "poisson_replay_2h"},
+        config=coerce_evaluator_config(
+            {
+                "id": "poisson_replay_2h",
+                "window_seconds": 7200,
+                "arrival_rate_per_second": 0.01,
+                "repetitions": 3,
+                "seed": 2026,
+            }
+        ),
         metric_descriptors=(
             MetricDescriptor(
                 id="profit_over_baseline",

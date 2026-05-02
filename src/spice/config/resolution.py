@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, overload
+from typing import Literal, TypeVar, overload
 
 from pydantic import ValidationError
 
@@ -14,9 +14,9 @@ from ..modeling.tuned_config import coerce_tuning_space_config
 from ..objectives import ObjectiveConfig
 from .models import (
     AcquireConfig,
-    AcquisitionConfig,
     ArtifactConfig,
     ChainSpec,
+    ConfigModel,
     DatasetBuilderConfig,
     DatasetSpec,
     EvaluateConfig,
@@ -62,6 +62,7 @@ from .selections import (
 from .surfaces import SurfaceFrame, apply_selection_overrides, load_surface_frame
 
 _TUNING_SPACE_GROUP = "tuning_space"
+ConfigModelT = TypeVar("ConfigModelT", bound=ConfigModel)
 
 WorkflowConfig = AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig
 
@@ -191,10 +192,6 @@ def _resolve_surface_frame(
             selection=selection,
             trial_count=selection.trial_count,
         )
-    if workflow is WorkflowTask.EVALUATE:
-        if not isinstance(selection, EvaluateWorkflowSelection):
-            raise ConfigResolutionError("evaluate requires EvaluateWorkflowSelection")
-        return _resolve_evaluate_config(selection)
     raise ConfigResolutionError(f"Unsupported workflow: {workflow.value}")
 
 
@@ -334,12 +331,12 @@ def _resolve_model_workflow_spine(
     *,
     model: ModelConfig[str],
     problem: ProblemSpec,
+    artifact: ArtifactConfig,
     require_tuning: bool,
     allow_tuned_variant: bool,
 ) -> ModelWorkflowSpine:
     training = _resolve_training(frame.training_id)
     split = _resolve_split(frame.split)
-    artifact = _resolve_artifact(frame.artifact)
     if require_tuning or (allow_tuned_variant and artifact.variant.value == "tuned"):
         tuning = _resolve_tuning(frame.tuning_id)
         tuning_space = load_named_tuning_space(
@@ -383,9 +380,7 @@ def _resolve_acquire_config(frame: SurfaceFrame, *, dry_run: bool | None) -> Acq
         )
     acquisition = provider.acquisition
     if dry_run is not None:
-        acquisition = AcquisitionConfig.model_validate(
-            {**acquisition.model_dump(mode="json"), "dry_run": dry_run}
-        )
+        acquisition = _validated_config_update(acquisition, dry_run=dry_run)
     return AcquireConfig(
         chain=chain,
         dataset=dataset,
@@ -407,6 +402,7 @@ def _resolve_train_config(
         frame,
         model=base.model,
         problem=base.problem,
+        artifact=base.artifact,
         require_tuning=False,
         allow_tuned_variant=True,
     )
@@ -443,6 +439,7 @@ def _resolve_tune_config(
         frame,
         model=base.model,
         problem=base.problem,
+        artifact=base.artifact,
         require_tuning=True,
         allow_tuned_variant=False,
     )
@@ -450,9 +447,7 @@ def _resolve_tune_config(
     assert spine.tuning_space is not None
     tuning = spine.tuning
     if trial_count is not None:
-        tuning = TuningConfig.model_validate(
-            {**tuning.model_dump(mode="json"), "trial_count": trial_count}
-        )
+        tuning = _validated_config_update(tuning, trial_count=trial_count)
     return TuneConfig(
         chain=base.chain,
         dataset=base.dataset,
@@ -494,3 +489,12 @@ def _required(value: str | None, label: str) -> str:
     if value is None:
         raise ConfigResolutionError(f"{label} is required")
     return value
+
+
+def _validated_config_update(config: ConfigModelT, **updates: object) -> ConfigModelT:
+    return type(config).model_validate(
+        {
+            **config.model_dump(mode="json", exclude_none=True),
+            **updates,
+        }
+    )

@@ -10,7 +10,12 @@ import optuna
 from optuna.storages import RDBStorage
 
 from ..config.models import TuneConfig, TunedParameterSet
-from ..core.errors import MissingStateError, StateConflictError, StateLayoutError
+from ..core.errors import (
+    ConfigResolutionError,
+    MissingStateError,
+    StateConflictError,
+    StateLayoutError,
+)
 from ..corpus.metadata import DatasetManifest
 from ..modeling.tuned_config import coerce_tuned_parameter_set
 from .engine import db_url
@@ -92,7 +97,10 @@ def load_best_params(db_path: Path, *, study_name: str) -> TunedParameterSet:
     payload = study.best_trial.user_attrs.get(TRIAL_PARAMS_KEY)
     if not isinstance(payload, dict):
         raise MissingStateError(f"Best tuning params are required but missing: {db_path}")
-    return coerce_tuned_parameter_set(payload, model_id=manifest.model_id)
+    try:
+        return coerce_tuned_parameter_set(payload, model_id=manifest.model_id)
+    except (ConfigResolutionError, ValueError) as exc:
+        raise StateLayoutError(f"Invalid best tuning params payload: {exc}") from exc
 
 
 def load_study_summary(db_path: Path) -> StudySummary:

@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import field_validator, model_validator
 
 from ..core.errors import ConfigResolutionError
-from ..core.specs import owner_payload
+from ..core.specs import owner_payload, validate_owner_config
 from ..core.validation import validate_path_segment
 from ..evaluation import EvaluatorConfig
 from ..modeling.families.base import ConfigModel
@@ -64,7 +64,6 @@ class CompiledObjectiveContract:
     metric_id: str
     direction: Literal["maximize", "minimize"]
     benchmark_id: str | None
-    config_payload: dict[str, object]
 
     @property
     def semantics(self) -> ObjectiveSemantics:
@@ -84,8 +83,9 @@ def coerce_objective_config(
 ) -> ObjectiveConfig:
     if isinstance(payload, ObjectiveConfig):
         return payload
-    return ObjectiveConfig.model_validate(
-        owner_payload(payload, owner="objective", config_type=ObjectiveConfig)
+    return validate_owner_config(
+        owner_payload(payload, owner="objective", config_type=ObjectiveConfig),
+        ObjectiveConfig,
     )
 
 
@@ -94,14 +94,12 @@ def compile_objective_contract(
     *,
     evaluation: EvaluatorConfig | None,
 ) -> CompiledObjectiveContract:
-    payload = config.model_dump(mode="json", exclude_none=True)
     if config.id == "validation":
         return CompiledObjectiveContract(
             objective_id="validation",
             metric_id=config.metric_id,
             direction=config.direction.value,
             benchmark_id=None,
-            config_payload=payload,
         )
     if evaluation is None:
         raise ConfigResolutionError(
@@ -116,5 +114,4 @@ def compile_objective_contract(
         metric_id=config.metric_id,
         direction=config.direction.value,
         benchmark_id=evaluation.id,
-        config_payload=payload,
     )

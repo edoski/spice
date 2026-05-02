@@ -19,7 +19,7 @@ from ..config.models import (
     TuningSearchConfig,
     TuningSpaceConfig,
 )
-from ..core.errors import StateLayoutError
+from ..core.errors import ConfigResolutionError, StateLayoutError
 from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import ModelConfig
 from ..modeling.tuned_config import coerce_tuned_parameter_set
@@ -144,8 +144,13 @@ class OpenStudy:
 def params_from_trial(trial: FrozenTrial, *, model_id: str) -> TunedParameterSet:
     payload = trial.user_attrs.get(TRIAL_PARAMS_KEY)
     if not isinstance(payload, dict):
-        raise ValueError(f"Trial {trial.number} is missing typed params metadata")
-    return coerce_tuned_parameter_set(payload, model_id=model_id)
+        raise StateLayoutError(f"Trial {trial.number} is missing typed params metadata")
+    try:
+        return coerce_tuned_parameter_set(payload, model_id=model_id)
+    except (ConfigResolutionError, ValueError) as exc:
+        raise StateLayoutError(
+            f"Invalid trial {trial.number} typed params metadata: {exc}"
+        ) from exc
 
 
 def best_epoch_from_trial(trial: FrozenTrial) -> int | None:

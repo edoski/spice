@@ -6,25 +6,35 @@ import pytest
 
 from spice.config.models import (
     TrainingConfig,
+    TuningSpaceConfig,
     coerce_features_config,
     coerce_problem_spec,
 )
 from spice.config.registry import load_named_group_payload
 from spice.core.errors import ConfigResolutionError
-from spice.evaluation import coerce_evaluator_config
+from spice.evaluation import EvaluatorConfig, coerce_evaluator_config
 from spice.modeling.dataset_builders import (
     coerce_builder_runtime_metadata,
     coerce_dataset_builder_config,
 )
+from spice.modeling.families.base import ModelConfig, ModelTuningSpaceConfig
 from spice.modeling.families.registry import coerce_model_config
 from spice.modeling.tuned_config import (
     coerce_tuned_parameter_set,
     coerce_tuning_space_config,
 )
 from spice.objectives import coerce_objective_config
-from spice.temporal.compilers import coerce_problem_compiler_config
-from spice.temporal.execution_policy import coerce_execution_policy_config
-from spice.temporal.input_normalization import coerce_input_normalization_config
+from spice.temporal.compilers import ProblemCompilerConfig, coerce_problem_compiler_config
+from spice.temporal.execution_policy import (
+    ExecutionPolicyConfig,
+    coerce_execution_policy_config,
+)
+from spice.temporal.execution_policy.strict_deadline_miss import StrictDeadlineMissConfig
+from spice.temporal.input_normalization import (
+    InputNormalizationConfig,
+    coerce_input_normalization_config,
+)
+from spice.temporal.input_normalization.row_standard import RowStandardConfig
 
 
 @pytest.mark.parametrize(
@@ -148,3 +158,55 @@ def test_owner_coercers_preserve_typed_config_identity() -> None:
         coerce_builder_runtime_metadata("fixed_sequence_temporal", metadata)
         is metadata
     )
+
+
+def test_owner_coercers_redispatch_abstract_selector_configs() -> None:
+    execution_policy = ExecutionPolicyConfig(id="strict_deadline_miss")
+    input_normalization = InputNormalizationConfig(id="row_standard")
+    model = coerce_model_config(load_named_group_payload("lstm", "model"))
+    problem = coerce_problem_spec(load_named_group_payload("current_row_nominal", "problem"))
+    tuning_space = TuningSpaceConfig(model=ModelTuningSpaceConfig[str](id="lstm"))
+
+    coerced_policy = coerce_execution_policy_config(execution_policy)
+    coerced_normalization = coerce_input_normalization_config(input_normalization)
+    coerced_tuning_space = coerce_tuning_space_config(
+        tuning_space,
+        model_config=model,
+        problem_config=problem,
+    )
+
+    assert coerced_policy is not execution_policy
+    assert isinstance(coerced_policy, StrictDeadlineMissConfig)
+    assert coerced_normalization is not input_normalization
+    assert isinstance(coerced_normalization, RowStandardConfig)
+    assert coerced_tuning_space is not tuning_space
+    assert type(coerced_tuning_space.model).__name__ == "LstmTuningSpaceModelConfig"
+
+
+@pytest.mark.parametrize(
+    ("coerce", "payload", "message"),
+    [
+        (
+            coerce_evaluator_config,
+            EvaluatorConfig(id="poisson_replay_2h"),
+            "Field required",
+        ),
+        (
+            coerce_model_config,
+            ModelConfig[str](id="lstm"),
+            "Field required",
+        ),
+        (
+            coerce_problem_compiler_config,
+            ProblemCompilerConfig(id="observed_time_window"),
+            "slot_spacing",
+        ),
+    ],
+)
+def test_incomplete_abstract_selector_configs_fail_at_owner_boundary(
+    coerce: Callable[[object], object],
+    payload: object,
+    message: str,
+) -> None:
+    with pytest.raises(ConfigResolutionError, match=message):
+        coerce(payload)

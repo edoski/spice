@@ -152,7 +152,9 @@ def _apply_model_params(
     params: TransformerTunedModelParams,
 ) -> TransformerModelConfig:
     updates = params.model_dump(exclude={"id"}, exclude_none=True)
-    return model_config.model_copy(update=updates)
+    return TransformerModelConfig.model_validate(
+        {**model_config.model_dump(mode="json", exclude_none=True), **updates}
+    )
 
 
 def _resolve_training_precision(device) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TypeVar, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .errors import ConfigResolutionError
 
@@ -70,3 +70,13 @@ def require_spec_config(config: object, config_type: type[ConfigT], label: str) 
     if isinstance(config, config_type):
         return config
     raise ConfigResolutionError(f"{label} must be {config_type.__name__}")
+
+
+def validate_owner_config(
+    payload: Mapping[str, object],
+    config_type: type[ConfigModelT],
+) -> ConfigModelT:
+    try:
+        return config_type.model_validate(payload)
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise ConfigResolutionError(str(exc)) from exc

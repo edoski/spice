@@ -320,7 +320,10 @@ def _evaluation_storage_id(summary: EvaluationRuntimeSummary) -> str:
     identity_payload: dict[str, object] = {
         "delay_seconds": summary.delay_seconds,
         "evaluation_id": summary.evaluation_id,
-        "evaluation_config": summary.evaluation_config,
+        "evaluation_config": summary.evaluation_config.model_dump(
+            mode="json",
+            exclude_none=True,
+        ),
     }
     if summary.execution_provenance is not None:
         identity_payload["execution_provenance"] = {

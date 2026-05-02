@@ -10,6 +10,7 @@ import torch
 from spice.config import EvaluateConfig, WorkflowTask
 from spice.config.models import ChainRuntimeSpec
 from spice.core.errors import ConfigResolutionError
+from spice.evaluation import coerce_evaluator_config
 from spice.modeling.artifact_inference import prepare_artifact_inference_context
 from spice.modeling.evaluation_runtime import EvaluationScoringRuntimePlan
 from spice.modeling.representations import RepresentationRuntimeContext
@@ -64,6 +65,7 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
             feature_prerequisites=("base_fee",),
             problem=object(),
             prediction=SimpleNamespace(id="icdcs_2026", family_id="fee_offset"),
+            training=SimpleNamespace(deterministic=True, seed=17),
         ),
         model=object(),
         dataset_builder_contract=None,
@@ -82,7 +84,15 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
     prediction_contract = SimpleNamespace(decoded_result_id="offsets")
     evaluator_contract = SimpleNamespace(
         evaluation_id="poisson_replay_2h",
-        config_payload={"id": "poisson_replay_2h"},
+        config=coerce_evaluator_config(
+            {
+                "id": "poisson_replay_2h",
+                "window_seconds": 7200,
+                "arrival_rate_per_second": 0.01,
+                "repetitions": 3,
+                "seed": 2026,
+            }
+        ),
         metric_descriptors=(),
     )
     prepared = SimpleNamespace(

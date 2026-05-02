@@ -141,8 +141,8 @@ def test_plan_training_runtime_uses_unshuffled_host_warmup_and_reuses_state(
         resolved_device=torch.device("cpu"),
         precision="32-true",
         representation_runtime_context=plan.runtime_context,
-        deterministic=None,
-        seed=0,
+        deterministic=True,
+        seed=7,
     )
     assert torch.equal(model.weight.detach(), original_weight)
     assert empty_cache_calls == [True]

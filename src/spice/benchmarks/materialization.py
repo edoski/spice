@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from pydantic import ValidationError
 
 from ..config.models import ArtifactVariant, EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
-from ..config.resolution import WorkflowConfig, resolve_workflow_config
+from ..config.resolution import resolve_workflow_config
 from ..config.selections import EvaluateWorkflowSelection, TrainWorkflowSelection, WorkflowSelection
+from ..config.workflow_snapshots import ResolvedWorkflowConfig
 from ..core.errors import ConfigResolutionError, SelectorResolutionError
 from ..storage.catalog.index import resolve_study_record
 from ..storage.selectors import StudySelector
@@ -30,7 +31,7 @@ def materialize_benchmark_plan(
     selections: Sequence[BenchmarkWorkflowSelection],
 ) -> list[BenchmarkPlanEntry]:
     entries: list[BenchmarkPlanEntry] = []
-    configs_by_run_id: dict[str, WorkflowConfig] = {}
+    configs_by_run_id: dict[str, ResolvedWorkflowConfig] = {}
     for selection in selections:
         entry = _materialize_benchmark_selection(
             selection,
@@ -44,13 +45,11 @@ def materialize_benchmark_plan(
 def _materialize_benchmark_selection(
     selection: BenchmarkWorkflowSelection,
     *,
-    configs_by_run_id: Mapping[str, WorkflowConfig],
+    configs_by_run_id: Mapping[str, ResolvedWorkflowConfig],
 ) -> BenchmarkPlanEntry:
     try:
         workflow_selection = _materialized_selection(selection, configs_by_run_id)
-        config = _resolved_benchmark_config(
-            resolve_workflow_config(selection.workflow, workflow_selection)
-        )
+        config = _resolve_benchmark_config(selection.workflow, workflow_selection)
     except (ConfigResolutionError, ValidationError, ValueError, TypeError) as exc:
         raise ConfigResolutionError(
             f"case {selection.case_id} step {selection.step_id}: {exc}"
@@ -87,7 +86,7 @@ def _materialized_selection_payload(
 
 def _materialized_selection(
     selection: BenchmarkWorkflowSelection,
-    configs_by_run_id: Mapping[str, WorkflowConfig],
+    configs_by_run_id: Mapping[str, ResolvedWorkflowConfig],
 ) -> WorkflowSelection:
     workflow_selection = selection.selection
     if (
@@ -113,7 +112,11 @@ def _materialized_selection(
     return workflow_selection
 
 
-def _resolved_benchmark_config(config: WorkflowConfig) -> TrainConfig | TuneConfig | EvaluateConfig:
+def _resolve_benchmark_config(
+    workflow: WorkflowTask,
+    selection: WorkflowSelection,
+) -> ResolvedWorkflowConfig:
+    config = resolve_workflow_config(workflow, selection)
     if isinstance(config, (TrainConfig, TuneConfig, EvaluateConfig)):
         return config
     raise ConfigResolutionError("benchmark plans support train, tune, and evaluate workflows")
@@ -121,7 +124,7 @@ def _resolved_benchmark_config(config: WorkflowConfig) -> TrainConfig | TuneConf
 
 def _dependency_study_id(
     depends_on: Sequence[str],
-    configs_by_run_id: Mapping[str, WorkflowConfig],
+    configs_by_run_id: Mapping[str, ResolvedWorkflowConfig],
 ) -> str:
     for run_id in depends_on:
         config = configs_by_run_id[run_id]
@@ -132,7 +135,7 @@ def _dependency_study_id(
 
 def _dependency_artifact_root(
     artifact_from: str,
-    configs_by_run_id: Mapping[str, WorkflowConfig],
+    configs_by_run_id: Mapping[str, ResolvedWorkflowConfig],
 ) -> _MaterializedArtifactRoot:
     source = configs_by_run_id[artifact_from]
     if not isinstance(source, TrainConfig):
@@ -146,7 +149,7 @@ def _dependency_artifact_root(
 
 def _train_dataset_id(
     config: TrainConfig,
-    configs_by_run_id: Mapping[str, WorkflowConfig],
+    configs_by_run_id: Mapping[str, ResolvedWorkflowConfig],
 ) -> str:
     if config.dataset_id is not None:
         return config.dataset_id

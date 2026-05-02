@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import cast
 
 from ..config.models import ChainRuntimeSpec
-from ..config.registry import load_chain_spec
 from ..core.errors import MissingStateError, StateLayoutError
 from ..corpus.metadata import (
     AcquireRunFacts,
@@ -36,7 +35,15 @@ from .engine import (
     require_root_kind,
     touch_meta,
 )
-from .payloads import PayloadCodec, SequencePayloadStore, SingletonPayloadStore, mapping_payload
+from .payloads import (
+    PayloadCodec,
+    SequencePayloadStore,
+    SingletonPayloadStore,
+    decode_payload,
+    int_payload,
+    mapping_payload,
+    string_payload,
+)
 from .schema import DATASET_TABLES, acquire_runs, dataset_manifest
 
 _DATASET_MANIFEST_STORE = SingletonPayloadStore(
@@ -128,6 +135,13 @@ def _dataset_manifest_payload(manifest: DatasetManifest) -> dict[str, object]:
 
 
 def _dataset_manifest_from_payload(payload: dict[str, object]) -> DatasetManifest:
+    return decode_payload(
+        "dataset manifest",
+        lambda: _decode_dataset_manifest(payload),
+    )
+
+
+def _decode_dataset_manifest(payload: dict[str, object]) -> DatasetManifest:
     dataset = mapping_payload(payload["dataset"], label="dataset")
     chain = mapping_payload(payload["chain"], label="chain")
     request = mapping_payload(payload["request"], label="request")
@@ -135,11 +149,11 @@ def _dataset_manifest_from_payload(payload: dict[str, object]) -> DatasetManifes
     validation = mapping_payload(payload["validation"], label="validation")
     return DatasetManifest(
         dataset=DatasetIdentity(
-            id=str(dataset["id"]),
-            name=str(dataset["name"]),
+            id=string_payload(dataset["id"], label="dataset.id"),
+            name=string_payload(dataset["name"], label="dataset.name"),
         ),
         chain=ChainMetadata(
-            name=str(chain["name"]),
+            name=string_payload(chain["name"], label="chain.name"),
             runtime=_chain_runtime_from_payload(chain),
         ),
         request=DatasetRequestMetadata(
@@ -159,12 +173,11 @@ def _dataset_manifest_from_payload(payload: dict[str, object]) -> DatasetManifes
 
 def _chain_runtime_from_payload(chain: dict[str, object]) -> ChainRuntimeSpec:
     runtime_payload = chain.get("runtime")
-    if runtime_payload is not None:
-        return ChainRuntimeSpec.model_validate(
-            mapping_payload(runtime_payload, label="chain.runtime")
-        )
-    chain_config = load_chain_spec(str(chain["name"]))
-    return chain_config.runtime
+    if runtime_payload is None:
+        raise StateLayoutError("chain.runtime is required")
+    return ChainRuntimeSpec.model_validate(
+        mapping_payload(runtime_payload, label="chain.runtime")
+    )
 
 
 def _window_from_payload(payload: object) -> DatasetWindowMetadata:
@@ -192,15 +205,22 @@ def _acquire_run_payload(run: AcquireRunRecord) -> dict[str, object]:
 
 
 def _acquire_run_from_payload(payload: dict[str, object]) -> AcquireRunRecord:
+    return decode_payload("acquire run", lambda: _decode_acquire_run(payload))
+
+
+def _decode_acquire_run(payload: dict[str, object]) -> AcquireRunRecord:
     provider = mapping_payload(payload["provider"], label="provider")
     facts = mapping_payload(payload["facts"], label="facts")
     settings = mapping_payload(payload["settings"], label="settings")
     runtime = mapping_payload(payload["runtime"], label="runtime")
     return AcquireRunRecord(
         provider=ProviderMetadata(
-            name=str(provider["name"]),
-            reference=str(provider["reference"]),
-            endpoint_fingerprint=str(provider["endpoint_fingerprint"]),
+            name=string_payload(provider["name"], label="provider.name"),
+            reference=string_payload(provider["reference"], label="provider.reference"),
+            endpoint_fingerprint=string_payload(
+                provider["endpoint_fingerprint"],
+                label="provider.endpoint_fingerprint",
+            ),
         ),
         facts=AcquireRunFacts(
             requested_history_window_seconds=_int_value(
@@ -269,11 +289,7 @@ def _optional_int(value: object) -> int | None:
 
 
 def _int_value(value: object) -> int:
-    if isinstance(value, bool):
-        raise StateLayoutError("Expected integer-like payload")
-    if isinstance(value, (int, float, str, bytes)):
-        return int(value)
-    raise StateLayoutError("Expected integer-like payload")
+    return int_payload(value, label="integer payload")
 
 
 def _int_list_value(values: object) -> list[int]:

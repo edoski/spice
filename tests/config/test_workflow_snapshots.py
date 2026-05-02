@@ -120,6 +120,10 @@ def test_workflow_snapshot_rejects_acquire_and_mismatched_workflow() -> None:
     with pytest.raises(ConfigResolutionError, match="workflow mismatch"):
         hydrate_workflow_config_snapshot(WorkflowTask.EVALUATE, payload)
 
+    del payload["workflow"]
+    with pytest.raises(ConfigResolutionError, match="workflow is required"):
+        hydrate_workflow_config_snapshot(WorkflowTask.TRAIN, payload)
+
 
 def test_workflow_snapshot_reports_malformed_payloads() -> None:
     train = _resolved_config(WorkflowTask.TRAIN)

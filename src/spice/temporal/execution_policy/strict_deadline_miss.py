@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+from pydantic import field_validator
 
 from ..problem_store import CompiledProblemStore
 from ..semantics import BaselineRowMode
@@ -20,6 +21,14 @@ from .base import (
 
 class StrictDeadlineMissConfig(ExecutionPolicyConfig):
     id: str = "strict_deadline_miss"
+
+    @field_validator("id")
+    @classmethod
+    def validate_strict_deadline_miss_id(cls, value: str) -> str:
+        value = ExecutionPolicyConfig.validate_id(value)
+        if value != "strict_deadline_miss":
+            raise ValueError("problem.execution_policy.id must be strict_deadline_miss")
+        return value
 
 
 def _action_mask(

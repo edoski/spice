@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, TypeVar, cast
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from ..core.errors import StateLayoutError
 from ..features import FeaturePrerequisites
@@ -51,4 +51,7 @@ def _adapter_payload(adapter: object, value: object) -> dict[str, object]:
 
 
 def _adapter_value(adapter: TypeAdapter[AdapterValueT], payload: object) -> AdapterValueT:
-    return adapter.validate_python(payload)
+    try:
+        return adapter.validate_python(payload)
+    except (ValidationError, ValueError, TypeError) as exc:
+        raise StateLayoutError(f"Invalid semantics payload: {exc}") from exc

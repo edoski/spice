@@ -12,7 +12,8 @@ from spice.config import (
     coerce_problem_spec,
     resolve_workflow_config,
 )
-from spice.config.models import TunedTrainingParams
+from spice.config.models import TunedTrainingParams, TuningProblemSearchSpace
+from spice.core.errors import ConfigResolutionError
 from spice.modeling.families.transformer import (
     TransformerModelConfig,
     TransformerTunedModelParams,
@@ -201,4 +202,16 @@ def test_transformer_tuning_space_rejects_incompatible_attention_dimensions() ->
             },
             model_config=_transformer_model(),
             problem_config=_problem(),
+        )
+
+
+def test_tuning_space_requires_problem_context_for_typed_problem_group() -> None:
+    with pytest.raises(ConfigResolutionError, match="problem_config is required"):
+        coerce_tuning_space_config(
+            {
+                "model": {"id": "transformer"},
+                "problem": TuningProblemSearchSpace(lookback_seconds=[900]),
+            },
+            model_config=_transformer_model(),
+            problem_config=None,
         )

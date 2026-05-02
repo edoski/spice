@@ -13,6 +13,7 @@ from ..prediction.base import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..prediction.decoding import DecodedPredictionResult
 from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
+from .config import EvaluatorConfig
 
 if TYPE_CHECKING:
     from ..prediction import CompiledPredictionContract
@@ -53,7 +54,7 @@ class CompiledEvaluatorContract:
     metric_descriptors: tuple[MetricDescriptor, ...]
     primary_metric_id: str
     direction: Literal["maximize", "minimize"]
-    config_payload: dict[str, object]
+    config: EvaluatorConfig
     accepted_decoded_result_id: str
     run_fn: RunEvaluatorFn
 

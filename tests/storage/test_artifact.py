@@ -15,7 +15,7 @@ from spice.config import (
     coerce_problem_spec,
 )
 from spice.core.errors import StateLayoutError
-from spice.evaluation import EvaluationRun
+from spice.evaluation import EvaluationRun, coerce_evaluator_config
 from spice.features import compile_feature_contract
 from spice.modeling.dataset_builders import (
     coerce_dataset_builder_config,
@@ -35,6 +35,7 @@ from spice.objectives import coerce_objective_config
 from spice.prediction import (
     MetricDescriptor,
     MetricSet,
+    WindowMetricSummary,
     compile_prediction_contract,
 )
 from spice.semantics import (
@@ -53,6 +54,10 @@ from spice.storage.artifact import (
     upsert_evaluation_state,
     write_artifact_manifest,
     write_training_state,
+)
+from spice.storage.artifact_codecs import (
+    evaluation_run_from_payload,
+    training_summary_from_payload,
 )
 from spice.storage.engine import DATASET_ROOT_KIND, ensure_state_db
 from spice.storage.schema import DATASET_TABLES
@@ -273,17 +278,48 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
     assert loaded_epochs == epoch_rows
 
 
-def _evaluation_summary(evaluation_id: str, value: float) -> EvaluationRuntimeSummary:
+def test_training_summary_payload_rejects_loose_scalar_types() -> None:
+    with pytest.raises(StateLayoutError, match="training summary"):
+        training_summary_from_payload(
+            {
+                "n_rows_available": "128",
+                "n_rows_used": True,
+                "train_samples": 10,
+                "validation_samples": 5,
+                "test_samples": 5,
+                "best_epoch": 1,
+                "best_objective_metric_id": "total_loss",
+                "best_objective_value": "0.25",
+                "best_validation_metrics": {"total_loss": "0.25"},
+                "test_metrics": {"total_loss": 0.3},
+            }
+        )
+
+
+def test_evaluation_run_payload_rejects_loose_scalar_types() -> None:
+    with pytest.raises(StateLayoutError, match="evaluation run"):
+        evaluation_run_from_payload(
+            {
+                "n_events": True,
+                "metrics": {"profit_over_baseline": "0.2"},
+                "metadata": {"mode": True},
+            }
+        )
+
+
+def _evaluation_summary(value: float, *, seed: int = 2026) -> EvaluationRuntimeSummary:
     return EvaluationRuntimeSummary(
         delay_seconds=24,
-        evaluation_id=evaluation_id,
-        evaluation_config={
-            "id": evaluation_id,
-            "window_seconds": 7200,
-            "repetitions": 50,
-            "arrival_rate_per_second": 0.05,
-            "seed": 2026,
-        },
+        evaluation_id="poisson_replay_2h",
+        evaluation_config=coerce_evaluator_config(
+            {
+                "id": "poisson_replay_2h",
+                "window_seconds": 7200,
+                "repetitions": 50,
+                "arrival_rate_per_second": 0.05,
+                "seed": seed,
+            }
+        ),
         metric_descriptors=(
             MetricDescriptor(
                 id="profit_over_baseline",
@@ -295,13 +331,15 @@ def _evaluation_summary(evaluation_id: str, value: float) -> EvaluationRuntimeSu
         n_evaluation_rows=64,
         sample_count=24,
         metrics=MetricSet(values={"profit_over_baseline": value}),
-        window_metrics={},
+        window_metrics={
+            "profit_over_baseline": WindowMetricSummary(mean=value, std=0.01)
+        },
         total_events=2,
         runs=[
             EvaluationRun(
                 n_events=2,
                 metrics={"profit_over_baseline": value},
-                metadata={"mode": evaluation_id},
+                metadata={"mode": "poisson_replay_2h"},
             ),
         ],
     )
@@ -310,8 +348,8 @@ def _evaluation_summary(evaluation_id: str, value: float) -> EvaluationRuntimeSu
 def test_remote_evaluation_provenance_creates_distinct_summaries(tmp_path) -> None:
     db_path = tmp_path / ".spice" / "state.sqlite"
     write_artifact_manifest(db_path, manifest=_manifest())
-    first = _evaluation_summary("poisson_replay_2h", 0.1)
-    second = _evaluation_summary("poisson_replay_2h", 0.1)
+    first = _evaluation_summary(0.1)
+    second = _evaluation_summary(0.1)
 
     first_id, _ = upsert_evaluation_state(
         db_path,
@@ -356,8 +394,8 @@ def test_remote_evaluation_provenance_creates_distinct_summaries(tmp_path) -> No
 def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
     db_path = tmp_path / ".spice" / "state.sqlite"
     manifest = _manifest()
-    base_summary = _evaluation_summary("poisson_replay_2h_short", 0.2)
-    replay_summary = _evaluation_summary("poisson_replay_2h", 0.1)
+    base_summary = _evaluation_summary(0.2, seed=2026)
+    replay_summary = _evaluation_summary(0.1, seed=2027)
 
     write_artifact_manifest(db_path, manifest=manifest)
     evaluation_id, recorded_at = upsert_evaluation_state(

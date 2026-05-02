@@ -16,7 +16,7 @@ from pydantic import (
 )
 
 from ..core.errors import ConfigResolutionError
-from ..core.specs import owner_payload
+from ..core.specs import owner_payload, validate_owner_config
 from ..core.validation import validate_path_segment
 from ..evaluation import EvaluatorConfig
 from ..features import validate_feature_selection
@@ -104,20 +104,32 @@ class ProblemSpec(ConfigModel):
 def coerce_problem_spec(payload: object) -> ProblemSpec:
     from ..temporal.compilers import coerce_problem_compiler_config
 
-    if isinstance(payload, ProblemSpec):
-        return payload
     raw_payload = owner_payload(payload, owner="problem", config_type=ProblemSpec)
-    raw_compiler = raw_payload.get("compiler")
+    raw_compiler = (
+        payload.compiler if isinstance(payload, ProblemSpec) else raw_payload.get("compiler")
+    )
     if raw_compiler is None:
         raise ConfigResolutionError("problem.compiler is required")
-    raw_execution_policy = raw_payload.get("execution_policy")
+    raw_execution_policy = (
+        payload.execution_policy
+        if isinstance(payload, ProblemSpec)
+        else raw_payload.get("execution_policy")
+    )
     if raw_execution_policy is None:
         raise ConfigResolutionError("problem.execution_policy is required")
     from ..temporal.execution_policy import coerce_execution_policy_config
 
-    raw_payload["compiler"] = coerce_problem_compiler_config(raw_compiler)
-    raw_payload["execution_policy"] = coerce_execution_policy_config(raw_execution_policy)
-    return ProblemSpec.model_validate(raw_payload)
+    compiler = coerce_problem_compiler_config(raw_compiler)
+    execution_policy = coerce_execution_policy_config(raw_execution_policy)
+    if (
+        isinstance(payload, ProblemSpec)
+        and compiler is payload.compiler
+        and execution_policy is payload.execution_policy
+    ):
+        return payload
+    raw_payload["compiler"] = compiler
+    raw_payload["execution_policy"] = execution_policy
+    return validate_owner_config(raw_payload, ProblemSpec)
 
 
 class SplitConfig(ConfigModel):
@@ -221,8 +233,9 @@ class FeaturesConfig(ConfigModel):
 def coerce_features_config(payload: object) -> FeaturesConfig:
     if isinstance(payload, FeaturesConfig):
         return payload
-    return FeaturesConfig.model_validate(
-        owner_payload(payload, owner="features", config_type=FeaturesConfig)
+    return validate_owner_config(
+        owner_payload(payload, owner="features", config_type=FeaturesConfig),
+        FeaturesConfig,
     )
 
 

@@ -16,7 +16,7 @@ from ..config.models import (
     StudyConfig,
     TrainingConfig,
 )
-from ..evaluation import EvaluationRun, EvaluationSummary
+from ..evaluation import EvaluationRun, EvaluationSummary, EvaluatorConfig
 from ..modeling.dataset_builders import (
     BuilderRuntimeMetadata,
     DatasetBuilderConfig,
@@ -173,7 +173,7 @@ class EvaluationRuntimeSummary:
 
     delay_seconds: int
     evaluation_id: str
-    evaluation_config: dict[str, object]
+    evaluation_config: EvaluatorConfig
     metric_descriptors: tuple[MetricDescriptor, ...]
     n_history_rows: int
     n_evaluation_rows: int
@@ -242,14 +242,14 @@ def build_evaluation_runtime_summary(
     evaluation: EvaluationSummary,
     delay_seconds: int,
     evaluation_id: str,
-    evaluation_config: dict[str, object],
+    evaluation_config: EvaluatorConfig,
     metric_descriptors: tuple[MetricDescriptor, ...],
     execution_provenance: EvaluationExecutionProvenance | None = None,
 ) -> EvaluationRuntimeSummary:
     return EvaluationRuntimeSummary(
         delay_seconds=delay_seconds,
         evaluation_id=evaluation_id,
-        evaluation_config=dict(evaluation_config),
+        evaluation_config=evaluation_config,
         execution_provenance=execution_provenance,
         metric_descriptors=metric_descriptors,
         n_history_rows=prepared.n_history_rows,

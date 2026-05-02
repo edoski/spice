@@ -10,11 +10,15 @@ Workflow Selection resolution, Resolved Workflow Snapshot hydration, and Config 
 
 Named Config Groups also serve two different callers. Operators need raw canonical payloads for show/edit/template workflows. Workflow resolution needs typed owner configs.
 
+Typed selector bases such as `ModelConfig`, `EvaluatorConfig`, or `ExecutionPolicyConfig` are not enough for execution. The owner registry must redispatch them by id and validate the concrete local-spec config type before runtime code sees them.
+
 ## Decision
 
 Fresh Workflow Selection resolution constructs `AcquireConfig`, `TrainConfig`, `TuneConfig`, and `EvaluateConfig` directly from already typed resolved pieces.
 
 Resolved Workflow Hydration lives with the snapshot codec. It accepts raw Resolved Workflow Snapshot payloads for train, tune, and evaluate, validates the workflow marker, and calls owner coercers to rebuild concrete nested configs. Acquire remains unsupported for snapshots.
+
+Concrete Owner Config means the concrete local-spec config selected by an owner id. Owner coercers preserve identity only for Concrete Owner Config instances. Abstract typed selector configs are dumped to a mapping, redispatched by id, and validated as the concrete type. Invalid or incomplete selector configs fail at the owner boundary with `ConfigResolutionError`.
 
 Config Group Loading has separate Interfaces:
 
@@ -23,6 +27,10 @@ Config Group Loading has separate Interfaces:
 
 Contextual tuning-space loading stays in resolution because its validity depends on the selected model and problem. Benchmark typed loading stays in the benchmark module.
 
+Tuned-parameter application is a typed Workflow Config transform, not a Resolved Workflow Hydration caller. It applies tuned params by constructing validated concrete nested configs and rebuilding the train or tune config directly.
+
+Runtime evaluator and objective contracts carry typed configs or policy fields. Durable payloads are produced only by storage codecs and snapshot codecs.
+
 ## Consequences
 
-Raw JSON/dict handling is localized to Resolved Workflow Hydration and raw Config Group loading. Surface resolution stays typed after selection overrides. Owner packages keep concrete dispatch for nested configs. There are no compatibility shims for deleted shallow Interfaces.
+Raw JSON/dict handling is localized to Resolved Workflow Hydration, raw Config Group loading, benchmark/run ledgers, and storage codecs. Surface resolution stays typed after selection overrides. Owner packages keep concrete dispatch for nested configs. There are no compatibility shims for deleted shallow Interfaces.

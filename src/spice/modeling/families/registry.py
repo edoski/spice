@@ -9,7 +9,12 @@ from typing import Any, Generic, TypeVar, cast
 import optuna
 import torch
 
-from ...core.specs import lookup_local_spec, owner_payload_id
+from ...core.specs import (
+    lookup_local_spec,
+    owner_payload_id,
+    require_spec_config,
+    validate_owner_config,
+)
 from ...prediction import PredictionOutputSpec
 from ..models import TemporalModel
 from .base import ModelConfig, ModelTuningSpaceConfig, TunedModelParams
@@ -49,15 +54,16 @@ def model_spec(model_id: str) -> ModelSpec[Any, Any, Any]:
 
 
 def coerce_model_config(payload: object) -> ModelConfig[str]:
-    if isinstance(payload, ModelConfig):
-        return payload
     raw_payload, model_id = owner_payload_id(
         payload,
         owner="model",
         config_type=ModelConfig,
         id_label="model.id",
     )
-    return model_spec(model_id).model_config_type.model_validate(raw_payload)
+    spec = model_spec(model_id)
+    if isinstance(payload, spec.model_config_type):
+        return cast(ModelConfig[str], payload)
+    return cast(ModelConfig[str], validate_owner_config(raw_payload, spec.model_config_type))
 
 
 def build_model(
@@ -66,7 +72,8 @@ def build_model(
     config: ModelConfig[str],
 ) -> TemporalModel:
     spec = model_spec(config.id)
-    return spec.build_model(n_features, output_spec, cast(Any, config))
+    concrete_config = require_spec_config(config, spec.model_config_type, "model config")
+    return spec.build_model(n_features, output_spec, concrete_config)
 
 
 def resolve_model_training_precision(
@@ -90,4 +97,10 @@ def apply_model_tuned_parameters(
     params: TunedModelParams,
 ) -> ModelConfig[str]:
     spec = model_spec(model_config.id)
-    return spec.apply_model_params(cast(Any, model_config), cast(Any, params))
+    concrete_config = require_spec_config(model_config, spec.model_config_type, "model config")
+    concrete_params = require_spec_config(
+        params,
+        spec.tuned_params_type,
+        "tuned model params",
+    )
+    return spec.apply_model_params(concrete_config, concrete_params)

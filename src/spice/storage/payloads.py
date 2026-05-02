@@ -13,7 +13,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.schema import Table
 
-from ..core.errors import StateLayoutError
+from ..core.errors import ConfigResolutionError, StateLayoutError
 
 T = TypeVar("T")
 
@@ -76,3 +76,32 @@ def mapping_payload(payload: object, *, label: str) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise StateLayoutError(f"{label}.payload must be a mapping")
     return {str(key): value for key, value in cast(Mapping[object, object], payload).items()}
+
+
+def decode_payload(label: str, decode: Callable[[], T]) -> T:
+    try:
+        return decode()
+    except StateLayoutError:
+        raise
+    except (ConfigResolutionError, KeyError, ValueError, TypeError) as exc:
+        raise StateLayoutError(f"Invalid {label} payload: {exc}") from exc
+
+
+def string_payload(value: object, *, label: str) -> str:
+    if isinstance(value, str):
+        return value
+    raise StateLayoutError(f"{label} must be a string")
+
+
+def int_payload(value: object, *, label: str) -> int:
+    if isinstance(value, bool):
+        raise StateLayoutError(f"{label} must be an integer")
+    if isinstance(value, int):
+        return value
+    raise StateLayoutError(f"{label} must be an integer")
+
+
+def bool_payload(value: object, *, label: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    raise StateLayoutError(f"{label} must be a boolean")

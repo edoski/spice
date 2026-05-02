@@ -259,14 +259,14 @@ YAML specs can be validated through the config registry:
 
 ```bash
 uv run python - <<'PY'
-from spice.config.registry import load_named_group, named_group_keys, list_group_names
+from spice.config.registry import load_named_group_payload, named_group_keys, list_group_names
 
 count = 0
 errors = []
 for group in named_group_keys():
     for name in list_group_names(group):
         try:
-            load_named_group(name, group)
+            load_named_group_payload(name, group)
         except Exception as exc:
             errors.append((group, name, type(exc).__name__, str(exc)))
         count += 1

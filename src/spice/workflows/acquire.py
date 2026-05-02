@@ -9,8 +9,8 @@ from ..config.models import AcquireConfig
 from ..core.async_runtime import run_interruptibly
 from ..core.reporting import Reporter
 from ..corpus.assembly import CorpusAssemblyRequest, assemble_corpus
-from ..features import compile_feature_contract
 from ..corpus.summary import acquire_dry_run_fields, acquisition_result_fields
+from ..features import compile_feature_contract
 from ..storage.workflow_roots import resolve_acquire_producer_roots
 
 

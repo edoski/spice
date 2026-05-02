@@ -119,7 +119,7 @@ def _validate_snapshot_workflow(
         raise ConfigResolutionError(f"Unsupported resolved workflow: {workflow.value}")
     raw_workflow = payload.get("workflow")
     if raw_workflow is None:
-        return
+        raise ConfigResolutionError("resolved workflow snapshot workflow is required")
     try:
         snapshot_workflow = WorkflowTask(str(raw_workflow))
     except ValueError as exc:

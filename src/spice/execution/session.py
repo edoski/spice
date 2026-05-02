@@ -9,11 +9,9 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from ..config.models import WorkflowTask
 from ..config.registry import load_execution_spec
-from ..config.resolution import WorkflowConfig
 from ..config.workflow_snapshots import ResolvedWorkflowConfig, workflow_config_snapshot_json
 from ..core.errors import SpiceOperatorError
 from .models import ExecutionSpec, ExecutionWorkflowSpec
@@ -162,7 +160,7 @@ class ExecutionSession:
         self,
         task: WorkflowTask,
         *,
-        config: WorkflowConfig,
+        config: ResolvedWorkflowConfig,
         dependency: str | None = None,
     ) -> ExecutionJobSubmission:
         workflow_spec = _workflow_spec(self.target, task)
@@ -288,7 +286,7 @@ def _render_sbatch_script(
     target: ExecutionTarget,
     task: WorkflowTask,
     workflow_spec: ExecutionWorkflowSpec,
-    config: WorkflowConfig,
+    config: ResolvedWorkflowConfig,
     log_path_template: Path,
 ) -> str:
     repo_root = shlex.quote(str(target.spec.paths.repo_root))
@@ -296,7 +294,7 @@ def _render_sbatch_script(
     storage_root = str(target.spec.paths.storage_root)
     python_path = str(target.spec.paths.python_path)
     config_json = workflow_config_snapshot_json(
-        cast(ResolvedWorkflowConfig, config),
+        config,
         storage_root_override=target.spec.paths.storage_root,
     )
     remote_command = shlex.join(

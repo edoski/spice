@@ -53,7 +53,6 @@ def _objective_contract() -> CompiledObjectiveContract:
         metric_id="score",
         direction="maximize",
         benchmark_id=None,
-        config_payload={},
     )
 
 

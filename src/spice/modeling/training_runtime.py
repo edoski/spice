@@ -146,8 +146,8 @@ def plan_training_runtime(
             resolved_device=resolved_device,
             precision=precision,
             representation_runtime_context=planned_runtime_context,
-            deterministic=None,
-            seed=0,
+            deterministic=training_config.deterministic,
+            seed=training_config.seed,
         ),
         prediction_training_state=prediction_training_state,
     )

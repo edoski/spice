@@ -65,6 +65,8 @@ def build_model_scoring_input(
     sample_indices: IntVector,
     runtime_plan: EvaluationScoringRuntimePlan | None = None,
     batch_size: int | None = None,
+    deterministic: bool | None = None,
+    seed: int = 0,
 ) -> ModelScoringInput:
     if runtime_plan is None:
         if batch_size is None:
@@ -72,6 +74,8 @@ def build_model_scoring_input(
         runtime_plan = build_evaluation_scoring_runtime_plan(
             model_config=model_config,
             batch_size=batch_size,
+            deterministic=deterministic,
+            seed=seed,
         )
     return ModelScoringInput(
         model=model,

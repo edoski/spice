@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from spice.core.errors import MissingStateError
+from spice.core.errors import MissingStateError, StateLayoutError
 from spice.storage.artifact import (
     list_evaluation_summaries,
     load_artifact_manifest,
@@ -35,7 +35,7 @@ def test_dataset_reads_are_read_only_for_missing_db(tmp_path: Path) -> None:
     assert not db_path.exists()
 
 
-def test_dataset_manifest_loads_chain_runtime_from_named_chain_config(
+def test_dataset_manifest_rejects_missing_chain_runtime(
     tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "datasets" / "polygon" / "dataset-1" / ".spice" / "state.sqlite"
@@ -63,11 +63,8 @@ def test_dataset_manifest_loads_chain_runtime_from_named_chain_config(
     finally:
         engine.dispose()
 
-    manifest = load_dataset_manifest(db_path)
-
-    assert manifest.chain.name == "polygon"
-    assert manifest.chain.runtime.chain_id == 137
-    assert manifest.chain.runtime.nominal_block_time_seconds == 2.0
+    with pytest.raises(StateLayoutError, match="chain.runtime is required"):
+        load_dataset_manifest(db_path)
 
 
 def test_artifact_reads_are_read_only_for_missing_db(tmp_path: Path) -> None:
