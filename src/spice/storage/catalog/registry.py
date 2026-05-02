@@ -237,7 +237,7 @@ def _resolve_artifact(storage_root: Path, root_id: str) -> CatalogArtifactRecord
     return resolve_artifact_record(storage_root, selector=ArtifactSelector(artifact_id=root_id))
 
 
-DATASET_ROOT_SPEC = CatalogRootKindSpec[CatalogDatasetRecord](
+DATASET_ROOT_SPEC: CatalogRootKindSpec[CatalogDatasetRecord] = CatalogRootKindSpec(
     root_kind=RootKind.CORPUS,
     label="dataset",
     record_type=CatalogDatasetRecord,
@@ -249,7 +249,7 @@ DATASET_ROOT_SPEC = CatalogRootKindSpec[CatalogDatasetRecord](
     manifest_to_record=_build_dataset_record,
     resolve_record=_resolve_dataset,
 )
-STUDY_ROOT_SPEC = CatalogRootKindSpec[CatalogStudyRecord](
+STUDY_ROOT_SPEC: CatalogRootKindSpec[CatalogStudyRecord] = CatalogRootKindSpec(
     root_kind=RootKind.STUDY,
     label="study",
     record_type=CatalogStudyRecord,
@@ -269,7 +269,7 @@ STUDY_ROOT_SPEC = CatalogRootKindSpec[CatalogStudyRecord](
     manifest_to_record=_build_study_record,
     resolve_record=_resolve_study,
 )
-ARTIFACT_ROOT_SPEC = CatalogRootKindSpec[CatalogArtifactRecord](
+ARTIFACT_ROOT_SPEC: CatalogRootKindSpec[CatalogArtifactRecord] = CatalogRootKindSpec(
     root_kind=RootKind.ARTIFACT,
     label="artifact",
     record_type=CatalogArtifactRecord,
