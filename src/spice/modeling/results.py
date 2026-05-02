@@ -4,8 +4,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from typing import TypeAlias, cast
 
 from ..config.models import (
     ArtifactVariant,
@@ -29,6 +30,22 @@ from ..prediction import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..semantics import ArtifactSemantics
 from ..temporal.scaling import ScalerStats
 from .training_run import TrainingRunResult
+
+JsonScalar: TypeAlias = str | int | float | bool | None
+JsonObject: TypeAlias = dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class _FrozenJsonObject:
+    items: tuple[tuple[str, FrozenJsonValue], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _FrozenJsonArray:
+    items: tuple[FrozenJsonValue, ...]
+
+
+FrozenJsonValue: TypeAlias = JsonScalar | _FrozenJsonObject | _FrozenJsonArray
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,12 +185,34 @@ class EvaluationExecutionProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class EvaluationConfigSnapshot:
+    """Immutable JSON-ready evaluator config provenance."""
+
+    _payload: _FrozenJsonObject
+
+    @classmethod
+    def from_config(cls, config: EvaluatorConfig) -> EvaluationConfigSnapshot:
+        return cls.from_payload(config.model_dump(mode="json", exclude_none=True))
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> EvaluationConfigSnapshot:
+        from ..evaluation import coerce_evaluator_config
+
+        config = coerce_evaluator_config(dict(payload))
+        normalized = config.model_dump(mode="json", exclude_none=True)
+        return cls(_freeze_json_object(normalized))
+
+    def payload(self) -> JsonObject:
+        return _thaw_json_object(self._payload)
+
+
+@dataclass(frozen=True, slots=True)
 class EvaluationRuntimeSummary:
     """Runtime-only evaluation outcomes stored separately from manifest provenance."""
 
     delay_seconds: int
     evaluation_id: str
-    evaluation_config: EvaluatorConfig
+    evaluation_config: EvaluationConfigSnapshot
     metric_descriptors: tuple[MetricDescriptor, ...]
     n_history_rows: int
     n_evaluation_rows: int
@@ -249,7 +288,7 @@ def build_evaluation_runtime_summary(
     return EvaluationRuntimeSummary(
         delay_seconds=delay_seconds,
         evaluation_id=evaluation_id,
-        evaluation_config=evaluation_config,
+        evaluation_config=EvaluationConfigSnapshot.from_config(evaluation_config),
         execution_provenance=execution_provenance,
         metric_descriptors=metric_descriptors,
         n_history_rows=prepared.n_history_rows,
@@ -260,3 +299,32 @@ def build_evaluation_runtime_summary(
         total_events=evaluation.total_events,
         runs=list(evaluation.runs),
     )
+
+
+def _freeze_json_object(payload: Mapping[str, object]) -> _FrozenJsonObject:
+    return _FrozenJsonObject(
+        tuple((str(key), _freeze_json_value(value)) for key, value in sorted(payload.items()))
+    )
+
+
+def _freeze_json_value(value: object) -> FrozenJsonValue:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        return _freeze_json_object(cast(Mapping[str, object], value))
+    if isinstance(value, (list, tuple)):
+        items = cast(tuple[object, ...], value)
+        return _FrozenJsonArray(tuple(_freeze_json_value(item) for item in items))
+    raise TypeError(f"Evaluation config snapshot contains non-JSON value: {type(value).__name__}")
+
+
+def _thaw_json_object(payload: _FrozenJsonObject) -> JsonObject:
+    return {key: _thaw_json_value(value) for key, value in payload.items}
+
+
+def _thaw_json_value(value: FrozenJsonValue) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, _FrozenJsonObject):
+        return _thaw_json_object(value)
+    return [_thaw_json_value(item) for item in value.items]

@@ -15,7 +15,7 @@ from ..config.models import (
     coerce_features_config,
     coerce_problem_spec,
 )
-from ..evaluation import EvaluationRun, coerce_evaluator_config
+from ..evaluation import EvaluationRun
 from ..modeling.dataset_builders import (
     coerce_builder_runtime_metadata,
     coerce_dataset_builder_config,
@@ -283,10 +283,7 @@ class EvaluationSummaryPayload(CodecPayloadModel):
         return cls(
             delay_seconds=summary.delay_seconds,
             evaluation_id=summary.evaluation_id,
-            evaluation_config=summary.evaluation_config.model_dump(
-                mode="json",
-                exclude_none=True,
-            ),
+            evaluation_config=summary.evaluation_config.payload(),
             execution_provenance=_execution_provenance_payload(
                 summary.execution_provenance
             ),
@@ -306,12 +303,12 @@ class EvaluationSummaryPayload(CodecPayloadModel):
         )
 
     def to_runtime(self, *, runs: list[EvaluationRun]) -> EvaluationRuntimeSummary:
-        from ..modeling.results import EvaluationRuntimeSummary
+        from ..modeling.results import EvaluationConfigSnapshot, EvaluationRuntimeSummary
 
         return EvaluationRuntimeSummary(
             delay_seconds=self.delay_seconds,
             evaluation_id=self.evaluation_id,
-            evaluation_config=coerce_evaluator_config(self.evaluation_config),
+            evaluation_config=EvaluationConfigSnapshot.from_payload(self.evaluation_config),
             execution_provenance=_execution_provenance_from_payload(
                 self.execution_provenance
             ),

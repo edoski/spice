@@ -15,7 +15,7 @@ from spice.config import (
     coerce_problem_spec,
 )
 from spice.core.errors import StateLayoutError
-from spice.evaluation import EvaluationRun, coerce_evaluator_config
+from spice.evaluation import EvaluationRun, PoissonReplayEvaluatorConfig, coerce_evaluator_config
 from spice.features import compile_feature_contract
 from spice.modeling.dataset_builders import (
     coerce_dataset_builder_config,
@@ -24,6 +24,7 @@ from spice.modeling.dataset_builders import (
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.representations import sequence_input_contract
 from spice.modeling.results import (
+    EvaluationConfigSnapshot,
     EvaluationExecutionProvenance,
     EvaluationRuntimeSummary,
     SplitSizes,
@@ -45,6 +46,7 @@ from spice.semantics import (
     ObjectiveSemantics,
 )
 from spice.storage.artifact import (
+    _evaluation_storage_id,
     list_evaluation_runs,
     list_evaluation_summaries,
     list_training_epochs,
@@ -308,18 +310,19 @@ def test_evaluation_run_payload_rejects_loose_scalar_types() -> None:
 
 
 def _evaluation_summary(value: float, *, seed: int = 2026) -> EvaluationRuntimeSummary:
+    evaluation_config = coerce_evaluator_config(
+        {
+            "id": "poisson_replay_2h",
+            "window_seconds": 7200,
+            "repetitions": 50,
+            "arrival_rate_per_second": 0.05,
+            "seed": seed,
+        }
+    )
     return EvaluationRuntimeSummary(
         delay_seconds=24,
         evaluation_id="poisson_replay_2h",
-        evaluation_config=coerce_evaluator_config(
-            {
-                "id": "poisson_replay_2h",
-                "window_seconds": 7200,
-                "repetitions": 50,
-                "arrival_rate_per_second": 0.05,
-                "seed": seed,
-            }
-        ),
+        evaluation_config=EvaluationConfigSnapshot.from_config(evaluation_config),
         metric_descriptors=(
             MetricDescriptor(
                 id="profit_over_baseline",
@@ -432,6 +435,38 @@ def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
     assert load_evaluation_summary(db_path, evaluation_id=replay_evaluation_id) is not None
     assert list_evaluation_runs(db_path, evaluation_id=evaluation_id) == base_summary.runs
     assert list_evaluation_runs(db_path, evaluation_id=replay_evaluation_id) == replay_summary.runs
+
+
+def test_evaluation_config_snapshot_freezes_storage_identity() -> None:
+    config = coerce_evaluator_config(
+        {
+            "id": "poisson_replay_2h",
+            "window_seconds": 7200,
+            "repetitions": 50,
+            "arrival_rate_per_second": 0.05,
+            "seed": 2026,
+        }
+    )
+    summary = replace(
+        _evaluation_summary(0.2),
+        evaluation_config=EvaluationConfigSnapshot.from_config(config),
+    )
+    evaluation_id = _evaluation_storage_id(summary)
+
+    assert isinstance(config, PoissonReplayEvaluatorConfig)
+    config.seed = 9999
+
+    assert summary.evaluation_config.payload()["seed"] == 2026
+    assert _evaluation_storage_id(summary) == evaluation_id
+    assert summary.evaluation_config == EvaluationConfigSnapshot.from_payload(
+        {
+            "id": "poisson_replay_2h",
+            "window_seconds": 7200,
+            "repetitions": 50,
+            "arrival_rate_per_second": 0.05,
+            "seed": 2026,
+        }
+    )
 
 
 def test_evaluation_run_listing_rejects_non_artifact_root_kind(tmp_path) -> None:

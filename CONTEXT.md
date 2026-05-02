@@ -84,6 +84,10 @@ _Avoid_: partial ledger, skipped rows
 Persisted remote evaluate-job identity attached to artifact evaluation state, including execution ref, job id, log path, workflow task, and target when available.
 _Avoid_: latest artifact state, evaluator-only match
 
+**Evaluation Config Snapshot**:
+Immutable normalized JSON-ready evaluator config persisted with artifact evaluation state. It is derived from the active evaluate Workflow Config's evaluator config and excludes delay, root ids, batch size, storage, and full workflow identity.
+_Avoid_: live evaluator config, evaluation workflow snapshot
+
 **Benchmark Result Record**:
 One summary-level benchmark observation from a collected evaluate result, including benchmark coordinates, submission facts, artifact/evaluation identity, and aggregate metrics.
 _Avoid_: raw replay dump, CSV row
@@ -212,6 +216,7 @@ _Avoid_: execution backend
 - **Resolved Workflow Hydration** loads **Resolved Workflow Snapshots** directly and does not run **Surface** resolution.
 - **Config Group Loading** feeds **Surface** resolution and raw config display/edit paths through separate Interfaces.
 - A **Problem Spec** can be selected by name or supplied inline by benchmark problem grids.
+- An **Evaluation Config Snapshot** freezes evaluator config provenance for persisted artifact evaluation state without representing the whole evaluate Workflow Config.
 - A **Benchmark** contains one or more **Benchmark Cases**.
 - A **Benchmark Case** contains one or more **Benchmark Steps**.
 - A **Benchmark Step** expands into one or more **Benchmark Workflow Selections**.
