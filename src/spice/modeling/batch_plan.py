@@ -251,27 +251,6 @@ def _prepare_model_representation(
     )
 
 
-def _prepare_action_space(
-    store: CompiledProblemStore,
-    sample_indices: IntVector,
-    *,
-    execution_policy: CompiledExecutionPolicyContract,
-) -> PreparedActionSpace:
-    action_space = execution_policy.prepare_action_space(store, sample_indices)
-    resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
-    if not np.array_equal(action_space.sample_indices, resolved_sample_indices):
-        raise ValueError("prepared Action Space sample_indices do not match request")
-    if action_space.max_candidate_slots != int(store.max_candidate_slots):
-        raise ValueError("prepared Action Space action width does not match store")
-    expected_shape = (int(resolved_sample_indices.shape[0]), store.max_candidate_slots)
-    if action_space.action_mask.shape != expected_shape:
-        raise ValueError(
-            "prepared Action Space action_mask shape does not match sample count "
-            "and action width"
-        )
-    return action_space
-
-
 def build_prediction_batch_plan(
     store: CompiledProblemStore,
     sample_indices: IntVector,
@@ -284,11 +263,7 @@ def build_prediction_batch_plan(
     seed: int,
     shuffle: bool = False,
 ) -> BatchPlan[PredictionBatch]:
-    action_space = _prepare_action_space(
-        store,
-        sample_indices,
-        execution_policy=execution_policy,
-    )
+    action_space = execution_policy.prepare_action_space(store, sample_indices)
     prepared = _prepare_model_representation(
         store,
         representation_contract=representation_contract,
@@ -320,11 +295,7 @@ def build_model_input_batch_plan(
     resolved_device: torch.device,
     seed: int,
 ) -> BatchPlan[ModelInputBatch]:
-    action_space = _prepare_action_space(
-        store,
-        sample_indices,
-        execution_policy=execution_policy,
-    )
+    action_space = execution_policy.prepare_action_space(store, sample_indices)
     prepared = _prepare_model_representation(
         store,
         representation_contract=representation_contract,

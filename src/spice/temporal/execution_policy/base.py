@@ -56,6 +56,8 @@ class PreparedActionSpace:
             raise ValueError(
                 "Action Space action_mask must match sample count and action width"
             )
+        if action_mask.shape[0] > 0 and not bool(np.all(action_mask.any(axis=1))):
+            raise ValueError("Action Space action_mask must allow at least one action per sample")
         object.__setattr__(self, "sample_indices", sample_indices)
         object.__setattr__(self, "max_candidate_slots", max_candidate_slots)
         object.__setattr__(self, "action_mask", action_mask)
@@ -127,7 +129,22 @@ class CompiledExecutionPolicyContract:
         store: CompiledProblemStore,
         sample_indices: IntVector,
     ) -> PreparedActionSpace:
-        return self.prepare_action_space_fn(store, sample_indices)
+        action_space = self.prepare_action_space_fn(store, sample_indices)
+        resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
+        if not np.array_equal(action_space.sample_indices, resolved_sample_indices):
+            raise ValueError("prepared Action Space sample_indices do not match request")
+        if action_space.max_candidate_slots != int(store.max_candidate_slots):
+            raise ValueError("prepared Action Space action width does not match store")
+        expected_shape = (
+            int(resolved_sample_indices.shape[0]),
+            int(store.max_candidate_slots),
+        )
+        if action_space.action_mask.shape != expected_shape:
+            raise ValueError(
+                "prepared Action Space action_mask shape does not match sample count "
+                "and action width"
+            )
+        return action_space
 
     def realize_selections(
         self,
