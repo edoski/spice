@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -172,6 +173,34 @@ def test_benchmark_plan_jsonl_round_trips_plan_entry(tmp_path: Path) -> None:
     assert restored.artifact_from == "case.train"
     assert restored.selection == entry.selection
     assert restored.config.model_dump(mode="json") == config.model_dump(mode="json")
+
+
+def test_benchmark_plan_jsonl_rejects_non_list_dependencies(tmp_path: Path) -> None:
+    config = _evaluate_config(tmp_path)
+    run_dir = create_benchmark_run_dir(
+        "bad_plan",
+        target="disi_l40",
+        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
+    )
+    entry = BenchmarkPlanEntry(
+        run_id="case.evaluate",
+        case_id="case",
+        step_id="evaluate",
+        workflow=WorkflowTask.EVALUATE,
+        depends_on=(),
+        external_dependencies=(),
+        dimension_labels={},
+        artifact_from=None,
+        selection={},
+        config=config,
+    )
+    write_plan_jsonl(run_dir, [entry])
+    payload = json.loads((run_dir / "plan.jsonl").read_text(encoding="utf-8"))
+    payload["depends_on"] = "case.train"
+    (run_dir / "plan.jsonl").write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    with pytest.raises(SpiceOperatorError, match="benchmark JSONL field must be a list"):
+        load_plan_jsonl(run_dir)
 
 
 def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(

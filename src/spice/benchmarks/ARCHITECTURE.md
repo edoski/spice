@@ -48,7 +48,8 @@ benchmarks/
   result_index.py    index upsert/rebuild operations
   result_query.py    read-only result query interface
   __init__.py    benchmark API
-  runs.py        run-state files and JSONL codecs
+  run_state_codec.py  benchmark-local metadata/plan/submission/collection codecs
+  runs.py        run-dir lifecycle and public run-state facade
   submission.py  remote workflow submission service
   collection_resolver.py  remote evaluate-result resolver
   collection.py  remote result collection service
@@ -58,6 +59,8 @@ benchmarks/
 ## Boundaries
 
 Run dirs are canonical benchmark audit state. `results.sqlite` is a rebuildable projection over `collection.json`; normalized observation and metric tables are the read model for list/export, while JSON payloads remain audit/debug payloads. `results.csv` is export-only and overwritten from the index.
+
+`runs.py` is the public run-state facade. Benchmark run-state JSON/JSONL encoding stays benchmark-local and must not move into config or shared storage codecs.
 
 The CLI creates run dirs, submits existing run dirs, collects existing run dirs, exports CSV, and reads the result index. It does not re-plan during submit or collect.
 
