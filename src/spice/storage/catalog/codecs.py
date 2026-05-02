@@ -7,7 +7,7 @@ import json
 from ...core.errors import SpiceOperatorError
 from ..engine import RootKind
 from .records import CatalogRecord
-from .root_kind_specs import spec_for_record, spec_for_root_kind
+from .registry import spec_for_record, spec_for_root_kind
 
 
 def encode_remote_catalog_record(record: CatalogRecord) -> str:
@@ -15,7 +15,7 @@ def encode_remote_catalog_record(record: CatalogRecord) -> str:
     return json.dumps(
         {
             "root_kind": spec.root_kind.value,
-            "record": spec.to_record_payload(record),
+            "record": spec.to_payload(record),
         }
     )
 
@@ -48,4 +48,4 @@ def decode_remote_catalog_record(
     record_payload = raw["record"]
     if not isinstance(record_payload, dict):
         raise SpiceOperatorError("remote catalog record must be a mapping")
-    return spec_for_root_kind(root_kind).from_record_payload(record_payload)
+    return spec_for_root_kind(root_kind).from_payload(record_payload)

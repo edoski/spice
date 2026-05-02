@@ -26,17 +26,9 @@ from .catalog.index import (
     resolve_dataset_record,
     resolve_study_record,
 )
-from .catalog.store import (
-    delete_artifact_record as _delete_artifact_catalog_record,
-)
-from .catalog.store import (
-    delete_dataset_record as _delete_dataset_catalog_record,
-)
-from .catalog.store import (
-    delete_study_record as _delete_study_catalog_record,
-)
+from .catalog.registry import spec_for_record, spec_for_root_kind
 from .engine import RootKind, detect_root_kind, require_root_kind, state_db_path
-from .layout import ARTIFACTS_ROOT_NAME, CORPORA_ROOT_NAME, STUDIES_ROOT_NAME, catalog_db_path
+from .layout import catalog_db_path
 from .selectors import ArtifactSelector, DatasetSelector, StudySelector
 
 
@@ -126,7 +118,7 @@ def validate_root_destination_path(
     destination_root: Path,
     expected_root_kind: RootKind,
 ) -> Path:
-    expected_parent = (storage_root / _root_kind_parent_name(expected_root_kind)).resolve()
+    expected_parent = (storage_root / spec_for_root_kind(expected_root_kind).parent_name).resolve()
     resolved_destination = destination_root.resolve()
     try:
         relative = resolved_destination.relative_to(expected_parent)
@@ -141,16 +133,6 @@ def validate_root_destination_path(
             f"{expected_parent}: {destination_root}"
         )
     return resolved_destination
-
-
-def _root_kind_parent_name(root_kind: RootKind) -> str:
-    if root_kind is RootKind.CORPUS:
-        return CORPORA_ROOT_NAME
-    if root_kind is RootKind.STUDY:
-        return STUDIES_ROOT_NAME
-    if root_kind is RootKind.ARTIFACT:
-        return ARTIFACTS_ROOT_NAME
-    raise ValueError(f"Unsupported root kind: {root_kind}")
 
 
 @contextmanager
@@ -238,41 +220,28 @@ def delete_artifact_record(
 
 
 def delete_catalog_artifact_root(storage_root: Path, record: CatalogArtifactRecord) -> None:
-    _delete_catalog_root_record(
-        storage_root,
-        root_path=record.root_path,
-        catalog_delete=lambda catalog_path: _delete_artifact_catalog_record(
-            catalog_path,
-            artifact_id=record.artifact_id,
-        ),
-        stop_dir_name=ARTIFACTS_ROOT_NAME,
-        expected_root_kind=RootKind.ARTIFACT,
-    )
+    delete_catalog_root(storage_root, record)
 
 
 def delete_catalog_study_root(storage_root: Path, record: CatalogStudyRecord) -> None:
-    _delete_catalog_root_record(
-        storage_root,
-        root_path=record.root_path,
-        catalog_delete=lambda catalog_path: _delete_study_catalog_record(
-            catalog_path,
-            study_id=record.study_id,
-        ),
-        stop_dir_name=STUDIES_ROOT_NAME,
-        expected_root_kind=RootKind.STUDY,
-    )
+    delete_catalog_root(storage_root, record)
 
 
 def delete_catalog_dataset_root(storage_root: Path, record: CatalogDatasetRecord) -> None:
+    delete_catalog_root(storage_root, record)
+
+
+def delete_catalog_root(
+    storage_root: Path,
+    record: CatalogDatasetRecord | CatalogStudyRecord | CatalogArtifactRecord,
+) -> None:
+    spec = spec_for_record(record)
     _delete_catalog_root_record(
         storage_root,
         root_path=record.root_path,
-        catalog_delete=lambda catalog_path: _delete_dataset_catalog_record(
-            catalog_path,
-            dataset_id=record.dataset_id,
-        ),
-        stop_dir_name=CORPORA_ROOT_NAME,
-        expected_root_kind=RootKind.CORPUS,
+        expected_root_kind=spec.root_kind,
+        catalog_delete=lambda catalog_path: spec.delete(catalog_path, record),
+        stop_dir_name=spec.parent_name,
     )
 
 

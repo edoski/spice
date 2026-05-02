@@ -10,7 +10,7 @@ from ..storage.catalog import CatalogArtifactRecord, CatalogDatasetRecord
 from ..storage.catalog.codecs import decode_remote_catalog_record
 from ..storage.catalog.index import ReindexedCatalogRoot, resolve_dataset_record
 from ..storage.catalog.records import CatalogRecord
-from ..storage.catalog.root_kind_specs import spec_for_root_kind
+from ..storage.catalog.registry import spec_for_root_kind
 from ..storage.engine import RootKind
 from ..storage.layout import corpus_root_path
 from ..storage.lifecycle import (

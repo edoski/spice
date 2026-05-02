@@ -6,7 +6,8 @@ from spice.benchmarks.materialization import materialize_benchmark_plan
 from spice.benchmarks.planning import plan_benchmark_workflow_selections
 from spice.benchmarks.schema import BenchmarkSpec
 from spice.config import EvaluateConfig, TrainConfig, WorkflowTask
-from spice.storage.catalog.store import upsert_study_record
+from spice.storage.catalog import CatalogStudyRecord
+from spice.storage.catalog.registry import STUDY_ROOT_SPEC
 from spice.storage.engine import state_db_path
 from spice.storage.layout import catalog_db_path
 from spice.storage.workflow_roots import produced_artifact_id, produced_study_id
@@ -161,19 +162,21 @@ def test_materialization_uses_catalog_dataset_for_explicit_tuned_study(
     isolate_conf_root()
     storage_root = tmp_path / "outputs"
     study_root = storage_root / "studies" / "ethereum" / "std_existing"
-    upsert_study_record(
+    STUDY_ROOT_SPEC.upsert(
         catalog_db_path(storage_root),
-        study_id="std_existing",
-        study_name="existing",
-        dataset_id=ETH_DATASET_ID,
-        dataset_name="icdcs_2026",
-        chain_name="ethereum",
-        features_id="core_fee_dynamics",
-        prediction_id="icdcs_2026",
-        model_id="lstm",
-        problem_id="current_row_nominal",
-        root_path=study_root,
-        state_db_path=state_db_path(study_root),
+        CatalogStudyRecord(
+            study_id="std_existing",
+            study_name="existing",
+            dataset_id=ETH_DATASET_ID,
+            dataset_name="icdcs_2026",
+            chain_name="ethereum",
+            features_id="core_fee_dynamics",
+            prediction_id="icdcs_2026",
+            model_id="lstm",
+            problem_id="current_row_nominal",
+            root_path=study_root,
+            state_db_path=state_db_path(study_root),
+        ),
     )
 
     entries = _materialize(

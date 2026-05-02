@@ -11,6 +11,7 @@ from spice.storage.catalog.codecs import (
     decode_remote_catalog_record,
     encode_remote_catalog_record,
 )
+from spice.storage.catalog.registry import spec_for_record, spec_for_root_kind
 from spice.storage.engine import RootKind
 
 
@@ -69,6 +70,24 @@ def test_remote_catalog_record_codec_round_trips_records(record) -> None:
     decoded = decode_remote_catalog_record(encode_remote_catalog_record(record))
 
     assert decoded == record
+
+
+@pytest.mark.parametrize(
+    ("root_kind", "record", "key_field"),
+    [
+        (RootKind.CORPUS, _dataset_record(), "dataset_id"),
+        (RootKind.STUDY, _study_record(), "study_id"),
+        (RootKind.ARTIFACT, _artifact_record(), "artifact_id"),
+    ],
+)
+def test_catalog_registry_maps_root_kinds_and_records(root_kind, record, key_field: str) -> None:
+    spec = spec_for_root_kind(root_kind)
+
+    assert spec_for_record(record) is spec
+    assert spec.key_field == key_field
+    assert isinstance(record, spec.record_type)
+    assert spec.root_path(Path("/storage"), record) == record.root_path
+    assert spec.from_payload(spec.to_payload(record)) == record
 
 
 def test_remote_catalog_record_codec_rejects_kind_mismatch() -> None:

@@ -117,7 +117,7 @@ Execution-owned push/pull transaction that resolves a catalog root, stages it, r
 _Avoid_: sync helper, rsync wrapper
 
 **Remote Catalog Record Codec**:
-Strict JSON envelope for catalog records crossing an SSH boundary. It carries the storage root kind plus one dataset, study, or artifact catalog record.
+Strict JSON envelope for catalog records crossing an SSH boundary. It carries the storage root kind plus one dataset, study, or artifact catalog record whose field shape is owned by the catalog root-kind registry.
 _Avoid_: record dict, sync payload
 
 **Corpus Assembly**:

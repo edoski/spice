@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from .catalog.codecs import encode_remote_catalog_record
-from .catalog.root_kind_specs import spec_for_root_kind
+from .catalog.registry import spec_for_root_kind
 from .engine import RootKind
 from .lifecycle import cleanup_root_stage, prepare_root_stage, promote_root_stage
 
