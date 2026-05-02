@@ -23,7 +23,7 @@ from spice.config import (
 )
 from spice.config.registry import (
     dump_canonical_yaml,
-    load_named_group,
+    load_named_group_payload,
     named_group_keys,
     normalize_group_name,
 )
@@ -74,7 +74,7 @@ def _write_named_spec(
 
 
 def _named_group_copy(name: str, group: str) -> dict[str, object]:
-    return deepcopy(load_named_group(name, group))
+    return deepcopy(load_named_group_payload(name, group))
 
 
 def _spec_name_for_payload(group: str, default_name: str, payload: Mapping[str, object]) -> str:

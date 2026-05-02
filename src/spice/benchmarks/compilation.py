@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
-from ..config.registry import load_named_group
+from ..config.registry import load_named_group_payload
 from ..core.errors import ConfigResolutionError
 from .materialization import materialize_benchmark_plan
 from .models import BenchmarkPlanEntry
@@ -37,7 +37,7 @@ def plan_benchmark(name: str) -> list[BenchmarkPlanEntry]:
 
 def _load_benchmark_spec(name: str) -> BenchmarkSpec:
     try:
-        return BenchmarkSpec.model_validate(load_named_group(name, "benchmark"))
+        return BenchmarkSpec.model_validate(load_named_group_payload(name, "benchmark"))
     except ValidationError as exc:
         raise ConfigResolutionError(str(exc)) from exc
 

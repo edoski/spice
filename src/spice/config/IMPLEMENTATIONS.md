@@ -19,10 +19,20 @@ YAML is user-facing. Pydantic models are the internal boundary. Compiled contrac
 
 Local specs are small named configs such as `model/lstm.yaml`, `problem/current_row_nominal.yaml`, `evaluation/poisson_replay_2h.yaml`, or `evaluation/full_temporal_replay.yaml`.
 
-Resolution uses the same pattern across registries:
+Config Group Loading has two explicit paths:
 
 ```text
-mapping contains id/engine/family
+load_named_group_payload()
+  -> canonical raw dict for show/edit/template/benchmark raw specs
+
+load_model_config(), load_problem_spec(), ...
+  -> typed owner config for resolution/runtime callers
+```
+
+Resolution uses the same typed pattern across registries:
+
+```text
+mapping contains id or name
   -> lookup local spec
   -> require matching config type
   -> compile contract

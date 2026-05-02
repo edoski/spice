@@ -9,8 +9,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
-from ..config.models import ChainRuntimeSpec, ChainSpec
-from ..config.registry import load_named_group
+from ..config.models import ChainRuntimeSpec
+from ..config.registry import load_chain_spec
 from ..core.errors import MissingStateError, StateLayoutError
 from ..corpus.metadata import (
     AcquireRunFacts,
@@ -163,7 +163,7 @@ def _chain_runtime_from_payload(chain: dict[str, object]) -> ChainRuntimeSpec:
         return ChainRuntimeSpec.model_validate(
             mapping_payload(runtime_payload, label="chain.runtime")
         )
-    chain_config = ChainSpec.model_validate(load_named_group(str(chain["name"]), "chain"))
+    chain_config = load_chain_spec(str(chain["name"]))
     return chain_config.runtime
 
 

@@ -6,7 +6,7 @@ from typing import TypeVar, cast
 
 from ..modeling.families.base import ConfigModel
 from .models import ArtifactConfig, ProblemSpec, StorageSpec, StudyConfig
-from .registry import load_named_group
+from .registry import load_surface_frame as _load_surface_frame
 from .selections import WorkflowSelectionBase
 
 ConfigT = TypeVar("ConfigT", bound=ConfigModel)
@@ -73,7 +73,7 @@ class SurfaceFrame(ConfigModel):
 
 
 def load_surface_frame(name: str) -> SurfaceFrame:
-    return SurfaceFrame.model_validate(load_named_group(name, "surface"))
+    return _load_surface_frame(name)
 
 
 def apply_selection_overrides(

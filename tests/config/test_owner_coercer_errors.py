@@ -9,7 +9,7 @@ from spice.config.models import (
     coerce_features_config,
     coerce_problem_spec,
 )
-from spice.config.registry import load_named_group
+from spice.config.registry import load_named_group_payload
 from spice.core.errors import ConfigResolutionError
 from spice.evaluation import coerce_evaluator_config
 from spice.modeling.dataset_builders import (
@@ -54,9 +54,9 @@ from spice.temporal.input_normalization import coerce_input_normalization_config
         (
             lambda payload: coerce_tuning_space_config(
                 payload,
-                model_config=coerce_model_config(load_named_group("lstm", "model")),
+                model_config=coerce_model_config(load_named_group_payload("lstm", "model")),
                 problem_config=coerce_problem_spec(
-                    load_named_group("current_row_nominal", "problem")
+                    load_named_group_payload("current_row_nominal", "problem")
                 ),
             ),
             "tuning_space must be a mapping or TuningSpaceConfig",
@@ -90,17 +90,19 @@ def test_owner_coercers_reject_non_mapping_payloads(
 
 
 def test_owner_coercers_preserve_typed_config_identity() -> None:
-    problem = coerce_problem_spec(load_named_group("current_row_nominal", "problem"))
-    features = coerce_features_config(load_named_group("core_fee_dynamics", "features"))
-    evaluator = coerce_evaluator_config(load_named_group("poisson_replay_2h", "evaluation"))
-    objective = coerce_objective_config(load_named_group("validation_total_loss", "objective"))
-    model = coerce_model_config(load_named_group("lstm", "model"))
-    builder = coerce_dataset_builder_config(
-        load_named_group("fixed_sequence_temporal", "dataset_builder")
+    problem = coerce_problem_spec(load_named_group_payload("current_row_nominal", "problem"))
+    features = coerce_features_config(load_named_group_payload("core_fee_dynamics", "features"))
+    evaluator = coerce_evaluator_config(load_named_group_payload("poisson_replay_2h", "evaluation"))
+    objective = coerce_objective_config(
+        load_named_group_payload("validation_total_loss", "objective")
     )
-    training = TrainingConfig.model_validate(load_named_group("default", "training"))
+    model = coerce_model_config(load_named_group_payload("lstm", "model"))
+    builder = coerce_dataset_builder_config(
+        load_named_group_payload("fixed_sequence_temporal", "dataset_builder")
+    )
+    training = TrainingConfig.model_validate(load_named_group_payload("default", "training"))
     tuning_space = coerce_tuning_space_config(
-        load_named_group("lstm_default", "tuning_space"),
+        load_named_group_payload("lstm_default", "tuning_space"),
         model_config=model,
         problem_config=problem,
     )

@@ -8,12 +8,10 @@ from typing import Literal, overload
 from pydantic import ValidationError
 
 from ..core.errors import ConfigResolutionError
-from ..evaluation import EvaluatorConfig, coerce_evaluator_config
-from ..modeling.dataset_builders import coerce_dataset_builder_config
+from ..evaluation import EvaluatorConfig
 from ..modeling.families.base import ModelConfig
-from ..modeling.families.registry import coerce_model_config
 from ..modeling.tuned_config import coerce_tuning_space_config
-from ..objectives import ObjectiveConfig, coerce_objective_config
+from ..objectives import ObjectiveConfig
 from .models import (
     AcquireConfig,
     AcquisitionConfig,
@@ -36,10 +34,23 @@ from .models import (
     TuningConfig,
     TuningSpaceConfig,
     WorkflowTask,
-    coerce_features_config,
-    coerce_problem_spec,
 )
-from .registry import load_named_group
+from .registry import (
+    load_chain_spec,
+    load_dataset_builder_config,
+    load_dataset_spec,
+    load_evaluator_config,
+    load_features_config,
+    load_model_config,
+    load_named_group_payload,
+    load_objective_config,
+    load_prediction_config,
+    load_problem_spec,
+    load_provider_spec,
+    load_split_config,
+    load_training_config,
+    load_tuning_config,
+)
 from .selections import (
     AcquireWorkflowSelection,
     EvaluateWorkflowSelection,
@@ -50,7 +61,6 @@ from .selections import (
 )
 from .surfaces import SurfaceFrame, apply_selection_overrides, load_surface_frame
 
-_MODEL_GROUP = "model"
 _TUNING_SPACE_GROUP = "tuning_space"
 
 WorkflowConfig = AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig
@@ -87,7 +97,7 @@ def load_named_tuning_space(
     problem_config: ProblemSpec,
 ) -> TuningSpaceConfig:
     tuning_space = coerce_tuning_space_config(
-        load_named_group(name, _TUNING_SPACE_GROUP),
+        load_named_group_payload(name, _TUNING_SPACE_GROUP),
         model_config=model_config,
         problem_config=problem_config,
     )
@@ -197,56 +207,56 @@ def _validate_selection_kind(workflow: WorkflowTask, selection: WorkflowSelectio
 
 
 def _resolve_dataset(name: str) -> DatasetSpec:
-    return DatasetSpec.model_validate(load_named_group(name, "dataset"))
+    return load_dataset_spec(name)
 
 
 def _resolve_chain(name: str) -> ChainSpec:
-    return ChainSpec.model_validate(load_named_group(name, "chain"))
+    return load_chain_spec(name)
 
 
 def _resolve_problem(name: str | ProblemSpec) -> ProblemSpec:
     if isinstance(name, ProblemSpec):
         return name
-    return coerce_problem_spec(load_named_group(name, "problem"))
+    return load_problem_spec(name)
 
 
 def _resolve_features(name: str) -> FeaturesConfig:
-    return coerce_features_config(load_named_group(name, "features"))
+    return load_features_config(name)
 
 
 def _resolve_dataset_builder(name: str) -> DatasetBuilderConfig:
-    return coerce_dataset_builder_config(load_named_group(name, "dataset_builder"))
+    return load_dataset_builder_config(name)
 
 
 def _resolve_prediction(name: str) -> PredictionConfig:
-    return PredictionConfig.model_validate(load_named_group(name, "prediction"))
+    return load_prediction_config(name)
 
 
 def _resolve_model(name: str) -> ModelConfig[str]:
-    return coerce_model_config(load_named_group(name, _MODEL_GROUP))
+    return load_model_config(name)
 
 
 def _resolve_training(name: str) -> TrainingConfig:
-    return TrainingConfig.model_validate(load_named_group(name, "training"))
+    return load_training_config(name)
 
 
 def _resolve_split(name: str) -> SplitConfig:
-    return SplitConfig.model_validate(load_named_group(name, "split"))
+    return load_split_config(name)
 
 
 def _resolve_tuning(name: str) -> TuningConfig:
-    return TuningConfig.model_validate(load_named_group(name, "tuning"))
+    return load_tuning_config(name)
 
 
 def _resolve_evaluation(name: str | None) -> EvaluatorConfig | None:
     if name is None:
         return None
-    return coerce_evaluator_config(load_named_group(name, "evaluation"))
+    return load_evaluator_config(name)
 
 
 def _resolve_objective(name: str, *, evaluation_name: str | None) -> ObjectiveConfig:
-    raw_objective = load_named_group(name, "objective")
-    expected_evaluation = _benchmark_evaluation_name(raw_objective)
+    objective = load_objective_config(name)
+    expected_evaluation = _benchmark_evaluation_name(objective)
     if (
         evaluation_name is not None
         and expected_evaluation is not None
@@ -256,16 +266,15 @@ def _resolve_objective(name: str, *, evaluation_name: str | None) -> ObjectiveCo
             f"objective {name} requires evaluation {expected_evaluation}, "
             f"got {evaluation_name}"
         )
-    return coerce_objective_config(raw_objective)
+    return objective
 
 
-def _benchmark_evaluation_name(payload: dict[str, object]) -> str | None:
-    if payload.get("id") != "evaluation":
+def _benchmark_evaluation_name(config: ObjectiveConfig) -> str | None:
+    if config.id != "evaluation":
         return None
-    benchmark_id = payload.get("benchmark_id")
-    if not isinstance(benchmark_id, str):
+    if config.benchmark_id is None:
         raise ConfigResolutionError("evaluation objective.benchmark_id must be a named benchmark")
-    return benchmark_id
+    return config.benchmark_id
 
 
 def _resolve_storage(storage: StorageSpec | None) -> StorageSpec:
@@ -281,7 +290,7 @@ def _resolve_artifact(artifact: ArtifactConfig | None) -> ArtifactConfig:
 
 
 def _resolve_provider(name: str) -> ProviderSpec:
-    return ProviderSpec.model_validate(load_named_group(name, "provider"))
+    return load_provider_spec(name)
 
 
 def _resolve_model_workflow_base(

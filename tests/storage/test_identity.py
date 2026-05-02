@@ -14,7 +14,7 @@ from spice.config import (
     WorkflowTask,
     resolve_workflow_config,
 )
-from spice.config.registry import load_named_group
+from spice.config.registry import load_named_group_payload
 from spice.corpus.metadata import (
     ChainMetadata,
     DatasetCoverageMetadata,
@@ -45,7 +45,7 @@ def _write_surface(conf_root, name: str, payload: dict[str, object]) -> None:
 
 
 def _base_surface(conf_root) -> dict[str, object]:
-    return load_named_group("current_row_fee_dynamics", "surface")
+    return load_named_group_payload("current_row_fee_dynamics", "surface")
 
 
 def _tune_config(tmp_path, *, surface: str, objective: str | None = None) -> TuneConfig:
@@ -218,7 +218,7 @@ def test_corpus_id_uses_dataset_evaluation_date(tmp_path, isolate_conf_root) -> 
             ),
         ),
     )
-    changed_dataset = dict(load_named_group("icdcs_2026", "dataset"))
+    changed_dataset = dict(load_named_group_payload("icdcs_2026", "dataset"))
     changed_dataset["evaluation_date"] = "2025-11-10"
     (conf_root / "dataset" / "icdcs_2026.yaml").write_text(
         yaml.safe_dump(changed_dataset, sort_keys=False),

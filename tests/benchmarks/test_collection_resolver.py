@@ -8,7 +8,7 @@ import pytest
 from spice.benchmarks.collection_resolver import resolve_benchmark_evaluation
 from spice.benchmarks.runs import BenchmarkSubmissionRecord
 from spice.config import EvaluateConfig, StorageSpec, WorkflowTask
-from spice.config.registry import load_named_group
+from spice.config.registry import load_named_group_payload
 from spice.core.errors import SpiceOperatorError
 from spice.evaluation.registry import coerce_evaluator_config
 from spice.execution.transfer import PulledArtifactRoot
@@ -20,7 +20,9 @@ def _evaluate_config(tmp_path: Path) -> EvaluateConfig:
         storage=StorageSpec(root=tmp_path / "outputs"),
         artifact_id="artifact-1",
         dataset_id="dataset-1",
-        evaluation=coerce_evaluator_config(load_named_group("poisson_replay_2h", "evaluation")),
+        evaluation=coerce_evaluator_config(
+            load_named_group_payload("poisson_replay_2h", "evaluation")
+        ),
         delay_seconds=36,
     )
 

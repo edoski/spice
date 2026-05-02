@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import cast
 
 from ..config.models import WorkflowTask
-from ..config.registry import load_named_group
+from ..config.registry import load_execution_spec
 from ..config.resolution import WorkflowConfig
 from ..config.workflow_snapshots import ResolvedWorkflowConfig, workflow_config_snapshot_json
 from ..core.errors import SpiceOperatorError
@@ -62,10 +62,9 @@ def open_execution_session(target_name: str) -> ExecutionSession:
 
 
 def _load_execution_target(name: str) -> ExecutionTarget:
-    payload = load_named_group(name, "execution")
     return ExecutionTarget(
         name=name,
-        spec=ExecutionSpec.model_validate(payload),
+        spec=load_execution_spec(name),
     )
 
 

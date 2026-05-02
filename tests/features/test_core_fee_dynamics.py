@@ -8,7 +8,7 @@ import polars as pl
 import pytest
 
 from spice.config import coerce_features_config
-from spice.config.registry import load_named_group
+from spice.config.registry import load_named_group_payload
 from spice.features import (
     CompiledFeatureContract,
     FeaturePrerequisites,
@@ -253,7 +253,7 @@ def test_core_fee_dynamics_fingerprint_includes_shared_engine() -> None:
 
 
 def test_default_core_fee_dynamics_excludes_time_since_start_signal() -> None:
-    payload = cast(dict[str, object], load_named_group("core_fee_dynamics", "features"))
+    payload = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
     outputs = cast(list[str], payload["outputs"])
 
     assert "elapsed_seconds" not in outputs
@@ -279,10 +279,10 @@ def test_compiled_contract_rejects_baseline_elapsed_position_output() -> None:
 
 
 def test_elapsed_position_ablation_config_adds_time_since_start_signal() -> None:
-    baseline = cast(dict[str, object], load_named_group("core_fee_dynamics", "features"))
+    baseline = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
     ablation = cast(
         dict[str, object],
-        load_named_group("core_fee_dynamics_elapsed_position", "features"),
+        load_named_group_payload("core_fee_dynamics_elapsed_position", "features"),
     )
     baseline_outputs = cast(list[str], baseline["outputs"])
     ablation_outputs = cast(list[str], ablation["outputs"])
@@ -294,7 +294,7 @@ def test_elapsed_position_ablation_config_adds_time_since_start_signal() -> None
 
 
 def test_core_fee_dynamics_config_includes_restored_safe_local_trends() -> None:
-    baseline = cast(dict[str, object], load_named_group("core_fee_dynamics", "features"))
+    baseline = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
     baseline_outputs = cast(list[str], baseline["outputs"])
 
     assert baseline_outputs == BASELINE_OUTPUTS
@@ -343,7 +343,10 @@ def test_core_fee_dynamics_local_trend_lags_use_prior_rows() -> None:
 
 
 def test_core_fee_dynamics_unsafe_config_replaces_same_block_facts() -> None:
-    payload = cast(dict[str, object], load_named_group("core_fee_dynamics_unsafe", "features"))
+    payload = cast(
+        dict[str, object],
+        load_named_group_payload("core_fee_dynamics_unsafe", "features"),
+    )
     outputs = cast(list[str], payload["outputs"])
 
     assert payload["id"] == "core_fee_dynamics_unsafe"
@@ -373,10 +376,10 @@ def test_core_fee_dynamics_unsafe_uses_same_block_facts() -> None:
 
 
 def test_priority_fee_config_adds_scalar_and_trend_outputs() -> None:
-    baseline = cast(dict[str, object], load_named_group("core_fee_dynamics", "features"))
+    baseline = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
     priority = cast(
         dict[str, object],
-        load_named_group("core_fee_dynamics_with_priority_fee", "features"),
+        load_named_group_payload("core_fee_dynamics_with_priority_fee", "features"),
     )
     baseline_outputs = cast(list[str], baseline["outputs"])
     priority_outputs = cast(list[str], priority["outputs"])

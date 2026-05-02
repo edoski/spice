@@ -9,21 +9,27 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum, StrEnum
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 import yaml
 from pydantic import BaseModel, ValidationError
 
 from ..core.errors import ConfigResolutionError
-from ..evaluation import coerce_evaluator_config
+from ..evaluation import EvaluatorConfig, coerce_evaluator_config
 from ..execution.models import ExecutionSpec
-from ..modeling.dataset_builders import coerce_dataset_builder_config
+from ..modeling.dataset_builders import (
+    DatasetBuilderConfig,
+    coerce_dataset_builder_config,
+)
+from ..modeling.families.base import ModelConfig
 from ..modeling.families.registry import coerce_model_config
-from ..objectives import coerce_objective_config
+from ..objectives import ObjectiveConfig, coerce_objective_config
 from .models import (
     ChainSpec,
     DatasetSpec,
+    FeaturesConfig,
     PredictionConfig,
+    ProblemSpec,
     ProviderSpec,
     SplitConfig,
     TrainingConfig,
@@ -32,8 +38,12 @@ from .models import (
     coerce_problem_spec,
 )
 
+if TYPE_CHECKING:
+    from .surfaces import SurfaceFrame
+
 _PACKAGE_CONF_ROOT = Path(__file__).resolve().parents[1] / "conf"
 _CONF_ROOT = _PACKAGE_CONF_ROOT
+ConfigModelT = TypeVar("ConfigModelT", bound=BaseModel)
 
 
 class ConfigGroup(StrEnum):
@@ -284,16 +294,93 @@ def load_yaml_mapping(path: Path) -> dict[str, object]:
     return _mapping_payload(cast(Mapping[object, object], payload))
 
 
-def load_named_group(name: str, group: str) -> dict[str, object]:
+def _load_named_group_validated(name: str, group: str) -> BaseModel | dict[str, object]:
     normalized_group = normalize_group_name(group)
     path = spec_path(normalized_group, name)
     if not path.is_file():
         raise ConfigResolutionError(f"Unknown {normalized_group} spec: {name}")
     payload = load_yaml_mapping(path)
-    validated = _validate_payload(normalized_group, name=name, payload=payload)
+    return _validate_payload(normalized_group, name=name, payload=payload)
+
+
+def load_named_group_payload(name: str, group: str) -> dict[str, object]:
+    validated = _load_named_group_validated(name, group)
     if isinstance(validated, BaseModel):
         return _canonicalize_model(validated)
     return _canonicalize_mapping(validated)
+
+
+def _load_named_group_model(
+    name: str,
+    group: str,
+    config_type: type[ConfigModelT],
+) -> ConfigModelT:
+    validated = _load_named_group_validated(name, group)
+    if isinstance(validated, config_type):
+        return validated
+    return config_type.model_validate(validated)
+
+
+def load_dataset_spec(name: str) -> DatasetSpec:
+    return _load_named_group_model(name, "dataset", DatasetSpec)
+
+
+def load_chain_spec(name: str) -> ChainSpec:
+    return _load_named_group_model(name, "chain", ChainSpec)
+
+
+def load_problem_spec(name: str) -> ProblemSpec:
+    return _load_named_group_model(name, "problem", ProblemSpec)
+
+
+def load_features_config(name: str) -> FeaturesConfig:
+    return _load_named_group_model(name, "features", FeaturesConfig)
+
+
+def load_provider_spec(name: str) -> ProviderSpec:
+    return _load_named_group_model(name, "provider", ProviderSpec)
+
+
+def load_model_config(name: str) -> ModelConfig[str]:
+    return cast(ModelConfig[str], _load_named_group_model(name, "model", ModelConfig))
+
+
+def load_dataset_builder_config(name: str) -> DatasetBuilderConfig:
+    return _load_named_group_model(name, "dataset_builder", DatasetBuilderConfig)
+
+
+def load_evaluator_config(name: str) -> EvaluatorConfig:
+    return _load_named_group_model(name, "evaluation", EvaluatorConfig)
+
+
+def load_objective_config(name: str) -> ObjectiveConfig:
+    return _load_named_group_model(name, "objective", ObjectiveConfig)
+
+
+def load_prediction_config(name: str) -> PredictionConfig:
+    return _load_named_group_model(name, "prediction", PredictionConfig)
+
+
+def load_training_config(name: str) -> TrainingConfig:
+    return _load_named_group_model(name, "training", TrainingConfig)
+
+
+def load_split_config(name: str) -> SplitConfig:
+    return _load_named_group_model(name, "split", SplitConfig)
+
+
+def load_tuning_config(name: str) -> TuningConfig:
+    return _load_named_group_model(name, "tuning", TuningConfig)
+
+
+def load_execution_spec(name: str) -> ExecutionSpec:
+    return _load_named_group_model(name, "execution", ExecutionSpec)
+
+
+def load_surface_frame(name: str) -> SurfaceFrame:
+    from .surfaces import SurfaceFrame
+
+    return _load_named_group_model(name, "surface", SurfaceFrame)
 
 
 def list_group_names(group: str) -> list[str]:
@@ -301,7 +388,7 @@ def list_group_names(group: str) -> list[str]:
 
 
 def show_named_group(group: str, name: str) -> str:
-    return dump_canonical_yaml(load_named_group(name, group))
+    return dump_canonical_yaml(load_named_group_payload(name, group))
 
 
 def ensure_named_group_file(group: str, name: str) -> Path:

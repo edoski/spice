@@ -13,7 +13,7 @@ from typing import cast
 from pydantic import ValidationError
 
 from ..config.models import ProblemSpec, WorkflowTask, coerce_problem_spec
-from ..config.registry import load_named_group
+from ..config.registry import load_problem_spec
 from ..config.selections import (
     WorkflowSelection,
     workflow_selection_fields,
@@ -226,7 +226,7 @@ def _expand_problem_entry(entry: ProblemDimensionEntry) -> list[_DimensionVarian
     grid = entry.grid
     if grid is None:
         raise ConfigResolutionError("problem dimension entry is empty")
-    base_problem = coerce_problem_spec(load_named_group(grid.base, "problem"))
+    base_problem = load_problem_spec(grid.base)
     field_names = tuple(grid.fields)
     variants: list[_DimensionVariant] = []
     for values in product(*(grid.fields[field] for field in field_names)):

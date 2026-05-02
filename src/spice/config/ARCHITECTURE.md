@@ -39,9 +39,9 @@ Selections usually refer to problem specs by name. Benchmark problem grids may s
 
 ## Config Group Loading
 
-Config groups have two loading needs. Raw canonical payload loading serves CLI show/edit, templates, fixture mutation, and durable YAML output. Typed loading serves workflow resolution, where a named config group must become the owner package's concrete config model before entering a workflow config.
+Config groups have two loading Interfaces. `load_named_group_payload()` returns a canonical raw dict for CLI show/edit, templates, fixture mutation, benchmark raw specs, and durable YAML output. Group-specific typed loaders return owner configs for workflow resolution and other internal runtime setup.
 
-The registry owns named group lookup and identity checks. Owner packages own concrete dispatch inside a group.
+The registry owns named group lookup and identity checks. Owner packages own concrete dispatch inside a group. Tuning-space loading stays in resolution because it depends on the selected model and problem. Benchmark typed loading stays in benchmarks.
 
 ## Owner Coercion
 

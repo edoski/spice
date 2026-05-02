@@ -20,7 +20,7 @@ from spice.config import (
     coerce_problem_spec,
     resolve_workflow_config,
 )
-from spice.config.registry import load_named_group
+from spice.config.registry import load_named_group_payload
 from spice.core.errors import ConfigResolutionError
 
 TEST_DATASET_ID = "cor_9a73b1e88edb488afb1e"
@@ -33,7 +33,7 @@ def _write_surface(conf_root: Path, name: str, payload: dict[str, object]) -> No
 
 
 def _base_surface(conf_root: Path) -> dict[str, object]:
-    return load_named_group("current_row_fee_dynamics", "surface")
+    return load_named_group_payload("current_row_fee_dynamics", "surface")
 
 
 def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root) -> None:
@@ -61,7 +61,7 @@ def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root)
         ConfigResolutionError,
         match="problem id must match spec name: aliased_problem",
     ):
-        load_named_group("aliased_problem", "problem")
+        load_named_group_payload("aliased_problem", "problem")
 
     aliased_evaluation = conf_root / "evaluation" / "aliased_evaluation.yaml"
     aliased_evaluation.write_text(
@@ -82,7 +82,7 @@ def test_named_spec_identity_is_enforced_on_normal_load_paths(isolate_conf_root)
         ConfigResolutionError,
         match="evaluation id must match spec name: aliased_evaluation",
     ):
-        load_named_group("aliased_evaluation", "evaluation")
+        load_named_group_payload("aliased_evaluation", "evaluation")
 
 
 def test_surface_refs_and_selection_defaults_resolve(
@@ -96,12 +96,12 @@ def test_surface_refs_and_selection_defaults_resolve(
     (conf_root / "training" / "child_training.yaml").write_text(
         yaml.safe_dump(
             {
-                **load_named_group("default", "training"),
+                **load_named_group_payload("default", "training"),
                 "batch_size": 64,
                 "early_stopping": {
                     **cast(
                         dict[str, object],
-                        load_named_group("default", "training")["early_stopping"],
+                        load_named_group_payload("default", "training")["early_stopping"],
                     ),
                     "patience": 3,
                 },
@@ -113,7 +113,7 @@ def test_surface_refs_and_selection_defaults_resolve(
     (conf_root / "split" / "child_split.yaml").write_text(
         yaml.safe_dump(
             {
-                **load_named_group("default", "split"),
+                **load_named_group_payload("default", "split"),
                 "train_fraction": 0.7,
             },
             sort_keys=False,
@@ -430,7 +430,7 @@ def test_selection_accepts_inline_problem_spec(
     isolate_conf_root()
     problem = coerce_problem_spec(
         {
-            **load_named_group("current_row_nominal", "problem"),
+            **load_named_group_payload("current_row_nominal", "problem"),
             "id": "inline_problem",
             "sample_count": 12345,
         }
@@ -513,6 +513,8 @@ def test_selection_overrides_allow_model_and_tuning_space_selection(
 
     assert config.model.id == "transformer"
     assert config.tuning_space.model.id == "transformer"
+    assert type(config.model).__name__ == "TransformerModelConfig"
+    assert type(config.tuning_space.model).__name__ == "TransformerTuningSpaceModelConfig"
 
 
 @pytest.mark.parametrize(

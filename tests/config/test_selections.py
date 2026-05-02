@@ -10,7 +10,7 @@ from spice.config import (
     WorkflowTask,
     coerce_problem_spec,
 )
-from spice.config.registry import load_named_group
+from spice.config.registry import load_named_group_payload
 from spice.config.selections import (
     workflow_selection_fields,
     workflow_selection_payload,
@@ -46,7 +46,7 @@ def test_workflow_selection_payload_keeps_only_supported_non_null_fields() -> No
 
 
 def test_inline_problem_spec_is_valid_for_surface_workflow_selections() -> None:
-    problem = coerce_problem_spec(load_named_group("current_row_nominal", "problem"))
+    problem = coerce_problem_spec(load_named_group_payload("current_row_nominal", "problem"))
 
     for workflow in (WorkflowTask.ACQUIRE, WorkflowTask.TRAIN, WorkflowTask.TUNE):
         selection_type = workflow_selection_type(workflow)
