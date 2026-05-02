@@ -1,4 +1,4 @@
-"""Internal corpus split fulfillment policy."""
+"""Internal corpus split materialization policy."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from enum import StrEnum
 from ...acquisition import BlockRange, TimestampRange
 
 
-class SplitFulfillmentAction(StrEnum):
+class SplitMaterializationAction(StrEnum):
     REUSE_STAGED = "reuse_staged"
     REUSE_COMMITTED = "reuse_committed"
     EXTEND_COMMITTED = "extend_committed"
@@ -16,7 +16,7 @@ class SplitFulfillmentAction(StrEnum):
     REJECT_INVALID_STAGED = "reject_invalid_staged"
 
 
-class SplitFulfillmentOutcome(StrEnum):
+class SplitMaterializationOutcome(StrEnum):
     CREATED = "created"
     REUSED = "reused"
     EXTENDED = "extended"
@@ -44,29 +44,29 @@ class SplitPullRange:
 
 
 @dataclass(frozen=True, slots=True)
-class SplitFulfillmentDecision:
-    action: SplitFulfillmentAction
-    outcome: SplitFulfillmentOutcome
+class SplitMaterializationDecision:
+    action: SplitMaterializationAction
+    outcome: SplitMaterializationOutcome
     status_message: str
     pull_ranges: tuple[SplitPullRange, ...] = ()
     reusable_range: BlockRange | None = None
     error_message: str | None = None
 
 
-def plan_history_split_fulfillment(
+def plan_history_split_materialization(
     target: SplitTarget,
     *,
     existing: SplitDatasetFacts | None,
     staged: SplitDatasetFacts | None,
     staged_matches_target: bool,
-) -> SplitFulfillmentDecision:
+) -> SplitMaterializationDecision:
     if staged is not None:
         invalid = _invalid_staged_decision("history", staged)
         if invalid is not None:
             return invalid
         if staged_matches_target:
-            return SplitFulfillmentDecision(
-                action=SplitFulfillmentAction.REUSE_STAGED,
+            return SplitMaterializationDecision(
+                action=SplitMaterializationAction.REUSE_STAGED,
                 outcome=_staged_outcome(existing),
                 status_message="history reused staged dataset",
             )
@@ -78,16 +78,16 @@ def plan_history_split_fulfillment(
         target_end = target.block_range.end
 
         if existing_end == target_end and existing_start <= target_start:
-            return SplitFulfillmentDecision(
-                action=SplitFulfillmentAction.REUSE_COMMITTED,
-                outcome=SplitFulfillmentOutcome.REUSED,
+            return SplitMaterializationDecision(
+                action=SplitMaterializationAction.REUSE_COMMITTED,
+                outcome=SplitMaterializationOutcome.REUSED,
                 status_message="history reused committed dataset",
             )
 
         if existing_end == target_end and existing_start > target_start:
-            return SplitFulfillmentDecision(
-                action=SplitFulfillmentAction.EXTEND_COMMITTED,
-                outcome=SplitFulfillmentOutcome.EXTENDED,
+            return SplitMaterializationDecision(
+                action=SplitMaterializationAction.EXTEND_COMMITTED,
+                outcome=SplitMaterializationOutcome.EXTENDED,
                 status_message="history extending committed dataset",
                 pull_ranges=(
                     SplitPullRange(
@@ -100,7 +100,7 @@ def plan_history_split_fulfillment(
     return _full_materialization_decision("history", existing=existing)
 
 
-def plan_evaluation_split_fulfillment(
+def plan_evaluation_split_materialization(
     target: SplitTarget,
     *,
     existing: SplitDatasetFacts | None,
@@ -108,14 +108,14 @@ def plan_evaluation_split_fulfillment(
     staged_matches_target: bool,
     existing_matches_target: bool,
     existing_reusable_range_matches_target_window: bool,
-) -> SplitFulfillmentDecision:
+) -> SplitMaterializationDecision:
     if staged is not None:
         invalid = _invalid_staged_decision("evaluation", staged)
         if invalid is not None:
             return invalid
         if staged_matches_target:
-            return SplitFulfillmentDecision(
-                action=SplitFulfillmentAction.REUSE_STAGED,
+            return SplitMaterializationDecision(
+                action=SplitMaterializationAction.REUSE_STAGED,
                 outcome=_staged_outcome(existing),
                 status_message="evaluation reused staged dataset",
             )
@@ -129,9 +129,9 @@ def plan_evaluation_split_fulfillment(
         if existing_start == target_start and existing_end == target_end:
             if not existing_matches_target:
                 return _full_materialization_decision("evaluation", existing=existing)
-            return SplitFulfillmentDecision(
-                action=SplitFulfillmentAction.REUSE_COMMITTED,
-                outcome=SplitFulfillmentOutcome.REUSED,
+            return SplitMaterializationDecision(
+                action=SplitMaterializationAction.REUSE_COMMITTED,
+                outcome=SplitMaterializationOutcome.REUSED,
                 status_message="evaluation reused committed dataset",
             )
 
@@ -155,9 +155,9 @@ def plan_evaluation_split_fulfillment(
                         block_range=BlockRange(start=overlap_end, end=target_end),
                     )
                 )
-            return SplitFulfillmentDecision(
-                action=SplitFulfillmentAction.EXTEND_COMMITTED,
-                outcome=SplitFulfillmentOutcome.EXTENDED,
+            return SplitMaterializationDecision(
+                action=SplitMaterializationAction.EXTEND_COMMITTED,
+                outcome=SplitMaterializationOutcome.EXTENDED,
                 status_message="evaluation extending committed dataset",
                 pull_ranges=tuple(pull_ranges),
                 reusable_range=BlockRange(start=overlap_start, end=overlap_end),
@@ -169,12 +169,12 @@ def plan_evaluation_split_fulfillment(
 def _invalid_staged_decision(
     kind: str,
     staged: SplitDatasetFacts,
-) -> SplitFulfillmentDecision | None:
+) -> SplitMaterializationDecision | None:
     if staged.status == "clean":
         return None
-    return SplitFulfillmentDecision(
-        action=SplitFulfillmentAction.REJECT_INVALID_STAGED,
-        outcome=SplitFulfillmentOutcome.REBUILT,
+    return SplitMaterializationDecision(
+        action=SplitMaterializationAction.REJECT_INVALID_STAGED,
+        outcome=SplitMaterializationOutcome.REBUILT,
         status_message="",
         error_message=f"Cannot resume invalid staged {kind} dataset",
     )
@@ -184,23 +184,23 @@ def _full_materialization_decision(
     kind: str,
     *,
     existing: SplitDatasetFacts | None,
-) -> SplitFulfillmentDecision:
-    return SplitFulfillmentDecision(
-        action=SplitFulfillmentAction.MATERIALIZE_FULL,
+) -> SplitMaterializationDecision:
+    return SplitMaterializationDecision(
+        action=SplitMaterializationAction.MATERIALIZE_FULL,
         outcome=(
-            SplitFulfillmentOutcome.REBUILT
+            SplitMaterializationOutcome.REBUILT
             if existing is not None
-            else SplitFulfillmentOutcome.CREATED
+            else SplitMaterializationOutcome.CREATED
         ),
         status_message=f"{kind} downloading",
     )
 
 
-def _staged_outcome(existing: SplitDatasetFacts | None) -> SplitFulfillmentOutcome:
+def _staged_outcome(existing: SplitDatasetFacts | None) -> SplitMaterializationOutcome:
     return (
-        SplitFulfillmentOutcome.REBUILT
+        SplitMaterializationOutcome.REBUILT
         if existing is not None
-        else SplitFulfillmentOutcome.CREATED
+        else SplitMaterializationOutcome.CREATED
     )
 
 

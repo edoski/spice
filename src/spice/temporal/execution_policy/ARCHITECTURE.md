@@ -23,7 +23,7 @@ Add a policy for a new action-to-outcome rule. Keep policy metadata explicit so 
 ```text
 decoded action offset
         +
-problem store candidate rows
+problem store candidate-window rows
         |
         v
 realized fee / outcome

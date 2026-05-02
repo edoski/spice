@@ -10,7 +10,7 @@ Good experiment config separates durable concepts from run controls. A surface s
 
 ## Invariants
 
-YAML specs should validate through their owning package model. Config ids must match named files when the group has an identity field. Implementation-selection fields, such as evaluator `engine`, must be explicit when the implementation is not implied by the group.
+YAML specs should validate through their owning package model. Config ids must match named files when the group has an identity field. Implementation-selection fields, such as evaluator `id`, must be explicit when the implementation is not implied by the group.
 
 ## Extension Points
 

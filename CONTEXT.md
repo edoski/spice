@@ -133,7 +133,7 @@ Execution-owned push/pull transaction that resolves a catalog root, stages it, r
 _Avoid_: sync helper, rsync wrapper
 
 **Remote Catalog Record Codec**:
-Strict JSON envelope for catalog records crossing an SSH boundary. It carries the storage root kind plus one dataset, study, or artifact catalog record whose field shape is owned by the catalog root-kind registry.
+Strict JSON envelope for catalog records crossing the SSH transfer seam. It carries the storage root kind plus one dataset, study, or artifact catalog record whose field shape is owned by the catalog root-kind registry.
 _Avoid_: record dict, sync payload
 
 **Corpus Assembly**:
@@ -149,11 +149,11 @@ Corpus policy that compiles feature/problem capability requirements, plans acqui
 _Avoid_: history helper, acquisition scheduler
 
 **Corpus Split Materialization**:
-Corpus module that fulfills Split Intents through a materialization session, reusing, extending, rebuilding, and validating canonical history/evaluation block datasets. It owns internal fulfillment policy, staged/committed fact collection, target matching, pull execution, parquet IO, and validation. Extension reuses whole clean parquet chunks and rewrites only missing or edge ranges.
+Corpus module that fulfills Split Intents through a materialization session, reusing, extending, rebuilding, and validating canonical history/evaluation block datasets. It owns internal materialization policy, staged/committed fact collection, target matching, pull execution, parquet IO, and validation. Extension reuses whole clean parquet chunks and rewrites only missing or edge ranges.
 _Avoid_: parquet helper, acquisition pull
 
 **Split Intent**:
-One requested history or evaluation corpus split fulfillment, including target split kind, block plan, output path, and staging path.
+One requested history or evaluation corpus split materialization, including target split kind, block plan, output path, and staging path.
 _Avoid_: split mode flags, parquet request
 
 **Staged Split Resume**:

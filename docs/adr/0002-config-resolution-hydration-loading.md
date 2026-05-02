@@ -10,7 +10,7 @@ Workflow Selection resolution, Resolved Workflow Snapshot hydration, and Config 
 
 Named Config Groups also serve two different callers. Operators need raw canonical payloads for show/edit/template workflows. Workflow resolution needs typed owner configs.
 
-Typed selector bases such as `ModelConfig`, `EvaluatorConfig`, or `ExecutionPolicyConfig` are not enough for execution. The owner registry must redispatch them by id and validate the concrete local-spec config type before runtime code sees them.
+Abstract owner config bases such as `ModelConfig`, `EvaluatorConfig`, or `ExecutionPolicyConfig` are not enough for execution. The owner registry must redispatch them by id and validate the concrete local-spec config type before runtime code sees them.
 
 ## Decision
 

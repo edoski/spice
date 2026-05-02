@@ -26,7 +26,7 @@ Cross-corpus evaluation is allowed only within the same chain. Different-chain e
 
 ## Consequences
 
-Old surface-shaped evaluation and fuzzy destructive storage selectors are removed. Benchmarks must materialize artifact ids through `artifact_from` and use a tuned train step between tune and evaluate.
+Old surface-shaped evaluation and ambiguous destructive storage operations are removed. Benchmarks must materialize artifact ids through `artifact_from` and use a tuned train step between tune and evaluate.
 
 Existing roots from older layouts can be regenerated instead of migrated.
 
@@ -34,7 +34,7 @@ Existing roots from older layouts can be regenerated instead of migrated.
 
 Existing-root workflow consumers resolve ids into typed root handles before orchestration:
 
-- `workflow_roots.py` applies exact catalog selectors for existing roots.
+- `workflow_roots.py` applies exact Storage Selectors for existing roots.
 - `workflow_roots.py` derives produced-root ids and produced root handles.
 - `workflow_roots.py` carries workflow-facing root identity and storage-owned root operations.
 - `acquire` derives its produced corpus root directly from producer identity.

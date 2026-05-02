@@ -44,13 +44,13 @@ raw_length = round(lookback_seconds / median_dt)
 sequence_length = clip(raw_length, min_sequence_length, max_sequence_length)
 ```
 
-The calibration span is derived from selected training samples, not the raw corpus tail. Runtime metadata stores sequence length, median delta, and compiler metadata. Inference requires this metadata and reuses the trained sequence length.
+The calibration span is derived from selected training samples, not the raw corpus tail. Builder runtime metadata stores sequence length and median delta. Compiler runtime metadata travels through the artifact Temporal Capability. Inference requires both values and reuses the trained sequence length.
 
 ## Comparison
 
 | Builder | Selection unit | Context length | Runtime metadata |
 | --- | --- | --- | --- |
-| `fixed_sequence_temporal` | Tail valid samples | Fixed from train sample median delta | Sequence length plus compiler metadata. |
+| `fixed_sequence_temporal` | Tail valid samples | Fixed from train sample median delta | Sequence length and median delta. |
 
 ## Scaler Ownership
 
@@ -64,7 +64,7 @@ train indices
 
 ## Inference Dataset Construction
 
-Inference must recreate the same sample geometry used during training. The artifact supplies builder runtime metadata and compiler runtime metadata. The requested delay can be shorter than the trained max delay but cannot exceed it.
+Inference must recreate the same sample geometry used during training. The artifact supplies builder runtime metadata and Temporal Capability. The requested delay can be shorter than the trained max delay but cannot exceed it.
 
 ## Failure Modes
 

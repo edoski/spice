@@ -50,7 +50,7 @@ Each spec table belongs to the package that owns the behavior. Implementation kn
 features       -> feature families
 temporal       -> compilers, realization policies, input normalization
 prediction     -> prediction families
-evaluation     -> evaluator engines
+evaluation     -> evaluator adapters
 modeling       -> dataset builders and model families
 objectives     -> objective contracts
 ```
@@ -102,7 +102,7 @@ artifact trained model plus runtime summaries and evaluations
 
 These are separate storage root kinds because they have different lifecycle rules and state schemas. Root-local state is authoritative; the catalog is a searchable index that can be rebuilt.
 
-`config` describes user intent. `contract` describes executable meaning. `engine`, `family`, `builder`, and `compiler` are local implementation selectors. A named YAML config may choose an engine, but the named config is not itself the engine.
+`config` describes user intent. `contract` describes executable meaning. `adapter`, `family`, `builder`, and `compiler` are local implementation selectors. A named YAML config may choose an adapter, but the named config is not itself the adapter.
 
 ## Guide Index
 

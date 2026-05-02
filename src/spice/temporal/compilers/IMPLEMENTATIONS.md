@@ -27,7 +27,7 @@ Slot-spacing ids:
 
 The compiler returns a Temporal Capability with `compiler_id`, `max_delay_seconds`, `action_width`, and typed runtime metadata. For `observed_time_window`, runtime metadata contains `slot_spacing_id` and `slot_spacing_seconds`.
 
-This compiler is online-safe because context rows end at the anchor row, candidate rows are future outcome rows only, and feature prerequisites/warmup filtering happens before train/validation/test splitting. It does not reveal a future row count from evaluation timestamps to the model; `slot_spacing` only fixes the prediction head width.
+This compiler is online-safe because context rows end at the anchor row, candidate-window rows are future outcome rows only, and feature prerequisites/warmup filtering happens before train/validation/test splitting. It does not reveal a future row count from evaluation timestamps to the model; `slot_spacing` only fixes the prediction head width.
 
 ## Shared Builder
 

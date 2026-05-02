@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from spice.benchmarks.materialization import materialize_benchmark_plan
-from spice.benchmarks.schema import BenchmarkSpec
+import yaml
+
+from spice.benchmarks.materialization import plan_benchmark
 from spice.config import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.storage.catalog import CatalogStudyRecord
 from spice.storage.catalog.registry import STUDY_ROOT_SPEC
@@ -14,17 +15,21 @@ from spice.storage.workflow_roots import produced_artifact_id, produced_study_id
 ETH_DATASET_ID = "cor_9a73b1e88edb488afb1e"
 
 
-def _materialize(payload: dict[str, object]):
-    spec = BenchmarkSpec.model_validate(payload)
-    return materialize_benchmark_plan(spec)
+def _materialize(isolate_conf_root, payload: dict[str, object]):
+    conf_root = isolate_conf_root()
+    benchmark_path = conf_root / "benchmark" / "materialization_case.yaml"
+    benchmark_path.write_text(
+        yaml.safe_dump(payload, sort_keys=False),
+        encoding="utf-8",
+    )
+    return plan_benchmark("materialization_case")
 
 
 def test_materialization_injects_study_id_for_tuned_train_dependency(
     isolate_conf_root,
 ) -> None:
-    isolate_conf_root()
-
     entries = _materialize(
+        isolate_conf_root,
         {
             "cases": [
                 {
@@ -61,9 +66,8 @@ def test_materialization_injects_study_id_for_tuned_train_dependency(
 def test_materialization_injects_artifact_and_dataset_for_artifact_from(
     isolate_conf_root,
 ) -> None:
-    isolate_conf_root()
-
     entries = _materialize(
+        isolate_conf_root,
         {
             "cases": [
                 {
@@ -108,10 +112,10 @@ def test_materialization_injects_artifact_and_dataset_for_artifact_from(
 def test_materialization_preserves_explicit_evaluate_dataset_id_with_artifact_from(
     isolate_conf_root,
 ) -> None:
-    isolate_conf_root()
     evaluate_dataset_id = "cor_cross_corpus_same_chain"
 
     entries = _materialize(
+        isolate_conf_root,
         {
             "cases": [
                 {
@@ -159,7 +163,6 @@ def test_materialization_uses_catalog_dataset_for_explicit_tuned_study(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
-    isolate_conf_root()
     storage_root = tmp_path / "outputs"
     study_root = storage_root / "studies" / "ethereum" / "std_existing"
     STUDY_ROOT_SPEC.upsert(
@@ -180,6 +183,7 @@ def test_materialization_uses_catalog_dataset_for_explicit_tuned_study(
     )
 
     entries = _materialize(
+        isolate_conf_root,
         {
             "cases": [
                 {
@@ -224,9 +228,8 @@ def test_materialization_uses_catalog_dataset_for_explicit_tuned_study(
 def test_materialization_preserves_selection_ledger_context(
     isolate_conf_root,
 ) -> None:
-    isolate_conf_root()
-
     entries = _materialize(
+        isolate_conf_root,
         {
             "cases": [
                 {

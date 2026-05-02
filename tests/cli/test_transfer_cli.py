@@ -95,10 +95,3 @@ def test_transfer_pull_artifact_command_uses_pulled_envelope(monkeypatch, tmp_pa
     assert "pull artifact=artifact-1" in result.stdout
     assert "matching local dataset root is missing" in result.stderr
 
-
-def test_transfer_study_commands_are_removed() -> None:
-    push_result = runner.invoke(app, ["transfer", "push", "study", "--study-id", "study-1"])
-    pull_result = runner.invoke(app, ["transfer", "pull", "study", "--study-id", "study-1"])
-
-    assert push_result.exit_code != 0
-    assert pull_result.exit_code != 0

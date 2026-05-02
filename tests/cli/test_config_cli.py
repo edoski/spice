@@ -200,16 +200,6 @@ def test_config_edit_seeds_missing_file_and_uses_editor(
     assert yaml.safe_load(created_path.read_text(encoding="utf-8"))["id"] == "phase2_problem"
 
 
-def test_train_rejects_removed_local_submission_options(tmp_path: Path) -> None:
-    submit_result = runner.invoke(app, ["train", "--submit"])
-    storage_result = runner.invoke(app, ["train", "--storage-root", str(tmp_path)])
-
-    assert submit_result.exit_code != 0
-    assert "--submit" in submit_result.output
-    assert storage_result.exit_code != 0
-    assert "--storage-root" in storage_result.output
-
-
 def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

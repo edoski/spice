@@ -99,6 +99,10 @@ class _MaterializedPlanState:
 
 def plan_benchmark(name: str) -> list[BenchmarkPlanEntry]:
     spec = _load_benchmark_spec(name)
+    return _materialize_benchmark_spec(name, spec)
+
+
+def _materialize_benchmark_spec(name: str, spec: BenchmarkSpec) -> list[BenchmarkPlanEntry]:
     entries: list[BenchmarkPlanEntry] = []
     errors: list[str] = []
     for case_index, case in enumerate(spec.cases):
@@ -114,13 +118,6 @@ def plan_benchmark(name: str) -> list[BenchmarkPlanEntry]:
             )
     if errors:
         raise ConfigResolutionError("\n".join(errors))
-    return entries
-
-
-def materialize_benchmark_plan(spec: BenchmarkSpec) -> list[BenchmarkPlanEntry]:
-    entries: list[BenchmarkPlanEntry] = []
-    for case in spec.cases:
-        entries.extend(_materialize_benchmark_case(case))
     return entries
 
 

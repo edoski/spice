@@ -43,14 +43,14 @@ For each sample:
 
 Baseline is the no-wait comparison. Optimum is the best possible in-window choice with perfect future knowledge.
 
-## Overflow Slots
+## Overflow Action Slots
 
-The action mask marks all `max_candidate_slots` as selectable. When a sample has fewer real candidate rows than the maximum, the remaining offsets are overflow actions. Under this policy, those offsets realize to the post-window row.
+The action mask marks the full action width as selectable. When a sample has fewer real candidate-window rows than the maximum, the remaining offsets are overflow actions. Under this policy, those offsets realize to the post-window row.
 
 ```text
 sample A candidates: 0 1 2 3
 sample B candidates: 0 1
-max slots:           0 1 2 3
+action slots:        0 1 2 3
 
 sample B offset 2 -> post-window row
 sample B offset 3 -> post-window row

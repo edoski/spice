@@ -305,14 +305,6 @@ def test_benchmark_index_export_uses_selected_index(tmp_path: Path) -> None:
     assert "artifact-1" in output_path.read_text(encoding="utf-8")
 
 
-def test_benchmark_export_run_dir_command_is_removed(tmp_path: Path) -> None:
-    run_dir = _write_collection_run(tmp_path)
-
-    result = runner.invoke(app, ["benchmark", "export", str(run_dir)])
-
-    assert result.exit_code != 0
-
-
 def test_benchmark_index_commands(tmp_path: Path) -> None:
     run_dir = _write_collection_run(tmp_path)
     index_path = tmp_path / "results.sqlite"

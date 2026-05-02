@@ -57,4 +57,4 @@ This prevents expensive training or evaluation from running on a corpus that can
 
 ## Boundaries
 
-Corpus code should not know about model families, evaluator engines, objectives, or artifact variants. Corpus Capability Planning may compile feature/problem contracts only to prove raw corpus coverage during acquisition.
+Corpus code should not know about model families, evaluator adapters, objectives, or artifact variants. Corpus Capability Planning may compile feature/problem contracts only to prove raw corpus coverage during acquisition.

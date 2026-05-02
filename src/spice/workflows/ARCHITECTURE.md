@@ -4,7 +4,7 @@
 
 `workflows` orchestrates application tasks: acquire, train, tune, and evaluate. A workflow connects generic services in the correct order, validates preconditions, reports progress, and commits outputs.
 
-It should not own implementation details from feature families, prediction families, model families, evaluator engines, or storage internals.
+It should not own implementation details from feature families, prediction families, model families, evaluator adapters, or storage internals.
 
 ## Boundary Rule
 

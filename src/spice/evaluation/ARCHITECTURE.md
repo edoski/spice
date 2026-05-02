@@ -111,7 +111,6 @@ evaluation/
   poisson_replay.py  Poisson replay evaluator adapter
   full_temporal_replay.py full supplied-sample evaluator adapter
   temporal_accounting.py shared temporal decision accounting
-  summary.py         generic summary helpers
 ```
 
 ## Extension Points

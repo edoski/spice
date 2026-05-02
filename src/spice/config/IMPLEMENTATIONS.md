@@ -115,7 +115,7 @@ Typical failures:
 | Unknown spec id | A YAML reference names no checked-in spec. |
 | Wrong local config type | A spec was routed to a compiler that does not own it. |
 | Extra fields | The YAML contains fields not accepted by that concrete config. |
-| Missing engine/family/id | Registry dispatch cannot choose an implementation. |
+| Missing owner id | Registry dispatch cannot choose an implementation. |
 | Objective benchmark mismatch | Training would optimize a different evaluator than requested. |
 
 ## CLI Remote Target Boundary
@@ -133,4 +133,4 @@ Execution and transfer code do not guess a remote target. That keeps command erg
 
 ## Extension Pattern
 
-To add a concrete config type, add the Pydantic model in the package that owns the implementation, register the spec id or engine, and make the compiler require that concrete model. The config package should resolve names and load resolved workflow snapshots; implementation packages should own implementation-specific fields.
+To add a concrete config type, add the Pydantic model in the package that owns the implementation, register the local spec id, and make the compiler require that concrete model. The config package should resolve names and load resolved workflow snapshots; implementation packages should own implementation-specific fields.

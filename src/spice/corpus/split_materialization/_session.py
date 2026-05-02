@@ -29,13 +29,13 @@ from ..validation import (
 )
 from ._policy import (
     SplitDatasetFacts,
-    SplitFulfillmentAction,
-    SplitFulfillmentDecision,
-    SplitFulfillmentOutcome,
+    SplitMaterializationAction,
+    SplitMaterializationDecision,
+    SplitMaterializationOutcome,
     SplitPullRange,
     SplitTarget,
-    plan_evaluation_split_fulfillment,
-    plan_history_split_fulfillment,
+    plan_evaluation_split_materialization,
+    plan_history_split_materialization,
 )
 
 
@@ -244,7 +244,7 @@ def split_facts(existing: ExistingDatasetState | None):
     )
 
 
-def split_outcome(outcome: SplitFulfillmentOutcome) -> CorpusSplitOutcome:
+def split_outcome(outcome: SplitMaterializationOutcome) -> CorpusSplitOutcome:
     return CorpusSplitOutcome(outcome.value)
 
 
@@ -610,7 +610,10 @@ def reusable_range_matches_target_window(
     return min(timestamps) >= window.start and max(timestamps) < window.end
 
 
-def reject_invalid_staged(decision: SplitFulfillmentDecision, staged: ExistingDatasetState) -> None:
+def reject_invalid_staged(
+    decision: SplitMaterializationDecision,
+    staged: ExistingDatasetState,
+) -> None:
     if decision.error_message is None:
         raise RuntimeError("Cannot resume invalid staged split dataset")
     raise RuntimeError(f"{decision.error_message}: {staged.validation}")
@@ -640,7 +643,7 @@ async def _ensure_history_split(
     def validate_result(validation: BlockDatasetValidationReport, _: Path) -> None:
         validate_history_result(validation, history_plan=history_plan)
 
-    decision = plan_history_split_fulfillment(
+    decision = plan_history_split_materialization(
         SplitTarget(
             kind=intent.kind.value,
             block_range=history_plan.block_range,
@@ -651,12 +654,12 @@ async def _ensure_history_split(
         staged_matches_target=staged_matches_target(staged, validate_result),
     )
 
-    if decision.action is SplitFulfillmentAction.REJECT_INVALID_STAGED:
+    if decision.action is SplitMaterializationAction.REJECT_INVALID_STAGED:
         if staged is None:
             raise RuntimeError("Cannot resume invalid staged history dataset")
         reject_invalid_staged(decision, staged)
 
-    if decision.action is SplitFulfillmentAction.REUSE_STAGED:
+    if decision.action is SplitMaterializationAction.REUSE_STAGED:
         if staged is None:
             raise RuntimeError("history staged reuse decision requires staged dataset")
         staged_validation = staged.validation.model_copy(deep=True)
@@ -668,14 +671,14 @@ async def _ensure_history_split(
             outcome=split_outcome(decision.outcome),
         )
 
-    if decision.action is SplitFulfillmentAction.REUSE_COMMITTED:
+    if decision.action is SplitMaterializationAction.REUSE_COMMITTED:
         if existing is None:
             raise RuntimeError("history committed reuse decision requires existing dataset")
         emit(decision.status_message)
         validate_history_result(existing.validation, history_plan=history_plan)
         return reused_result(existing)
 
-    if decision.action is SplitFulfillmentAction.EXTEND_COMMITTED:
+    if decision.action is SplitMaterializationAction.EXTEND_COMMITTED:
         if existing is None:
             raise RuntimeError("history extension decision requires existing dataset")
         if len(decision.pull_ranges) != 1:
@@ -745,7 +748,7 @@ async def _ensure_evaluation_split(
             expected_chain_id=materialization.expected_chain_id,
         )
 
-    decision = plan_evaluation_split_fulfillment(
+    decision = plan_evaluation_split_materialization(
         SplitTarget(
             kind=intent.kind.value,
             block_range=evaluation_plan.block_range,
@@ -762,12 +765,12 @@ async def _ensure_evaluation_split(
         ),
     )
 
-    if decision.action is SplitFulfillmentAction.REJECT_INVALID_STAGED:
+    if decision.action is SplitMaterializationAction.REJECT_INVALID_STAGED:
         if staged is None:
             raise RuntimeError("Cannot resume invalid staged evaluation dataset")
         reject_invalid_staged(decision, staged)
 
-    if decision.action is SplitFulfillmentAction.REUSE_STAGED:
+    if decision.action is SplitMaterializationAction.REUSE_STAGED:
         if staged is None:
             raise RuntimeError("evaluation staged reuse decision requires staged dataset")
         staged_validation = staged.validation.model_copy(deep=True)
@@ -779,7 +782,7 @@ async def _ensure_evaluation_split(
             outcome=split_outcome(decision.outcome),
         )
 
-    if decision.action is SplitFulfillmentAction.REUSE_COMMITTED:
+    if decision.action is SplitMaterializationAction.REUSE_COMMITTED:
         if existing is None:
             raise RuntimeError("evaluation committed reuse decision requires existing dataset")
         validation = existing.validation.model_copy(deep=True)
@@ -787,7 +790,7 @@ async def _ensure_evaluation_split(
         validate_result(validation, existing.path)
         return reused_result(existing, validation=validation)
 
-    if decision.action is SplitFulfillmentAction.EXTEND_COMMITTED:
+    if decision.action is SplitMaterializationAction.EXTEND_COMMITTED:
         if existing is None:
             raise RuntimeError("evaluation extension decision requires existing dataset")
         if decision.reusable_range is None:

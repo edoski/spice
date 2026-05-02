@@ -46,7 +46,7 @@ The surface YAML uses targeted nesting where the nesting matches ownership:
 
 Chains: `ethereum`, `polygon`, `avalanche`.
 
-Provider: `publicnode`.
+Providers: `publicnode`, `tenderly`.
 
 Dataset: `icdcs_2026`.
 
