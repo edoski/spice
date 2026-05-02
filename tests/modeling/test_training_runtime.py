@@ -7,8 +7,8 @@ import pytest
 import torch
 
 from spice.config.models import TrainingConfig
-from spice.modeling.evaluation_runtime import EvaluationScoringRuntimePlan
 from spice.modeling.representations import DeviceStorageBudget, RepresentationRuntimeContext
+from spice.modeling.scoring_runtime import EvaluationScoringRuntimePlan
 from spice.modeling.training_runtime import plan_training_runtime
 
 

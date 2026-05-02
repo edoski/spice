@@ -110,6 +110,7 @@ modeling/
   _fit_policy.py          private best-state and early-stop policy
   objective_runtime.py    objective contract and metric production during training
   inference.py            model prediction over prepared stores
+  scoring_runtime.py      evaluation scoring runtime planning
   scoring.py              model inference -> evaluator bridge
   artifacts.py            artifact loading/validation helpers
   artifact_inference.py   artifact validation -> inference scoring context

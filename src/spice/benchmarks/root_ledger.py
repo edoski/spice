@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from pydantic import Field
 
-from ..config.models import ArtifactVariant, EvaluateConfig, TrainConfig, TuneConfig
+from ..config.models import ArtifactVariant, TrainConfig, TuneConfig
 from ..config.selections import (
     EvaluateWorkflowSelection,
     TrainWorkflowSelection,
@@ -153,12 +153,11 @@ class BenchmarkRootMaterializer:
                 dataset_id=config.dataset_id,
                 study_id=config.study_id,
             )
-        if isinstance(config, EvaluateConfig):
-            return BenchmarkConsumedRoots(
-                dataset_id=config.dataset_id,
-                artifact_id=config.artifact_id,
-            )
-        return fallback
+        del fallback
+        return BenchmarkConsumedRoots(
+            dataset_id=config.dataset_id,
+            artifact_id=config.artifact_id,
+        )
 
     def _produced_roots(self, config: ResolvedWorkflowConfig) -> BenchmarkProducedRoots:
         if isinstance(config, TuneConfig):

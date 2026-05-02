@@ -13,8 +13,9 @@ from ..metrics import MetricDescriptor, MetricSet
 from ..objectives import CompiledObjectiveContract, ObjectiveConfig, compile_objective_contract
 from .scoring import ModelScoringInput, score_evaluation
 
+ScoringInputFactory = Callable[[], ModelScoringInput]
 EvaluateObjectiveMetricsFn = Callable[
-    [MetricSet, ModelScoringInput],
+    [MetricSet, ScoringInputFactory | None],
     MetricSet,
 ]
 
@@ -28,9 +29,9 @@ class CompiledObjectiveRuntime:
         self,
         validation_metrics: MetricSet,
         *,
-        context: ModelScoringInput,
+        scoring_input_factory: ScoringInputFactory | None = None,
     ) -> MetricSet:
-        return self.evaluate_metrics_fn(validation_metrics, context)
+        return self.evaluate_metrics_fn(validation_metrics, scoring_input_factory)
 
 
 def compile_objective_runtime(
@@ -48,7 +49,7 @@ def compile_objective_runtime(
         )
         return CompiledObjectiveRuntime(
             contract=contract,
-            evaluate_metrics_fn=lambda validation_metrics, context: validation_metrics,
+            evaluate_metrics_fn=_validation_metrics,
         )
     if evaluation is None:
         raise ConfigResolutionError("evaluation objective runtime requires evaluation config")
@@ -61,15 +62,25 @@ def compile_objective_runtime(
 
     def _evaluate(
         validation_metrics: MetricSet,
-        context: ModelScoringInput,
+        scoring_input_factory: ScoringInputFactory | None,
     ) -> MetricSet:
         del validation_metrics
+        if scoring_input_factory is None:
+            raise ValueError("evaluation objective runtime requires scoring input")
         return score_evaluation(
-            model_input=context,
+            model_input=scoring_input_factory(),
             evaluator_contract=evaluator_contract,
         ).metrics
 
     return CompiledObjectiveRuntime(contract=contract, evaluate_metrics_fn=_evaluate)
+
+
+def _validation_metrics(
+    validation_metrics: MetricSet,
+    scoring_input_factory: ScoringInputFactory | None,
+) -> MetricSet:
+    del scoring_input_factory
+    return validation_metrics
 
 
 def _require_metric_descriptor(

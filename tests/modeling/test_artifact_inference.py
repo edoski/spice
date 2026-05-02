@@ -12,8 +12,8 @@ from spice.config.models import ChainRuntimeSpec
 from spice.core.errors import ConfigResolutionError
 from spice.evaluation import coerce_evaluator_config
 from spice.modeling.artifact_inference import prepare_artifact_inference_context
-from spice.modeling.evaluation_runtime import EvaluationScoringRuntimePlan
 from spice.modeling.representations import RepresentationRuntimeContext
+from spice.modeling.scoring_runtime import EvaluationScoringRuntimePlan
 from spice.storage.workflow_roots import CorpusRootHandle, EvaluateWorkflowRoots
 from spice.temporal import TemporalCapability
 from spice.temporal.compilers.observed_time_window import ObservedTimeWindowRuntimeMetadata
@@ -164,7 +164,7 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
         lambda path: calls.append(f"load_blocks:{path.name}") or object(),
     )
     monkeypatch.setattr(
-        "spice.modeling.scoring.build_evaluation_scoring_runtime_plan",
+        "spice.modeling.artifact_inference.build_evaluation_scoring_runtime_plan",
         lambda **kwargs: calls.append(f"build_runtime:{kwargs['batch_size']}")
         or EvaluationScoringRuntimePlan(
             resolved_device=torch.device("cpu"),
@@ -214,6 +214,9 @@ def test_artifact_inference_context_prepares_scoring_inputs(
     assert context.scoring_input.model is loaded_artifact.model
     assert context.scoring_input.prediction_contract is prediction_contract
     assert context.scoring_input.sample_indices.tolist() == [0, 1]
+    assert context.scoring_input.runtime_plan.representation_runtime_context.batch_size == (
+        config.batch_size
+    )
     assert calls == [
         f"load_artifact:{roots.artifact.root_path.name}",
         "load_dataset_manifest",

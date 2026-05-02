@@ -14,10 +14,10 @@ from ..temporal.problem_store import CompiledProblemStore, IntVector
 from ._runtime import (
     configure_torch_backends,
 )
-from .evaluation_runtime import EvaluationScoringRuntimePlan
 from .forward_runtime import run_planned_model_input_forward
 from .models import TemporalModel
 from .representations import CompiledRepresentationContract
+from .scoring_runtime import EvaluationScoringRuntimePlan
 
 
 def predict_with_model(

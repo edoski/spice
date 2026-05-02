@@ -15,12 +15,23 @@ from .schema import AfterDependency, BenchmarkStep, SlurmAfterDependency
 
 
 class BenchmarkPlanSeed(Protocol):
-    step_id: str
-    workflow: WorkflowTask
-    dimension_labels: Mapping[str, str]
-    depends_on_steps: tuple[str, ...]
-    external_dependencies: tuple[str, ...]
-    artifact_from_step: str | None
+    @property
+    def step_id(self) -> str: ...
+
+    @property
+    def workflow(self) -> WorkflowTask: ...
+
+    @property
+    def dimension_labels(self) -> Mapping[str, str]: ...
+
+    @property
+    def depends_on_steps(self) -> tuple[str, ...]: ...
+
+    @property
+    def external_dependencies(self) -> tuple[str, ...]: ...
+
+    @property
+    def artifact_from_step(self) -> str | None: ...
 
 
 @dataclass(frozen=True, slots=True)

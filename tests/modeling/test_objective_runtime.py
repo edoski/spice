@@ -3,17 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
-import numpy as np
 import pytest
-import torch
 
 from spice.core.errors import ConfigResolutionError
 from spice.evaluation import EvaluationSummary
 from spice.metrics import MetricDescriptor, MetricSet
-from spice.modeling.evaluation_runtime import EvaluationScoringRuntimePlan
 from spice.modeling.objective_runtime import compile_objective_runtime
-from spice.modeling.representations import RepresentationRuntimeContext
-from spice.modeling.scoring import ModelScoringInput
 from spice.objectives import ObjectiveConfig, ObjectiveDirection
 
 
@@ -41,10 +36,10 @@ def test_validation_objective_runtime_returns_validation_metrics_unchanged() -> 
         ),
     )
 
-    result = runtime.evaluate_metrics(
-        metrics,
-        context=cast(Any, SimpleNamespace()),
-    )
+    def fail_scoring_input():
+        raise AssertionError("validation objectives must not request scoring input")
+
+    result = runtime.evaluate_metrics(metrics, scoring_input_factory=fail_scoring_input)
 
     assert runtime.contract.metric_id == "score"
     assert result is metrics
@@ -88,34 +83,22 @@ def test_evaluation_objective_runtime_scores_with_same_runtime_facts(
             MetricDescriptor(id="total_loss", label="total loss", role="primary"),
         ),
     )
-    runtime_plan = EvaluationScoringRuntimePlan(
-        resolved_device=torch.device("cpu"),
-        precision="fp32",
-        representation_runtime_context=RepresentationRuntimeContext(
-            batch_size=8,
-            available_host_memory_bytes=1024,
-        ),
-        deterministic=None,
-        seed=0,
-    )
-    runtime_context = ModelScoringInput(
-        model=cast(Any, SimpleNamespace(name="model")),
-        model_config=cast(Any, SimpleNamespace(name="model_config")),
-        prediction_contract=cast(Any, SimpleNamespace(name="prediction")),
-        representation_contract=cast(Any, SimpleNamespace(name="representation")),
-        execution_policy=cast(Any, SimpleNamespace(name="execution")),
-        store=cast(Any, SimpleNamespace(name="store")),
-        sample_indices=np.array([2, 4], dtype=np.int64),
-        runtime_plan=runtime_plan,
-    )
+    runtime_context = cast(Any, SimpleNamespace(name="scoring_input"))
+    factory_calls = 0
+
+    def scoring_input_factory():
+        nonlocal factory_calls
+        factory_calls += 1
+        return runtime_context
 
     result = runtime.evaluate_metrics(
         MetricSet({"score": 1.0}),
-        context=runtime_context,
+        scoring_input_factory=scoring_input_factory,
     )
 
     assert runtime.contract.benchmark_id == "poisson_replay_2h"
     assert result == summary.metrics
+    assert factory_calls == 1
     assert len(seen_contexts) == 1
     model_input, seen_evaluator_contract = seen_contexts[0]
     assert model_input is runtime_context

@@ -10,7 +10,7 @@ An objective can be a validation metric from the training loop or a benchmark me
 
 ## Invariants
 
-Validation objectives read validation metrics directly. Evaluation objectives declare the benchmark metric to optimize. Objective configs must match the selected evaluation when they benchmark an evaluator. Model-bound metric production belongs to the **Objective Runtime** in `modeling.objective_runtime`.
+Validation objectives read validation metrics directly and do not request scoring context. Evaluation objectives declare the benchmark metric to optimize. Objective configs must match the selected evaluation when they benchmark an evaluator. Model-bound metric production belongs to the **Objective Runtime** in `modeling.objective_runtime`.
 
 Objective contracts consume the shared metric ABI from `spice.metrics`; they do not own metric result shapes.
 

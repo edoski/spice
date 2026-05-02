@@ -15,7 +15,8 @@ from ..storage.workflow_roots import ArtifactRootHandle, CorpusRootHandle
 from ..temporal.contracts import compile_problem_contract
 from .artifacts import LoadedTrainingArtifact, load_training_artifact
 from .dataset_builders import ArtifactInferencePreparationSpec, PreparedInferenceDataset
-from .scoring import ModelScoringInput, build_model_scoring_input
+from .scoring import ModelScoringInput
+from .scoring_runtime import build_evaluation_scoring_runtime_plan
 
 
 @dataclass(slots=True)
@@ -90,17 +91,20 @@ def prepare_artifact_inference_context(
             evaluation_end_timestamp=corpus_manifest.coverage.evaluation.end_timestamp,
         ),
     )
-    scoring_input = build_model_scoring_input(
-        model=loaded_artifact.model,
+    runtime_plan = build_evaluation_scoring_runtime_plan(
         model_config=loaded_artifact.manifest.model,
+        batch_size=config.batch_size,
+        deterministic=manifest.training.deterministic,
+        seed=manifest.training.seed,
+    )
+    scoring_input = ModelScoringInput(
+        model=loaded_artifact.model,
         prediction_contract=prediction_contract,
         representation_contract=loaded_artifact.representation_contract,
         execution_policy=prepared.execution_policy,
         store=prepared.store,
         sample_indices=prepared.sample_indices,
-        batch_size=config.batch_size,
-        deterministic=manifest.training.deterministic,
-        seed=manifest.training.seed,
+        runtime_plan=runtime_plan,
     )
     return ArtifactInferenceContext(
         loaded_artifact=loaded_artifact,

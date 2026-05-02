@@ -187,9 +187,8 @@ def run_training_fit(
                 break
             objective_metrics = spec.objective_runtime.evaluate_metrics(
                 validation_metrics,
-                context=ModelScoringInput(
+                scoring_input_factory=lambda: ModelScoringInput(
                     model=fit_model,
-                    model_config=spec.model_config,
                     prediction_contract=spec.prediction_contract,
                     representation_contract=spec.representation_contract,
                     execution_policy=spec.execution_policy,

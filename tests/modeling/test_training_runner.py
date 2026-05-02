@@ -11,9 +11,9 @@ import torch
 from spice.config.models import TrainingConfig
 from spice.metrics import MetricSet
 from spice.modeling._runtime import CudaModelingRuntime
-from spice.modeling.evaluation_runtime import EvaluationScoringRuntimePlan
 from spice.modeling.objective_runtime import CompiledObjectiveRuntime
 from spice.modeling.representations import RepresentationRuntimeContext
+from spice.modeling.scoring_runtime import EvaluationScoringRuntimePlan
 from spice.modeling.training_runner import (
     TrainingCallbacks,
     TrainingFitSpec,
@@ -60,7 +60,7 @@ def _objective_runtime(evaluate_metrics_fn=None) -> CompiledObjectiveRuntime:
     return CompiledObjectiveRuntime(
         contract=_objective_contract(),
         evaluate_metrics_fn=evaluate_metrics_fn
-        or (lambda validation_metrics, context: validation_metrics),
+        or (lambda validation_metrics, scoring_input_factory: validation_metrics),
     )
 
 
@@ -143,6 +143,12 @@ def test_training_fit_restores_best_state_and_calls_early_stop_callback(
 
     _patch_training_runtime(monkeypatch)
     monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
+    monkeypatch.setattr(
+        "spice.modeling.training_runner.ModelScoringInput",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("validation objective must not build scoring input")
+        ),
+    )
 
     model = _TinyModel()
     result = run_training_fit(

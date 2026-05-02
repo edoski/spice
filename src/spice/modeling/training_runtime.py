@@ -15,9 +15,9 @@ from ..temporal.problem_store import CompiledProblemStore, IntVector
 from ._epoch_execution import execute_training_batch
 from ._runtime_probe import measure_device_resident_budget, measured_runtime_context
 from .batch_plan import BatchPlan, build_prediction_batch_plan
-from .evaluation_runtime import EvaluationScoringRuntimePlan
 from .models import TemporalModel
 from .representations import CompiledRepresentationContract, RepresentationRuntimeContext
+from .scoring_runtime import EvaluationScoringRuntimePlan
 
 
 @dataclass(frozen=True, slots=True)
