@@ -54,6 +54,8 @@ Features: `core_fee_dynamics` is the canonical no-priority safe set. `core_fee_d
 
 `core_fee_dynamics` selects safe fee, gas-pressure, local trend, cadence/calendar, rolling log-fee, and tx-count outputs. It does not include priority-fee, elapsed-time/corpus-position, raw block author/proposer, or same-block finalized gas/tx outputs.
 
+Feature YAML files remain explicit operator specs. The canonical Python feature-output composition owns the expected tuples for baseline, unsafe current-row facts, priority-fee, and elapsed-position variants; tests keep YAML and composition aligned.
+
 Problems:
 
 - `current_row_nominal`: `observed_time_window` with `slot_spacing.id: nominal`.

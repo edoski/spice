@@ -558,27 +558,52 @@ CORE_FEE_DYNAMICS = FeatureCatalog(
     ),
 )
 
-CORE_FEE_DYNAMICS_OUTPUTS = (
+def _compose_feature_outputs(*groups: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(output for group in groups for output in group)
+
+
+CORE_FEE_LEVEL_OUTPUTS = (
     "log_base_fee_per_gas",
+)
+PREVIOUS_BLOCK_FACT_OUTPUTS = (
     "log_prev_gas_used",
     "log_prev_gas_limit",
     "prev_gas_utilization",
     "log_prev_tx_count",
+)
+CURRENT_ROW_BLOCK_FACT_OUTPUTS = (
+    "log_current_gas_used",
+    "log_current_gas_limit",
+    "current_gas_utilization",
+    "log_current_tx_count",
+)
+CADENCE_CALENDAR_OUTPUTS = (
     "seconds_since_previous_block",
     "hour_sin",
     "hour_cos",
     "dow_sin",
     "dow_cos",
+)
+LOCAL_FEE_CONTEXT_OUTPUTS = (
     "roll25_mean_logfee",
     "roll25_std_logfee",
     "roll25_min_logfee",
     "roll100_mean_logfee",
     "roll100_std_logfee",
     "roll100_min_logfee",
+)
+BASE_FEE_TREND_OUTPUTS = (
     "dlog_base_fee",
     "base_fee_trend",
     *(f"dlog_base_fee_lag{lag}" for lag in range(1, 7)),
+)
+PREVIOUS_GAS_UTILIZATION_TREND_OUTPUTS = (
     *(f"prev_gas_utilization_lag{lag}" for lag in range(1, 7)),
+)
+CURRENT_ROW_GAS_UTILIZATION_TREND_OUTPUTS = (
+    *(f"current_gas_utilization_lag{lag}" for lag in range(1, 7)),
+)
+EXTENDED_ROLLING_FEE_CONTEXT_OUTPUTS = (
     "roll10_mean_logfee",
     "roll10_std_logfee",
     "roll10_min_logfee",
@@ -588,6 +613,8 @@ CORE_FEE_DYNAMICS_OUTPUTS = (
     "roll200_mean_logfee",
     "roll200_std_logfee",
     "roll200_min_logfee",
+)
+PREVIOUS_GAS_UTILIZATION_ROLLING_OUTPUTS = (
     "roll10_mean_prev_gas_utilization",
     "roll10_std_prev_gas_utilization",
     "roll50_mean_prev_gas_utilization",
@@ -595,36 +622,7 @@ CORE_FEE_DYNAMICS_OUTPUTS = (
     "roll200_mean_prev_gas_utilization",
     "roll200_std_prev_gas_utilization",
 )
-CORE_FEE_DYNAMICS_UNSAFE_OUTPUTS = (
-    "log_base_fee_per_gas",
-    "log_current_gas_used",
-    "log_current_gas_limit",
-    "current_gas_utilization",
-    "log_current_tx_count",
-    "seconds_since_previous_block",
-    "hour_sin",
-    "hour_cos",
-    "dow_sin",
-    "dow_cos",
-    "roll25_mean_logfee",
-    "roll25_std_logfee",
-    "roll25_min_logfee",
-    "roll100_mean_logfee",
-    "roll100_std_logfee",
-    "roll100_min_logfee",
-    "dlog_base_fee",
-    "base_fee_trend",
-    *(f"dlog_base_fee_lag{lag}" for lag in range(1, 7)),
-    *(f"current_gas_utilization_lag{lag}" for lag in range(1, 7)),
-    "roll10_mean_logfee",
-    "roll10_std_logfee",
-    "roll10_min_logfee",
-    "roll50_mean_logfee",
-    "roll50_std_logfee",
-    "roll50_min_logfee",
-    "roll200_mean_logfee",
-    "roll200_std_logfee",
-    "roll200_min_logfee",
+CURRENT_ROW_GAS_UTILIZATION_ROLLING_OUTPUTS = (
     "roll10_mean_current_gas_utilization",
     "roll10_std_current_gas_utilization",
     "roll50_mean_current_gas_utilization",
@@ -632,7 +630,7 @@ CORE_FEE_DYNAMICS_UNSAFE_OUTPUTS = (
     "roll200_mean_current_gas_utilization",
     "roll200_std_current_gas_utilization",
 )
-CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS = CORE_FEE_DYNAMICS_OUTPUTS + (
+PRIORITY_FEE_OUTPUTS = (
     "prev_priority_fee_p10",
     "prev_priority_fee_p50",
     "prev_priority_fee_p90",
@@ -656,6 +654,35 @@ CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS = CORE_FEE_DYNAMICS_OUTPUTS + (
     "roll200_mean_log_prev_priority_fee_spread",
     "roll200_std_log_prev_priority_fee_spread",
 )
-CORE_FEE_DYNAMICS_ELAPSED_POSITION_OUTPUTS = CORE_FEE_DYNAMICS_OUTPUTS + (
+ELAPSED_POSITION_OUTPUTS = (
     "elapsed_seconds",
+)
+
+CORE_FEE_DYNAMICS_OUTPUTS = _compose_feature_outputs(
+    CORE_FEE_LEVEL_OUTPUTS,
+    PREVIOUS_BLOCK_FACT_OUTPUTS,
+    CADENCE_CALENDAR_OUTPUTS,
+    LOCAL_FEE_CONTEXT_OUTPUTS,
+    BASE_FEE_TREND_OUTPUTS,
+    PREVIOUS_GAS_UTILIZATION_TREND_OUTPUTS,
+    EXTENDED_ROLLING_FEE_CONTEXT_OUTPUTS,
+    PREVIOUS_GAS_UTILIZATION_ROLLING_OUTPUTS,
+)
+CORE_FEE_DYNAMICS_UNSAFE_OUTPUTS = _compose_feature_outputs(
+    CORE_FEE_LEVEL_OUTPUTS,
+    CURRENT_ROW_BLOCK_FACT_OUTPUTS,
+    CADENCE_CALENDAR_OUTPUTS,
+    LOCAL_FEE_CONTEXT_OUTPUTS,
+    BASE_FEE_TREND_OUTPUTS,
+    CURRENT_ROW_GAS_UTILIZATION_TREND_OUTPUTS,
+    EXTENDED_ROLLING_FEE_CONTEXT_OUTPUTS,
+    CURRENT_ROW_GAS_UTILIZATION_ROLLING_OUTPUTS,
+)
+CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS = _compose_feature_outputs(
+    CORE_FEE_DYNAMICS_OUTPUTS,
+    PRIORITY_FEE_OUTPUTS,
+)
+CORE_FEE_DYNAMICS_ELAPSED_POSITION_OUTPUTS = _compose_feature_outputs(
+    CORE_FEE_DYNAMICS_OUTPUTS,
+    ELAPSED_POSITION_OUTPUTS,
 )

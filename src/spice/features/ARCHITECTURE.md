@@ -28,7 +28,7 @@ ResolvedFeatureTable
 
 ## `core_fee_dynamics`
 
-The current catalog is protocol-first and includes the safe local-trend signals that improved the 1M A/B grid:
+The current catalog is protocol-first and includes the safe local-trend signals that improved the 1M A/B grid. Output sets are composed from explicit Python groups so YAML specs can stay fully expanded while tests verify they match the canonical composition.
 
 | Group | Outputs | Reason |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ The current catalog is protocol-first and includes the safe local-trend signals 
 | Gas-utilization local trends | `prev_gas_utilization_lag1..6`, `roll10/50/200_*_prev_gas_utilization` | Captures safe pressure history using lagged finalized gas facts. |
 | Additional rolling fee context | `roll10/50/200_*_logfee` | Captures shorter and longer fee regimes than the original 25/100 windows. |
 
-All previous-block facts are lagged inside their `SourceSpec`, not ad hoc in dataset builders or models. That keeps causality local to the source that owns availability.
+All previous-block facts are lagged inside their `SourceSpec`, not ad hoc in dataset builders or models. That keeps causality local to the source that owns availability. The current-row gas/tx groups are separate Python output groups used only by the unsafe leakage comparator.
 
 `core_fee_dynamics_unsafe` is the same no-priority feature concept with finalized gas and tx-count facts exposed from the current row. It is not deployable; it exists as an explicit same-block leakage comparator.
 

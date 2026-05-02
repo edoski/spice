@@ -18,106 +18,14 @@ from spice.features import (
 )
 from spice.features import core as feature_core
 from spice.features.sets import core_fee_dynamics as core_fee_dynamics_module
-from spice.features.sets.core_fee_dynamics import CORE_FEE_DYNAMICS
-
-BASELINE_OUTPUTS = [
-    "log_base_fee_per_gas",
-    "log_prev_gas_used",
-    "log_prev_gas_limit",
-    "prev_gas_utilization",
-    "log_prev_tx_count",
-    "seconds_since_previous_block",
-    "hour_sin",
-    "hour_cos",
-    "dow_sin",
-    "dow_cos",
-    "roll25_mean_logfee",
-    "roll25_std_logfee",
-    "roll25_min_logfee",
-    "roll100_mean_logfee",
-    "roll100_std_logfee",
-    "roll100_min_logfee",
-    "dlog_base_fee",
-    "base_fee_trend",
-    *[f"dlog_base_fee_lag{lag}" for lag in range(1, 7)],
-    *[f"prev_gas_utilization_lag{lag}" for lag in range(1, 7)],
-    "roll10_mean_logfee",
-    "roll10_std_logfee",
-    "roll10_min_logfee",
-    "roll50_mean_logfee",
-    "roll50_std_logfee",
-    "roll50_min_logfee",
-    "roll200_mean_logfee",
-    "roll200_std_logfee",
-    "roll200_min_logfee",
-    "roll10_mean_prev_gas_utilization",
-    "roll10_std_prev_gas_utilization",
-    "roll50_mean_prev_gas_utilization",
-    "roll50_std_prev_gas_utilization",
-    "roll200_mean_prev_gas_utilization",
-    "roll200_std_prev_gas_utilization",
-]
-UNSAFE_OUTPUTS = [
-    "log_base_fee_per_gas",
-    "log_current_gas_used",
-    "log_current_gas_limit",
-    "current_gas_utilization",
-    "log_current_tx_count",
-    "seconds_since_previous_block",
-    "hour_sin",
-    "hour_cos",
-    "dow_sin",
-    "dow_cos",
-    "roll25_mean_logfee",
-    "roll25_std_logfee",
-    "roll25_min_logfee",
-    "roll100_mean_logfee",
-    "roll100_std_logfee",
-    "roll100_min_logfee",
-    "dlog_base_fee",
-    "base_fee_trend",
-    *[f"dlog_base_fee_lag{lag}" for lag in range(1, 7)],
-    *[f"current_gas_utilization_lag{lag}" for lag in range(1, 7)],
-    "roll10_mean_logfee",
-    "roll10_std_logfee",
-    "roll10_min_logfee",
-    "roll50_mean_logfee",
-    "roll50_std_logfee",
-    "roll50_min_logfee",
-    "roll200_mean_logfee",
-    "roll200_std_logfee",
-    "roll200_min_logfee",
-    "roll10_mean_current_gas_utilization",
-    "roll10_std_current_gas_utilization",
-    "roll50_mean_current_gas_utilization",
-    "roll50_std_current_gas_utilization",
-    "roll200_mean_current_gas_utilization",
-    "roll200_std_current_gas_utilization",
-]
-PRIORITY_FEE_OUTPUTS = [
-    "prev_priority_fee_p10",
-    "prev_priority_fee_p50",
-    "prev_priority_fee_p90",
-    "prev_priority_fee_spread",
-    "log_prev_priority_fee_p50",
-    "dlog_prev_priority_fee_p50",
-    *[f"dlog_prev_priority_fee_p50_lag{lag}" for lag in range(1, 7)],
-    "roll10_mean_log_prev_priority_fee_p50",
-    "roll10_std_log_prev_priority_fee_p50",
-    "roll50_mean_log_prev_priority_fee_p50",
-    "roll50_std_log_prev_priority_fee_p50",
-    "roll200_mean_log_prev_priority_fee_p50",
-    "roll200_std_log_prev_priority_fee_p50",
-    "log_prev_priority_fee_spread",
-    "dlog_prev_priority_fee_spread",
-    *[f"dlog_prev_priority_fee_spread_lag{lag}" for lag in range(1, 7)],
-    "roll10_mean_log_prev_priority_fee_spread",
-    "roll10_std_log_prev_priority_fee_spread",
-    "roll50_mean_log_prev_priority_fee_spread",
-    "roll50_std_log_prev_priority_fee_spread",
-    "roll200_mean_log_prev_priority_fee_spread",
-    "roll200_std_log_prev_priority_fee_spread",
-]
+from spice.features.sets.core_fee_dynamics import (
+    CORE_FEE_DYNAMICS,
+    CORE_FEE_DYNAMICS_ELAPSED_POSITION_OUTPUTS,
+    CORE_FEE_DYNAMICS_OUTPUTS,
+    CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS,
+    CORE_FEE_DYNAMICS_UNSAFE_OUTPUTS,
+    PRIORITY_FEE_OUTPUTS,
+)
 
 
 def _frame(row_count: int = 140) -> pl.DataFrame:
@@ -218,16 +126,16 @@ def test_core_fee_dynamics_rejects_priority_fee_outputs() -> None:
         coerce_features_config(
             {
                 "id": "core_fee_dynamics",
-                "outputs": [*BASELINE_OUTPUTS, "prev_priority_fee_p50"],
+                "outputs": [*CORE_FEE_DYNAMICS_OUTPUTS, "prev_priority_fee_p50"],
             }
         )
 
     coerce_features_config(
-        {
-            "id": "core_fee_dynamics_with_priority_fee",
-            "outputs": [*BASELINE_OUTPUTS, "prev_priority_fee_p50"],
-        }
-    )
+            {
+                "id": "core_fee_dynamics_with_priority_fee",
+                "outputs": [*CORE_FEE_DYNAMICS_OUTPUTS, "prev_priority_fee_p50"],
+            }
+        )
 
 
 def test_core_fee_dynamics_fingerprint_includes_shared_engine() -> None:
@@ -275,6 +183,7 @@ def test_elapsed_position_ablation_config_adds_time_since_start_signal() -> None
     ablation_outputs = cast(list[str], ablation["outputs"])
 
     assert ablation["id"] == "core_fee_dynamics_elapsed_position"
+    assert tuple(ablation_outputs) == CORE_FEE_DYNAMICS_ELAPSED_POSITION_OUTPUTS
     assert ablation_outputs[:-1] == baseline_outputs
     assert ablation_outputs[-1] == "elapsed_seconds"
     coerce_features_config(ablation)
@@ -284,7 +193,7 @@ def test_core_fee_dynamics_config_includes_restored_safe_local_trends() -> None:
     baseline = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
     baseline_outputs = cast(list[str], baseline["outputs"])
 
-    assert baseline_outputs == BASELINE_OUTPUTS
+    assert tuple(baseline_outputs) == CORE_FEE_DYNAMICS_OUTPUTS
     assert "elapsed_seconds" not in baseline_outputs
     assert "time_since_start" not in baseline_outputs
     assert "prev_priority_fee_p50" not in baseline_outputs
@@ -295,9 +204,9 @@ def test_core_fee_dynamics_config_includes_restored_safe_local_trends() -> None:
 
 
 def test_core_fee_dynamics_source_columns_do_not_require_fee_history() -> None:
-    baseline_contract = _contract(BASELINE_OUTPUTS)
+    baseline_contract = _contract(list(CORE_FEE_DYNAMICS_OUTPUTS))
     priority_contract = _contract(
-        [*BASELINE_OUTPUTS, "prev_priority_fee_p50"],
+        [*CORE_FEE_DYNAMICS_OUTPUTS, "prev_priority_fee_p50"],
         features_id="core_fee_dynamics_with_priority_fee",
     )
 
@@ -349,7 +258,7 @@ def test_core_fee_dynamics_unsafe_config_replaces_same_block_facts() -> None:
     outputs = cast(list[str], payload["outputs"])
 
     assert payload["id"] == "core_fee_dynamics_unsafe"
-    assert outputs == UNSAFE_OUTPUTS
+    assert tuple(outputs) == CORE_FEE_DYNAMICS_UNSAFE_OUTPUTS
     assert "log_prev_gas_used" not in outputs
     assert "log_current_gas_used" in outputs
     assert "prev_priority_fee_p50" not in outputs
@@ -382,7 +291,8 @@ def test_priority_fee_config_adds_scalar_and_trend_outputs() -> None:
     priority_outputs = cast(list[str], priority["outputs"])
 
     assert priority["id"] == "core_fee_dynamics_with_priority_fee"
-    assert priority_outputs == [*baseline_outputs, *PRIORITY_FEE_OUTPUTS]
+    assert tuple(priority_outputs) == CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS
+    assert tuple(priority_outputs) == (*tuple(baseline_outputs), *PRIORITY_FEE_OUTPUTS)
     assert "prev_priority_fee_p10" in priority_outputs
     assert "log_prev_priority_fee_p10" not in priority_outputs
     assert "elapsed_seconds" not in priority_outputs
