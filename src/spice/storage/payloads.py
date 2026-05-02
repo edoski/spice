@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar, cast
 
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection
@@ -16,6 +17,11 @@ from sqlalchemy.schema import Table
 from ..core.errors import ConfigResolutionError, StateLayoutError
 
 T = TypeVar("T")
+PayloadModelT = TypeVar("PayloadModelT", bound="PayloadModel")
+
+
+class PayloadModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +93,50 @@ def decode_payload(label: str, decode: Callable[[], T]) -> T:
         raise StateLayoutError(f"Invalid {label} payload: {exc}") from exc
 
 
+def model_payload(model: BaseModel, *, label: str) -> dict[str, object]:
+    return _model_dump_mapping(model.model_dump(mode="json"), label=label)
+
+
+def _model_dump_mapping(payload: object, *, label: str) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        raise StateLayoutError(f"{label} must serialize to a mapping payload")
+    return cast(dict[str, object], payload)
+
+
+def decode_payload_model(
+    label: str,
+    model_type: type[PayloadModelT],
+    payload: dict[str, object],
+    decode: Callable[[PayloadModelT], T],
+) -> T:
+    return decode_payload(
+        label,
+        lambda: decode(model_type.model_validate(payload, strict=True)),
+    )
+
+
+def type_adapter_payload(
+    adapter: TypeAdapter[Any],
+    value: object,
+    *,
+    label: str,
+) -> dict[str, object]:
+    payload = adapter.dump_python(value, mode="json")
+    if not isinstance(payload, dict):
+        raise StateLayoutError(f"{label} must serialize to a mapping payload")
+    return cast(dict[str, object], payload)
+
+
+def type_adapter_value(
+    adapter: TypeAdapter[T],
+    payload: object,
+    *,
+    label: str,
+    strict: bool = False,
+) -> T:
+    return decode_payload(label, lambda: adapter.validate_python(payload, strict=strict))
+
+
 def string_payload(value: object, *, label: str) -> str:
     if isinstance(value, str):
         return value
@@ -105,3 +155,19 @@ def bool_payload(value: object, *, label: str) -> bool:
     if isinstance(value, bool):
         return value
     raise StateLayoutError(f"{label} must be a boolean")
+
+
+def optional_int_payload(value: object, *, label: str) -> int | None:
+    if value is None:
+        return None
+    return int_payload(value, label=label)
+
+
+def sequence_payload(value: object, *, label: str) -> Sequence[object]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise StateLayoutError(f"{label} must be a sequence")
+    return cast(Sequence[object], value)
+
+
+def int_list_payload(value: object, *, label: str) -> list[int]:
+    return [int_payload(item, label=label) for item in sequence_payload(value, label=label)]

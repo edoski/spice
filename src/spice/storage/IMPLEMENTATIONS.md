@@ -44,6 +44,10 @@ The engine creates the expected tables for a root kind and validates table shape
 
 SQLite connections enable foreign keys, WAL, and busy timeout.
 
+## Payload Codecs
+
+`storage.payloads` owns generic SQLite payload stores plus raw persisted-payload validation helpers. Domain codecs keep artifact, corpus, study, and semantics field meaning, but use shared payload helpers so malformed state consistently raises `StateLayoutError`.
+
 ## Deterministic IDs
 
 IDs are content-derived:

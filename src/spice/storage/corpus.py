@@ -4,10 +4,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
-from typing import cast
 
 from ..config.models import ChainRuntimeSpec
 from ..core.errors import MissingStateError, StateLayoutError
@@ -40,8 +38,10 @@ from .payloads import (
     SequencePayloadStore,
     SingletonPayloadStore,
     decode_payload,
+    int_list_payload,
     int_payload,
     mapping_payload,
+    optional_int_payload,
     string_payload,
 )
 from .schema import DATASET_TABLES, acquire_runs, dataset_manifest
@@ -183,8 +183,8 @@ def _chain_runtime_from_payload(chain: dict[str, object]) -> ChainRuntimeSpec:
 def _window_from_payload(payload: object) -> DatasetWindowMetadata:
     mapping = mapping_payload(payload, label="window")
     return DatasetWindowMetadata(
-        start_timestamp=_int_value(mapping["start_timestamp"]),
-        end_timestamp=_int_value(mapping["end_timestamp"]),
+        start_timestamp=int_payload(mapping["start_timestamp"], label="window.start_timestamp"),
+        end_timestamp=int_payload(mapping["end_timestamp"], label="window.end_timestamp"),
     )
 
 
@@ -223,30 +223,65 @@ def _decode_acquire_run(payload: dict[str, object]) -> AcquireRunRecord:
             ),
         ),
         facts=AcquireRunFacts(
-            requested_history_window_seconds=_int_value(
-                facts["requested_history_window_seconds"]
+            requested_history_window_seconds=int_payload(
+                facts["requested_history_window_seconds"],
+                label="facts.requested_history_window_seconds",
             ),
-            resolved_capability_samples=_int_value(facts["resolved_capability_samples"]),
+            resolved_capability_samples=int_payload(
+                facts["resolved_capability_samples"],
+                label="facts.resolved_capability_samples",
+            ),
         ),
         settings=AcquisitionConfigSnapshot(
-            chunk_size=_int_value(settings["chunk_size"]),
-            rpc_batch_size=_int_value(settings["rpc_batch_size"]),
-            rpc_concurrency=_int_value(settings["rpc_concurrency"]),
-            rpc_min_batch_size=_int_value(settings["rpc_min_batch_size"]),
-            rpc_concurrency_rungs=_int_list_value(settings["rpc_concurrency_rungs"]),
+            chunk_size=int_payload(settings["chunk_size"], label="settings.chunk_size"),
+            rpc_batch_size=int_payload(
+                settings["rpc_batch_size"], label="settings.rpc_batch_size"
+            ),
+            rpc_concurrency=int_payload(
+                settings["rpc_concurrency"], label="settings.rpc_concurrency"
+            ),
+            rpc_min_batch_size=int_payload(
+                settings["rpc_min_batch_size"], label="settings.rpc_min_batch_size"
+            ),
+            rpc_concurrency_rungs=int_list_payload(
+                settings["rpc_concurrency_rungs"],
+                label="settings.rpc_concurrency_rungs",
+            ),
         ),
         runtime=DatasetAcquisitionRuntimeMetadata(
-            configured_batch_size=_int_value(runtime["configured_batch_size"]),
-            final_batch_size=_int_value(runtime["final_batch_size"]),
-            min_batch_size=_int_value(runtime["min_batch_size"]),
-            configured_concurrency=_int_value(runtime["configured_concurrency"]),
-            final_concurrency=_int_value(runtime["final_concurrency"]),
-            concurrency_rungs=_int_list_value(runtime["concurrency_rungs"]),
-            oversize_error_count=_int_value(runtime["oversize_error_count"]),
-            transient_error_count=_int_value(runtime["transient_error_count"]),
-            oversize_backoffs=_int_value(runtime["oversize_backoffs"]),
-            transient_backoffs=_int_value(runtime["transient_backoffs"]),
-            concurrency_recoveries=_int_value(runtime["concurrency_recoveries"]),
+            configured_batch_size=int_payload(
+                runtime["configured_batch_size"],
+                label="runtime.configured_batch_size",
+            ),
+            final_batch_size=int_payload(
+                runtime["final_batch_size"], label="runtime.final_batch_size"
+            ),
+            min_batch_size=int_payload(runtime["min_batch_size"], label="runtime.min_batch_size"),
+            configured_concurrency=int_payload(
+                runtime["configured_concurrency"],
+                label="runtime.configured_concurrency",
+            ),
+            final_concurrency=int_payload(
+                runtime["final_concurrency"], label="runtime.final_concurrency"
+            ),
+            concurrency_rungs=int_list_payload(
+                runtime["concurrency_rungs"], label="runtime.concurrency_rungs"
+            ),
+            oversize_error_count=int_payload(
+                runtime["oversize_error_count"], label="runtime.oversize_error_count"
+            ),
+            transient_error_count=int_payload(
+                runtime["transient_error_count"], label="runtime.transient_error_count"
+            ),
+            oversize_backoffs=int_payload(
+                runtime["oversize_backoffs"], label="runtime.oversize_backoffs"
+            ),
+            transient_backoffs=int_payload(
+                runtime["transient_backoffs"], label="runtime.transient_backoffs"
+            ),
+            concurrency_recoveries=int_payload(
+                runtime["concurrency_recoveries"], label="runtime.concurrency_recoveries"
+            ),
         ),
     )
 
@@ -263,14 +298,26 @@ def _validation_from_payload(payload: object) -> CompactValidationReport:
     )
     return CompactValidationReport(
         status=str(mapping["status"]),
-        rows=_int_value(mapping["rows"]),
+        rows=int_payload(mapping["rows"], label="validation.rows"),
         block_range=BlockRangeMetadata(
-            first=_optional_int(block_range.get("first")),
-            last=_optional_int(block_range.get("last")),
+            first=optional_int_payload(
+                block_range.get("first"),
+                label="validation.block_range.first",
+            ),
+            last=optional_int_payload(
+                block_range.get("last"),
+                label="validation.block_range.last",
+            ),
         ),
         timestamp_range=TimestampRangeMetadata(
-            first=_optional_int(timestamp_range.get("first")),
-            last=_optional_int(timestamp_range.get("last")),
+            first=optional_int_payload(
+                timestamp_range.get("first"),
+                label="validation.timestamp_range.first",
+            ),
+            last=optional_int_payload(
+                timestamp_range.get("last"),
+                label="validation.timestamp_range.last",
+            ),
         ),
         issues=_issues_payload(mapping.get("issues")),
     )
@@ -280,26 +327,6 @@ def _issues_payload(payload: object) -> dict[str, object] | None:
     if payload is None:
         return None
     return mapping_payload(payload, label="validation.issues")
-
-
-def _optional_int(value: object) -> int | None:
-    if value is None:
-        return None
-    return _int_value(value)
-
-
-def _int_value(value: object) -> int:
-    return int_payload(value, label="integer payload")
-
-
-def _int_list_value(values: object) -> list[int]:
-    return [_int_value(value) for value in _sequence_payload(values)]
-
-
-def _sequence_payload(values: object) -> Sequence[object]:
-    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
-        raise StateLayoutError("Expected list payload")
-    return cast(Sequence[object], values)
 
 
 def _now_timestamp() -> int:

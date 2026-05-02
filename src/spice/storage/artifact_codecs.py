@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from pydantic import BaseModel, ConfigDict
-
 from ..config.models import (
     ArtifactVariant,
     PredictionConfig,
@@ -24,7 +22,13 @@ from ..modeling.families.registry import coerce_model_config
 from ..objectives import coerce_objective_config
 from ..prediction import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..temporal.scaling import ScalerStats
-from .payloads import decode_payload, mapping_payload, string_payload
+from .payloads import (
+    PayloadModel,
+    decode_payload_model,
+    mapping_payload,
+    model_payload,
+    string_payload,
+)
 from .semantics_codecs import artifact_semantics_from_payload, artifact_semantics_payload
 
 if TYPE_CHECKING:
@@ -34,10 +38,6 @@ if TYPE_CHECKING:
         TrainingEpochRecord,
         TrainingRuntimeSummary,
     )
-
-
-class CodecPayloadModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
 
 
 def _metric_values_payload(metrics: MetricSet) -> dict[str, float]:
@@ -76,7 +76,7 @@ def _metric_descriptor_from_payload(payload: object) -> MetricDescriptor:
     )
 
 
-class ArtifactManifestPayload(CodecPayloadModel):
+class ArtifactManifestPayload(PayloadModel):
     artifact_id: str
     dataset_builder: dict[str, object]
     prediction: dict[str, object]
@@ -151,7 +151,7 @@ class ArtifactManifestPayload(CodecPayloadModel):
         )
 
 
-class TrainingSummaryPayload(CodecPayloadModel):
+class TrainingSummaryPayload(PayloadModel):
     n_rows_available: int
     n_rows_used: int
     train_samples: int
@@ -197,7 +197,7 @@ class TrainingSummaryPayload(CodecPayloadModel):
         )
 
 
-class TrainingEpochPayload(CodecPayloadModel):
+class TrainingEpochPayload(PayloadModel):
     train_metrics: dict[str, float]
     validation_metrics: dict[str, float]
     objective_metrics: dict[str, float]
@@ -221,7 +221,7 @@ class TrainingEpochPayload(CodecPayloadModel):
         )
 
 
-class EvaluationRunPayload(CodecPayloadModel):
+class EvaluationRunPayload(PayloadModel):
     n_events: int
     metrics: dict[str, float]
     metadata: dict[str, str | int | float]
@@ -242,7 +242,7 @@ class EvaluationRunPayload(CodecPayloadModel):
         )
 
 
-class WindowMetricSummaryPayload(CodecPayloadModel):
+class WindowMetricSummaryPayload(PayloadModel):
     mean: float
     std: float
 
@@ -257,7 +257,7 @@ class WindowMetricSummaryPayload(CodecPayloadModel):
         return WindowMetricSummary(mean=self.mean, std=self.std)
 
 
-class EvaluationExecutionProvenancePayload(CodecPayloadModel):
+class EvaluationExecutionProvenancePayload(PayloadModel):
     execution_ref: str
     job_id: str | None = None
     log_path: str | None = None
@@ -265,7 +265,7 @@ class EvaluationExecutionProvenancePayload(CodecPayloadModel):
     target: str | None = None
 
 
-class EvaluationSummaryPayload(CodecPayloadModel):
+class EvaluationSummaryPayload(PayloadModel):
     delay_seconds: int
     evaluation_id: str
     evaluation_config: dict[str, object]
@@ -330,52 +330,46 @@ class EvaluationSummaryPayload(CodecPayloadModel):
 
 
 def artifact_manifest_payload(manifest: TrainingArtifactManifest) -> dict[str, object]:
-    return cast(
-        dict[str, object],
-        ArtifactManifestPayload.from_manifest(manifest).model_dump(mode="json"),
-    )
+    return model_payload(ArtifactManifestPayload.from_manifest(manifest), label="artifact manifest")
 
 
 def artifact_manifest_from_payload(payload: dict[str, object]):
-    return decode_payload(
+    return decode_payload_model(
         "artifact manifest",
-        lambda: ArtifactManifestPayload.model_validate(payload, strict=True).to_manifest(),
+        ArtifactManifestPayload,
+        payload,
+        lambda model: model.to_manifest(),
     )
 
 
 def training_summary_payload(summary: TrainingRuntimeSummary) -> dict[str, object]:
-    return cast(
-        dict[str, object],
-        TrainingSummaryPayload.from_runtime(summary).model_dump(mode="json"),
-    )
+    return model_payload(TrainingSummaryPayload.from_runtime(summary), label="training summary")
 
 
 def training_summary_from_payload(payload: dict[str, object]):
-    return decode_payload(
+    return decode_payload_model(
         "training summary",
-        lambda: TrainingSummaryPayload.model_validate(payload, strict=True).to_runtime(),
+        TrainingSummaryPayload,
+        payload,
+        lambda model: model.to_runtime(),
     )
 
 
 def training_epoch_payload(record: TrainingEpochRecord) -> dict[str, object]:
-    return cast(
-        dict[str, object],
-        TrainingEpochPayload.from_record(record).model_dump(mode="json"),
-    )
+    return model_payload(TrainingEpochPayload.from_record(record), label="training epoch")
 
 
 def training_epoch_from_payload(payload: dict[str, object], *, epoch: int):
-    return decode_payload(
+    return decode_payload_model(
         "training epoch",
-        lambda: TrainingEpochPayload.model_validate(payload, strict=True).to_record(epoch=epoch),
+        TrainingEpochPayload,
+        payload,
+        lambda model: model.to_record(epoch=epoch),
     )
 
 
 def evaluation_summary_payload(summary: EvaluationRuntimeSummary) -> dict[str, object]:
-    return cast(
-        dict[str, object],
-        EvaluationSummaryPayload.from_runtime(summary).model_dump(mode="json"),
-    )
+    return model_payload(EvaluationSummaryPayload.from_runtime(summary), label="evaluation summary")
 
 
 def evaluation_summary_from_payload(
@@ -383,25 +377,24 @@ def evaluation_summary_from_payload(
     *,
     runs: list[EvaluationRun],
 ):
-    return decode_payload(
+    return decode_payload_model(
         "evaluation summary",
-        lambda: EvaluationSummaryPayload.model_validate(payload, strict=True).to_runtime(
-            runs=runs
-        ),
+        EvaluationSummaryPayload,
+        payload,
+        lambda model: model.to_runtime(runs=runs),
     )
 
 
 def evaluation_run_payload(run: EvaluationRun) -> dict[str, object]:
-    return cast(
-        dict[str, object],
-        EvaluationRunPayload.from_run(run).model_dump(mode="json"),
-    )
+    return model_payload(EvaluationRunPayload.from_run(run), label="evaluation run")
 
 
 def evaluation_run_from_payload(payload: dict[str, object]):
-    return decode_payload(
+    return decode_payload_model(
         "evaluation run",
-        lambda: EvaluationRunPayload.model_validate(payload, strict=True).to_run(),
+        EvaluationRunPayload,
+        payload,
+        lambda model: model.to_run(),
     )
 
 

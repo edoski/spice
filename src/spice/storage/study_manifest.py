@@ -294,7 +294,7 @@ def _decode_manifest(payload: dict[str, object]) -> StudyManifest:
             mapping_payload(definition["tuning"], label="study.definition.tuning")
         ),
         sampler_name=string_payload(payload["sampler_name"], label="sampler_name"),
-        sampler_seed=coerce_int(payload["sampler_seed"], label="sampler_seed"),
+        sampler_seed=int_payload(payload["sampler_seed"], label="sampler_seed"),
         pruner_name=string_payload(payload["pruner_name"], label="pruner_name"),
         enable_pruning=bool_payload(payload["enable_pruning"], label="enable_pruning"),
         tuning_space=coerce_study_tuning_space(
@@ -325,6 +325,3 @@ def coerce_study_tuning_space(
 def pruner_name(enable_pruning: bool) -> str:
     return "MedianPruner" if enable_pruning else "NopPruner"
 
-
-def coerce_int(value: object, *, label: str) -> int:
-    return int_payload(value, label=label)
