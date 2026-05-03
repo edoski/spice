@@ -23,6 +23,7 @@ from .metadata import (
     provider_metadata,
 )
 from .planning import (
+    CorpusAcquisitionSourceRequirements,
     CorpusCapabilityPlanningSpec,
     build_corpus_capability_planning_context,
 )
@@ -77,6 +78,12 @@ def _split_materialization_spec(config: AcquireConfig) -> CorpusSplitMaterializa
         expected_chain_id=config.chain.runtime.chain_id,
         chunk_size=config.acquisition.chunk_size,
     )
+
+
+def acquisition_source_requirements(
+    config: AcquireConfig,
+) -> CorpusAcquisitionSourceRequirements:
+    return build_corpus_capability_planning_context(_planning_spec(config)).source_requirements
 
 
 async def assemble_corpus(

@@ -8,7 +8,8 @@ from typing import cast
 import pytest
 
 from spice.acquisition import BlockPullPlan, BlockRange, TimestampRange
-from spice.config import AcquireConfig, WorkflowTask
+from spice.config import AcquireConfig, WorkflowTask, coerce_features_config
+from spice.config.registry import load_named_group_payload
 from spice.corpus.planning import (
     HISTORY_REFILL_ATTEMPT_LIMIT,
     CorpusCapabilityPlanningSpec,
@@ -119,6 +120,33 @@ def test_initial_capability_planning_computes_evaluation_and_history_windows(
         end=config.history_window_end_timestamp,
     )
     assert source.planned_windows == [evaluation_window, plan.history_plan.window]
+
+
+def test_capability_planning_derives_priority_fee_source_requirements(
+    tmp_path,
+    load_workflow_config,
+    acquire_override,
+) -> None:
+    config = _load_acquire_config(
+        load_workflow_config,
+        tmp_path,
+        override=acquire_override(),
+    )
+    priority_config = config.model_copy(
+        update={
+            "features": coerce_features_config(
+                load_named_group_payload("core_fee_dynamics_with_priority_fee", "features")
+            )
+        }
+    )
+
+    baseline_context = build_corpus_capability_planning_context(_planning_spec(config))
+    priority_context = build_corpus_capability_planning_context(
+        _planning_spec(priority_config)
+    )
+
+    assert baseline_context.source_requirements.include_priority_fees is False
+    assert priority_context.source_requirements.include_priority_fees is True
 
 
 def test_capability_planning_builds_refill_decision(

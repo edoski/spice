@@ -13,8 +13,7 @@ from spice.acquisition import (
     BlockRange,
     TimestampRange,
 )
-from spice.config import AcquireConfig, WorkflowTask, coerce_features_config
-from spice.config.registry import load_named_group_payload
+from spice.config import AcquireConfig, WorkflowTask
 from spice.core.reporting import Reporter
 from spice.storage.catalog.index import list_dataset_records
 from spice.storage.corpus import list_acquire_runs, load_dataset_manifest
@@ -63,28 +62,6 @@ def _plan_for_window(
     )
 
 
-def test_acquire_fetches_fee_history_only_for_priority_fee_features(
-    tmp_path,
-    load_workflow_config,
-    acquire_override,
-) -> None:
-    config = _load_test_acquire_config(
-        load_workflow_config,
-        tmp_path,
-        override=acquire_override(),
-    )
-    priority_config = config.model_copy(
-        update={
-            "features": coerce_features_config(
-                load_named_group_payload("core_fee_dynamics_with_priority_fee", "features")
-            )
-        }
-    )
-
-    assert acquire_workflow._requires_priority_fee_fetch(config) is False
-    assert acquire_workflow._requires_priority_fee_fetch(priority_config) is True
-
-
 def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     tmp_path,
     monkeypatch,
@@ -109,8 +86,9 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     history_windows: list[TimestampRange] = []
 
     class FakeAcquireClient:
-        def __init__(self, rpc_endpoint, chain) -> None:
+        def __init__(self, rpc_endpoint, chain, *, include_priority_fees=False) -> None:
             del rpc_endpoint
+            assert include_priority_fees is False
             self.chain = chain
             self._planned_windows: list[BlockPullPlan] = []
 
@@ -206,8 +184,8 @@ def test_acquire_cancellation_during_planning_logs_warning(
     reporter = Reporter(stream=output, error_stream=errors)
 
     class FakeAcquireClient:
-        def __init__(self, rpc_endpoint, chain) -> None:
-            del rpc_endpoint, chain
+        def __init__(self, rpc_endpoint, chain, *, include_priority_fees=False) -> None:
+            del rpc_endpoint, chain, include_priority_fees
 
         async def close(self) -> None:
             return None
@@ -291,8 +269,9 @@ def test_acquire_failure_preserves_staging_and_rerun_resumes(
     fail_history_tail = True
 
     class FakeAcquireClient:
-        def __init__(self, rpc_endpoint, chain) -> None:
+        def __init__(self, rpc_endpoint, chain, *, include_priority_fees=False) -> None:
             del rpc_endpoint
+            assert include_priority_fees is False
             self.chain = chain
 
         async def close(self) -> None:
@@ -369,8 +348,8 @@ def test_acquire_dry_run_emits_compact_output(
     reporter = Reporter(stream=output)
 
     class FakeAcquireClient:
-        def __init__(self, rpc_endpoint, chain) -> None:
-            del rpc_endpoint, chain
+        def __init__(self, rpc_endpoint, chain, *, include_priority_fees=False) -> None:
+            del rpc_endpoint, chain, include_priority_fees
 
         async def close(self) -> None:
             return None

@@ -27,12 +27,12 @@ Workflows receive typed configs. They do not resolve remote target defaults. The
 AcquireConfig
   -> derive produced corpus root
   -> report acquisition plan
-  -> create block source
+  -> create block source with corpus-derived source requirements
   -> delegate corpus assembly
   -> close block source
 ```
 
-Acquire is deliberately thin. Corpus Assembly owns capability planning, bounded refill attempts, split materialization, state writing, and commit/reindex mechanics.
+Acquire is deliberately thin. Corpus Assembly owns capability planning, source requirements, bounded refill attempts, split materialization, state writing, and commit/reindex mechanics.
 
 ## Train
 

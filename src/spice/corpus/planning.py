@@ -16,6 +16,14 @@ from .validation import BlockDatasetValidationReport
 HISTORY_WINDOW_CUSHION_RATIO = 0.10
 HISTORY_REFILL_CUSHION_RATIO = 0.10
 HISTORY_REFILL_ATTEMPT_LIMIT = 3
+PRIORITY_FEE_SOURCE_COLUMNS = frozenset(
+    {
+        "priority_fee_p10",
+        "priority_fee_p50",
+        "priority_fee_p90",
+        "priority_fee_spread",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +51,11 @@ class CorpusHistoryRefillPlan:
 
 
 @dataclass(frozen=True, slots=True)
+class CorpusAcquisitionSourceRequirements:
+    include_priority_fees: bool
+
+
+@dataclass(frozen=True, slots=True)
 class CorpusCapabilityPlanningContext:
     spec: CorpusCapabilityPlanningSpec
     feature_contract: CompiledFeatureContract
@@ -51,6 +64,16 @@ class CorpusCapabilityPlanningContext:
     @property
     def required_sample_count(self) -> int:
         return self.problem_contract.sample_count
+
+    @property
+    def source_requirements(self) -> CorpusAcquisitionSourceRequirements:
+        return CorpusAcquisitionSourceRequirements(
+            include_priority_fees=bool(
+                PRIORITY_FEE_SOURCE_COLUMNS.intersection(
+                    self.feature_contract.required_source_columns
+                )
+            )
+        )
 
     async def initial_plan(self, block_source: BlockSource) -> InitialCorpusCapabilityPlan:
         evaluation_window = evaluation_range(

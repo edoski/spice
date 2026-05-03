@@ -156,6 +156,10 @@ _Avoid_: staging helper, acquire workflow body
 Corpus policy that compiles feature/problem capability requirements, plans acquisition windows, counts valid temporal capability samples, and decides bounded history refills.
 _Avoid_: history helper, acquisition scheduler
 
+**Corpus Acquisition Source Requirements**:
+Corpus-owned policy facts derived from feature/problem capability planning that tell concrete acquisition adapters which optional raw source fields are required for a corpus pull.
+_Avoid_: workflow feature-source switch, provider policy
+
 **Corpus Split Materialization**:
 Corpus module that fulfills Split Intents through a materialization session, reusing, extending, rebuilding, and validating canonical history/evaluation block datasets. It owns internal materialization policy, staged/committed fact collection, target matching, pull execution, parquet IO, and validation. Extension reuses whole clean parquet chunks and rewrites only missing or edge ranges.
 _Avoid_: parquet helper, acquisition pull
