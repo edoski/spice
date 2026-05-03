@@ -95,6 +95,7 @@ class RepresentationRuntimeContext:
     device_storage_budget: DeviceStorageBudget = field(
         default_factory=DeviceStorageBudget.disabled
     )
+    host_loader_policy: Literal["automatic", "single_process_unpinned"] = "automatic"
 
     def with_device_storage_budget(
         self,
@@ -104,6 +105,18 @@ class RepresentationRuntimeContext:
             batch_size=self.batch_size,
             available_host_memory_bytes=self.available_host_memory_bytes,
             device_storage_budget=device_storage_budget,
+            host_loader_policy=self.host_loader_policy,
+        )
+
+    def with_host_loader_policy(
+        self,
+        host_loader_policy: Literal["automatic", "single_process_unpinned"],
+    ) -> RepresentationRuntimeContext:
+        return RepresentationRuntimeContext(
+            batch_size=self.batch_size,
+            available_host_memory_bytes=self.available_host_memory_bytes,
+            device_storage_budget=self.device_storage_budget,
+            host_loader_policy=host_loader_policy,
         )
 
 

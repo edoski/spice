@@ -21,7 +21,9 @@ WarmupPlanT = TypeVar("WarmupPlanT")
 def host_warmup_context(
     runtime_context: RepresentationRuntimeContext,
 ) -> RepresentationRuntimeContext:
-    return runtime_context.with_device_storage_budget(DeviceStorageBudget.disabled())
+    return runtime_context.with_device_storage_budget(
+        DeviceStorageBudget.disabled()
+    ).with_host_loader_policy("single_process_unpinned")
 
 
 def measured_runtime_context(

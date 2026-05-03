@@ -349,6 +349,7 @@ def _build_batch_source(
         _build_host_dataloader_source(
             prepared,
             batch_sampler=batch_sampler,
+            runtime_context=runtime_context,
             resolved_device=resolved_device,
         ),
         _host_storage_mode(prepared),
@@ -363,9 +364,10 @@ def _build_host_dataloader_source(
     prepared: PreparedBatchRepresentation[BatchT],
     *,
     batch_sampler: _PositionBatchSampler,
+    runtime_context: RepresentationRuntimeContext,
     resolved_device: torch.device,
 ) -> _HostDataLoaderBatchSource[BatchT]:
-    worker_settings = _resolve_host_loader_worker_settings()
+    worker_settings = _resolve_host_loader_worker_settings(runtime_context)
     loader = DataLoader(
         _SamplePositionDataset(prepared.sample_count),
         batch_sampler=batch_sampler,
@@ -373,7 +375,7 @@ def _build_host_dataloader_source(
         num_workers=worker_settings.num_workers,
         persistent_workers=worker_settings.persistent_workers,
         prefetch_factor=worker_settings.prefetch_factor,
-        pin_memory=_should_pin_host_memory(resolved_device),
+        pin_memory=_should_pin_host_memory(runtime_context, resolved_device),
     )
     return _HostDataLoaderBatchSource(
         loader=cast(DataLoader[BatchT], loader),
@@ -381,7 +383,12 @@ def _build_host_dataloader_source(
     )
 
 
-def _resolve_host_loader_worker_settings() -> _HostLoaderWorkerSettings:
+def _resolve_host_loader_worker_settings(
+    runtime_context: RepresentationRuntimeContext,
+) -> _HostLoaderWorkerSettings:
+    if runtime_context.host_loader_policy == "single_process_unpinned":
+        return _build_host_loader_worker_settings(num_workers=0)
+
     requested_workers = os.environ.get("SPICE_DATALOADER_WORKERS")
     if requested_workers is not None:
         return _build_host_loader_worker_settings(
@@ -431,7 +438,12 @@ def _build_host_loader_worker_settings(*, num_workers: int) -> _HostLoaderWorker
     )
 
 
-def _should_pin_host_memory(resolved_device: torch.device) -> bool:
+def _should_pin_host_memory(
+    runtime_context: RepresentationRuntimeContext,
+    resolved_device: torch.device,
+) -> bool:
+    if runtime_context.host_loader_policy == "single_process_unpinned":
+        return False
     return resolved_device.type == "cuda" and torch.cuda.is_available()
 
 

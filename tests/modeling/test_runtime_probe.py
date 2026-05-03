@@ -44,6 +44,10 @@ def test_measured_runtime_context_uses_host_warmup_then_measured_budget() -> Non
     assert host_warmup_context(runtime_context).device_storage_budget == (
         DeviceStorageBudget.disabled()
     )
+    assert (
+        host_warmup_context(runtime_context).host_loader_policy
+        == "single_process_unpinned"
+    )
     assert seen_budgets == [DeviceStorageBudget.disabled()]
     assert planned_context.device_storage_budget == DeviceStorageBudget.measured(123)
 

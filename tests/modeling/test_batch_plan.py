@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -100,12 +101,15 @@ class _PredictionContract:
 
 
 def _runtime_context(
-    *, device_storage_budget: DeviceStorageBudget | None = None
+    *,
+    device_storage_budget: DeviceStorageBudget | None = None,
+    host_loader_policy: Literal["automatic", "single_process_unpinned"] = "automatic",
 ) -> RepresentationRuntimeContext:
     return RepresentationRuntimeContext(
         batch_size=2,
         available_host_memory_bytes=1024,
         device_storage_budget=device_storage_budget or DeviceStorageBudget.disabled(),
+        host_loader_policy=host_loader_policy,
     )
 
 
@@ -122,6 +126,52 @@ def test_host_loader_worker_override_rejects_invalid_values(monkeypatch) -> None
             resolved_device=torch.device("cpu"),
             seed=2026,
         )
+
+
+def test_single_process_unpinned_loader_policy_disables_workers_and_pin_memory(
+    monkeypatch,
+) -> None:
+    captured_kwargs = []
+
+    class FakeDataLoader:
+        @classmethod
+        def __class_getitem__(cls, _item):
+            return cls
+
+        def __init__(self, _dataset, **kwargs) -> None:
+            captured_kwargs.append(kwargs)
+            self._batch_sampler = kwargs["batch_sampler"]
+            self._collate_fn = kwargs["collate_fn"]
+
+        def __iter__(self):
+            for sample_positions in self._batch_sampler:
+                yield self._collate_fn(sample_positions)
+
+    monkeypatch.setenv("SPICE_DATALOADER_WORKERS", "8")
+    monkeypatch.setattr("spice.modeling.batch_plan.DataLoader", FakeDataLoader)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+
+    plan = build_model_input_batch_plan(
+        _Store(),
+        np.arange(4, dtype=np.int64),
+        representation_contract=_RepresentationContract(_Prepared()),
+        execution_policy=_ExecutionPolicy(),
+        runtime_context=_runtime_context(host_loader_policy="single_process_unpinned"),
+        resolved_device=torch.device("cuda"),
+        seed=2026,
+    )
+
+    assert next(iter(plan.source)).sample_positions.tolist() == [1, 3]
+    assert captured_kwargs == [
+        {
+            "batch_sampler": captured_kwargs[0]["batch_sampler"],
+            "collate_fn": captured_kwargs[0]["collate_fn"],
+            "num_workers": 0,
+            "persistent_workers": False,
+            "prefetch_factor": None,
+            "pin_memory": False,
+        }
+    ]
 
 
 def test_batch_plan_orders_samples_deterministically_by_signature() -> None:
