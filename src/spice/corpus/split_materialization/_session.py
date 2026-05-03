@@ -28,6 +28,7 @@ from ..validation import (
     validate_exact_window_frame,
 )
 from ._policy import (
+    SplitDatasetCandidate,
     SplitDatasetFacts,
     SplitMaterializationAction,
     SplitMaterializationDecision,
@@ -234,13 +235,17 @@ def staged_result(
     )
 
 
-def split_facts(existing: ExistingDatasetState | None):
+def split_candidate(existing: ExistingDatasetState | None) -> SplitDatasetCandidate | None:
     if existing is None:
         return None
-    return SplitDatasetFacts(
-        status=existing.validation.status,
-        first_block_number=existing.validation.first_block_number,
-        last_block_number=existing.validation.last_block_number,
+    return SplitDatasetCandidate(
+        path=existing.path,
+        validation=existing.validation,
+        facts=SplitDatasetFacts(
+            status=existing.validation.status,
+            first_block_number=existing.validation.first_block_number,
+            last_block_number=existing.validation.last_block_number,
+        ),
     )
 
 
@@ -563,43 +568,12 @@ async def pull_decision_range_to_dir(
     )
 
 
-def staged_matches_target(
-    staged: ExistingDatasetState | None,
-    validate_result: ValidationCallback,
-) -> bool:
-    if staged is None or staged.validation.status != "clean":
-        return False
-    staged_validation = staged.validation.model_copy(deep=True)
-    try:
-        validate_result(staged_validation, staged.path)
-    except ValueError:
-        return False
-    return True
-
-
-def existing_matches_target(
-    existing: ExistingDatasetState | None,
-    validate_result: ValidationCallback,
-) -> bool:
-    if existing is None or existing.validation.status != "clean":
-        return False
-    validation = existing.validation.model_copy(deep=True)
-    try:
-        validate_result(validation, existing.path)
-    except ValueError:
-        return False
-    return True
-
-
 def reusable_range_matches_target_window(
-    existing: ExistingDatasetState | None,
-    *,
-    block_range: BlockRange | None,
+    candidate: SplitDatasetCandidate,
+    block_range: BlockRange,
     window: TimestampRange,
 ) -> bool:
-    if existing is None or block_range is None:
-        return False
-    frame = filter_block_range(load_block_frame(existing.path), block_range)
+    frame = filter_block_range(load_block_frame(candidate.path), block_range)
     if frame.height == 0:
         return False
     timestamps: list[int] = []
@@ -649,9 +623,9 @@ async def _ensure_history_split(
             block_range=history_plan.block_range,
             window=history_plan.window,
         ),
-        existing=split_facts(existing),
-        staged=split_facts(staged),
-        staged_matches_target=staged_matches_target(staged, validate_result),
+        existing=split_candidate(existing),
+        staged=split_candidate(staged),
+        validate_target=validate_result,
     )
 
     if decision.action is SplitMaterializationAction.REJECT_INVALID_STAGED:
@@ -662,21 +636,22 @@ async def _ensure_history_split(
     if decision.action is SplitMaterializationAction.REUSE_STAGED:
         if staged is None:
             raise RuntimeError("history staged reuse decision requires staged dataset")
-        staged_validation = staged.validation.model_copy(deep=True)
-        validate_result(staged_validation, staged.path)
+        if decision.target_validation is None:
+            raise RuntimeError("history staged reuse decision requires target validation")
         emit(decision.status_message)
         return staged_result(
             staged,
-            validation=staged_validation,
+            validation=decision.target_validation,
             outcome=split_outcome(decision.outcome),
         )
 
     if decision.action is SplitMaterializationAction.REUSE_COMMITTED:
         if existing is None:
             raise RuntimeError("history committed reuse decision requires existing dataset")
+        if decision.target_validation is None:
+            raise RuntimeError("history committed reuse decision requires target validation")
         emit(decision.status_message)
-        validate_history_result(existing.validation, history_plan=history_plan)
-        return reused_result(existing)
+        return reused_result(existing, validation=decision.target_validation)
 
     if decision.action is SplitMaterializationAction.EXTEND_COMMITTED:
         if existing is None:
@@ -754,15 +729,10 @@ async def _ensure_evaluation_split(
             block_range=evaluation_plan.block_range,
             window=evaluation_plan.window,
         ),
-        existing=split_facts(existing),
-        staged=split_facts(staged),
-        staged_matches_target=staged_matches_target(staged, validate_result),
-        existing_matches_target=existing_matches_target(existing, validate_result),
-        existing_reusable_range_matches_target_window=reusable_range_matches_target_window(
-            existing,
-            block_range=evaluation_plan.block_range,
-            window=evaluation_plan.window,
-        ),
+        existing=split_candidate(existing),
+        staged=split_candidate(staged),
+        validate_target=validate_result,
+        reusable_range_matches_target_window=reusable_range_matches_target_window,
     )
 
     if decision.action is SplitMaterializationAction.REJECT_INVALID_STAGED:
@@ -773,22 +743,22 @@ async def _ensure_evaluation_split(
     if decision.action is SplitMaterializationAction.REUSE_STAGED:
         if staged is None:
             raise RuntimeError("evaluation staged reuse decision requires staged dataset")
-        staged_validation = staged.validation.model_copy(deep=True)
-        validate_result(staged_validation, staged.path)
+        if decision.target_validation is None:
+            raise RuntimeError("evaluation staged reuse decision requires target validation")
         emit(decision.status_message)
         return staged_result(
             staged,
-            validation=staged_validation,
+            validation=decision.target_validation,
             outcome=split_outcome(decision.outcome),
         )
 
     if decision.action is SplitMaterializationAction.REUSE_COMMITTED:
         if existing is None:
             raise RuntimeError("evaluation committed reuse decision requires existing dataset")
-        validation = existing.validation.model_copy(deep=True)
+        if decision.target_validation is None:
+            raise RuntimeError("evaluation committed reuse decision requires target validation")
         emit(decision.status_message)
-        validate_result(validation, existing.path)
-        return reused_result(existing, validation=validation)
+        return reused_result(existing, validation=decision.target_validation)
 
     if decision.action is SplitMaterializationAction.EXTEND_COMMITTED:
         if existing is None:

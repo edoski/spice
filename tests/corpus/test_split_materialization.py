@@ -188,6 +188,36 @@ def test_history_split_materialization_reuses_matching_staged_dataset(tmp_path) 
     assert source.requests == []
 
 
+def test_history_split_materialization_ignores_stale_clean_staged_dataset(tmp_path) -> None:
+    _write_block_dataset_dir(
+        tmp_path / "work" / "history",
+        start_block=100,
+        row_count=2,
+        start_timestamp=1_000,
+    )
+    source = _RangeSource()
+    plan = _plan_for_window(
+        TimestampRange(start=1_000, end=1_048),
+        start_block=100,
+        expected_rows=4,
+    )
+
+    result = asyncio.run(
+        _session(source).fulfill(
+            CorpusSplitIntent(
+                kind=CorpusSplitKind.HISTORY,
+                output_dir=tmp_path / "history",
+                working_dir=tmp_path / "work",
+                plan=plan,
+            )
+        )
+    )
+
+    assert result.outcome is CorpusSplitOutcome.CREATED
+    assert source.requests == [(100, 102), (102, 104)]
+    assert load_block_frame(result.path)["block_number"].to_list() == [100, 101, 102, 103]
+
+
 def test_history_split_materialization_rejects_invalid_staged_dataset(tmp_path) -> None:
     _write_block_dataset_dir(
         tmp_path / "work" / "history",
@@ -344,6 +374,43 @@ def test_evaluation_split_materialization_extends_overlap(tmp_path) -> None:
         "ethereum__blocks__104_to_104.parquet",
     ]
     assert load_block_frame(result.path)["block_number"].to_list() == [101, 102, 103, 104]
+
+
+def test_evaluation_split_materialization_rebuilds_overlap_outside_window(
+    tmp_path,
+) -> None:
+    _write_block_dataset_dir(
+        tmp_path / "evaluation",
+        start_block=100,
+        row_count=4,
+        start_timestamp=0,
+    )
+    source = _RangeSource()
+    plan = BlockPullPlan(
+        window=TimestampRange(start=1_012, end=1_060),
+        block_range=BlockRange(start=101, end=105),
+        expected_rows=4,
+    )
+
+    result = asyncio.run(
+        _session(source).fulfill(
+            CorpusSplitIntent(
+                kind=CorpusSplitKind.EVALUATION,
+                output_dir=tmp_path / "evaluation",
+                working_dir=tmp_path / "work",
+                plan=plan,
+            )
+        )
+    )
+
+    assert result.outcome is CorpusSplitOutcome.REBUILT
+    assert source.requests == [(101, 103), (103, 105)]
+    assert load_block_frame(result.path)["timestamp"].to_list() == [
+        1_012,
+        1_024,
+        1_036,
+        1_048,
+    ]
 
 
 def test_evaluation_split_materialization_rebuilds_stale_exact_range(tmp_path) -> None:
