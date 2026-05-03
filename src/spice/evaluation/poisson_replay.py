@@ -2,21 +2,66 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
+from numpy.typing import NDArray
 
 from ..core.errors import SpiceOperatorError
 from ..temporal.problem_store import CompiledProblemStore
 from .config import PoissonReplayEvaluatorConfig
 from .contracts import CompiledEvaluatorContract, IntVector
-from .sampling import (
-    chronological_sample_view,
-    sample_poisson_arrivals,
-    select_sample_positions_for_arrivals,
-)
 from .temporal_replay_runner import (
     TemporalReplaySelection,
     compile_temporal_replay_evaluator_contract,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _ChronologicalSampleView:
+    sample_positions: IntVector
+    sample_timestamps: IntVector
+
+
+def _sample_poisson_arrivals(
+    rng: np.random.Generator,
+    *,
+    rate_per_second: float,
+    start_timestamp: float,
+    end_timestamp: float,
+) -> NDArray[np.float64]:
+    if rate_per_second <= 0:
+        raise ValueError("rate_per_second must be positive")
+    arrivals: list[float] = []
+    cursor = start_timestamp
+    while cursor < end_timestamp:
+        cursor += rng.exponential(1.0 / rate_per_second)
+        if cursor < end_timestamp:
+            arrivals.append(cursor)
+    return np.asarray(arrivals, dtype=np.float64)
+
+
+def _chronological_sample_view(
+    store: CompiledProblemStore,
+    sample_indices: IntVector,
+) -> _ChronologicalSampleView:
+    resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
+    sample_timestamps = store.sample_timestamps(resolved_sample_indices)
+    order = np.argsort(sample_timestamps, kind="stable").astype(np.int64, copy=False)
+    return _ChronologicalSampleView(
+        sample_positions=order,
+        sample_timestamps=sample_timestamps[order],
+    )
+
+
+def _select_sample_positions_for_arrivals(
+    sample_timestamps: NDArray[np.int64],
+    arrivals: NDArray[np.float64],
+) -> NDArray[np.int64]:
+    if arrivals.size == 0:
+        return np.empty(0, dtype=np.int64)
+    selected_positions = np.searchsorted(sample_timestamps, arrivals, side="right") - 1
+    return selected_positions[selected_positions >= 0].astype(np.int64, copy=False)
 
 
 class PoissonReplayAdapter:
@@ -28,7 +73,7 @@ class PoissonReplayAdapter:
         store: CompiledProblemStore,
         sample_indices: IntVector,
     ) -> list[TemporalReplaySelection]:
-        chronological_samples = chronological_sample_view(store, sample_indices)
+        chronological_samples = _chronological_sample_view(store, sample_indices)
         first_timestamp = int(chronological_samples.sample_timestamps[0])
         last_timestamp = int(chronological_samples.sample_timestamps[-1])
         latest_start = last_timestamp - self.config.window_seconds
@@ -40,14 +85,14 @@ class PoissonReplayAdapter:
         for _ in range(self.config.repetitions):
             window_start = float(rng.uniform(first_timestamp, latest_start))
             window_end = window_start + self.config.window_seconds
-            arrivals = sample_poisson_arrivals(
+            arrivals = _sample_poisson_arrivals(
                 rng,
                 rate_per_second=self.config.arrival_rate_per_second,
                 start_timestamp=window_start,
                 end_timestamp=window_end,
             )
             selected_positions = chronological_samples.sample_positions[
-                select_sample_positions_for_arrivals(
+                _select_sample_positions_for_arrivals(
                     chronological_samples.sample_timestamps,
                     arrivals,
                 )

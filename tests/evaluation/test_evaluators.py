@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pytest
 import torch
@@ -10,14 +12,11 @@ from spice.evaluation import (
     EvaluationRun,
     EvaluationSummary,
     EvaluatorConfig,
+    PoissonReplayEvaluatorConfig,
     coerce_evaluator_config,
     compile_evaluator_contract,
 )
-from spice.evaluation.sampling import (
-    chronological_sample_view,
-    sample_poisson_arrivals,
-    select_sample_positions_for_arrivals,
-)
+from spice.evaluation.poisson_replay import PoissonReplayAdapter
 from spice.metrics import MetricDescriptor, MetricSet
 from spice.prediction.decoded_offsets import OFFSET_DECODED_RESULT_ID, DecodedOffsets
 from spice.temporal import (
@@ -164,23 +163,44 @@ def test_evaluator_rejects_incompatible_decoded_result_semantics() -> None:
         )
 
 
-def test_poisson_arrival_sampling_selects_previous_chronological_sample() -> None:
-    rng = np.random.default_rng(7)
-
-    arrivals = sample_poisson_arrivals(
-        rng,
-        rate_per_second=0.01,
-        start_timestamp=100.0,
-        end_timestamp=500.0,
+def test_poisson_replay_maps_arrivals_to_previous_chronological_sample(
+    monkeypatch,
+) -> None:
+    store = CompiledProblemStore(
+        feature_matrix=np.zeros((5, 1), dtype=np.float32),
+        log_base_fees=np.log(np.array([100, 95, 90, 80, 75], dtype=np.float32)).astype(
+            np.float32,
+            copy=False,
+        ),
+        timestamps=np.array([0, 100, 200, 300, 400], dtype=np.int64),
+        anchor_rows=np.array([1, 2, 4], dtype=np.int64),
+        context_start_rows=np.array([0, 1, 3], dtype=np.int64),
+        candidate_start_rows=np.array([2, 3, 4], dtype=np.int64),
+        candidate_end_rows=np.array([3, 4, 5], dtype=np.int64),
+        max_candidate_slots=1,
+    )
+    config = cast(
+        PoissonReplayEvaluatorConfig,
+        coerce_evaluator_config(
+            {
+                **_poisson_config(),
+                "window_seconds": 300,
+                "repetitions": 1,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "spice.evaluation.poisson_replay._sample_poisson_arrivals",
+        lambda *_args, **_kwargs: np.array([50.0, 100.0, 199.9, 200.0, 399.9]),
     )
 
-    assert arrivals.size > 0
-    assert np.all(arrivals >= 100.0)
-    assert np.all(arrivals < 500.0)
-    assert select_sample_positions_for_arrivals(
-        np.array([100, 200, 400], dtype=np.int64),
-        np.array([50.0, 100.0, 199.9, 200.0, 450.0]),
-    ).tolist() == [0, 0, 1, 2]
+    selections = PoissonReplayAdapter(config).selections(
+        store,
+        np.array([2, 0, 1], dtype=np.int64),
+    )
+
+    assert len(selections) == 1
+    assert selections[0].selected_positions.tolist() == [1, 1, 2, 2]
 
 
 def test_poisson_replay_uses_event_mean_economic_metrics() -> None:
@@ -292,7 +312,7 @@ def test_poisson_replay_rejects_all_empty_arrival_repetitions(monkeypatch) -> No
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     evaluator = compile_evaluator_contract(coerce_evaluator_config(_poisson_config()))
     monkeypatch.setattr(
-        "spice.evaluation.poisson_replay.sample_poisson_arrivals",
+        "spice.evaluation.poisson_replay._sample_poisson_arrivals",
         lambda *_args, **_kwargs: np.empty(0, dtype=np.float64),
     )
 
@@ -311,7 +331,7 @@ def _expected_poisson_metrics(
     sample_indices: np.ndarray,
 ) -> dict[str, float | int]:
     config = _poisson_config()
-    chronological_samples = chronological_sample_view(store, sample_indices)
+    chronological_samples = _expected_chronological_samples(store, sample_indices)
     first_timestamp = int(chronological_samples.sample_timestamps[0])
     last_timestamp = int(chronological_samples.sample_timestamps[-1])
     latest_start = last_timestamp - int(config["window_seconds"])
@@ -328,14 +348,14 @@ def _expected_poisson_metrics(
 
     for _ in range(int(config["repetitions"])):
         window_start = float(rng.uniform(first_timestamp, latest_start))
-        arrivals = sample_poisson_arrivals(
+        arrivals = _expected_poisson_arrivals(
             rng,
             rate_per_second=float(config["arrival_rate_per_second"]),
             start_timestamp=window_start,
             end_timestamp=window_start + int(config["window_seconds"]),
         )
         selected_positions = chronological_samples.sample_positions[
-            select_sample_positions_for_arrivals(
+            _expected_positions_for_arrivals(
                 chronological_samples.sample_timestamps,
                 arrivals,
             )
@@ -373,6 +393,60 @@ def _expected_poisson_metrics(
         "optimum_fee_sum": optimum_fee_sum,
         "total_events": total_events,
     }
+
+
+class _ExpectedChronologicalSamples:
+    def __init__(self, sample_positions: np.ndarray, sample_timestamps: np.ndarray) -> None:
+        self.sample_positions = sample_positions
+        self.sample_timestamps = sample_timestamps
+
+
+def _expected_chronological_samples(
+    store: CompiledProblemStore,
+    sample_indices: np.ndarray,
+) -> _ExpectedChronologicalSamples:
+    sample_timestamps = store.sample_timestamps(sample_indices)
+    ordered_positions = sorted(
+        range(sample_timestamps.shape[0]),
+        key=lambda position: (int(sample_timestamps[position]), position),
+    )
+    order = np.asarray(ordered_positions, dtype=np.int64)
+    return _ExpectedChronologicalSamples(
+        sample_positions=order,
+        sample_timestamps=sample_timestamps[order],
+    )
+
+
+def _expected_poisson_arrivals(
+    rng: np.random.Generator,
+    *,
+    rate_per_second: float,
+    start_timestamp: float,
+    end_timestamp: float,
+) -> np.ndarray:
+    arrivals: list[float] = []
+    cursor = start_timestamp
+    while cursor < end_timestamp:
+        cursor += rng.exponential(1.0 / rate_per_second)
+        if cursor < end_timestamp:
+            arrivals.append(cursor)
+    return np.asarray(arrivals, dtype=np.float64)
+
+
+def _expected_positions_for_arrivals(
+    sample_timestamps: np.ndarray,
+    arrivals: np.ndarray,
+) -> np.ndarray:
+    positions = []
+    for arrival in arrivals:
+        previous_positions = [
+            position
+            for position, timestamp in enumerate(sample_timestamps.tolist())
+            if timestamp <= arrival
+        ]
+        if previous_positions:
+            positions.append(previous_positions[-1])
+    return np.asarray(positions, dtype=np.int64)
 
 
 def _expected_selected_metrics(

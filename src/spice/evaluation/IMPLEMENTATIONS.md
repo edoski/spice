@@ -65,7 +65,7 @@ Shared metrics include:
 
 ## Poisson Replay
 
-`poisson_replay_2h` simulates randomly timed transaction opportunities. Each repetition picks a uniform replay window, samples exponential inter-arrival times, maps each arrival to the latest sample at or before that timestamp, then uses Temporal Accounting.
+`poisson_replay_2h` simulates randomly timed transaction opportunities. Its adapter owns replay windows, exponential inter-arrival sampling, and arrival-to-sample mapping. Each repetition picks a uniform replay window, maps each arrival to the latest sample at or before that timestamp, then uses Temporal Accounting.
 
 ```text
 arrivals
