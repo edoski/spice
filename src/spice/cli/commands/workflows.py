@@ -54,7 +54,7 @@ def _submit_selected_workflow(
             ]
         )
     )
-    if detach or not submission.target.spec.follow_by_default:
+    if detach or not session.follow_by_default:
         return
     try:
         state = session.follow_job(submission)

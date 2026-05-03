@@ -60,6 +60,7 @@ remote train/tune/evaluate:
   may use --target, --dependency, --detach
   do not expose --submit or --storage-root
   remote storage comes from the execution target spec
+  follow logs when ExecutionSession.follow_by_default allows it unless --detach is set
 ```
 
 This matches the CUDA operating model: corpora are acquired locally and pushed, while train, tune, and evaluate execute on the cluster.

@@ -187,7 +187,6 @@ def test_execution_session_follow_job_uses_quoted_tail_command(
     )
     submission = ExecutionJobSubmission(
         task=WorkflowTask.TRAIN,
-        target=session.target,
         job_id="12345",
         log_path=tmp_path / "spice-train-12345.out",
     )

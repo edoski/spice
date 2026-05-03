@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
 
 import yaml
 from typer.testing import CliRunner
@@ -216,7 +215,6 @@ def test_benchmark_submit_uses_persisted_plan(
             calls.append((task.value, "disi_l40", dependency))
             return ExecutionJobSubmission(
                 task=task,
-                target=cast(Any, self.target),
                 job_id=job_id,
                 log_path=Path(f"/tmp/spice-{task.value}-{job_id}.out"),
             )

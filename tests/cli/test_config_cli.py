@@ -3,7 +3,7 @@ from __future__ import annotations
 import stat
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 import pytest
 import yaml
@@ -95,7 +95,7 @@ def test_model_workflow_cli_resolves_and_submits_selection_surface(
     captured: dict[str, object] = {}
 
     class FakeSession:
-        target = SimpleNamespace(spec=SimpleNamespace(follow_by_default=False))
+        follow_by_default = False
 
         def submit_workflow(self, task, *, config, dependency):
             del dependency
@@ -103,7 +103,6 @@ def test_model_workflow_cli_resolves_and_submits_selection_surface(
             captured["config"] = config
             return ExecutionJobSubmission(
                 task=task,
-                target=cast(Any, self.target),
                 job_id="12345",
                 log_path=Path("/tmp/spice-job.out"),
             )
@@ -206,14 +205,13 @@ def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     class FakeSession:
-        target = SimpleNamespace(spec=SimpleNamespace(follow_by_default=False))
+        follow_by_default = False
 
         def submit_workflow(self, task, *, config, dependency):
             del config, dependency
             captured["task"] = task
             return ExecutionJobSubmission(
                 task=task,
-                target=cast(Any, self.target),
                 job_id="12345",
                 log_path=Path("/tmp/spice-train-12345.out"),
             )
@@ -271,7 +269,7 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
         )
 
     class FakeSession:
-        target = SimpleNamespace(spec=SimpleNamespace(follow_by_default=False))
+        follow_by_default = False
 
         def submit_workflow(
             self,
@@ -283,7 +281,6 @@ def test_train_submit_cli_preflights_and_routes_to_execution_backend(
             events.append(("submit", (task, config, "disi_l40", dependency)))
             return ExecutionJobSubmission(
                 task=task,
-                target=cast(Any, self.target),
                 job_id="12345",
                 log_path=Path("/remote/logs/spice-train-12345.out"),
             )
@@ -335,7 +332,7 @@ def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:
         return TrainConfig.model_construct(workflow=WorkflowTask.TRAIN)
 
     class FakeSession:
-        target = SimpleNamespace(spec=SimpleNamespace(follow_by_default=True))
+        follow_by_default = True
 
         def submit_workflow(
             self,
@@ -347,7 +344,6 @@ def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:
             del config, dependency
             return ExecutionJobSubmission(
                 task=task,
-                target=cast(Any, self.target),
                 job_id="12345",
                 log_path=Path("/remote/logs/spice-train-12345.out"),
             )

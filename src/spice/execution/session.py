@@ -50,7 +50,6 @@ class ExecutionTarget:
 @dataclass(frozen=True, slots=True)
 class ExecutionJobSubmission:
     task: WorkflowTask
-    target: ExecutionTarget
     job_id: str
     log_path: Path
 
@@ -81,6 +80,10 @@ def _ensure_execution_success(
 @dataclass(frozen=True, slots=True)
 class ExecutionSession:
     target: ExecutionTarget
+
+    @property
+    def follow_by_default(self) -> bool:
+        return self.target.spec.follow_by_default
 
     def build_shell_argv(self, command: str) -> list[str]:
         return [
@@ -192,7 +195,6 @@ class ExecutionSession:
         job_id = match.group("job_id")
         return ExecutionJobSubmission(
             task=task,
-            target=self.target,
             job_id=job_id,
             log_path=Path(str(log_path_template).replace("%j", job_id)),
         )
