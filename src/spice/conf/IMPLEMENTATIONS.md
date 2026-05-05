@@ -69,7 +69,7 @@ Evaluators: `poisson_replay_2h` and `full_temporal_replay`. The default surface 
 
 Benchmarks: `priority_fee_ablation`, `unsafe_core_fee_dynamics_ablation`, `safe_baseline_grid`, `large_capacity_hpo`, `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, `delay_degradation_sweep`, and `evaluator_objective_grid`.
 
-`safe_baseline_grid` is the untuned ETH/POL/AVAX by LSTM/Transformer/Transformer-LSTM baseline. `large_capacity_hpo` is the bounded calibration search: the same 3x3 grid, large-capacity spaces, and 40 trials per cell. `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, and `delay_degradation_sweep` are fixed train/evaluate grids, not per-cell HPO grids. `delay_degradation_sweep` trains one artifact per `max_delay_seconds` value and evaluates with the artifact capability delay unless an evaluate step sets `delay_seconds`. Sample-count sweeps are deferred because larger history windows need explicit date-range and protocol-regime checks.
+`safe_baseline_grid` is the untuned ETH/POL/AVAX by LSTM/Transformer/Transformer-LSTM baseline. `large_capacity_hpo` is the bounded calibration search: the same 3x3 grid, conservative large-capacity spaces, and 32 trials per cell. `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, and `delay_degradation_sweep` are fixed train/evaluate grids, not per-cell HPO grids. `delay_degradation_sweep` trains one artifact per `max_delay_seconds` value and evaluates with the artifact capability delay unless an evaluate step sets `delay_seconds`. Sample-count sweeps are deferred because larger history windows need explicit date-range and protocol-regime checks.
 
 ## Invariants
 

@@ -29,7 +29,7 @@ cases:
         set:
           objective: profit_poisson_replay_2h
           evaluation: poisson_replay_2h
-          trial_count: 40
+          trial_count: 32
       - id: train_tuned
         workflow: train
         after: [tune]
