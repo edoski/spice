@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from .catalog.codecs import encode_remote_catalog_record
-from .catalog.registry import spec_for_root_kind
+from .catalog.index import resolve_catalog_record_by_id
 from .engine import RootKind
 from .lifecycle import cleanup_root_stage, prepare_root_stage, promote_root_stage
 
@@ -70,8 +70,11 @@ def _cleanup_stage_command(args: argparse.Namespace) -> None:
 
 def _resolve_record_command(args: argparse.Namespace) -> None:
     root_kind = RootKind(args.root_kind)
-    spec = spec_for_root_kind(root_kind)
-    record = spec.resolve_record(Path(args.storage_root), args.root_id)
+    record = resolve_catalog_record_by_id(
+        Path(args.storage_root),
+        root_kind=root_kind,
+        root_id=args.root_id,
+    )
     print(encode_remote_catalog_record(record))
 
 

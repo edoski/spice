@@ -3,12 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from spice.storage.catalog import CatalogArtifactRecord, CatalogDatasetRecord, CatalogStudyRecord
-from spice.storage.catalog.registry import (
-    ARTIFACT_ROOT_SPEC,
-    DATASET_ROOT_SPEC,
-    STUDY_ROOT_SPEC,
-)
-from spice.storage.layout import catalog_db_path
+from spice.storage.catalog.index import upsert_catalog_record
 from spice.storage.operator import (
     StorageDeleteCommand,
     StorageDeleteFailure,
@@ -74,14 +69,8 @@ def _artifact_record(
 
 
 def _write_catalog_records(storage_root: Path, *records) -> None:
-    catalog_path = catalog_db_path(storage_root)
     for record in records:
-        if isinstance(record, CatalogDatasetRecord):
-            DATASET_ROOT_SPEC.upsert(catalog_path, record)
-        elif isinstance(record, CatalogStudyRecord):
-            STUDY_ROOT_SPEC.upsert(catalog_path, record)
-        elif isinstance(record, CatalogArtifactRecord):
-            ARTIFACT_ROOT_SPEC.upsert(catalog_path, record)
+        upsert_catalog_record(storage_root, record)
 
 
 def test_show_detail_ambiguity_returns_diagnostics_and_narrowing_attributes(

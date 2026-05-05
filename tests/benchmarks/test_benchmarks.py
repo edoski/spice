@@ -7,9 +7,8 @@ from spice.benchmarks import plan_benchmark
 from spice.config.models import EvaluateConfig, TrainConfig, WorkflowTask
 from spice.core.errors import ConfigResolutionError
 from spice.storage.catalog import CatalogStudyRecord
-from spice.storage.catalog.registry import STUDY_ROOT_SPEC
+from spice.storage.catalog.index import upsert_catalog_record
 from spice.storage.engine import state_db_path
-from spice.storage.layout import catalog_db_path
 from spice.storage.workflow_roots import produced_artifact_id
 
 ETH_DATASET_ID = "cor_9a73b1e88edb488afb1e"
@@ -259,8 +258,8 @@ def test_artifact_from_explicit_tuned_study_uses_catalog_dataset(
     conf_root = isolate_conf_root()
     storage_root = tmp_path / "outputs"
     study_root = storage_root / "studies" / "ethereum" / "std_existing"
-    STUDY_ROOT_SPEC.upsert(
-        catalog_db_path(storage_root),
+    upsert_catalog_record(
+        storage_root,
         CatalogStudyRecord(
             study_id="std_existing",
             study_name="existing",

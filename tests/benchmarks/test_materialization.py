@@ -7,9 +7,8 @@ import yaml
 from spice.benchmarks.materialization import plan_benchmark
 from spice.config import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.storage.catalog import CatalogStudyRecord
-from spice.storage.catalog.registry import STUDY_ROOT_SPEC
+from spice.storage.catalog.index import upsert_catalog_record
 from spice.storage.engine import state_db_path
-from spice.storage.layout import catalog_db_path
 from spice.storage.workflow_roots import produced_artifact_id, produced_study_id
 
 ETH_DATASET_ID = "cor_9a73b1e88edb488afb1e"
@@ -169,8 +168,8 @@ def test_materialization_uses_catalog_dataset_for_explicit_tuned_study(
 ) -> None:
     storage_root = tmp_path / "outputs"
     study_root = storage_root / "studies" / "ethereum" / "std_existing"
-    STUDY_ROOT_SPEC.upsert(
-        catalog_db_path(storage_root),
+    upsert_catalog_record(
+        storage_root,
         CatalogStudyRecord(
             study_id="std_existing",
             study_name="existing",

@@ -4,9 +4,8 @@ import pytest
 
 from spice.core.errors import StateLayoutError
 from spice.storage.catalog import CatalogArtifactRecord
-from spice.storage.catalog.registry import ARTIFACT_ROOT_SPEC
+from spice.storage.catalog.index import list_artifact_records, upsert_catalog_record
 from spice.storage.engine import RootKind, ensure_state_db, state_db_path
-from spice.storage.layout import catalog_db_path
 from spice.storage.lifecycle import delete_catalog_artifact_root
 
 
@@ -58,8 +57,7 @@ def test_delete_artifact_keeps_catalog_record_when_filesystem_delete_fails(
     artifact_root = storage_root / "artifacts" / "ethereum" / "art_1"
     ensure_state_db(state_db_path(artifact_root), root_kind=RootKind.ARTIFACT, tables=())
     record = _artifact_record(artifact_root)
-    catalog_path = catalog_db_path(storage_root)
-    ARTIFACT_ROOT_SPEC.upsert(catalog_path, record)
+    upsert_catalog_record(storage_root, record)
 
     def fail_remove_path(path) -> None:
         del path
@@ -70,5 +68,5 @@ def test_delete_artifact_keeps_catalog_record_when_filesystem_delete_fails(
     with pytest.raises(OSError, match="delete failed"):
         delete_catalog_artifact_root(storage_root, record)
 
-    records = ARTIFACT_ROOT_SPEC.list_records(catalog_path, filters={})
+    records = list_artifact_records(storage_root)
     assert [stored.artifact_id for stored in records] == [record.artifact_id]

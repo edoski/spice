@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`storage.catalog` contains searchable record models, relational catalog schema, a static root-kind registry, and typed catalog read/resolve operations.
+`storage.catalog` contains searchable record models, relational catalog schema, private root-kind dispatch metadata, typed catalog read/write operations, and remote record codecs.
 
 ## Theory
 
@@ -12,7 +12,7 @@ The catalog is an index, not the source of truth. Root-local SQLite state owns p
 
 Catalog rows point to root paths and state DB paths. Reindexing reads root-local state and upserts catalog rows. Upserts must not rewrite `created_at`. Deleting catalog rows must be coordinated with root deletion in `storage.lifecycle`.
 
-The static root-kind registry owns low-level persistence metadata for each catalog root kind: table, primary key field, typed record, root path derivation, manifest-to-record conversion, remote payload shape, upsert, delete, and default ordering. Typed public list and resolve functions stay in `catalog.index`.
+Private root-kind metadata names the table, primary key field, typed record, path fields, nullable fields, parent directory, and default ordering for each catalog root kind. Callers use `catalog.index` for list/resolve/upsert/reindex operations and `catalog.codecs` for remote record envelopes; they do not use registry specs directly.
 
 ## Extension Points
 
@@ -24,10 +24,10 @@ Add catalog columns only for stable selector/search fields. Do not store large r
 root-local state DB
         |
         v
-manifest loader
+catalog record materializer
         |
         v
-root-kind registry
+private root-kind dispatch
         |
         v
 catalog record

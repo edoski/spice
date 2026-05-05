@@ -26,7 +26,8 @@ from .catalog.index import (
     resolve_dataset_record,
     resolve_study_record,
 )
-from .catalog.registry import spec_for_record, spec_for_root_kind
+from .catalog.registry import catalog_record_root_kind, catalog_root_parent_path
+from .catalog.store import delete_catalog_record
 from .engine import RootKind, detect_root_kind, require_root_kind, state_db_path
 from .errors import DeleteBlockedError
 from .layout import catalog_db_path
@@ -119,7 +120,7 @@ def validate_root_destination_path(
     destination_root: Path,
     expected_root_kind: RootKind,
 ) -> Path:
-    expected_parent = (storage_root / spec_for_root_kind(expected_root_kind).parent_name).resolve()
+    expected_parent = catalog_root_parent_path(storage_root, expected_root_kind).resolve()
     resolved_destination = destination_root.resolve()
     try:
         relative = resolved_destination.relative_to(expected_parent)
@@ -236,13 +237,13 @@ def delete_catalog_root(
     storage_root: Path,
     record: CatalogDatasetRecord | CatalogStudyRecord | CatalogArtifactRecord,
 ) -> None:
-    spec = spec_for_record(record)
+    expected_root_kind = catalog_record_root_kind(record)
     _delete_catalog_root_record(
         storage_root,
         root_path=record.root_path,
-        expected_root_kind=spec.root_kind,
-        catalog_delete=lambda catalog_path: spec.delete(catalog_path, record),
-        stop_dir_name=spec.parent_name,
+        expected_root_kind=expected_root_kind,
+        catalog_delete=lambda catalog_path: delete_catalog_record(catalog_path, record),
+        stop_dir=catalog_root_parent_path(storage_root, expected_root_kind),
     )
 
 
@@ -275,7 +276,7 @@ def _delete_catalog_root_record(
     *,
     root_path: Path,
     catalog_delete: Callable[[Path], None],
-    stop_dir_name: str,
+    stop_dir: Path,
     expected_root_kind: RootKind,
 ) -> None:
     root_path = validated_catalog_root_path(
@@ -285,4 +286,4 @@ def _delete_catalog_root_record(
     )
     remove_path(root_path)
     catalog_delete(catalog_db_path(storage_root))
-    prune_empty_directories(root_path.parent, stop_at=storage_root / stop_dir_name)
+    prune_empty_directories(root_path.parent, stop_at=stop_dir)

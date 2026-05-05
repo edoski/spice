@@ -27,12 +27,12 @@ Rows store selector fields, root path, state DB path, created timestamp, and upd
 
 ## Refresh
 
-`refresh_catalog()` rebuilds the catalog into a temporary DB, scans all registered root-kind directories, detects root kind from each state DB, asks the registry spec to load the manifest into a typed record, upserts rows, then atomically replaces the catalog DB.
+`refresh_catalog()` rebuilds the catalog into a temporary DB, scans registered root-kind directories, detects root kind from each state DB, materializes the matching manifest into a typed record, upserts rows through catalog store operations, then atomically replaces the catalog DB.
 
 ```text
 scan registered root-kind directories
   -> detect root kind
-  -> registry manifest-to-record
+  -> materialize catalog record
   -> write temp catalog
   -> replace catalog.sqlite
 ```
@@ -41,7 +41,7 @@ scan registered root-kind directories
 
 After a workflow promotes a root, `reindex_catalog_root()` updates the catalog entry for that root and returns the reindexed catalog record. This avoids full scans after every successful workflow.
 
-`catalog.registry` is static over corpus, study, and artifact roots. It owns table/key metadata, path fields, nullable fields, row conversion, remote payload conversion, and upsert/delete plumbing. `catalog.index` keeps the typed selector-facing API.
+`catalog.registry` is private metadata over corpus, study, and artifact roots. `catalog.store` owns SQLite row conversion and upsert/delete/list mechanics. `catalog.materialization` owns manifest-to-record conversion and canonical destination paths. `catalog.codecs` owns the strict remote record envelope. `catalog.index` keeps the typed selector-facing API and is the public entrypoint for catalog reads, writes, refresh, and reindex.
 
 ## Selectors
 

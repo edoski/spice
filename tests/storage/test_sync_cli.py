@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 from spice.storage import sync_cli
 from spice.storage.catalog import CatalogDatasetRecord
@@ -20,8 +19,8 @@ def test_sync_cli_resolve_record_emits_remote_catalog_envelope(monkeypatch, caps
     )
     monkeypatch.setattr(
         sync_cli,
-        "spec_for_root_kind",
-        lambda _kind: SimpleNamespace(resolve_record=lambda _storage_root, _root_id: record),
+        "resolve_catalog_record_by_id",
+        lambda _storage_root, *, root_kind, root_id: record,
     )
 
     sync_cli.main(

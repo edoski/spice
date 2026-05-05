@@ -112,7 +112,7 @@ Supported transfer directions:
 | `transfer push dataset` | local corpus root to cluster. |
 | `transfer pull artifact` | cluster artifact root to local. |
 
-`execution.transfer` prepares a remote or local stage, uses `rsync`, validates root kind through lifecycle operations, finalizes the stage, and reindexes. `storage.sync_cli` is the remote-side helper for path and root-kind commands. Dataset is the operator identity; corpus is the storage root kind.
+`execution.transfer` prepares a remote or local stage, uses `rsync`, validates root kind through lifecycle operations, finalizes the stage, and reindexes. `storage.sync_cli` is the remote-side helper for path and root-kind commands. Transfer destination paths are derived by catalog materialization, and remote records cross the SSH seam through the strict catalog codec. Dataset is the operator identity; corpus is the storage root kind.
 
 ## Invariants
 
@@ -137,4 +137,4 @@ Supported transfer directions:
 
 ## Extension Pattern
 
-New persisted state should be rooted in a manifest first, then indexed into the catalog. Keep catalog rows derivable from root state.
+New persisted state should be rooted in a manifest first, then indexed into the catalog through catalog materialization and store operations. Keep catalog rows derivable from root state.

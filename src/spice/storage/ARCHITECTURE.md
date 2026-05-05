@@ -89,7 +89,7 @@ storage/
   lifecycle.py       staging, promotion, partial commit, delete cascade
   sync_cli.py        remote-side path/root-kind helper commands
   inspect*.py        read-only inspection views
-  catalog/           global searchable index, root-kind registry, record codecs
+  catalog/           global searchable index, catalog records, schema, store, and codecs
 ```
 
 Storage owns persisted payload ABI. Modeling and evaluation own runtime result objects; storage codecs translate those objects at the SQLite table boundary. Artifact manifests persist Temporal Capability as the artifact-facing compiler capability bundle and persist artifact semantics as its normalized semantic projection. Artifact evaluation state stores an **Evaluation Config Snapshot**, not a live evaluator config object, so evaluation storage identity is based on immutable evaluator provenance.
@@ -102,4 +102,4 @@ Producer identity and consumer selection stay separate inside `workflow_roots.py
 
 Remote SSH and rsync orchestration lives in `execution.transfer`. Storage exposes local lifecycle/catalog operations and `storage.sync_cli`, the helper module executed on the remote machine for path and root-kind operations.
 
-Catalog kind `dataset` maps intentionally to storage `RootKind.CORPUS`: dataset is the operator/config identity, while corpus is the physical storage root kind. `storage.catalog.registry` owns root-kind dispatch for canonical destination paths, record resolution, record construction, codec field shape, catalog upsert, and catalog delete. `storage.catalog.codecs` owns the strict remote JSON envelope used by transfer helpers.
+Catalog kind `dataset` maps intentionally to storage `RootKind.CORPUS`: dataset is the operator/config identity, while corpus is the physical storage root kind. `storage.catalog.index` owns typed catalog list/resolve/upsert/reindex operations, private catalog dispatch owns root-kind metadata, `storage.catalog.materialization` owns canonical destination paths and record construction, and `storage.catalog.codecs` owns the strict remote JSON envelope used by transfer helpers.

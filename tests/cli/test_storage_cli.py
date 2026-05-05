@@ -7,8 +7,7 @@ from typer.testing import CliRunner
 from spice.cli import app
 from spice.cli.commands import storage as storage_commands
 from spice.storage.catalog import CatalogArtifactRecord
-from spice.storage.catalog.registry import ARTIFACT_ROOT_SPEC
-from spice.storage.layout import catalog_db_path
+from spice.storage.catalog.index import upsert_catalog_record
 from spice.storage.operator import RenderableSections, StorageShowRendered
 
 runner = CliRunner()
@@ -21,8 +20,8 @@ def _write_artifact_record(
     model_id: str = "model",
 ) -> None:
     root_path = storage_root / "artifacts" / "ethereum" / artifact_id
-    ARTIFACT_ROOT_SPEC.upsert(
-        catalog_db_path(storage_root),
+    upsert_catalog_record(
+        storage_root,
         CatalogArtifactRecord(
             artifact_id=artifact_id,
             dataset_id="cor_1",

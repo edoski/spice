@@ -9,8 +9,8 @@ from ..core.errors import SpiceOperatorError
 from ..storage.catalog import CatalogArtifactRecord, CatalogDatasetRecord
 from ..storage.catalog.codecs import decode_remote_catalog_record
 from ..storage.catalog.index import ReindexedCatalogRoot, resolve_dataset_record
+from ..storage.catalog.materialization import catalog_record_root_path
 from ..storage.catalog.records import CatalogRecord
-from ..storage.catalog.registry import spec_for_root_kind
 from ..storage.engine import RootKind
 from ..storage.layout import corpus_root_path
 from ..storage.lifecycle import (
@@ -45,7 +45,7 @@ def push_dataset_to_cluster(
     _push_root_to_cluster(
         session=session,
         local_root=record.root_path,
-        destination_root=spec_for_root_kind(RootKind.CORPUS).root_path(
+        destination_root=catalog_record_root_path(
             session.target.spec.paths.storage_root,
             record,
         ),
@@ -63,7 +63,7 @@ def pull_artifact_from_cluster(
     replace: bool,
 ) -> PulledArtifactRoot:
     record = _resolve_cluster_artifact_record(session, artifact_id=artifact_id)
-    destination_root = spec_for_root_kind(RootKind.ARTIFACT).root_path(storage_root, record)
+    destination_root = catalog_record_root_path(storage_root, record)
     promoted = _pull_root_from_cluster(
         session=session,
         cluster_root=record.root_path,

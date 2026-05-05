@@ -8,13 +8,15 @@ import pytest
 from spice.core.errors import StateLayoutError
 from spice.storage.artifact import load_artifact_manifest
 from spice.storage.catalog import CatalogArtifactRecord, CatalogDatasetRecord
-from spice.storage.catalog.registry import (
-    ARTIFACT_ROOT_SPEC,
-    DATASET_ROOT_SPEC,
+from spice.storage.catalog.index import (
+    list_artifact_records,
+    list_dataset_records,
+    upsert_catalog_record,
 )
 from spice.storage.engine import DATASET_ROOT_KIND, ensure_state_db, state_db_path
 from spice.storage.layout import catalog_db_path
 from spice.storage.schema import DATASET_TABLES
+from spice.storage.selectors import ArtifactSelector, DatasetSelector
 
 
 def _dataset_timestamps(path: Path, dataset_id: str) -> tuple[int, int]:
@@ -28,12 +30,12 @@ def _dataset_timestamps(path: Path, dataset_id: str) -> tuple[int, int]:
 
 
 def test_catalog_upsert_keeps_created_at_stable(tmp_path: Path, monkeypatch) -> None:
-    from spice.storage.catalog import registry
+    from spice.storage.catalog import store
 
     storage_root = tmp_path / "outputs"
     catalog_path = catalog_db_path(storage_root)
     timestamps = iter([100, 200])
-    monkeypatch.setattr(registry, "_now_timestamp", lambda: next(timestamps))
+    monkeypatch.setattr(store, "_now_timestamp", lambda: next(timestamps))
 
     dataset_root = storage_root / "corpora" / "ethereum" / "dataset-1"
     record = CatalogDatasetRecord(
@@ -43,9 +45,9 @@ def test_catalog_upsert_keeps_created_at_stable(tmp_path: Path, monkeypatch) -> 
         root_path=dataset_root,
         state_db_path=state_db_path(dataset_root),
     )
-    DATASET_ROOT_SPEC.upsert(catalog_path, record)
-    DATASET_ROOT_SPEC.upsert(
-        catalog_path,
+    upsert_catalog_record(storage_root, record)
+    upsert_catalog_record(
+        storage_root,
         CatalogDatasetRecord(
             dataset_id=record.dataset_id,
             dataset_name="new",
@@ -69,11 +71,10 @@ def test_artifact_reader_rejects_corpus_root_kind(tmp_path: Path) -> None:
 
 def test_catalog_filters_by_exact_root_ids(tmp_path: Path) -> None:
     storage_root = tmp_path / "outputs"
-    catalog_path = catalog_db_path(storage_root)
     dataset_root = storage_root / "corpora" / "ethereum" / "dataset-1"
     artifact_root = storage_root / "artifacts" / "ethereum" / "artifact-1"
-    DATASET_ROOT_SPEC.upsert(
-        catalog_path,
+    upsert_catalog_record(
+        storage_root,
         CatalogDatasetRecord(
             dataset_id="dataset-1",
             dataset_name="daily",
@@ -82,8 +83,8 @@ def test_catalog_filters_by_exact_root_ids(tmp_path: Path) -> None:
             state_db_path=state_db_path(dataset_root),
         ),
     )
-    ARTIFACT_ROOT_SPEC.upsert(
-        catalog_path,
+    upsert_catalog_record(
+        storage_root,
         CatalogArtifactRecord(
             artifact_id="artifact-1",
             dataset_id="dataset-1",
@@ -101,15 +102,15 @@ def test_catalog_filters_by_exact_root_ids(tmp_path: Path) -> None:
         ),
     )
 
-    dataset_records = DATASET_ROOT_SPEC.list_records(
-        catalog_path,
-        filters={"dataset_id": "dataset-1"},
+    dataset_records = list_dataset_records(
+        storage_root,
+        selector=DatasetSelector(dataset_id="dataset-1"),
     )
     assert [record.dataset_id for record in dataset_records] == ["dataset-1"]
     assert [
         record.artifact_id
-        for record in ARTIFACT_ROOT_SPEC.list_records(
-            catalog_path,
-            filters={"dataset_id": "dataset-1"},
+        for record in list_artifact_records(
+            storage_root,
+            selector=ArtifactSelector(dataset_id="dataset-1"),
         )
     ] == ["artifact-1"]

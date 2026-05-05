@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from typing import Any, cast
 
 from ...core.errors import SpiceOperatorError
 from ..engine import RootKind
@@ -15,7 +17,7 @@ def encode_remote_catalog_record(record: CatalogRecord) -> str:
     return json.dumps(
         {
             "root_kind": spec.root_kind.value,
-            "record": spec.to_payload(record),
+            "record": _record_to_payload(record),
         }
     )
 
@@ -48,4 +50,50 @@ def decode_remote_catalog_record(
     record_payload = raw["record"]
     if not isinstance(record_payload, dict):
         raise SpiceOperatorError("remote catalog record must be a mapping")
-    return spec_for_root_kind(root_kind).from_payload(record_payload)
+    return _record_from_payload(root_kind, record_payload)
+
+
+def _record_to_payload(record: CatalogRecord) -> dict[str, object | None]:
+    spec = spec_for_record(record)
+    concrete = spec.require_record(record)
+    return {
+        field_name: str(value) if isinstance(value, Path) else value
+        for field_name in spec.field_names
+        for value in (getattr(concrete, field_name),)
+    }
+
+
+def _record_from_payload(
+    root_kind: RootKind,
+    payload: dict[str, object | None],
+) -> CatalogRecord:
+    spec = spec_for_root_kind(root_kind)
+    fields_set = set(spec.field_names)
+    payload_keys = set(payload)
+    missing = sorted(fields_set - payload_keys)
+    extra = sorted(payload_keys - fields_set)
+    if missing:
+        raise SpiceOperatorError(
+            f"remote catalog record is missing fields: {', '.join(missing)}"
+        )
+    if extra:
+        raise SpiceOperatorError(f"remote catalog record has extra fields: {', '.join(extra)}")
+    values: dict[str, object | None] = {}
+    for name in spec.field_names:
+        value = payload[name]
+        if value is None:
+            if name not in spec.nullable_fields:
+                raise SpiceOperatorError(f"remote catalog record field {name} cannot be null")
+            values[name] = None
+            continue
+        if name in spec.path_fields:
+            values[name] = Path(_require_string(name, value))
+        else:
+            values[name] = _require_string(name, value)
+    return spec.record_type(**cast(Any, values))
+
+
+def _require_string(name: str, value: object) -> str:
+    if not isinstance(value, str):
+        raise SpiceOperatorError(f"remote catalog record field {name} must be a string")
+    return value

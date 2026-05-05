@@ -12,13 +12,14 @@ from ...core.errors import SelectorResolutionError
 from ..engine import RootKind, detect_root_kind, state_db_path
 from ..layout import catalog_db_path
 from ..selectors import ArtifactSelector, DatasetSelector, StudySelector
+from . import store as catalog_store
+from .materialization import catalog_record_from_root
 from .records import CatalogArtifactRecord, CatalogDatasetRecord, CatalogRecord, CatalogStudyRecord
 from .registry import (
     ARTIFACT_ROOT_SPEC,
     DATASET_ROOT_SPEC,
     STUDY_ROOT_SPEC,
     CatalogRootKindSpec,
-    ensure_catalog_db,
     spec_for_root_kind,
 )
 
@@ -80,10 +81,14 @@ def list_studies_for_dataset(
     *,
     dataset_id: str,
 ) -> list[CatalogStudyRecord]:
-    return STUDY_ROOT_SPEC.list_records(
-        catalog_db_path(storage_root),
-        filters={"dataset_id": dataset_id},
-        order_by=("study_name",),
+    return _typed_records(
+        catalog_store.list_catalog_records(
+            catalog_db_path(storage_root),
+            RootKind.STUDY,
+            filters={"dataset_id": dataset_id},
+            order_by=("study_name",),
+        ),
+        CatalogStudyRecord,
     )
 
 
@@ -92,10 +97,14 @@ def list_artifacts_for_dataset(
     *,
     dataset_id: str,
 ) -> list[CatalogArtifactRecord]:
-    return ARTIFACT_ROOT_SPEC.list_records(
-        catalog_db_path(storage_root),
-        filters={"dataset_id": dataset_id},
-        order_by=("variant", "model_id"),
+    return _typed_records(
+        catalog_store.list_catalog_records(
+            catalog_db_path(storage_root),
+            RootKind.ARTIFACT,
+            filters={"dataset_id": dataset_id},
+            order_by=("variant", "model_id"),
+        ),
+        CatalogArtifactRecord,
     )
 
 
@@ -104,10 +113,14 @@ def list_artifacts_for_study(
     *,
     study_id: str,
 ) -> list[CatalogArtifactRecord]:
-    return ARTIFACT_ROOT_SPEC.list_records(
-        catalog_db_path(storage_root),
-        filters={"study_id": study_id},
-        order_by=("variant", "model_id"),
+    return _typed_records(
+        catalog_store.list_catalog_records(
+            catalog_db_path(storage_root),
+            RootKind.ARTIFACT,
+            filters={"study_id": study_id},
+            order_by=("variant", "model_id"),
+        ),
+        CatalogArtifactRecord,
     )
 
 
@@ -150,6 +163,27 @@ def resolve_artifact_record(
     )
 
 
+def resolve_catalog_record_by_id(
+    storage_root: Path,
+    *,
+    root_kind: RootKind,
+    root_id: str,
+) -> CatalogRecord:
+    spec = spec_for_root_kind(root_kind)
+    return _resolve_one(
+        spec.label,
+        catalog_store.list_catalog_records(
+            catalog_db_path(storage_root),
+            root_kind,
+            filters={spec.key_field: root_id},
+        ),
+    )
+
+
+def upsert_catalog_record(storage_root: Path, record: CatalogRecord) -> None:
+    catalog_store.upsert_catalog_record(catalog_db_path(storage_root), record)
+
+
 def reindex_catalog_root(storage_root: Path, *, root_path: Path) -> ReindexedCatalogRoot:
     return _reindex_catalog_root(catalog_db_path(storage_root), root_path=root_path)
 
@@ -161,7 +195,7 @@ def refresh_catalog(storage_root: Path) -> CatalogRefreshSummary:
     if temp_catalog_path.exists():
         temp_catalog_path.unlink()
     try:
-        ensure_catalog_db(temp_catalog_path)
+        catalog_store.ensure_catalog_db(temp_catalog_path)
         counts = {"dataset_roots": 0, "study_roots": 0, "artifact_roots": 0}
         for spec, count_key in (
             (DATASET_ROOT_SPEC, "dataset_roots"),
@@ -181,9 +215,8 @@ def refresh_catalog(storage_root: Path) -> CatalogRefreshSummary:
 def _reindex_catalog_root(catalog_path: Path, *, root_path: Path) -> ReindexedCatalogRoot:
     db_path = state_db_path(root_path)
     root_kind = detect_root_kind(db_path)
-    spec = spec_for_root_kind(root_kind)
-    record = spec.manifest_to_record(root_path, db_path)
-    spec.upsert(catalog_path, record)
+    record = catalog_record_from_root(root_path, db_path, root_kind)
+    catalog_store.upsert_catalog_record(catalog_path, record)
     return ReindexedCatalogRoot(root_kind=root_kind, record=record)
 
 
@@ -223,7 +256,14 @@ def _list_catalog_records(
     selector: SelectorT,
     spec: CatalogRootKindSpec[T],
 ) -> list[T]:
-    return spec.list_records(catalog_db_path(storage_root), filters=_selector_kwargs(selector))
+    return _typed_records(
+        catalog_store.list_catalog_records(
+            catalog_db_path(storage_root),
+            spec.root_kind,
+            filters=_selector_kwargs(selector),
+        ),
+        spec.record_type,
+    )
 
 
 def _resolve_catalog_record(
@@ -237,3 +277,7 @@ def _resolve_catalog_record(
         label,
         _list_catalog_records(storage_root, selector=selector, spec=spec),
     )
+
+
+def _typed_records(records: list[CatalogRecord], record_type: type[T]) -> list[T]:
+    return [record for record in records if isinstance(record, record_type)]

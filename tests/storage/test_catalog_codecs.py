@@ -11,7 +11,6 @@ from spice.storage.catalog.codecs import (
     decode_remote_catalog_record,
     encode_remote_catalog_record,
 )
-from spice.storage.catalog.registry import spec_for_record, spec_for_root_kind
 from spice.storage.engine import RootKind
 
 
@@ -63,31 +62,20 @@ def _artifact_record(*, study_id: str | None = None) -> CatalogArtifactRecord:
 
 
 @pytest.mark.parametrize(
-    "record",
-    [_dataset_record(), _study_record(), _artifact_record(), _artifact_record(study_id="study-1")],
-)
-def test_remote_catalog_record_codec_round_trips_records(record) -> None:
-    decoded = decode_remote_catalog_record(encode_remote_catalog_record(record))
-
-    assert decoded == record
-
-
-@pytest.mark.parametrize(
-    ("root_kind", "record", "key_field"),
+    ("record", "root_kind"),
     [
-        (RootKind.CORPUS, _dataset_record(), "dataset_id"),
-        (RootKind.STUDY, _study_record(), "study_id"),
-        (RootKind.ARTIFACT, _artifact_record(), "artifact_id"),
+        (_dataset_record(), "corpus"),
+        (_study_record(), "study"),
+        (_artifact_record(), "artifact"),
+        (_artifact_record(study_id="study-1"), "artifact"),
     ],
 )
-def test_catalog_registry_maps_root_kinds_and_records(root_kind, record, key_field: str) -> None:
-    spec = spec_for_root_kind(root_kind)
+def test_remote_catalog_record_codec_round_trips_records(record, root_kind: str) -> None:
+    encoded = encode_remote_catalog_record(record)
+    decoded = decode_remote_catalog_record(encoded)
 
-    assert spec_for_record(record) is spec
-    assert spec.key_field == key_field
-    assert isinstance(record, spec.record_type)
-    assert spec.root_path(Path("/storage"), record) == record.root_path
-    assert spec.from_payload(spec.to_payload(record)) == record
+    assert json.loads(encoded)["root_kind"] == root_kind
+    assert decoded == record
 
 
 def test_remote_catalog_record_codec_rejects_kind_mismatch() -> None:
