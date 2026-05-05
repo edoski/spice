@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal, TypeAlias, cast
@@ -63,7 +63,6 @@ class StorageShowQuery:
     kind: StorageRootKind
     selector: StorageSelector
     detail: str | None = None
-    has_filters: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,7 +166,7 @@ def show_storage(query: StorageShowQuery) -> StorageShowOutcome:
         )
     if query.detail is not None:
         return _describe_record(records[0], detail=query.detail)
-    if not query.has_filters or len(records) != 1:
+    if not _selector_has_filters(query.selector) or len(records) != 1:
         return StorageShowRendered(_list_renderable(spec, records))
     return _describe_record(records[0], detail=None)
 
@@ -252,6 +251,10 @@ def _list_records(
         list[CatalogRecord],
         list_artifact_records(storage_root, selector=_artifact_selector(selector)),
     )
+
+
+def _selector_has_filters(selector: StorageSelector) -> bool:
+    return any(getattr(selector, field.name) is not None for field in fields(selector))
 
 
 def _describe_record(record: CatalogRecord, *, detail: str | None) -> StorageShowRendered:

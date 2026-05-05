@@ -181,7 +181,6 @@ def show_dataset_command(
                 storage_root=root,
                 kind="dataset",
                 selector=selector,
-                has_filters=dataset_id is not None or chain is not None or dataset is not None,
                 detail=None if detail is None else detail.value,
             )
         )
@@ -225,19 +224,6 @@ def show_study_command(
                 storage_root=root,
                 kind="study",
                 selector=selector,
-                has_filters=any(
-                    value is not None
-                    for value in (
-                        study_id,
-                        chain,
-                        dataset,
-                        features,
-                        prediction,
-                        model,
-                        problem,
-                        study,
-                    )
-                ),
                 detail=None if detail is None else detail.value,
             )
         )
@@ -293,22 +279,6 @@ def show_artifact_command(
                 storage_root=root,
                 kind="artifact",
                 selector=selector,
-                has_filters=any(
-                    value is not None
-                    for value in (
-                        artifact_id,
-                        dataset_id,
-                        study_id,
-                        chain,
-                        dataset,
-                        features,
-                        prediction,
-                        model,
-                        problem,
-                        variant,
-                        study,
-                    )
-                ),
                 detail=None if detail is None else detail.value,
             )
         )

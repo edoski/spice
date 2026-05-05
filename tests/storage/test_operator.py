@@ -98,7 +98,7 @@ def test_show_detail_ambiguity_returns_diagnostics_and_narrowing_attributes(
     assert "model_id" in outcome.narrowing_attributes
 
 
-def test_show_detail_uses_unique_filtered_match(tmp_path: Path, monkeypatch) -> None:
+def test_show_filtered_unique_match_renders_detail(tmp_path: Path, monkeypatch) -> None:
     storage_root = tmp_path / "outputs"
     record = _artifact_record(storage_root, "art_1", model_id="lstm")
     _write_catalog_records(
@@ -123,13 +123,11 @@ def test_show_detail_uses_unique_filtered_match(tmp_path: Path, monkeypatch) -> 
             storage_root=storage_root,
             kind="artifact",
             selector=ArtifactSelector(model_id="lstm"),
-            detail="epochs",
-            has_filters=True,
         )
     )
 
     assert isinstance(outcome, StorageShowRendered)
-    assert seen == {"root_path": record.root_path, "detail": "epochs"}
+    assert seen == {"root_path": record.root_path, "detail": None}
     assert outcome.renderable.title == "artifact summary"
 
 

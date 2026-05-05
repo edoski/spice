@@ -73,7 +73,6 @@ def test_show_detail_uses_unique_filtered_match(tmp_path: Path, monkeypatch) -> 
                 "kind": query.kind,
                 "model": query.selector.model_id,
                 "detail": query.detail,
-                "has_filters": query.has_filters,
             }
         )
         return StorageShowRendered(
@@ -105,5 +104,4 @@ def test_show_detail_uses_unique_filtered_match(tmp_path: Path, monkeypatch) -> 
         "kind": "artifact",
         "model": "lstm",
         "detail": "epochs",
-        "has_filters": True,
     }
