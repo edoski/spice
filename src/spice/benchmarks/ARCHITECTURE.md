@@ -49,6 +49,7 @@ benchmarks/
   selection_ledger.py  typed benchmark coordinate ledger
   models.py      benchmark plan data models
   result_records.py  collection snapshot and result records
+  result_schema.py   SQLite result projection schema
   result_store.py    low-level SQLite result projection
   result_index.py    index upsert/rebuild/count/query operations
   __init__.py    benchmark API

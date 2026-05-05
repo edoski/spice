@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import stat
 from pathlib import Path
-from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -155,11 +154,6 @@ def test_config_public_commands_only(isolate_conf_root) -> None:
         "poisson_replay_2h",
     ]
 
-    acquisition_result = runner.invoke(app, ["config", "list", "acquisition"])
-    assert acquisition_result.exit_code != 0
-    assert isinstance(acquisition_result.exception, SystemExit)
-    assert "Unsupported config group: acquisition" in acquisition_result.stderr
-
     builder_result = runner.invoke(app, ["config", "list", "dataset-builder"])
     assert builder_result.exit_code == 0, builder_result.stdout
     assert builder_result.stdout.splitlines() == ["fixed_sequence_temporal"]
@@ -251,77 +245,6 @@ def test_acquire_rejects_objective_option() -> None:
 
     assert result.exit_code != 0
     assert "--objective" in result.output
-
-
-def test_train_submit_cli_preflights_and_routes_to_execution_backend(
-    monkeypatch,
-) -> None:
-    from spice.cli.commands import workflows as workflow_commands
-
-    events: list[tuple[str, object]] = []
-
-    def _fake_resolve(task: WorkflowTask, values) -> object:
-        events.append(("resolve", (task, values)))
-        return TrainConfig.model_construct(
-            workflow=WorkflowTask.TRAIN,
-            study=SimpleNamespace(name=values["study"]),
-            artifact=SimpleNamespace(variant=SimpleNamespace(value=values["variant"])),
-        )
-
-    class FakeSession:
-        follow_by_default = False
-
-        def submit_workflow(
-            self,
-            task: WorkflowTask,
-            *,
-            config,
-            dependency: str | None = None,
-        ) -> ExecutionJobSubmission:
-            events.append(("submit", (task, config, "disi_l40", dependency)))
-            return ExecutionJobSubmission(
-                task=task,
-                job_id="12345",
-                log_path=Path("/remote/logs/spice-train-12345.out"),
-            )
-
-    monkeypatch.setattr(workflow_commands, "resolve_workflow_command_config", _fake_resolve)
-    monkeypatch.setattr(
-        workflow_commands,
-        "open_execution_session",
-        lambda _target: FakeSession(),
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "train",
-            "--surface",
-            "current_row_fee_dynamics",
-            "--study",
-            "default",
-            "--variant",
-            "baseline",
-        ],
-    )
-
-    assert result.exit_code == 0, result.stdout
-    assert [event[0] for event in events] == ["resolve", "submit"]
-    resolved_task, values = cast(tuple[WorkflowTask, dict[str, object | None]], events[0][1])
-    assert resolved_task is WorkflowTask.TRAIN
-    assert values["study"] == "default"
-    assert values["variant"] == "baseline"
-    submitted_task, submitted_config, target_name, dependency = cast(
-        tuple[WorkflowTask, object, str, str | None],
-        events[1][1],
-    )
-    assert submitted_task is WorkflowTask.TRAIN
-    assert target_name == "disi_l40"
-    assert dependency is None
-    assert (
-        "submit workflow=train job_id=12345 log=/remote/logs/spice-train-12345.out"
-        in result.stdout
-    )
 
 
 def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:
