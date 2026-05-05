@@ -44,6 +44,8 @@ compile_dataset_builder_contract(config)
   -> concrete compile_dataset_builder(config)
 ```
 
+The local table owns dataset-builder ids, concrete config types, runtime metadata types, and compile hooks. `core.specs` supplies only the mechanical owner-spec helper used for payload coercion and compile-time type assertions.
+
 The registry does not serialize and revalidate a concrete config during compile. Coercion validates. Compile dispatch asserts the invariant.
 
 Config-facing dataset-builder and builder-runtime-metadata envelope failures use `ConfigResolutionError`. Already typed configs are returned unchanged.

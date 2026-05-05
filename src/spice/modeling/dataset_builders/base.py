@@ -11,11 +11,10 @@ from pydantic import Field, field_validator, model_validator
 
 from ...core.config_model import ConfigModel
 from ...core.specs import (
+    coerce_spec_config,
+    coerce_spec_payload,
     lookup_local_spec,
-    owner_payload,
-    owner_payload_id,
-    require_spec_config,
-    validate_owner_config,
+    require_spec_config_from_table,
 )
 from ...core.validation import validate_path_segment
 from ...semantics import DatasetBuilderSemantics
@@ -190,36 +189,37 @@ def coerce_builder_runtime_metadata(
     payload: object,
 ) -> BuilderRuntimeMetadata:
     spec = dataset_builder_spec(builder_id)
-    if isinstance(payload, spec.runtime_metadata_type):
-        return payload
-    return validate_owner_config(
-        owner_payload(
-            payload,
-            owner="builder runtime metadata",
-            config_type=BuilderRuntimeMetadata,
-        ),
-        spec.runtime_metadata_type,
+    return coerce_spec_payload(
+        payload,
+        owner="builder runtime metadata",
+        base_payload_type=BuilderRuntimeMetadata,
+        spec=spec,
+        spec_payload_type=lambda entry: entry.runtime_metadata_type,
     )
 
 
 def coerce_dataset_builder_config(
     payload: object,
 ) -> DatasetBuilderConfig:
-    raw_payload, builder_id = owner_payload_id(
+    return coerce_spec_config(
         payload,
         owner="dataset_builder",
-        config_type=DatasetBuilderConfig,
+        base_config_type=DatasetBuilderConfig,
         id_label="dataset_builder.id",
+        lookup_spec=dataset_builder_spec,
+        spec_config_type=lambda spec: spec.config_type,
     )
-    spec = dataset_builder_spec(builder_id)
-    if isinstance(payload, spec.config_type):
-        return payload
-    return validate_owner_config(raw_payload, spec.config_type)
 
 
 def compile_dataset_builder_contract(
     config: DatasetBuilderConfig,
 ) -> CompiledDatasetBuilderContract:
     spec = dataset_builder_spec(config.id)
-    concrete_config = require_spec_config(config, spec.config_type, "dataset builder config")
+    concrete_config = require_spec_config_from_table(
+        config,
+        config_id=config.id,
+        lookup_spec=dataset_builder_spec,
+        spec_config_type=lambda entry: entry.config_type,
+        label="dataset builder config",
+    )
     return spec.compile_contract(concrete_config)

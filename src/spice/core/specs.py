@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import TypeVar, cast
 
 from pydantic import BaseModel, ValidationError
@@ -13,6 +13,7 @@ SpecIdT = TypeVar("SpecIdT")
 SpecT = TypeVar("SpecT")
 ConfigT = TypeVar("ConfigT")
 ConfigModelT = TypeVar("ConfigModelT", bound=BaseModel)
+PayloadModelT = TypeVar("PayloadModelT", bound=BaseModel)
 
 
 def require_mapping_id(payload: Mapping[str, object], field_label: str) -> str:
@@ -70,6 +71,63 @@ def require_spec_config(config: object, config_type: type[ConfigT], label: str) 
     if isinstance(config, config_type):
         return config
     raise ConfigResolutionError(f"{label} must be {config_type.__name__}")
+
+
+def coerce_spec_config(
+    payload: object,
+    *,
+    owner: str,
+    base_config_type: type[ConfigModelT],
+    id_label: str,
+    lookup_spec: Callable[[str], SpecT],
+    spec_config_type: Callable[[SpecT], type[ConfigModelT]],
+) -> ConfigModelT:
+    raw_payload, spec_id = owner_payload_id(
+        payload,
+        owner=owner,
+        config_type=base_config_type,
+        id_label=id_label,
+    )
+    config_type = spec_config_type(lookup_spec(spec_id))
+    if isinstance(payload, config_type):
+        return payload
+    return validate_owner_config(raw_payload, config_type)
+
+
+def coerce_spec_payload(
+    payload: object,
+    *,
+    owner: str,
+    base_payload_type: type[PayloadModelT],
+    spec: SpecT,
+    spec_payload_type: Callable[[SpecT], type[PayloadModelT]],
+) -> PayloadModelT:
+    payload_type = spec_payload_type(spec)
+    if isinstance(payload, payload_type):
+        return payload
+    return validate_owner_config(
+        owner_payload(
+            payload,
+            owner=owner,
+            config_type=base_payload_type,
+        ),
+        payload_type,
+    )
+
+
+def require_spec_config_from_table(
+    config: object,
+    *,
+    config_id: str,
+    lookup_spec: Callable[[str], SpecT],
+    spec_config_type: Callable[[SpecT], type[ConfigT]],
+    label: str,
+) -> ConfigT:
+    return require_spec_config(
+        config,
+        spec_config_type(lookup_spec(config_id)),
+        label,
+    )
 
 
 def validate_owner_config(

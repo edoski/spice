@@ -10,7 +10,7 @@ A temporal compiler is a label-construction engine. It answers: for each decisio
 
 ## Pattern
 
-Compiler config validates user intent. The local registry maps compiler id to compile hooks and runtime metadata codecs. The compiled problem contract then builds stores for training and delay-specific stores for evaluation.
+Compiler config validates user intent. The local registry maps compiler id to config types, compile hooks, and runtime metadata codecs. `core.specs` supplies the mechanical owner-spec helper for payload coercion; compiler ids and runtime metadata codecs stay local. The compiled problem contract then builds stores for training and delay-specific stores for evaluation.
 
 Config-facing compiler and observed-time-window slot-spacing payload errors normalize to `ConfigResolutionError`. Runtime metadata codecs keep their runtime metadata error domain.
 

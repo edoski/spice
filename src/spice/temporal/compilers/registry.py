@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from ...core.specs import (
+    coerce_spec_config,
     lookup_local_spec,
-    owner_payload_id,
     require_spec_config,
-    validate_owner_config,
+    require_spec_config_from_table,
 )
 from .base import ProblemCompilerConfig
 
@@ -100,16 +100,14 @@ def problem_compiler_spec(compiler_id: str) -> ProblemCompilerSpec:
 def coerce_problem_compiler_config(
     payload: object,
 ) -> ProblemCompilerConfig:
-    raw_payload, compiler_id = owner_payload_id(
+    return coerce_spec_config(
         payload,
         owner="problem.compiler",
-        config_type=ProblemCompilerConfig,
+        base_config_type=ProblemCompilerConfig,
         id_label="problem.compiler.id",
+        lookup_spec=problem_compiler_spec,
+        spec_config_type=lambda spec: spec.config_type,
     )
-    spec = problem_compiler_spec(compiler_id)
-    if isinstance(payload, spec.config_type):
-        return payload
-    return validate_owner_config(raw_payload, spec.config_type)
 
 
 def compile_problem(
@@ -120,10 +118,12 @@ def compile_problem(
 ) -> CompiledProblemContract:
     compiler_id = problem.compiler.id
     spec = problem_compiler_spec(compiler_id)
-    compiler_config = require_spec_config(
+    compiler_config = require_spec_config_from_table(
         problem.compiler,
-        spec.config_type,
-        "problem compiler config",
+        config_id=compiler_id,
+        lookup_spec=problem_compiler_spec,
+        spec_config_type=lambda entry: entry.config_type,
+        label="problem compiler config",
     )
     return spec.compile_problem(
         problem,

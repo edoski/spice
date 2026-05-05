@@ -10,10 +10,10 @@ import optuna
 import torch
 
 from ...core.specs import (
+    coerce_spec_config,
     lookup_local_spec,
-    owner_payload_id,
     require_spec_config,
-    validate_owner_config,
+    require_spec_config_from_table,
 )
 from ...prediction import PredictionOutputSpec
 from ..models import TemporalModel
@@ -61,16 +61,17 @@ def model_spec(model_id: str) -> ModelSpec[Any, Any, Any]:
 
 
 def coerce_model_config(payload: object) -> ModelConfig[str]:
-    raw_payload, model_id = owner_payload_id(
-        payload,
-        owner="model",
-        config_type=ModelConfig,
-        id_label="model.id",
+    return cast(
+        ModelConfig[str],
+        coerce_spec_config(
+            payload,
+            owner="model",
+            base_config_type=ModelConfig,
+            id_label="model.id",
+            lookup_spec=model_spec,
+            spec_config_type=lambda spec: spec.model_config_type,
+        ),
     )
-    spec = model_spec(model_id)
-    if isinstance(payload, spec.model_config_type):
-        return cast(ModelConfig[str], payload)
-    return cast(ModelConfig[str], validate_owner_config(raw_payload, spec.model_config_type))
 
 
 def build_model(
@@ -79,7 +80,13 @@ def build_model(
     config: ModelConfig[str],
 ) -> TemporalModel:
     spec = model_spec(config.id)
-    concrete_config = require_spec_config(config, spec.model_config_type, "model config")
+    concrete_config = require_spec_config_from_table(
+        config,
+        config_id=config.id,
+        lookup_spec=model_spec,
+        spec_config_type=lambda entry: entry.model_config_type,
+        label="model config",
+    )
     return spec.build_model(n_features, output_spec, concrete_config)
 
 
@@ -104,7 +111,13 @@ def apply_model_tuned_parameters(
     params: TunedModelParams,
 ) -> ModelConfig[str]:
     spec = model_spec(model_config.id)
-    concrete_config = require_spec_config(model_config, spec.model_config_type, "model config")
+    concrete_config = require_spec_config_from_table(
+        model_config,
+        config_id=model_config.id,
+        lookup_spec=model_spec,
+        spec_config_type=lambda entry: entry.model_config_type,
+        label="model config",
+    )
     concrete_params = require_spec_config(
         params,
         spec.tuned_params_type,
@@ -120,10 +133,12 @@ def sample_model_tuned_parameters(
     tuning_space: ModelTuningSpaceConfig[str],
 ) -> TunedModelParams[str] | None:
     spec = model_spec(tuning_space.id)
-    concrete_space = require_spec_config(
+    concrete_space = require_spec_config_from_table(
         tuning_space,
-        spec.tuning_space_type,
-        "tuning_space.model",
+        config_id=tuning_space.id,
+        lookup_spec=model_spec,
+        spec_config_type=lambda entry: entry.tuning_space_type,
+        label="tuning_space.model",
     )
     sampled: dict[str, TunedScalar] = {}
     for field in spec.tunable_fields:

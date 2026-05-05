@@ -28,7 +28,7 @@ ResolvedFeatureTable
 
 ## Catalog Family
 
-`core_fee_dynamics` is a catalog family with separate registered catalogs for the safe baseline, unsafe same-block comparator, priority-fee extension, and elapsed-position ablation. Each registered catalog owns its selectable outputs and fingerprint sources. Shared formulas live in private family helpers; the registry does not slice one broad catalog with external allow-lists.
+`core_fee_dynamics` is a catalog family with separate registered catalogs for the safe baseline, unsafe same-block comparator, priority-fee extension, and elapsed-position ablation. Each registered catalog owns its selectable outputs and fingerprint sources. Formula helpers are split by behavior owner: transforms, time/cadence, base fee, block facts, fee context, and priority fee. The registry does not slice one broad catalog with external allow-lists.
 
 The safe `core_fee_dynamics` catalog is protocol-first and includes the safe local-trend signals that improved the 1M A/B grid. Output sets are composed from explicit Python groups so YAML specs can stay fully expanded while tests verify they match the canonical composition.
 
@@ -59,4 +59,4 @@ Feature matrices are `float32` and finite. Warmup rows use finite placeholders t
 
 ## Fingerprints
 
-Fingerprints hash the features id, selected output names, and each catalog's implementation source files. They do not hash output paths. Splitting a family catalog can naturally change fingerprints because the source layout is part of the feature ABI.
+Fingerprints hash the features id, selected output names, and each catalog's implementation source files. They do not hash output paths. A catalog fingerprints only modules that can change its behavior; the priority-fee and elapsed-position catalogs fingerprint the safe helper modules they reuse, and the safe catalog does not fingerprint priority-only or elapsed-only code.

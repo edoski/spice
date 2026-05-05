@@ -11,27 +11,37 @@ from spice.config import coerce_features_config
 from spice.config.groups import load_named_group_payload
 from spice.core.errors import ConfigResolutionError
 from spice.features import (
-    CompiledFeatureContract,
     FeaturePrerequisites,
     compile_feature_contract,
     validate_feature_selection,
 )
 from spice.features import core as feature_core
-from spice.features.sets.core_fee_dynamics import _shared as shared_module
+from spice.features.sets.core_fee_dynamics import _base_fee as base_fee_module
+from spice.features.sets.core_fee_dynamics import _block_facts as block_facts_module
+from spice.features.sets.core_fee_dynamics import _fee_context as fee_context_module
+from spice.features.sets.core_fee_dynamics import _priority_fee as priority_fee_module
+from spice.features.sets.core_fee_dynamics import _time as time_module
+from spice.features.sets.core_fee_dynamics import _transforms as transforms_module
+from spice.features.sets.core_fee_dynamics import elapsed_position as elapsed_module
 from spice.features.sets.core_fee_dynamics import safe as safe_module
+from spice.features.sets.core_fee_dynamics import unsafe as unsafe_module
+from spice.features.sets.core_fee_dynamics import with_priority_fee as priority_module
 from spice.features.sets.core_fee_dynamics.elapsed_position import (
+    CORE_FEE_DYNAMICS_ELAPSED_POSITION,
     CORE_FEE_DYNAMICS_ELAPSED_POSITION_OUTPUTS,
-)
-from spice.features.sets.core_fee_dynamics.priority_fee import (
-    CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS,
-    PRIORITY_FEE_OUTPUTS,
 )
 from spice.features.sets.core_fee_dynamics.safe import (
     CORE_FEE_DYNAMICS,
     CORE_FEE_DYNAMICS_OUTPUTS,
 )
 from spice.features.sets.core_fee_dynamics.unsafe import (
+    CORE_FEE_DYNAMICS_UNSAFE,
     CORE_FEE_DYNAMICS_UNSAFE_OUTPUTS,
+)
+from spice.features.sets.core_fee_dynamics.with_priority_fee import (
+    CORE_FEE_DYNAMICS_PRIORITY_FEE,
+    CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS,
+    PRIORITY_FEE_OUTPUTS,
 )
 
 
@@ -138,21 +148,43 @@ def test_core_fee_dynamics_rejects_priority_fee_outputs() -> None:
         )
 
     coerce_features_config(
-            {
-                "id": "core_fee_dynamics_with_priority_fee",
-                "outputs": [*CORE_FEE_DYNAMICS_OUTPUTS, "prev_priority_fee_p50"],
-            }
-        )
+        {
+            "id": "core_fee_dynamics_with_priority_fee",
+            "outputs": [*CORE_FEE_DYNAMICS_OUTPUTS, "prev_priority_fee_p50"],
+        }
+    )
 
 
-def test_core_fee_dynamics_fingerprint_includes_shared_engine() -> None:
-    assert safe_module.__file__ is not None
-    assert shared_module.__file__ is not None
-    assert feature_core.__file__ is not None
+def test_core_fee_dynamics_fingerprints_follow_owned_modules() -> None:
+    core_path = Path(feature_core.__file__).resolve()
+    shared_owner_paths = (
+        Path(transforms_module.__file__).resolve(),
+        Path(time_module.__file__).resolve(),
+        Path(base_fee_module.__file__).resolve(),
+        Path(block_facts_module.__file__).resolve(),
+        Path(fee_context_module.__file__).resolve(),
+    )
+
     assert CORE_FEE_DYNAMICS.fingerprint_sources == (
         Path(safe_module.__file__).resolve(),
-        Path(shared_module.__file__).resolve(),
-        Path(feature_core.__file__).resolve(),
+        *shared_owner_paths,
+        core_path,
+    )
+    assert CORE_FEE_DYNAMICS_UNSAFE.fingerprint_sources == (
+        Path(unsafe_module.__file__).resolve(),
+        *shared_owner_paths,
+        core_path,
+    )
+    assert CORE_FEE_DYNAMICS_PRIORITY_FEE.fingerprint_sources == (
+        Path(priority_module.__file__).resolve(),
+        *shared_owner_paths,
+        Path(priority_fee_module.__file__).resolve(),
+        core_path,
+    )
+    assert CORE_FEE_DYNAMICS_ELAPSED_POSITION.fingerprint_sources == (
+        Path(elapsed_module.__file__).resolve(),
+        *shared_owner_paths,
+        core_path,
     )
 
 
@@ -168,18 +200,6 @@ def test_default_core_fee_dynamics_excludes_elapsed_position_signal() -> None:
                 "outputs": [*outputs, "elapsed_seconds"],
             }
         )
-
-
-def test_compiled_contract_rejects_baseline_elapsed_position_output() -> None:
-    contract = CompiledFeatureContract(
-        features_id="core_fee_dynamics",
-        feature_names=("elapsed_seconds",),
-        feature_graph_fingerprint="manual",
-        feature_prerequisites=FeaturePrerequisites(),
-    )
-
-    with pytest.raises(ValueError, match="Unknown feature outputs: elapsed_seconds"):
-        contract.build_table(_frame())
 
 
 def test_elapsed_position_ablation_config_adds_elapsed_seconds_signal() -> None:

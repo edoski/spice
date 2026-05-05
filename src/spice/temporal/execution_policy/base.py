@@ -12,10 +12,9 @@ from pydantic import field_validator
 
 from ...core.config_model import ConfigModel
 from ...core.specs import (
+    coerce_spec_config,
     lookup_local_spec,
-    owner_payload_id,
-    require_spec_config,
-    validate_owner_config,
+    require_spec_config_from_table,
 )
 from ...core.validation import validate_path_segment
 from ...semantics import ExecutionPolicySemantics
@@ -197,21 +196,25 @@ def execution_policy_spec(policy_id: str) -> ExecutionPolicySpec:
 def coerce_execution_policy_config(
     payload: object,
 ) -> ExecutionPolicyConfig:
-    raw_payload, policy_id = owner_payload_id(
+    return coerce_spec_config(
         payload,
         owner="problem.execution_policy",
-        config_type=ExecutionPolicyConfig,
+        base_config_type=ExecutionPolicyConfig,
         id_label="problem.execution_policy.id",
+        lookup_spec=execution_policy_spec,
+        spec_config_type=lambda spec: spec.config_type,
     )
-    spec = execution_policy_spec(policy_id)
-    if isinstance(payload, spec.config_type):
-        return payload
-    return validate_owner_config(raw_payload, spec.config_type)
 
 
 def compile_execution_policy_contract(
     config: ExecutionPolicyConfig,
 ) -> CompiledExecutionPolicyContract:
     spec = execution_policy_spec(config.id)
-    concrete_config = require_spec_config(config, spec.config_type, "execution policy config")
+    concrete_config = require_spec_config_from_table(
+        config,
+        config_id=config.id,
+        lookup_spec=execution_policy_spec,
+        spec_config_type=lambda entry: entry.config_type,
+        label="execution policy config",
+    )
     return spec.compile_contract(concrete_config)

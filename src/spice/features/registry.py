@@ -10,13 +10,13 @@ def _feature_catalogs() -> dict[str, FeatureCatalog]:
     from .sets.core_fee_dynamics.elapsed_position import (
         CORE_FEE_DYNAMICS_ELAPSED_POSITION,
     )
-    from .sets.core_fee_dynamics.priority_fee import (
-        CORE_FEE_DYNAMICS_PRIORITY_FEE,
-    )
     from .sets.core_fee_dynamics.safe import (
         CORE_FEE_DYNAMICS,
     )
     from .sets.core_fee_dynamics.unsafe import CORE_FEE_DYNAMICS_UNSAFE
+    from .sets.core_fee_dynamics.with_priority_fee import (
+        CORE_FEE_DYNAMICS_PRIORITY_FEE,
+    )
 
     return {
         "core_fee_dynamics": CORE_FEE_DYNAMICS,

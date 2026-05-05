@@ -1,13 +1,14 @@
-"""Safe core fee-dynamics catalog."""
+"""Priority-fee extended core fee-dynamics catalog."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from ...core import FeatureCatalog, FeatureSpec, SourceSpec
-from . import _base_fee, _block_facts, _fee_context, _time, _transforms
+from ...core import FeatureCatalog
+from . import _base_fee, _block_facts, _fee_context, _priority_fee, _time, _transforms
 from ._base_fee import (
     BASE_FEE_TREND_OUTPUTS,
+    CORE_FEE_LEVEL_OUTPUTS,
     base_fee_trend_features,
     core_fee_level_features,
     current_base_fee_sources,
@@ -27,18 +28,12 @@ from ._fee_context import (
     extended_rolling_fee_context_features,
     local_fee_context_features,
 )
-from ._time import CADENCE_CALENDAR_OUTPUTS, cadence_calendar_features
-
-CORE_FEE_LEVEL_OUTPUTS = _base_fee.CORE_FEE_LEVEL_OUTPUTS
-CORE_FEE_DYNAMICS_FINGERPRINT_SOURCES = (
-    Path(__file__).resolve(),
-    Path(_transforms.__file__).resolve(),
-    Path(_time.__file__).resolve(),
-    Path(_base_fee.__file__).resolve(),
-    Path(_block_facts.__file__).resolve(),
-    Path(_fee_context.__file__).resolve(),
-    Path(__file__).resolve().parents[2] / "core.py",
+from ._priority_fee import (
+    PRIORITY_FEE_OUTPUTS,
+    priority_fee_features,
+    priority_fee_sources,
 )
+from ._time import CADENCE_CALENDAR_OUTPUTS, cadence_calendar_features
 
 CORE_FEE_DYNAMICS_OUTPUTS = (
     *CORE_FEE_LEVEL_OUTPUTS,
@@ -51,16 +46,28 @@ CORE_FEE_DYNAMICS_OUTPUTS = (
     *PREVIOUS_GAS_UTILIZATION_ROLLING_OUTPUTS,
 )
 
+CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS = (
+    *CORE_FEE_DYNAMICS_OUTPUTS,
+    *PRIORITY_FEE_OUTPUTS,
+)
+CORE_FEE_DYNAMICS_PRIORITY_FEE_FINGERPRINT_SOURCES = (
+    Path(__file__).resolve(),
+    Path(_transforms.__file__).resolve(),
+    Path(_time.__file__).resolve(),
+    Path(_base_fee.__file__).resolve(),
+    Path(_block_facts.__file__).resolve(),
+    Path(_fee_context.__file__).resolve(),
+    Path(_priority_fee.__file__).resolve(),
+    Path(__file__).resolve().parents[2] / "core.py",
+)
 
-def safe_sources() -> dict[str, SourceSpec]:
-    return {
+CORE_FEE_DYNAMICS_PRIORITY_FEE = FeatureCatalog(
+    sources={
         **current_base_fee_sources(),
         **previous_block_fact_sources(),
-    }
-
-
-def safe_features() -> dict[str, FeatureSpec]:
-    return {
+        **priority_fee_sources(),
+    },
+    features={
         **core_fee_level_features(),
         **previous_block_fact_features(),
         **cadence_calendar_features(),
@@ -75,12 +82,8 @@ def safe_features() -> dict[str, FeatureSpec]:
             "prev_gas_utilization",
             base_warmup_rows=1,
         ),
-    }
-
-
-CORE_FEE_DYNAMICS = FeatureCatalog(
-    sources=safe_sources(),
-    features=safe_features(),
-    allowed_outputs=CORE_FEE_DYNAMICS_OUTPUTS,
-    fingerprint_sources=CORE_FEE_DYNAMICS_FINGERPRINT_SOURCES,
+        **priority_fee_features(),
+    },
+    allowed_outputs=CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS,
+    fingerprint_sources=CORE_FEE_DYNAMICS_PRIORITY_FEE_FINGERPRINT_SOURCES,
 )

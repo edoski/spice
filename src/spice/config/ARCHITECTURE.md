@@ -61,7 +61,7 @@ training.input_normalization.id -> input-normalization config type
 objective.id             -> objective config shape
 ```
 
-So config group typed loading, resolved snapshot hydration, and typed tuned-parameter transforms call owner coercers. Config-facing coercer envelope errors normalize to `ConfigResolutionError`.
+So config group typed loading, resolved snapshot hydration, and typed tuned-parameter transforms call owner coercers. Config-facing coercer envelope errors normalize to `ConfigResolutionError`. Owner tables stay in their packages; `core.specs` only supplies mechanical helpers for payload/id extraction, concrete-type validation, and compile-time type assertions.
 
 A Concrete Owner Config is the concrete local-spec config selected by an owner id. Owner coercers preserve identity only for Concrete Owner Config instances. Abstract typed selector configs are redispatched by id and validated as the concrete type before runtime code sees them. This keeps all implementation-selection knowledge in the owning domain.
 

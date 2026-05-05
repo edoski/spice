@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TypeVar
 
 from ..core.specs import (
+    coerce_spec_config,
     lookup_local_spec,
-    owner_payload_id,
     require_spec_config,
-    validate_owner_config,
+    require_spec_config_from_table,
 )
 from .config import (
     EvaluatorConfig,
@@ -20,8 +19,6 @@ from .config import (
 from .contracts import CompiledEvaluatorContract
 from .full_temporal_replay import compile_full_temporal_replay_evaluator_contract
 from .poisson_replay import compile_poisson_replay_evaluator_contract
-
-EvaluatorConfigT = TypeVar("EvaluatorConfigT", bound=EvaluatorConfig)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,13 +31,13 @@ _EVALUATOR_SPECS: dict[str, _EvaluatorSpec] = {
     "poisson_replay_2h": _EvaluatorSpec(
         config_type=PoissonReplayEvaluatorConfig,
         compile_contract=lambda config: compile_poisson_replay_evaluator_contract(
-            _require_config(config, PoissonReplayEvaluatorConfig)
+            require_spec_config(config, PoissonReplayEvaluatorConfig, "evaluation config")
         ),
     ),
     "full_temporal_replay": _EvaluatorSpec(
         config_type=FullTemporalReplayEvaluatorConfig,
         compile_contract=lambda config: compile_full_temporal_replay_evaluator_contract(
-            _require_config(config, FullTemporalReplayEvaluatorConfig)
+            require_spec_config(config, FullTemporalReplayEvaluatorConfig, "evaluation config")
         ),
     ),
 }
@@ -49,27 +46,29 @@ _EVALUATOR_SPECS: dict[str, _EvaluatorSpec] = {
 def coerce_evaluator_config(
     payload: object,
 ) -> EvaluatorConfig:
-    raw_payload, evaluator_id = owner_payload_id(
+    return coerce_spec_config(
         payload,
         owner="evaluation",
-        config_type=EvaluatorConfig,
+        base_config_type=EvaluatorConfig,
         id_label="evaluation.id",
+        lookup_spec=evaluator_spec,
+        spec_config_type=lambda spec: spec.config_type,
     )
-    spec = lookup_local_spec(_EVALUATOR_SPECS, evaluator_id, "evaluation.id")
-    if isinstance(payload, spec.config_type):
-        return payload
-    return validate_owner_config(raw_payload, spec.config_type)
 
 
 def compile_evaluator_contract(
     evaluator_config: EvaluatorConfig,
 ) -> CompiledEvaluatorContract:
-    spec = lookup_local_spec(_EVALUATOR_SPECS, evaluator_config.id, "evaluation.id")
-    return spec.compile_contract(evaluator_config)
+    spec = evaluator_spec(evaluator_config.id)
+    concrete_config = require_spec_config_from_table(
+        evaluator_config,
+        config_id=evaluator_config.id,
+        lookup_spec=evaluator_spec,
+        spec_config_type=lambda entry: entry.config_type,
+        label="evaluation config",
+    )
+    return spec.compile_contract(concrete_config)
 
 
-def _require_config(
-    config: EvaluatorConfig,
-    config_type: type[EvaluatorConfigT],
-) -> EvaluatorConfigT:
-    return require_spec_config(config, config_type, "evaluation config")
+def evaluator_spec(evaluator_id: str) -> _EvaluatorSpec:
+    return lookup_local_spec(_EVALUATOR_SPECS, evaluator_id, "evaluation.id")

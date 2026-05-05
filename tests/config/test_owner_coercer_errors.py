@@ -25,6 +25,10 @@ from spice.modeling.tuned_config import (
 )
 from spice.objectives import coerce_objective_config
 from spice.temporal.compilers import ProblemCompilerConfig, coerce_problem_compiler_config
+from spice.temporal.compilers.observed_time_window import (
+    ObservedTimeWindowNominalSlotSpacingConfig,
+    ObservedTimeWindowSlotSpacingConfig,
+)
 from spice.temporal.execution_policy import (
     ExecutionPolicyConfig,
     coerce_execution_policy_config,
@@ -177,6 +181,24 @@ def test_owner_coercers_redispatch_abstract_selector_configs() -> None:
     assert isinstance(coerced_normalization, RowStandardConfig)
     assert coerced_tuning_space is not tuning_space
     assert type(coerced_tuning_space.model).__name__ == "LstmTuningSpaceModelConfig"
+
+
+def test_nested_slot_spacing_owner_coercer_preserves_and_redispatches() -> None:
+    concrete_slot_spacing = ObservedTimeWindowNominalSlotSpacingConfig()
+    concrete_compiler = coerce_problem_compiler_config(
+        {"id": "observed_time_window", "slot_spacing": concrete_slot_spacing}
+    )
+    abstract_slot_spacing = ObservedTimeWindowSlotSpacingConfig(id="nominal")
+    redispatched_compiler = coerce_problem_compiler_config(
+        {"id": "observed_time_window", "slot_spacing": abstract_slot_spacing}
+    )
+
+    assert concrete_compiler.slot_spacing is concrete_slot_spacing
+    assert redispatched_compiler.slot_spacing is not abstract_slot_spacing
+    assert isinstance(
+        redispatched_compiler.slot_spacing,
+        ObservedTimeWindowNominalSlotSpacingConfig,
+    )
 
 
 @pytest.mark.parametrize(

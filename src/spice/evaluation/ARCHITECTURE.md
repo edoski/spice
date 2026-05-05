@@ -37,7 +37,7 @@ compile_evaluator_contract()
   - compile concrete evaluator contract
 ```
 
-The registry is an explicit table of trusted evaluator adapters. It is not a generic engine registry.
+The registry is an explicit table of trusted evaluator adapters. It is not a generic engine registry. Shared owner-spec helpers handle only mechanical payload and concrete-type validation; evaluator ids and compile hooks stay local to `evaluation`.
 
 ## Scoring Flow
 

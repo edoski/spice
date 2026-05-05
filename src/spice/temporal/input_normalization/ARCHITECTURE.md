@@ -31,7 +31,7 @@ The same saved `ScalerStats` is used later during inference/evaluation so that e
 
 ## Registry Pattern
 
-Input-normalization configs use `id` as the implementation selector. The local registry maps ids to concrete config types and compile hooks. Compile dispatch uses `require_spec_config` to ensure the already-coerced config matches the selected spec.
+Input-normalization configs use `id` as the implementation selector. The local registry maps ids to concrete config types and compile hooks. `core.specs` supplies the mechanical owner-spec helper for payload coercion and compile-time type assertions; policy ids and fit hooks stay local.
 
 ```text
 id -> config_type -> concrete compile hook -> CompiledInputNormalizationContract

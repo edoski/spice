@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from pydantic import SerializeAsAny, field_validator
 
 from ...core.config_model import ConfigModel
-from ...core.specs import lookup_local_spec, owner_payload_id, validate_owner_config
+from ...core.specs import coerce_spec_config, lookup_local_spec
 from ...core.validation import validate_path_segment
 from ...features import (
     CompiledFeatureContract,
@@ -168,16 +168,14 @@ class ObservedTimeWindowCompilerConfig(ProblemCompilerConfig):
         cls,
         value: object,
     ) -> ObservedTimeWindowSlotSpacingConfig:
-        raw_payload, slot_spacing_id = owner_payload_id(
+        return coerce_spec_config(
             value,
             owner="observed_time_window.slot_spacing",
-            config_type=ObservedTimeWindowSlotSpacingConfig,
+            base_config_type=ObservedTimeWindowSlotSpacingConfig,
             id_label="observed_time_window.slot_spacing.id",
+            lookup_spec=_slot_spacing_spec,
+            spec_config_type=lambda spec: spec.config_type,
         )
-        spec = _slot_spacing_spec(slot_spacing_id)
-        if isinstance(value, spec.config_type):
-            return value
-        return validate_owner_config(raw_payload, spec.config_type)
 
 
 @dataclass(frozen=True, slots=True)
@@ -348,13 +346,6 @@ def _float_payload(payload: Mapping[str, object], key: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise ValueError(f"Invalid float runtime metadata field: {key}")
     return float(value)
-
-
-def _int_payload(payload: Mapping[str, object], key: str) -> int:
-    value = payload.get(key)
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"Invalid integer runtime metadata field: {key}")
-    return int(value)
 
 
 def _str_payload(payload: Mapping[str, object], key: str) -> str:

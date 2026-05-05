@@ -12,6 +12,8 @@ Prediction chooses an action. Training and inference need to know which actions 
 
 Policies must be compiled contracts, not workflow branches. Config-facing payload errors use `ConfigResolutionError`. Evaluators receive an execution-policy contract and a decoded prediction result, then compute metrics from the problem store.
 
+The local policy table owns ids, concrete config types, and compile hooks. `core.specs` supplies only the mechanical owner-spec helper for payload coercion and compile-time type assertions.
+
 The prepared Action Space is the policy-owned alignment object for selected samples. It carries sample indices, action width, and the action mask used by model-input representation, prediction targets, and decoding. The compiled execution-policy contract validates selected-sample alignment, store action width, and action-mask shape when preparing it.
 
 ## Extension Points

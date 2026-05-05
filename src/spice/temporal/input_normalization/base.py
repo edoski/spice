@@ -10,10 +10,9 @@ from pydantic import field_validator
 
 from ...core.config_model import ConfigModel
 from ...core.specs import (
+    coerce_spec_config,
     lookup_local_spec,
-    owner_payload_id,
-    require_spec_config,
-    validate_owner_config,
+    require_spec_config_from_table,
 )
 from ...core.validation import validate_path_segment
 from ...semantics import InputNormalizationSemantics
@@ -116,25 +115,25 @@ def input_normalization_spec(normalization_id: str) -> InputNormalizationSpec:
 def coerce_input_normalization_config(
     payload: object,
 ) -> InputNormalizationConfig:
-    raw_payload, normalization_id = owner_payload_id(
+    return coerce_spec_config(
         payload,
         owner="training.input_normalization",
-        config_type=InputNormalizationConfig,
+        base_config_type=InputNormalizationConfig,
         id_label="training.input_normalization.id",
+        lookup_spec=input_normalization_spec,
+        spec_config_type=lambda spec: spec.config_type,
     )
-    spec = input_normalization_spec(normalization_id)
-    if isinstance(payload, spec.config_type):
-        return payload
-    return validate_owner_config(raw_payload, spec.config_type)
 
 
 def compile_input_normalization_contract(
     config: InputNormalizationConfig,
 ) -> CompiledInputNormalizationContract:
     spec = input_normalization_spec(config.id)
-    concrete_config = require_spec_config(
+    concrete_config = require_spec_config_from_table(
         config,
-        spec.config_type,
-        "input normalization config",
+        config_id=config.id,
+        lookup_spec=input_normalization_spec,
+        spec_config_type=lambda entry: entry.config_type,
+        label="input normalization config",
     )
     return spec.compile_contract(concrete_config)
