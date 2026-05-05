@@ -33,12 +33,12 @@ from spice.storage.identity import (
     study_definition_identity_from_manifest,
     study_definition_identity_from_tuned_config,
 )
-from spice.storage.study_manifest import manifest_from_tune_config
-from spice.workflows.preparation import (
+from spice.storage.root_identity import (
     produced_artifact_id,
     produced_corpus_id,
     produced_study_id,
 )
+from spice.storage.study_manifest import manifest_from_tune_config
 from tests.root_handle_helpers import corpus_handle, study_handle
 
 TEST_DATASET_ID = "cor_9a73b1e88edb488afb1e"

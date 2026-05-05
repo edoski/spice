@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from typing import cast
 
-from spice.config import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
+from spice.config import AcquireConfig, EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.config.models import ArtifactVariant
 from spice.storage.catalog.records import (
     CatalogArtifactRecord,
     CatalogDatasetRecord,
     CatalogStudyRecord,
+)
+from spice.storage.root_identity import (
+    produced_artifact_id,
+    produced_corpus_id,
+    produced_study_id,
 )
 from spice.storage.workflow_roots import (
     BaselineTrainWorkflowRoots,
@@ -17,8 +22,7 @@ from spice.storage.workflow_roots import (
     study_root_from_record,
 )
 from spice.workflows.preparation import (
-    produced_artifact_id,
-    produced_study_id,
+    resolve_acquire_producer_roots,
     resolve_evaluate_roots,
     resolve_train_roots,
     resolve_tune_roots,
@@ -76,6 +80,22 @@ def _artifact_record(
         root_path=root,
         state_db_path=root / "custom-state.sqlite",
     )
+
+
+def test_acquire_producer_roots_use_produced_corpus_identity(
+    tmp_path,
+    load_workflow_config,
+) -> None:
+    config = cast(
+        AcquireConfig,
+        load_workflow_config(WorkflowTask.ACQUIRE, workspace=tmp_path),
+    )
+
+    roots = resolve_acquire_producer_roots(config)
+
+    assert roots.corpus.dataset_id == produced_corpus_id(config)
+    assert roots.corpus.dataset_name == config.dataset.name
+    assert roots.corpus.chain_name == config.chain.name
 
 
 def test_tune_consumer_roots_resolve_dataset_and_produced_study(

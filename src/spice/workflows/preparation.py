@@ -22,12 +22,8 @@ from ..storage.catalog.index import (
     resolve_study_record,
 )
 from ..storage.engine import state_db_path
-from ..storage.identity import (
-    artifact_storage_identity_from_config,
-    study_storage_identity_from_config,
-)
-from ..storage.ids import artifact_storage_id, corpus_storage_id, study_storage_id
 from ..storage.layout import artifact_root_path, corpus_root_path, study_root_path
+from ..storage.root_identity import produced_root_facts
 from ..storage.selectors import ArtifactSelector, DatasetSelector, StudySelector
 from ..storage.workflow_roots import (
     AcquireWorkflowRoots,
@@ -73,30 +69,6 @@ class PreparedEvaluateWorkflow:
     config: EvaluateConfig
     roots: EvaluateWorkflowRoots
     inference_context: ArtifactInferenceContext
-
-
-def produced_corpus_id(config: AcquireConfig) -> str:
-    return corpus_storage_id(
-        chain_name=config.chain.name,
-        dataset_name=config.dataset.name,
-        evaluation_date=config.dataset.evaluation_date,
-    )
-
-
-def produced_study_id(config: TuneConfig) -> str:
-    return study_storage_id(
-        identity=study_storage_identity_from_config(config, corpus_id=config.dataset_id)
-    )
-
-
-def produced_artifact_id(config: TrainConfig, *, dataset_id: str) -> str:
-    return artifact_storage_id(
-        identity=artifact_storage_identity_from_config(
-            config,
-            corpus_id=dataset_id,
-            study_id=config.study_id,
-        )
-    )
 
 
 def produced_corpus_root(
@@ -171,11 +143,14 @@ def produced_artifact_root(
 
 
 def resolve_acquire_producer_roots(config: AcquireConfig) -> AcquireWorkflowRoots:
+    produced = produced_root_facts(config)
+    if produced.corpus_id is None:
+        raise ValueError("acquire root identity did not produce corpus_id")
     return AcquireWorkflowRoots(
         corpus=produced_corpus_root(
             config.storage.root,
             chain_name=config.chain.name,
-            dataset_id=produced_corpus_id(config),
+            dataset_id=produced.corpus_id,
             dataset_name=config.dataset.name,
         ),
     )
@@ -187,12 +162,15 @@ def resolve_tune_roots(config: TuneConfig) -> TuneWorkflowRoots:
         selector=DatasetSelector(dataset_id=config.dataset_id),
     )
     corpus = corpus_root_from_record(config.storage.root, dataset)
+    produced = produced_root_facts(config)
+    if produced.study_id is None:
+        raise ValueError("tune root identity did not produce study_id")
     return TuneWorkflowRoots(
         corpus=corpus,
         study=produced_study_root(
             config.storage.root,
             corpus=corpus,
-            study_id=produced_study_id(config),
+            study_id=produced.study_id,
             study_name=config.study.name,
         ),
     )
@@ -212,14 +190,16 @@ def resolve_train_roots(config: TrainConfig) -> TrainWorkflowRoots:
         )
         corpus = corpus_root_from_record(config.storage.root, dataset)
         study_root = study_root_from_record(config.storage.root, study)
-        artifact_id = produced_artifact_id(config, dataset_id=study.dataset_id)
+        produced = produced_root_facts(config, dataset_id=study.dataset_id)
+        if produced.artifact_id is None:
+            raise ValueError("train root identity did not produce artifact_id")
         return TunedTrainWorkflowRoots(
             corpus=corpus,
             study=study_root,
             artifact=produced_artifact_root(
                 config.storage.root,
                 corpus=corpus,
-                artifact_id=artifact_id,
+                artifact_id=produced.artifact_id,
                 variant=config.artifact.variant,
                 study=study_root,
             ),
@@ -232,13 +212,15 @@ def resolve_train_roots(config: TrainConfig) -> TrainWorkflowRoots:
         selector=DatasetSelector(dataset_id=config.dataset_id),
     )
     corpus = corpus_root_from_record(config.storage.root, dataset)
-    artifact_id = produced_artifact_id(config, dataset_id=dataset.dataset_id)
+    produced = produced_root_facts(config, dataset_id=dataset.dataset_id)
+    if produced.artifact_id is None:
+        raise ValueError("train root identity did not produce artifact_id")
     return BaselineTrainWorkflowRoots(
         corpus=corpus,
         artifact=produced_artifact_root(
             config.storage.root,
             corpus=corpus,
-            artifact_id=artifact_id,
+            artifact_id=produced.artifact_id,
             variant=config.artifact.variant,
         ),
     )

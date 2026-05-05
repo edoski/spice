@@ -19,7 +19,7 @@ from spice.core.errors import ConfigResolutionError
 from spice.storage.catalog import CatalogStudyRecord
 from spice.storage.catalog.index import upsert_catalog_record
 from spice.storage.engine import state_db_path
-from spice.workflows.preparation import produced_artifact_id, produced_study_id
+from spice.storage.root_identity import produced_artifact_id, produced_study_id
 
 ETH_DATASET_ID = "cor_9a73b1e88edb488afb1e"
 
@@ -59,7 +59,7 @@ def test_materialization_injects_study_id_for_tuned_train_dependency(
                     ],
                 }
             ]
-        }
+        },
     )
 
     tune = next(entry for entry in entries if entry.workflow is WorkflowTask.TUNE)
@@ -69,9 +69,7 @@ def test_materialization_injects_study_id_for_tuned_train_dependency(
     assert isinstance(train.config, TrainConfig)
     assert train.config.study_id == produced_study_id(tune.config)
     assert train.config.dataset_id is None
-    assert root_id(train.root_ledger, role="consumed", root_kind="study") == (
-        train.config.study_id
-    )
+    assert root_id(train.root_ledger, role="consumed", root_kind="study") == (train.config.study_id)
     assert produced_study_root_id(tune.root_ledger) == produced_study_id(tune.config)
     assert train.selection.study == "case_study"
 
@@ -131,7 +129,7 @@ def test_materialization_injects_artifact_and_dataset_for_artifact_from(
                     ],
                 }
             ]
-        }
+        },
     )
 
     train = next(entry for entry in entries if entry.workflow is WorkflowTask.TRAIN)
@@ -184,7 +182,7 @@ def test_materialization_preserves_explicit_evaluate_dataset_id_with_artifact_fr
                     ],
                 }
             ]
-        }
+        },
     )
 
     train = next(entry for entry in entries if entry.workflow is WorkflowTask.TRAIN)
@@ -253,7 +251,7 @@ def test_materialization_uses_catalog_dataset_for_explicit_tuned_study(
                     ],
                 }
             ]
-        }
+        },
     )
 
     train = next(entry for entry in entries if entry.workflow is WorkflowTask.TRAIN)
@@ -297,7 +295,7 @@ def test_materialization_preserves_selection_ledger_context(
                     ],
                 }
             ]
-        }
+        },
     )
 
     evaluate = next(entry for entry in entries if entry.workflow is WorkflowTask.EVALUATE)

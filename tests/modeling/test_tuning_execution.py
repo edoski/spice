@@ -27,7 +27,7 @@ from spice.modeling.tuning_execution import (
     open_tuning_execution,
     run_tuning_execution,
 )
-from spice.workflows.preparation import produced_study_id
+from spice.storage.root_identity import produced_study_id
 from tests.root_handle_helpers import corpus_handle, study_handle, tune_roots
 
 TEST_DATASET_ID = "cor_9a73b1e88edb488afb1e"
@@ -210,9 +210,7 @@ def test_tuning_execution_reports_resume_trials_and_best_improvements(
         roots=roots,
         corpus_manifest=_corpus_manifest(config),
         callbacks=TuningExecutionCallbacks(
-            on_resume=lambda existing, target: events.append(
-                ("resume", (existing, target))
-            ),
+            on_resume=lambda existing, target: events.append(("resume", (existing, target))),
             on_study_start=lambda remaining: events.append(("start", remaining)),
             on_trial_complete=lambda progress: events.append(("trial", progress)),
             on_best_improved=lambda progress: events.append(("best", progress)),

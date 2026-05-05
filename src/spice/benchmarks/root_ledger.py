@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from ..config.models import ArtifactVariant, TrainConfig, TuneConfig, WorkflowTask
+from ..config.models import ArtifactVariant, TrainConfig, WorkflowTask
 from ..config.selections import (
     EvaluateWorkflowSelection,
     TrainWorkflowSelection,
@@ -17,23 +17,12 @@ from ..config.workflow_snapshots import ResolvedWorkflowConfig
 from ..core.config_model import ConfigModel
 from ..core.errors import ConfigResolutionError, SelectorResolutionError
 from ..storage.catalog.index import resolve_study_record
+from ..storage.root_identity import consumed_root_facts, produced_root_facts
 from ..storage.selectors import StudySelector
-from ..workflows.preparation import produced_artifact_id, produced_study_id
 from .dependency_ledger import BenchmarkDependencyLedger
 
 BenchmarkRootRole = Literal["consumed", "produced", "source"]
 BenchmarkRootKind = Literal["dataset", "study", "artifact"]
-
-
-class BenchmarkConsumedRoots(ConfigModel):
-    dataset_id: str | None = None
-    study_id: str | None = None
-    artifact_id: str | None = None
-
-
-class BenchmarkProducedRoots(ConfigModel):
-    study_id: str | None = None
-    artifact_id: str | None = None
 
 
 class BenchmarkMaterializedRoot(ConfigModel):
@@ -122,8 +111,11 @@ class BenchmarkRootMaterializer:
         config: ResolvedWorkflowConfig,
         prepared: _PreparedRootSelection,
     ) -> BenchmarkRootLedger:
-        consumed = self._consumed_roots(config)
-        produced = self._produced_roots(config)
+        consumed = consumed_root_facts(config)
+        train_dataset_id = (
+            self._train_dataset_id(config) if isinstance(config, TrainConfig) else None
+        )
+        produced = produced_root_facts(config, dataset_id=train_dataset_id)
         entries: list[BenchmarkMaterializedRoot] = []
         if consumed.dataset_id is not None:
             entries.append(
@@ -170,7 +162,7 @@ class BenchmarkRootMaterializer:
                     root_kind="study",
                     root_id=produced.study_id,
                     study_id=produced.study_id,
-                    dataset_id=config.dataset_id if isinstance(config, TuneConfig) else None,
+                    dataset_id=consumed.dataset_id,
                 )
             )
         if produced.artifact_id is not None:
@@ -182,9 +174,7 @@ class BenchmarkRootMaterializer:
                     root_kind="artifact",
                     root_id=produced.artifact_id,
                     artifact_id=produced.artifact_id,
-                    dataset_id=self._train_dataset_id(config)
-                    if isinstance(config, TrainConfig)
-                    else None,
+                    dataset_id=consumed.dataset_id or train_dataset_id,
                 )
             )
         if prepared.artifact_source_dataset_id is not None:
@@ -209,31 +199,6 @@ class BenchmarkRootMaterializer:
     ) -> None:
         del run_id, config
         self.root_entries.extend(ledger.entries)
-
-    def _consumed_roots(self, config: ResolvedWorkflowConfig) -> BenchmarkConsumedRoots:
-        if isinstance(config, TuneConfig):
-            return BenchmarkConsumedRoots(dataset_id=config.dataset_id)
-        if isinstance(config, TrainConfig):
-            return BenchmarkConsumedRoots(
-                dataset_id=config.dataset_id,
-                study_id=config.study_id,
-            )
-        return BenchmarkConsumedRoots(
-            dataset_id=config.dataset_id,
-            artifact_id=config.artifact_id,
-        )
-
-    def _produced_roots(self, config: ResolvedWorkflowConfig) -> BenchmarkProducedRoots:
-        if isinstance(config, TuneConfig):
-            return BenchmarkProducedRoots(study_id=produced_study_id(config))
-        if isinstance(config, TrainConfig):
-            return BenchmarkProducedRoots(
-                artifact_id=produced_artifact_id(
-                    config,
-                    dataset_id=self._train_dataset_id(config),
-                )
-            )
-        return BenchmarkProducedRoots()
 
     def _dependency_study_id(self, depends_on: tuple[str, ...]) -> str:
         for run_id in depends_on:
@@ -286,9 +251,7 @@ class BenchmarkRootMaterializer:
         matches = [
             entry
             for entry in self.root_entries
-            if entry.run_id == run_id
-            and entry.role == "produced"
-            and entry.root_kind == root_kind
+            if entry.run_id == run_id and entry.role == "produced" and entry.root_kind == root_kind
         ]
         if len(matches) > 1:
             raise ConfigResolutionError(
@@ -309,9 +272,7 @@ def root_id(
         if entry.role == role and entry.root_kind == root_kind
     ]
     if len(matches) > 1:
-        raise ConfigResolutionError(
-            f"benchmark root ledger has multiple {role} {root_kind} roots"
-        )
+        raise ConfigResolutionError(f"benchmark root ledger has multiple {role} {root_kind} roots")
     return matches[0] if matches else None
 
 
