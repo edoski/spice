@@ -13,7 +13,7 @@ from ..core.errors import SpiceOperatorError
 from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary
 from .dependency_ledger import BenchmarkDependencyLedger
 from .models import BenchmarkPlanEntry
-from .root_ledger import BenchmarkRootLedger, consumed_dataset_id
+from .root_ledger import BenchmarkRootLedger
 from .runs import BenchmarkSubmissionRecord, format_datetime
 from .selection_ledger import BenchmarkSelectionLedger
 
@@ -107,7 +107,7 @@ def build_benchmark_result_record(
 ) -> BenchmarkResultRecord:
     manifest = evaluation.manifest
     runtime = evaluation.runtime
-    evaluation_dataset_id = consumed_dataset_id(entry.root_ledger)
+    evaluation_dataset_id = entry.root_ledger.consumed_dataset_id()
     if evaluation_dataset_id is None:
         raise SpiceOperatorError(
             f"benchmark run {entry.run_id} root ledger is missing consumed dataset"

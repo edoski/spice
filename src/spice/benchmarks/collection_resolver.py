@@ -15,7 +15,6 @@ from ..storage.artifact import (
     load_training_summary,
 )
 from .models import BenchmarkPlanEntry
-from .root_ledger import consumed_artifact_id, consumed_dataset_id
 from .runs import BenchmarkSubmissionRecord
 
 
@@ -51,7 +50,7 @@ def benchmark_collection_selection(
         raise SpiceOperatorError(f"benchmark submission {entry.run_id} is not evaluate")
     if not isinstance(entry.config, EvaluateConfig):
         raise SpiceOperatorError(f"benchmark run {entry.run_id} is not an evaluate config")
-    ledger_artifact_id = consumed_artifact_id(entry.root_ledger)
+    ledger_artifact_id = entry.root_ledger.consumed_artifact_id()
     if ledger_artifact_id is None:
         raise SpiceOperatorError(
             f"benchmark run {entry.run_id} root ledger is missing consumed artifact"
@@ -61,7 +60,7 @@ def benchmark_collection_selection(
             f"benchmark run {entry.run_id} root ledger artifact mismatch: "
             f"{ledger_artifact_id} != {entry.config.artifact_id}"
         )
-    ledger_dataset_id = consumed_dataset_id(entry.root_ledger)
+    ledger_dataset_id = entry.root_ledger.consumed_dataset_id()
     if ledger_dataset_id is None:
         raise SpiceOperatorError(
             f"benchmark run {entry.run_id} root ledger is missing consumed dataset"

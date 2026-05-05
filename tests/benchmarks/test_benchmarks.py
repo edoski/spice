@@ -4,7 +4,6 @@ import pytest
 import yaml
 
 from spice.benchmarks import plan_benchmark
-from spice.benchmarks.root_ledger import consumed_artifact_id
 from spice.config.models import EvaluateConfig, WorkflowTask
 from spice.core.errors import ConfigResolutionError
 
@@ -163,7 +162,7 @@ def test_evaluator_objective_grid_keeps_cross_evaluation_bindings() -> None:
     assert poisson_full.selection.surface == "current_row_fee_dynamics"
     assert poisson_full.selection.model == "lstm"
     assert poisson_full.selection.problem == "current_row_nominal"
-    assert consumed_artifact_id(poisson_full.root_ledger) == poisson_full.config.artifact_id
+    assert poisson_full.root_ledger.consumed_artifact_id() == poisson_full.config.artifact_id
     assert poisson_full.dependencies.local_run_ids == (
         "evaluator_objective_grid."
         "data-chain-ethereum__dataset_id-cor_9a73b1e88edb488afb1e."

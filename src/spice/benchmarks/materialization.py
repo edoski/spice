@@ -27,14 +27,9 @@ from ..config.selections import (
 from ..config.typed_registry import load_problem_spec
 from ..config.workflow_snapshots import ResolvedWorkflowConfig
 from ..core.errors import ConfigResolutionError
-from .dependency_ledger import (
-    BenchmarkDependencyResolver,
-    external_after_dependencies,
-    local_after_steps,
-    validate_step_graph,
-)
+from .dependency_ledger import BenchmarkDependencyPlan
 from .models import BenchmarkPlanEntry
-from .root_ledger import BenchmarkRootMaterializer
+from .root_ledger import BenchmarkPlanLedgerMaterializer
 from .schema import (
     BenchmarkCase,
     BenchmarkSpec,
@@ -50,9 +45,6 @@ class _PlanSeed:
     step_id: str
     workflow: WorkflowTask
     dimension_labels: Mapping[str, str]
-    depends_on_steps: tuple[str, ...]
-    external_dependencies: tuple[str, ...]
-    artifact_from_step: str | None
     row: Mapping[str, object]
 
 
@@ -104,43 +96,39 @@ def _format_benchmark_error(
 
 
 def _materialize_benchmark_case(case: BenchmarkCase) -> list[BenchmarkPlanEntry]:
-    validate_step_graph(case.steps)
+    dependency_plan = BenchmarkDependencyPlan.from_steps(case.steps)
     seeds = _expand_case(case)
     run_ids = _run_ids(seeds)
-    dependency_resolver = BenchmarkDependencyResolver(seeds, run_ids)
-    root_materializer = BenchmarkRootMaterializer.create()
+    ledger_materializer = BenchmarkPlanLedgerMaterializer.create(
+        seeds,
+        run_ids,
+        dependency_plan=dependency_plan,
+    )
     entries: list[BenchmarkPlanEntry] = []
     for index, seed in enumerate(seeds):
         try:
-            dependencies = dependency_resolver.resolve(seed)
             workflow_selection = _selection_for_seed(seed)
-            prepared_roots = root_materializer.prepare_selection(
-                workflow_selection,
-                dependencies,
-            )
-            config = _resolve_benchmark_config(seed.workflow, prepared_roots.selection)
-            root_ledger = root_materializer.finalize_ledger(
+            ledgers = ledger_materializer.materialize(
+                seed=seed,
                 run_id=run_ids[index],
-                workflow=seed.workflow,
-                config=config,
-                prepared=prepared_roots,
+                workflow_selection=workflow_selection,
+                resolve_config=_resolve_benchmark_config,
             )
             entry = BenchmarkPlanEntry(
                 run_id=run_ids[index],
                 case_id=seed.case_id,
                 step_id=seed.step_id,
                 workflow=seed.workflow,
-                dependencies=dependencies,
+                dependencies=ledgers.dependencies,
                 dimension_labels=dict(seed.dimension_labels),
                 selection=materialize_selection_ledger(
                     source_row=seed.row,
-                    workflow_selection=prepared_roots.selection,
+                    workflow_selection=ledgers.selection,
                 ),
-                root_ledger=root_ledger,
-                config=config,
+                root_ledger=ledgers.root_ledger,
+                config=ledgers.config,
             )
             entries.append(entry)
-            root_materializer.record_config(entry.run_id, config, root_ledger)
         except ConfigResolutionError as exc:
             raise ConfigResolutionError(
                 f"case {case.id} step {seed.step_id}: {exc.message}"
@@ -188,9 +176,6 @@ def _expand_case(case: BenchmarkCase) -> list[_PlanSeed]:
                         step_id=step.id,
                         workflow=step.workflow,
                         dimension_labels=step_labels,
-                        depends_on_steps=local_after_steps(step.after),
-                        external_dependencies=external_after_dependencies(step.after),
-                        artifact_from_step=step.artifact_from,
                         row=row,
                     )
                 )

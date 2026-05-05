@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -19,7 +20,12 @@ from ..core.errors import ConfigResolutionError, SelectorResolutionError
 from ..storage.catalog.index import resolve_study_record
 from ..storage.root_identity import consumed_root_facts, produced_root_facts
 from ..storage.selectors import StudySelector
-from .dependency_ledger import BenchmarkDependencyLedger
+from .dependency_ledger import (
+    BenchmarkDependencyLedger,
+    BenchmarkDependencyPlan,
+    BenchmarkDependencyResolver,
+    BenchmarkPlanSeed,
+)
 
 BenchmarkRootRole = Literal["consumed", "produced", "source"]
 BenchmarkRootKind = Literal["dataset", "study", "artifact"]
@@ -40,6 +46,38 @@ class BenchmarkMaterializedRoot(ConfigModel):
 class BenchmarkRootLedger(ConfigModel):
     entries: tuple[BenchmarkMaterializedRoot, ...] = ()
 
+    def root_id(
+        self,
+        *,
+        role: BenchmarkRootRole,
+        root_kind: BenchmarkRootKind,
+    ) -> str | None:
+        matches = [
+            entry.root_id
+            for entry in self.entries
+            if entry.role == role and entry.root_kind == root_kind
+        ]
+        if len(matches) > 1:
+            raise ConfigResolutionError(
+                f"benchmark root ledger has multiple {role} {root_kind} roots"
+            )
+        return matches[0] if matches else None
+
+    def consumed_dataset_id(self) -> str | None:
+        return self.root_id(role="consumed", root_kind="dataset")
+
+    def consumed_artifact_id(self) -> str | None:
+        return self.root_id(role="consumed", root_kind="artifact")
+
+    def produced_study_id(self) -> str | None:
+        return self.root_id(role="produced", root_kind="study")
+
+    def produced_artifact_id(self) -> str | None:
+        return self.root_id(role="produced", root_kind="artifact")
+
+    def artifact_source_dataset_id(self) -> str | None:
+        return self.root_id(role="source", root_kind="dataset")
+
 
 @dataclass(frozen=True, slots=True)
 class _MaterializedArtifactRoot:
@@ -54,12 +92,20 @@ class _PreparedRootSelection:
     artifact_source_dataset_id: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class BenchmarkPlanLedgers:
+    dependencies: BenchmarkDependencyLedger
+    selection: WorkflowSelection
+    config: ResolvedWorkflowConfig
+    root_ledger: BenchmarkRootLedger
+
+
 @dataclass(slots=True)
-class BenchmarkRootMaterializer:
+class _BenchmarkRootMaterializer:
     root_entries: list[BenchmarkMaterializedRoot]
 
     @classmethod
-    def create(cls) -> BenchmarkRootMaterializer:
+    def create(cls) -> _BenchmarkRootMaterializer:
         return cls(root_entries=[])
 
     def prepare_selection(
@@ -191,13 +237,7 @@ class BenchmarkRootMaterializer:
             )
         return BenchmarkRootLedger(entries=tuple(entries))
 
-    def record_config(
-        self,
-        run_id: str,
-        config: ResolvedWorkflowConfig,
-        ledger: BenchmarkRootLedger,
-    ) -> None:
-        del run_id, config
+    def record_ledger(self, ledger: BenchmarkRootLedger) -> None:
         self.root_entries.extend(ledger.entries)
 
     def _dependency_study_id(self, depends_on: tuple[str, ...]) -> str:
@@ -260,37 +300,52 @@ class BenchmarkRootMaterializer:
         return matches[0] if matches else None
 
 
-def root_id(
-    ledger: BenchmarkRootLedger,
-    *,
-    role: BenchmarkRootRole,
-    root_kind: BenchmarkRootKind,
-) -> str | None:
-    matches = [
-        entry.root_id
-        for entry in ledger.entries
-        if entry.role == role and entry.root_kind == root_kind
-    ]
-    if len(matches) > 1:
-        raise ConfigResolutionError(f"benchmark root ledger has multiple {role} {root_kind} roots")
-    return matches[0] if matches else None
+@dataclass(slots=True)
+class BenchmarkPlanLedgerMaterializer:
+    dependency_resolver: BenchmarkDependencyResolver
+    root_materializer: _BenchmarkRootMaterializer
 
+    @classmethod
+    def create(
+        cls,
+        seeds: Sequence[BenchmarkPlanSeed],
+        run_ids: Sequence[str],
+        *,
+        dependency_plan: BenchmarkDependencyPlan,
+    ) -> BenchmarkPlanLedgerMaterializer:
+        return cls(
+            dependency_resolver=BenchmarkDependencyResolver(
+                seeds,
+                run_ids,
+                dependency_plan=dependency_plan,
+            ),
+            root_materializer=_BenchmarkRootMaterializer.create(),
+        )
 
-def consumed_dataset_id(ledger: BenchmarkRootLedger) -> str | None:
-    return root_id(ledger, role="consumed", root_kind="dataset")
-
-
-def consumed_artifact_id(ledger: BenchmarkRootLedger) -> str | None:
-    return root_id(ledger, role="consumed", root_kind="artifact")
-
-
-def produced_study_root_id(ledger: BenchmarkRootLedger) -> str | None:
-    return root_id(ledger, role="produced", root_kind="study")
-
-
-def produced_artifact_root_id(ledger: BenchmarkRootLedger) -> str | None:
-    return root_id(ledger, role="produced", root_kind="artifact")
-
-
-def artifact_source_dataset_id(ledger: BenchmarkRootLedger) -> str | None:
-    return root_id(ledger, role="source", root_kind="dataset")
+    def materialize(
+        self,
+        *,
+        seed: BenchmarkPlanSeed,
+        run_id: str,
+        workflow_selection: WorkflowSelection,
+        resolve_config: Callable[[WorkflowTask, WorkflowSelection], ResolvedWorkflowConfig],
+    ) -> BenchmarkPlanLedgers:
+        dependencies = self.dependency_resolver.resolve(seed)
+        prepared_roots = self.root_materializer.prepare_selection(
+            workflow_selection,
+            dependencies,
+        )
+        config = resolve_config(seed.workflow, prepared_roots.selection)
+        root_ledger = self.root_materializer.finalize_ledger(
+            run_id=run_id,
+            workflow=seed.workflow,
+            config=config,
+            prepared=prepared_roots,
+        )
+        self.root_materializer.record_ledger(root_ledger)
+        return BenchmarkPlanLedgers(
+            dependencies=dependencies,
+            selection=prepared_roots.selection,
+            config=config,
+            root_ledger=root_ledger,
+        )

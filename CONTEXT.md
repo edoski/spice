@@ -89,7 +89,7 @@ Benchmark-owned durable root facts for a Benchmark Plan Entry, recording typed c
 _Avoid_: injected selection ids, materialization state dict
 
 **Benchmark Plan Materialization**:
-Benchmark module that turns Benchmark Specs, Cases, and Steps into Benchmark Plan Entries by expanding dimensions, matching dependencies, deriving dependency-produced root ids, and resolving Workflow Config snapshots.
+Benchmark module that turns Benchmark Specs, Cases, and Steps into Benchmark Plan Entries by expanding dimensions, delegating dependency/root policy to benchmark ledgers, and resolving Workflow Config snapshots.
 _Avoid_: benchmark compilation helper, id patching
 
 **Benchmark Run**:
@@ -290,7 +290,7 @@ _Avoid_: execution backend
 - A **Temporal Replay Runner** is shared by replay evaluator Adapters after prediction decoding and before **Temporal Accounting**.
 - **Temporal Accounting** is shared by evaluator Adapters after they select temporal decision events.
 - **Workflow Command Selection** builds typed **Workflow Selections** from operator options before config resolution.
-- A **Benchmark Collection Resolver** consumes exact artifact id, evaluation storage id, evaluator id, the pulled artifact root, and the submitted execution record to produce a collected benchmark evaluation.
+- A **Benchmark Collection Resolver** consumes exact artifact id, evaluator id, resolved delay, execution ref, and the pulled artifact root to produce a collected benchmark evaluation.
 - An **Execution Session** is opened for one explicit execution target and used by submission, following, remote transfer, and benchmark collection.
 
 ## Example Dialogue
