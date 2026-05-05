@@ -9,6 +9,14 @@ from typing import TYPE_CHECKING
 from ..config.models import ArtifactVariant
 from .catalog.records import CatalogArtifactRecord, CatalogDatasetRecord, CatalogStudyRecord
 from .corpus import load_dataset_manifest
+from .engine import state_db_path
+from .layout import (
+    artifact_root_path,
+    corpus_evaluation_dir_path,
+    corpus_history_dir_path,
+    corpus_root_path,
+    study_root_path,
+)
 
 if TYPE_CHECKING:
     from ..corpus.metadata import DatasetManifest
@@ -96,8 +104,8 @@ def corpus_root_from_record(storage_root: Path, record: CatalogDatasetRecord) ->
         chain_name=record.chain_name,
         root_path=record.root_path,
         state_db_path=record.state_db_path,
-        history_dir=record.root_path / "history",
-        evaluation_dir=record.root_path / "evaluation",
+        history_dir=corpus_history_dir_path(record.root_path),
+        evaluation_dir=corpus_evaluation_dir_path(record.root_path),
     )
 
 
@@ -129,4 +137,75 @@ def artifact_root_from_record(
         variant=ArtifactVariant(record.variant),
         study_id=record.study_id,
         study_name=record.study_name,
+    )
+
+
+def produced_corpus_root(
+    storage_root: Path,
+    *,
+    chain_name: str,
+    dataset_id: str,
+    dataset_name: str,
+) -> CorpusRootHandle:
+    root_path = corpus_root_path(storage_root, chain_name=chain_name, corpus_id=dataset_id)
+    return CorpusRootHandle(
+        storage_root=storage_root,
+        dataset_id=dataset_id,
+        dataset_name=dataset_name,
+        chain_name=chain_name,
+        root_path=root_path,
+        state_db_path=state_db_path(root_path),
+        history_dir=corpus_history_dir_path(root_path),
+        evaluation_dir=corpus_evaluation_dir_path(root_path),
+    )
+
+
+def produced_study_root(
+    storage_root: Path,
+    *,
+    corpus: CorpusRootHandle,
+    study_id: str,
+    study_name: str,
+) -> StudyRootHandle:
+    root_path = study_root_path(
+        storage_root,
+        chain_name=corpus.chain_name,
+        study_id=study_id,
+    )
+    return StudyRootHandle(
+        storage_root=storage_root,
+        study_id=study_id,
+        study_name=study_name,
+        dataset_id=corpus.dataset_id,
+        dataset_name=corpus.dataset_name,
+        chain_name=corpus.chain_name,
+        root_path=root_path,
+        state_db_path=state_db_path(root_path),
+    )
+
+
+def produced_artifact_root(
+    storage_root: Path,
+    *,
+    corpus: CorpusRootHandle,
+    artifact_id: str,
+    variant: ArtifactVariant,
+    study: StudyRootHandle | None = None,
+) -> ArtifactRootHandle:
+    root_path = artifact_root_path(
+        storage_root,
+        chain_name=corpus.chain_name,
+        artifact_id=artifact_id,
+    )
+    return ArtifactRootHandle(
+        storage_root=storage_root,
+        artifact_id=artifact_id,
+        dataset_id=corpus.dataset_id,
+        dataset_name=corpus.dataset_name,
+        chain_name=corpus.chain_name,
+        root_path=root_path,
+        state_db_path=state_db_path(root_path),
+        variant=variant,
+        study_id=None if study is None else study.study_id,
+        study_name=None if study is None else study.study_name,
     )

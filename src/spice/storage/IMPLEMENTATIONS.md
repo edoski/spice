@@ -103,7 +103,7 @@ write staged root
 
 Partial commits promote selected paths inside an existing root. Acquire uses partial commit because history, evaluation, and state paths are assembled as parts of a corpus root.
 
-`workflow_roots.py` only exposes root handles and catalog-record conversion. Workflow Preparation derives produced roots and resolves consumed roots; Storage Transactions own promotion, selected-path commit, and reindex boundaries.
+`workflow_roots.py` exposes root handles and root-handle factories. `workflow_root_materialization.py` derives produced roots and resolves consumed roots; Workflow Preparation consumes those handles for preflight. Storage Transactions own promotion, selected-path commit, and reindex boundaries.
 
 ## Transfer Support
 

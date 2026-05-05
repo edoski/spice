@@ -14,18 +14,18 @@ from spice.storage.root_identity import (
     produced_corpus_id,
     produced_study_id,
 )
+from spice.storage.workflow_root_materialization import (
+    materialize_acquire_roots,
+    materialize_evaluate_roots,
+    materialize_train_roots,
+    materialize_tune_roots,
+)
 from spice.storage.workflow_roots import (
     BaselineTrainWorkflowRoots,
     TunedTrainWorkflowRoots,
     artifact_root_from_record,
     corpus_root_from_record,
     study_root_from_record,
-)
-from spice.workflows.preparation import (
-    resolve_acquire_producer_roots,
-    resolve_evaluate_roots,
-    resolve_train_roots,
-    resolve_tune_roots,
 )
 
 
@@ -91,7 +91,7 @@ def test_acquire_producer_roots_use_produced_corpus_identity(
         load_workflow_config(WorkflowTask.ACQUIRE, workspace=tmp_path),
     )
 
-    roots = resolve_acquire_producer_roots(config)
+    roots = materialize_acquire_roots(config)
 
     assert roots.corpus.dataset_id == produced_corpus_id(config)
     assert roots.corpus.dataset_name == config.dataset.name
@@ -109,11 +109,11 @@ def test_tune_consumer_roots_resolve_dataset_and_produced_study(
     )
     dataset = _dataset_record(tmp_path, dataset_id=config.dataset_id, chain_name="polygon")
     monkeypatch.setattr(
-        "spice.workflows.preparation.resolve_dataset_record",
+        "spice.storage.workflow_root_materialization.resolve_dataset_record",
         lambda *_args, **_kwargs: dataset,
     )
 
-    roots = resolve_tune_roots(config)
+    roots = materialize_tune_roots(config)
 
     assert roots.corpus.dataset_id == config.dataset_id
     assert roots.corpus.state_db_path == dataset.state_db_path
@@ -134,11 +134,11 @@ def test_baseline_train_consumer_roots_resolve_dataset_and_produced_artifact(
     assert config.dataset_id is not None
     dataset = _dataset_record(tmp_path, dataset_id=config.dataset_id, chain_name="polygon")
     monkeypatch.setattr(
-        "spice.workflows.preparation.resolve_dataset_record",
+        "spice.storage.workflow_root_materialization.resolve_dataset_record",
         lambda *_args, **_kwargs: dataset,
     )
 
-    roots = resolve_train_roots(config)
+    roots = materialize_train_roots(config)
 
     assert isinstance(roots, BaselineTrainWorkflowRoots)
     assert roots.corpus.state_db_path == dataset.state_db_path
@@ -165,15 +165,15 @@ def test_tuned_train_consumer_roots_use_study_dataset_for_artifact_identity(
     study = _study_record(tmp_path, dataset_id="cor_from_study", chain_name="polygon")
     dataset = _dataset_record(tmp_path, dataset_id=study.dataset_id, chain_name="polygon")
     monkeypatch.setattr(
-        "spice.workflows.preparation.resolve_study_record",
+        "spice.storage.workflow_root_materialization.resolve_study_record",
         lambda *_args, **_kwargs: study,
     )
     monkeypatch.setattr(
-        "spice.workflows.preparation.resolve_dataset_record",
+        "spice.storage.workflow_root_materialization.resolve_dataset_record",
         lambda *_args, **_kwargs: dataset,
     )
 
-    roots = resolve_train_roots(config)
+    roots = materialize_train_roots(config)
 
     assert isinstance(roots, TunedTrainWorkflowRoots)
     assert roots.study.state_db_path == study.state_db_path
@@ -202,15 +202,15 @@ def test_evaluate_consumer_roots_resolve_dataset_and_artifact_independently(
         chain_name="polygon",
     )
     monkeypatch.setattr(
-        "spice.workflows.preparation.resolve_dataset_record",
+        "spice.storage.workflow_root_materialization.resolve_dataset_record",
         lambda *_args, **_kwargs: dataset,
     )
     monkeypatch.setattr(
-        "spice.workflows.preparation.resolve_artifact_record",
+        "spice.storage.workflow_root_materialization.resolve_artifact_record",
         lambda *_args, **_kwargs: artifact,
     )
 
-    roots = resolve_evaluate_roots(config)
+    roots = materialize_evaluate_roots(config)
 
     assert roots.corpus.dataset_id == config.dataset_id
     assert roots.artifact.artifact_id == config.artifact_id

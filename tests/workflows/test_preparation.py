@@ -56,7 +56,7 @@ def test_train_preparation_uses_resolved_corpus_manifest(
             feature_contract=object(),
         )
 
-    monkeypatch.setattr(preparation, "resolve_train_roots", lambda _config: roots)
+    monkeypatch.setattr(preparation, "materialize_train_roots", lambda _config: roots)
     monkeypatch.setattr(CorpusRootHandle, "load_manifest", lambda _self: corpus_manifest)
     monkeypatch.setattr(preparation, "build_artifact_training_spec", fake_build_training_spec)
     monkeypatch.setattr(preparation, "training_coverage_requirement", lambda *_args: object())
@@ -122,7 +122,7 @@ def test_tuned_train_preparation_keeps_artifact_root_stable_after_best_params(
             feature_contract=object(),
         )
 
-    monkeypatch.setattr(preparation, "resolve_train_roots", lambda _config: roots)
+    monkeypatch.setattr(preparation, "materialize_train_roots", lambda _config: roots)
     monkeypatch.setattr(
         preparation,
         "apply_study_best_params",
@@ -193,7 +193,7 @@ def test_tune_preparation_uses_resolved_corpus_manifest(
         captured["manifest_chain"] = corpus_manifest.chain.name
         return SimpleNamespace(problem_contract=object(), feature_contract=object())
 
-    monkeypatch.setattr(preparation, "resolve_tune_roots", lambda _config: roots)
+    monkeypatch.setattr(preparation, "materialize_tune_roots", lambda _config: roots)
     monkeypatch.setattr(CorpusRootHandle, "load_manifest", lambda _self: corpus_manifest)
     monkeypatch.setattr(preparation, "build_tuning_coverage_spec", fake_coverage_spec)
     monkeypatch.setattr(preparation, "training_coverage_requirement", lambda *_args: object())

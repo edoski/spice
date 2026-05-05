@@ -17,8 +17,8 @@ from spice.core.reporting import Reporter
 from spice.storage.catalog.index import list_dataset_records
 from spice.storage.corpus import list_acquire_runs, load_dataset_manifest
 from spice.storage.selectors import DatasetSelector
+from spice.storage.workflow_root_materialization import materialize_acquire_roots
 from spice.workflows.acquire import run as run_acquire
-from spice.workflows.preparation import resolve_acquire_producer_roots
 from tests.dataset_helpers import make_block_rows
 
 
@@ -72,7 +72,7 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
         tmp_path,
         override=acquire_override(),
     )
-    roots = resolve_acquire_producer_roots(config)
+    roots = materialize_acquire_roots(config)
     evaluation_plan = _plan_for_window(
         TimestampRange(
             start=config.evaluation_window_start_timestamp,
@@ -188,7 +188,7 @@ def test_acquire_failure_preserves_staging_and_rerun_resumes(
         tmp_path,
         override=override,
     )
-    roots = resolve_acquire_producer_roots(config)
+    roots = materialize_acquire_roots(config)
     stage_root = roots.corpus.root_path.parent / f".{roots.corpus.dataset_id}.acquire-staging"
     evaluation_plan = _plan_for_window(
         TimestampRange(
@@ -286,7 +286,7 @@ def test_acquire_dry_run_emits_compact_output(
         override=acquire_override(),
     )
     config.acquisition.dry_run = True
-    roots = resolve_acquire_producer_roots(config)
+    roots = materialize_acquire_roots(config)
     output = StringIO()
     reporter = Reporter(stream=output)
 

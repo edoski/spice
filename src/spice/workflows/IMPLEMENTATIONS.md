@@ -19,7 +19,8 @@ Acquire downloads block data and writes a corpus root.
 
 ```text
 resolve config
-  -> prepare produced corpus root
+  -> materialize produced corpus root
+  -> prepare acquisition request
   -> report plan
   -> create block source
   -> delegate to Corpus Assembly
@@ -36,7 +37,8 @@ Train creates an artifact root.
 
 ```text
 resolve config and identity
-  -> prepare roots, active config, corpus manifest, and training spec
+  -> materialize roots
+  -> prepare active config, corpus manifest, and training spec
   -> open full-root transaction
   -> train model
   -> write manifest/model/state
@@ -52,7 +54,8 @@ Tune creates or resumes a study root.
 
 ```text
 resolve study identity
-  -> prepare roots, corpus manifest, and coverage spec
+  -> materialize roots
+  -> prepare corpus manifest and coverage spec
   -> open tuning execution
   -> delegate trial execution to modeling
   -> report trial and best-trial callbacks
@@ -67,7 +70,8 @@ Evaluate runs diagnostic scoring for an existing artifact.
 
 ```text
 resolve artifact
-  -> prepare roots, validate semantics/capability/coverage, and build inference dataset
+  -> materialize roots
+  -> validate semantics/capability/coverage and build inference dataset
   -> score evaluator
   -> upsert evaluation state with execution provenance when remote
 ```

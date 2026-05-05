@@ -132,12 +132,16 @@ _Avoid_: path bag, catalog record
 Root Handle for a not-yet-existing or staged workflow output, derived from Producer Root Identity and canonical layout.
 _Avoid_: workflow paths
 
+**Storage Root Materialization**:
+Storage-owned module that resolves consumed roots through exact Storage Selectors, derives Produced Root Handles from Producer Root Identity, and returns workflow-facing root handles before Workflow Preparation performs domain preflight.
+_Avoid_: workflow root resolution, path derivation helper
+
 **Root Lifecycle**:
 Validation, staging, promotion, partial commit, reindex, and delete behavior for storage roots.
 _Avoid_: storage sync
 
 **Workflow Preparation**:
-Generic preflight seam that resolves consumed and produced roots, loads manifests, applies tuned training params, builds workflow specs or inference contexts, and validates coverage before a workflow runner starts side effects.
+Generic preflight seam that consumes Storage Root Materialization output, loads manifests, applies tuned training params, builds workflow specs or inference contexts, and validates coverage before a workflow runner starts side effects.
 _Avoid_: config resolution, runner body
 
 **Storage Transaction**:
@@ -266,7 +270,7 @@ _Avoid_: execution backend
 - A **Benchmark Collection Snapshot** contains **Benchmark Result Records** for all expected collected evaluate steps after **Evaluation Execution Provenance** matches the submitted execution ref.
 - The **Benchmark Result Index** projects **Benchmark Result Records** for query and CSV export.
 - A **Storage Selector** resolves existing persisted roots through the catalog before consumers build paths.
-- A **Root Handle** is the workflow-facing result of resolving a **Storage Selector** or produced-root identity.
+- A **Root Handle** is the workflow-facing result of resolving a **Storage Selector** or produced-root identity through **Storage Root Materialization**.
 - A **Produced Root Handle** is derived from **Producer Root Identity** and canonical storage layout.
 - **Root Lifecycle** changes storage roots and keeps the catalog index current.
 - **Corpus Assembly** consumes a block source and produces a dry-run plan or committed corpus root.

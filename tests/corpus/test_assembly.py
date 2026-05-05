@@ -10,7 +10,7 @@ from spice.acquisition import BlockPullPlan, BlockRange, TimestampRange
 from spice.config import AcquireConfig, WorkflowTask
 from spice.corpus.assembly import CorpusAssemblyRequest, assemble_corpus
 from spice.corpus.contract import CanonicalBlockRow
-from spice.workflows.preparation import resolve_acquire_producer_roots
+from spice.storage.workflow_root_materialization import materialize_acquire_roots
 from tests.dataset_helpers import make_block_rows
 
 
@@ -97,7 +97,7 @@ def test_assemble_corpus_dry_run_returns_plan_without_writes(
         override=acquire_override(),
     )
     config.acquisition.dry_run = True
-    roots = resolve_acquire_producer_roots(config)
+    roots = materialize_acquire_roots(config)
     source = _PlanningSource(
         TimestampRange(
             start=config.evaluation_window_start_timestamp,
@@ -135,7 +135,7 @@ def test_assemble_corpus_preserves_staging_on_failure(
         },
     }
     config = _load_acquire_config(load_workflow_config, tmp_path, override=override)
-    roots = resolve_acquire_producer_roots(config)
+    roots = materialize_acquire_roots(config)
     source = _PlanningSource(
         TimestampRange(
             start=config.evaluation_window_start_timestamp,
@@ -183,7 +183,7 @@ def _exercise_short_history_refill(
         tmp_path,
         override=override,
     )
-    roots = resolve_acquire_producer_roots(config)
+    roots = materialize_acquire_roots(config)
     evaluation_plan = _plan_for_window(
         TimestampRange(
             start=config.evaluation_window_start_timestamp,

@@ -85,7 +85,8 @@ storage/
   study_optuna.py    Optuna storage adapter and read access
   artifact.py        artifact-root persistence
   operator.py        show/delete command outcomes and ambiguity policy
-  workflow_roots.py  workflow-facing root handles and catalog-record conversion
+  workflow_roots.py  workflow-facing root handles and root-handle factories
+  workflow_root_materialization.py  selector/producer identity -> workflow roots
   transactions.py    workflow-facing root commit/reindex transaction boundaries
   lifecycle.py       low-level staging, promotion, validation, and delete cascade
   sync_cli.py        remote-side path/root-kind helper commands
@@ -95,7 +96,7 @@ storage/
 
 Storage owns persisted payload ABI. Modeling and evaluation own runtime result objects; storage codecs translate those objects at the SQLite table boundary. Artifact manifests persist Temporal Capability as the artifact-facing compiler capability bundle and persist artifact semantics as its normalized semantic projection. Artifact evaluation state stores an **Evaluation Config Snapshot**, not a live evaluator config object, so evaluation storage identity is based on immutable evaluator provenance.
 
-Producer identity and consumer selection stay separate inside `workflows.preparation`. Producer helpers derive ids and root handles for roots that workflows are about to create. Consumer helpers resolve existing roots through the catalog before workflows read them. Root handles expose root facts and manifest loading. Storage transactions expose staging, promotion, selected-path commit, and reindex boundaries; lower-level lifecycle remains path and root-kind infrastructure.
+Producer identity and consumer selection stay separate inside `storage.workflow_root_materialization`. Producer paths derive ids and root handles for roots that workflows are about to create. Consumer paths resolve existing roots through the catalog before workflows read them. Root handles expose root facts and manifest loading. Storage transactions expose staging, promotion, selected-path commit, and reindex boundaries; lower-level lifecycle remains path and root-kind infrastructure.
 
 `operator.py` owns Storage Operator Outcomes for show/delete command behavior: list-vs-detail selection, detail ambiguity, narrowing attributes, delete-blocked diagnostics, and refresh rendering. CLI code maps options to selectors, maps narrowing attributes to flag names, and prints renderable sections.
 
