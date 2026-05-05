@@ -32,7 +32,8 @@ from .dataset_builders import (
     CompiledDatasetBuilderContract,
     DatasetBuilderConfig,
     PreparedTrainingDataset,
-    TrainingDatasetPreparationSpec,
+    TrainingDatasetPreparationContext,
+    TrainingDatasetPreparationFacts,
 )
 from .families.base import ModelConfig
 from .families.registry import build_model
@@ -159,18 +160,6 @@ def _build_training_spec(
     )
 
 
-def _training_preparation_spec(spec: TrainingSpec) -> TrainingDatasetPreparationSpec:
-    return TrainingDatasetPreparationSpec(
-        dataset_builder=spec.dataset_builder,
-        feature_contract=spec.feature_contract,
-        problem_contract=spec.problem_contract,
-        sample_count=spec.problem.sample_count,
-        lookback_seconds=spec.problem.lookback_seconds,
-        split=spec.split,
-        input_normalization_contract=spec.input_normalization_contract,
-    )
-
-
 def run_training(
     history_block_path: Path,
     *,
@@ -183,7 +172,12 @@ def run_training(
     blocks = load_block_frame(history_block_path)
     prepared = spec.dataset_builder_contract.prepare_training_dataset(
         blocks,
-        spec=_training_preparation_spec(spec),
+        facts=TrainingDatasetPreparationFacts(split=spec.split),
+        context=TrainingDatasetPreparationContext(
+            feature_contract=spec.feature_contract,
+            problem_contract=spec.problem_contract,
+            input_normalization_contract=spec.input_normalization_contract,
+        ),
     )
     if on_prepare_complete is not None:
         on_prepare_complete(prepared)

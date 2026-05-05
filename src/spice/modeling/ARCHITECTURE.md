@@ -74,6 +74,7 @@ Tuning Execution is centralized in `modeling.tuning_execution`. It opens compati
 ## Dataset Builders
 
 Dataset builders adapt canonical block frames into model-ready training and inference datasets. They own tensorization policy, split behavior, builder runtime metadata, scaler fitting inputs, and inference-time reconstruction from the artifact Temporal Capability. They do not own corpus IO, feature semantics, prediction losses, or evaluator metrics.
+Callers provide domain facts such as split, delay, and evaluation window plus compiled/trusted context; builders decide how those facts become samples and tensors.
 
 ```text
 raw/canonical blocks

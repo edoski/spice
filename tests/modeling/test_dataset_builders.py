@@ -7,9 +7,12 @@ import polars as pl
 
 from spice.config import TrainConfig, WorkflowTask
 from spice.modeling.dataset_builders import (
-    ArtifactInferencePreparationSpec,
+    ArtifactInferenceDatasetPreparationContext,
+    ArtifactInferenceDatasetPreparationFacts,
     FixedSequenceTemporalBuilderRuntimeMetadata,
-    TrainingDatasetPreparationSpec,
+    InclusiveEvaluationWindow,
+    TrainingDatasetPreparationContext,
+    TrainingDatasetPreparationFacts,
 )
 from spice.modeling.pipeline import build_artifact_training_spec
 from tests.dataset_helpers import (
@@ -67,22 +70,15 @@ def _spec(config: TrainConfig):
     )
 
 
-def _training_prep_spec(spec) -> TrainingDatasetPreparationSpec:
-    return TrainingDatasetPreparationSpec(
-        dataset_builder=spec.dataset_builder,
-        feature_contract=spec.feature_contract,
-        problem_contract=spec.problem_contract,
-        sample_count=spec.problem.sample_count,
-        lookback_seconds=spec.problem.lookback_seconds,
-        split=spec.split,
-        input_normalization_contract=spec.input_normalization_contract,
-    )
-
-
 def _prepare_training_dataset(rows, *, spec):
     return spec.dataset_builder_contract.prepare_training_dataset(
         pl.DataFrame(rows),
-        spec=_training_prep_spec(spec),
+        facts=TrainingDatasetPreparationFacts(split=spec.split),
+        context=TrainingDatasetPreparationContext(
+            feature_contract=spec.feature_contract,
+            problem_contract=spec.problem_contract,
+            input_normalization_contract=spec.input_normalization_contract,
+        ),
     )
 
 
@@ -278,15 +274,19 @@ def test_fixed_sequence_inference_prep_reconstructs_artifact_runtime_state(
     prepared = spec.dataset_builder_contract.prepare_inference_dataset(
         pl.DataFrame(history_rows),
         pl.DataFrame(evaluation_rows),
-        spec=ArtifactInferencePreparationSpec(
+        facts=ArtifactInferenceDatasetPreparationFacts(
+            delay_seconds=12,
+            evaluation_window=InclusiveEvaluationWindow(
+                start_timestamp=evaluation_start,
+                end_timestamp=evaluation_end,
+            ),
+        ),
+        context=ArtifactInferenceDatasetPreparationContext(
             feature_contract=spec.feature_contract,
             problem_contract=spec.problem_contract,
-            delay_seconds=12,
             builder_runtime_metadata=trained.builder_runtime_metadata,
             scaler=trained.scaler,
             temporal_capability=trained.temporal_capability,
-            evaluation_start_timestamp=evaluation_start,
-            evaluation_end_timestamp=evaluation_end,
         ),
     )
 

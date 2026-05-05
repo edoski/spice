@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`modeling.dataset_builders` turns canonical block frames, feature contracts, temporal problem contracts, and artifact runtime state into prepared datasets for training and inference. This is the Temporal Dataset Preparation Interface.
+`modeling.dataset_builders` turns canonical block frames plus domain facts and compiled/trusted context into prepared datasets for training and inference. This is the Temporal Dataset Preparation Interface.
 
 Tensorization matters because the same temporal problem can be represented as independent rows, fixed-sequence sequences, or another model input shape without changing feature semantics or evaluator behavior.
 
@@ -64,13 +64,13 @@ training prepare
   -> reconstruct same assumptions
 ```
 
-Artifact Inference Context validates artifact and corpus compatibility, then passes trusted artifact facts into the dataset-builder contract. The contract coerces builder runtime metadata, passes the artifact Temporal Capability through, and normalizes evaluation-window timestamps before the concrete builder prepares inference data.
+Artifact Inference Context validates artifact and corpus compatibility, then passes trusted artifact facts and compiled context into the dataset-builder contract. The contract coerces builder runtime metadata, passes the artifact Temporal Capability through, and normalizes inclusive evaluation-window timestamps before the concrete builder prepares inference data.
 
 Builder runtime metadata is builder-local. Compiler runtime metadata is not hidden inside it; compiler metadata travels with Temporal Capability so artifact action width and compiler assumptions stay one typed value.
 
 ## Preparation Types
 
-`preparation.py` contains the public prep specs and prepared dataset results. `base.py` contains registry/config dispatch and `CompiledDatasetBuilderContract`. Concrete builders depend on the preparation Interface instead of importing orchestration types from `pipeline.py`.
+`preparation.py` contains the public facts/context records and prepared dataset results. `base.py` contains registry/config dispatch and `CompiledDatasetBuilderContract`. Concrete builders depend on the preparation Interface instead of importing orchestration types from `pipeline.py`.
 
 ## Invariants
 
@@ -89,4 +89,4 @@ Sampling and split behavior are builder-owned invariants.
 
 ## Extension Points
 
-Add a builder when model input representation changes. Keep it behind `DatasetBuilderConfig`, `CompiledDatasetBuilderContract`, preparation specs, and a local spec entry. Avoid workflow branches on builder ids.
+Add a builder when model input representation changes. Keep it behind `DatasetBuilderConfig`, `CompiledDatasetBuilderContract`, preparation facts/context records, and a local spec entry. Avoid workflow branches on builder ids.

@@ -18,34 +18,48 @@ if TYPE_CHECKING:
         IntVector,
     )
     from ...temporal.scaling import ScalerStats
-    from .base import BuilderRuntimeMetadata, DatasetBuilderConfig
+    from .base import BuilderRuntimeMetadata
 
 
 @dataclass(slots=True)
-class TrainingDatasetPreparationSpec:
-    dataset_builder: DatasetBuilderConfig
+class TrainingDatasetPreparationContext:
     feature_contract: CompiledFeatureContract
     problem_contract: CompiledProblemContract
-    sample_count: int
-    lookback_seconds: int
-    split: SplitConfig
     input_normalization_contract: CompiledInputNormalizationContract
 
 
 @dataclass(slots=True)
-class ArtifactInferencePreparationSpec:
-    feature_contract: CompiledFeatureContract
-    problem_contract: CompiledProblemContract
-    delay_seconds: int
-    builder_runtime_metadata: BuilderRuntimeMetadata
-    scaler: ScalerStats
-    temporal_capability: TemporalCapability
-    evaluation_start_timestamp: int
-    evaluation_end_timestamp: int
+class TrainingDatasetPreparationFacts:
+    split: SplitConfig
 
 
 @dataclass(slots=True)
-class CompiledInferenceDatasetPreparationSpec:
+class InclusiveEvaluationWindow:
+    start_timestamp: int
+    end_timestamp: int
+
+    @property
+    def exclusive_end_timestamp(self) -> int:
+        return self.end_timestamp + 1
+
+
+@dataclass(slots=True)
+class ArtifactInferenceDatasetPreparationFacts:
+    delay_seconds: int
+    evaluation_window: InclusiveEvaluationWindow
+
+
+@dataclass(slots=True)
+class ArtifactInferenceDatasetPreparationContext:
+    feature_contract: CompiledFeatureContract
+    problem_contract: CompiledProblemContract
+    builder_runtime_metadata: BuilderRuntimeMetadata
+    scaler: ScalerStats
+    temporal_capability: TemporalCapability
+
+
+@dataclass(slots=True)
+class CompiledInferenceDatasetPreparationRequest:
     feature_contract: CompiledFeatureContract
     problem_contract: CompiledProblemContract
     delay_seconds: int

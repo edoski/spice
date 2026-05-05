@@ -180,10 +180,13 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
         ),
     )
 
-    def fake_prepare_inference_dataset(*_args, spec):
+    def fake_prepare_inference_dataset(*_args, facts, context):
         calls.append("prepare_inference")
-        assert spec.builder_runtime_metadata is runtime_metadata
-        assert spec.temporal_capability is temporal_capability
+        assert facts.delay_seconds == (
+            config.delay_seconds or loaded_artifact.manifest.max_delay_seconds
+        )
+        assert context.builder_runtime_metadata is runtime_metadata
+        assert context.temporal_capability is temporal_capability
         return prepared
 
     loaded_artifact.dataset_builder_contract = SimpleNamespace(
@@ -244,9 +247,10 @@ def test_artifact_inference_passes_inclusive_corpus_evaluation_window(
     roots = _roots(config)
     captured: dict[str, int] = {}
 
-    def fake_prepare_inference_dataset(*_args, spec):
-        captured["evaluation_start_timestamp"] = spec.evaluation_start_timestamp
-        captured["evaluation_end_timestamp"] = spec.evaluation_end_timestamp
+    def fake_prepare_inference_dataset(*_args, facts, context):
+        del context
+        captured["evaluation_start_timestamp"] = facts.evaluation_window.start_timestamp
+        captured["evaluation_end_timestamp"] = facts.evaluation_window.end_timestamp
         return SimpleNamespace(
             n_history_rows=10,
             n_evaluation_rows=5,

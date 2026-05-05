@@ -189,7 +189,7 @@ Trusted inference inputs reconstructed from a trained artifact manifest, selecte
 _Avoid_: evaluation setup, scoring setup
 
 **Temporal Dataset Preparation Interface**:
-Modeling seam that turns canonical block frames, temporal contracts, builder runtime metadata, scaler state, and split/window policy into prepared training or inference datasets.
+Modeling seam that turns canonical block frames plus domain facts and compiled/trusted context into prepared training or inference datasets. Callers pass split/window and delay facts; dataset builders own temporal sample selection, split assignment, scaler use, builder runtime metadata, and tensorization policy.
 _Avoid_: dataset plumbing, feature loading
 
 **Action Space**:
@@ -278,7 +278,7 @@ _Avoid_: execution backend
 - **Corpus Assembly** uses **Corpus Acquisition Stage** for staging, fulfillment, commit wiring, and cleanup.
 - **Corpus Acquisition Stage** owns **Corpus Split Materialization** session lifecycle and split sequencing.
 - An **Artifact Inference Context** trusts artifact manifest semantics, validates selected corpus compatibility, and prepares model scoring inputs.
-- A **Temporal Dataset Preparation Interface** owns temporal sample selection, split assignment, scaler use, builder runtime metadata, and prepared dataset assembly.
+- A **Temporal Dataset Preparation Interface** receives domain facts plus compiled/trusted context and owns temporal sample selection, split assignment, scaler use, builder runtime metadata, and prepared dataset assembly.
 - An **Action Space** is derived by an execution policy from a problem store and selected temporal samples.
 - A **Training Runner** consumes prepared training data and produces fitted model state plus runtime training metrics.
 - A **Batch Plan** is built by the **Training Runner** and inference paths after runtime memory budget is known, carrying the prepared **Action Space** into inputs, targets, and decode.

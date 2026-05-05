@@ -14,7 +14,12 @@ from ..prediction import compile_prediction_contract
 from ..storage.workflow_roots import ArtifactRootHandle, CorpusRootHandle
 from ..temporal.contracts import compile_problem_contract
 from .artifacts import LoadedTrainingArtifact, load_training_artifact
-from .dataset_builders import ArtifactInferencePreparationSpec, PreparedInferenceDataset
+from .dataset_builders import (
+    ArtifactInferenceDatasetPreparationContext,
+    ArtifactInferenceDatasetPreparationFacts,
+    InclusiveEvaluationWindow,
+    PreparedInferenceDataset,
+)
 from .scoring import ModelScoringInput
 from .scoring_runtime import build_evaluation_scoring_runtime_plan
 
@@ -80,21 +85,25 @@ def prepare_artifact_inference_context(
     prepared = loaded_artifact.dataset_builder_contract.prepare_inference_dataset(
         load_block_frame(corpus.history_dir),
         load_block_frame(corpus.evaluation_dir),
-        spec=ArtifactInferencePreparationSpec(
+        facts=ArtifactInferenceDatasetPreparationFacts(
+            delay_seconds=delay_seconds,
+            evaluation_window=InclusiveEvaluationWindow(
+                start_timestamp=_required_timestamp(
+                    corpus_manifest.splits.evaluation.coverage.first_timestamp,
+                    "evaluation first timestamp",
+                ),
+                end_timestamp=_required_timestamp(
+                    corpus_manifest.splits.evaluation.coverage.last_timestamp,
+                    "evaluation last timestamp",
+                ),
+            ),
+        ),
+        context=ArtifactInferenceDatasetPreparationContext(
             feature_contract=feature_contract,
             problem_contract=problem_contract,
-            delay_seconds=delay_seconds,
             builder_runtime_metadata=manifest.builder_runtime_metadata,
             scaler=manifest.scaler,
             temporal_capability=manifest.temporal_capability,
-            evaluation_start_timestamp=_required_timestamp(
-                corpus_manifest.splits.evaluation.coverage.first_timestamp,
-                "evaluation first timestamp",
-            ),
-            evaluation_end_timestamp=_required_timestamp(
-                corpus_manifest.splits.evaluation.coverage.last_timestamp,
-                "evaluation last timestamp",
-            ),
         ),
     )
     runtime_plan = build_evaluation_scoring_runtime_plan(
