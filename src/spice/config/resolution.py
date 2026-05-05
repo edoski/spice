@@ -25,7 +25,6 @@ from .models import (
     FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
-    ProviderSpec,
     ResolvedRpcEndpointConfig,
     SplitConfig,
     StorageSpec,
@@ -247,46 +246,10 @@ def _validate_selection_kind(workflow: WorkflowTask, selection: WorkflowSelectio
         )
 
 
-def _resolve_dataset(name: str) -> DatasetSpec:
-    return load_dataset_spec(name)
-
-
-def _resolve_chain(name: str) -> ChainSpec:
-    return load_chain_spec(name)
-
-
 def _resolve_problem(name: str | ProblemSpec) -> ProblemSpec:
     if isinstance(name, ProblemSpec):
         return name
     return load_problem_spec(name)
-
-
-def _resolve_features(name: str) -> FeaturesConfig:
-    return load_features_config(name)
-
-
-def _resolve_dataset_builder(name: str) -> DatasetBuilderConfig:
-    return load_dataset_builder_config(name)
-
-
-def _resolve_prediction(name: str) -> PredictionConfig:
-    return load_prediction_config(name)
-
-
-def _resolve_model(name: str) -> ModelConfig[str]:
-    return load_model_config(name)
-
-
-def _resolve_training(name: str) -> TrainingConfig:
-    return load_training_config(name)
-
-
-def _resolve_split(name: str) -> SplitConfig:
-    return load_split_config(name)
-
-
-def _resolve_tuning(name: str) -> TuningConfig:
-    return load_tuning_config(name)
 
 
 def _resolve_evaluation(name: str | None) -> EvaluatorConfig | None:
@@ -330,23 +293,19 @@ def _resolve_artifact(artifact: ArtifactConfig | None) -> ArtifactConfig:
     return artifact or ArtifactConfig()
 
 
-def _resolve_provider(name: str) -> ProviderSpec:
-    return load_provider_spec(name)
-
-
 def _resolve_model_workflow_base(
     frame: SurfaceFrame,
     *,
     validate_objective_benchmark: bool,
 ) -> ModelWorkflowBase:
-    dataset = _resolve_dataset(frame.dataset)
-    chain = _resolve_chain(frame.chain)
+    dataset = load_dataset_spec(frame.dataset)
+    chain = load_chain_spec(frame.chain)
     storage = _resolve_storage(frame.storage)
     problem = _resolve_problem(frame.problem)
-    model = _resolve_model(_required(frame.model, "model"))
-    dataset_builder = _resolve_dataset_builder(frame.dataset_builder)
-    features = _resolve_features(_required(frame.features, "features"))
-    prediction = _resolve_prediction(frame.prediction)
+    model = load_model_config(_required(frame.model, "model"))
+    dataset_builder = load_dataset_builder_config(frame.dataset_builder)
+    features = load_features_config(_required(frame.features, "features"))
+    prediction = load_prediction_config(frame.prediction)
     objective = _resolve_objective(
         _required(frame.objective, "objective"),
         evaluation_name=frame.evaluation_id if validate_objective_benchmark else None,
@@ -379,10 +338,10 @@ def _resolve_model_workflow_spine(
     require_tuning: bool,
     allow_tuned_variant: bool,
 ) -> ModelWorkflowSpine:
-    training = _resolve_training(frame.training_id)
-    split = _resolve_split(frame.split)
+    training = load_training_config(frame.training_id)
+    split = load_split_config(frame.split)
     if require_tuning or (allow_tuned_variant and artifact.variant.value == "tuned"):
-        tuning = _resolve_tuning(frame.tuning_id)
+        tuning = load_tuning_config(frame.tuning_id)
         tuning_space = load_named_tuning_space(
             _required(frame.tuning_space_id, "tuning.space"),
             model_config=model,
@@ -403,11 +362,11 @@ def _resolve_model_workflow_spine(
 
 
 def _resolve_acquire_config(frame: SurfaceFrame, *, dry_run: bool | None) -> AcquireConfig:
-    dataset = _resolve_dataset(frame.dataset)
-    chain = _resolve_chain(frame.chain)
+    dataset = load_dataset_spec(frame.dataset)
+    chain = load_chain_spec(frame.chain)
     storage = _resolve_storage(frame.storage)
     problem = _resolve_problem(frame.problem)
-    provider = _resolve_provider(frame.provider)
+    provider = load_provider_spec(frame.provider)
     endpoint = provider.endpoint_config_for(chain.name)
     rpc_endpoint = ResolvedRpcEndpointConfig(
         provider_name=provider.name,
@@ -417,7 +376,7 @@ def _resolve_acquire_config(frame: SurfaceFrame, *, dry_run: bool | None) -> Acq
         retry_count=provider.transport.retry_count,
         backoff_factor=provider.transport.backoff_factor,
     )
-    features = _resolve_features(_required(frame.features, "features"))
+    features = load_features_config(_required(frame.features, "features"))
     if provider.acquisition is None:
         raise ConfigResolutionError(
             f"provider {provider.name} must define acquisition settings"

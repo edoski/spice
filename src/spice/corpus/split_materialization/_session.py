@@ -593,6 +593,221 @@ def reject_invalid_staged(
     raise RuntimeError(f"{decision.error_message}: {staged.validation}")
 
 
+@dataclass(frozen=True, slots=True)
+class _SplitDecisionExecution:
+    kind: CorpusSplitKind
+    plan: BlockPullPlan
+    working_dir: Path
+    materialization: CorpusSplitMaterializationSpec
+    block_source: BlockSource
+    controller: AcquisitionPullController
+    emit: StatusCallback
+    validate_result: ValidationCallback
+
+
+def _require_staged_dataset(
+    kind: CorpusSplitKind,
+    staged: ExistingDatasetState | None,
+) -> ExistingDatasetState:
+    if staged is None:
+        raise RuntimeError(f"{kind.value} staged reuse decision requires staged dataset")
+    return staged
+
+
+def _require_existing_dataset(
+    kind: CorpusSplitKind,
+    existing: ExistingDatasetState | None,
+    *,
+    label: str,
+) -> ExistingDatasetState:
+    if existing is None:
+        raise RuntimeError(f"{kind.value} {label} decision requires existing dataset")
+    return existing
+
+
+def _require_decision_target_validation(
+    kind: CorpusSplitKind,
+    decision: SplitMaterializationDecision,
+    *,
+    label: str,
+) -> BlockDatasetValidationReport:
+    if decision.target_validation is None:
+        raise RuntimeError(f"{kind.value} {label} decision requires target validation")
+    return decision.target_validation
+
+
+async def _execute_split_materialization_decision(
+    decision: SplitMaterializationDecision,
+    *,
+    existing: ExistingDatasetState | None,
+    staged: ExistingDatasetState | None,
+    execution: _SplitDecisionExecution,
+) -> DatasetBuildResult:
+    kind = execution.kind
+    if decision.action is SplitMaterializationAction.REJECT_INVALID_STAGED:
+        if staged is None:
+            raise RuntimeError(f"Cannot resume invalid staged {kind.value} dataset")
+        reject_invalid_staged(decision, staged)
+
+    if decision.action is SplitMaterializationAction.REUSE_STAGED:
+        staged_dataset = _require_staged_dataset(kind, staged)
+        target_validation = _require_decision_target_validation(
+            kind,
+            decision,
+            label="staged reuse",
+        )
+        execution.emit(decision.status_message)
+        return staged_result(
+            staged_dataset,
+            validation=target_validation,
+            outcome=split_outcome(decision.outcome),
+        )
+
+    if decision.action is SplitMaterializationAction.REUSE_COMMITTED:
+        existing_dataset = _require_existing_dataset(
+            kind,
+            existing,
+            label="committed reuse",
+        )
+        target_validation = _require_decision_target_validation(
+            kind,
+            decision,
+            label="committed reuse",
+        )
+        execution.emit(decision.status_message)
+        return reused_result(existing_dataset, validation=target_validation)
+
+    if decision.action is SplitMaterializationAction.EXTEND_COMMITTED:
+        return await _extend_committed_split(decision, existing=existing, execution=execution)
+
+    if decision.action is SplitMaterializationAction.MATERIALIZE_FULL:
+        return await _materialize_full_split(decision, execution=execution)
+
+    raise RuntimeError(f"Unsupported split materialization action: {decision.action}")
+
+
+async def _extend_committed_split(
+    decision: SplitMaterializationDecision,
+    *,
+    existing: ExistingDatasetState | None,
+    execution: _SplitDecisionExecution,
+) -> DatasetBuildResult:
+    if execution.kind is CorpusSplitKind.HISTORY:
+        return await _extend_history_committed_split(
+            decision,
+            existing=existing,
+            execution=execution,
+        )
+    if execution.kind is CorpusSplitKind.EVALUATION:
+        return await _extend_evaluation_committed_split(
+            decision,
+            existing=existing,
+            execution=execution,
+        )
+    raise RuntimeError(f"Unsupported corpus split kind: {execution.kind}")
+
+
+async def _extend_history_committed_split(
+    decision: SplitMaterializationDecision,
+    *,
+    existing: ExistingDatasetState | None,
+    execution: _SplitDecisionExecution,
+) -> DatasetBuildResult:
+    existing_dataset = _require_existing_dataset(
+        execution.kind,
+        existing,
+        label="extension",
+    )
+    if len(decision.pull_ranges) != 1:
+        raise RuntimeError("history extension decision requires one prefix pull range")
+    execution.emit(decision.status_message)
+    prefix_dir = await pull_decision_range_to_dir(
+        block_source=execution.block_source,
+        pull_range=decision.pull_ranges[0],
+        window=execution.plan.window,
+        working_dir=execution.working_dir,
+        materialization=execution.materialization,
+        controller=execution.controller,
+    )
+    return materialize_dataset_from_sources(
+        mode=execution.kind.value,
+        materialization=execution.materialization,
+        working_dir=execution.working_dir,
+        validate_result=execution.validate_result,
+        source_dirs=(prefix_dir, existing_dataset.path),
+        outcome=split_outcome(decision.outcome),
+    )
+
+
+async def _extend_evaluation_committed_split(
+    decision: SplitMaterializationDecision,
+    *,
+    existing: ExistingDatasetState | None,
+    execution: _SplitDecisionExecution,
+) -> DatasetBuildResult:
+    existing_dataset = _require_existing_dataset(
+        execution.kind,
+        existing,
+        label="extension",
+    )
+    if decision.reusable_range is None:
+        raise RuntimeError("evaluation extension decision requires reusable range")
+    source_dirs: list[Path] = []
+    source_files, frames = reusable_block_files_and_edges(
+        existing_dataset.path,
+        block_range=decision.reusable_range,
+    )
+    for pull_range in decision.pull_ranges:
+        source_dirs.append(
+            await pull_decision_range_to_dir(
+                block_source=execution.block_source,
+                pull_range=pull_range,
+                window=execution.plan.window,
+                working_dir=execution.working_dir,
+                materialization=execution.materialization,
+                controller=execution.controller,
+            )
+        )
+    execution.emit(decision.status_message)
+    return materialize_dataset_from_sources(
+        mode=execution.kind.value,
+        materialization=execution.materialization,
+        working_dir=execution.working_dir,
+        validate_result=execution.validate_result,
+        source_dirs=source_dirs,
+        source_files=source_files,
+        frames=frames,
+        outcome=split_outcome(decision.outcome),
+    )
+
+
+async def _materialize_full_split(
+    decision: SplitMaterializationDecision,
+    *,
+    execution: _SplitDecisionExecution,
+) -> DatasetBuildResult:
+    execution.emit(decision.status_message)
+    frame = await pull_plan_to_frame(
+        block_source=execution.block_source,
+        plan=execution.plan,
+        output_dir=plan_pull_dir(
+            execution.working_dir,
+            label=execution.kind.value,
+            plan=execution.plan,
+        ),
+        materialization=execution.materialization,
+        controller=execution.controller,
+    )
+    return materialize_dataset(
+        mode=execution.kind.value,
+        materialization=execution.materialization,
+        working_dir=execution.working_dir,
+        validate_result=execution.validate_result,
+        frames=(frame,),
+        outcome=split_outcome(decision.outcome),
+    )
+
+
 async def _ensure_history_split(
     intent: CorpusSplitIntent,
     *,
@@ -628,69 +843,20 @@ async def _ensure_history_split(
         validate_target=validate_result,
     )
 
-    if decision.action is SplitMaterializationAction.REJECT_INVALID_STAGED:
-        if staged is None:
-            raise RuntimeError("Cannot resume invalid staged history dataset")
-        reject_invalid_staged(decision, staged)
-
-    if decision.action is SplitMaterializationAction.REUSE_STAGED:
-        if staged is None:
-            raise RuntimeError("history staged reuse decision requires staged dataset")
-        if decision.target_validation is None:
-            raise RuntimeError("history staged reuse decision requires target validation")
-        emit(decision.status_message)
-        return staged_result(
-            staged,
-            validation=decision.target_validation,
-            outcome=split_outcome(decision.outcome),
-        )
-
-    if decision.action is SplitMaterializationAction.REUSE_COMMITTED:
-        if existing is None:
-            raise RuntimeError("history committed reuse decision requires existing dataset")
-        if decision.target_validation is None:
-            raise RuntimeError("history committed reuse decision requires target validation")
-        emit(decision.status_message)
-        return reused_result(existing, validation=decision.target_validation)
-
-    if decision.action is SplitMaterializationAction.EXTEND_COMMITTED:
-        if existing is None:
-            raise RuntimeError("history extension decision requires existing dataset")
-        if len(decision.pull_ranges) != 1:
-            raise RuntimeError("history extension decision requires one prefix pull range")
-        emit(decision.status_message)
-        prefix_dir = await pull_decision_range_to_dir(
+    return await _execute_split_materialization_decision(
+        decision,
+        existing=existing,
+        staged=staged,
+        execution=_SplitDecisionExecution(
+            kind=intent.kind,
+            plan=history_plan,
+            working_dir=working_dir,
+            materialization=materialization,
             block_source=block_source,
-            pull_range=decision.pull_ranges[0],
-            window=history_plan.window,
-            working_dir=working_dir,
-            materialization=materialization,
             controller=controller,
-        )
-        return materialize_dataset_from_sources(
-            mode="history",
-            materialization=materialization,
-            working_dir=working_dir,
+            emit=emit,
             validate_result=validate_result,
-            source_dirs=(prefix_dir, existing.path),
-            outcome=split_outcome(decision.outcome),
-        )
-
-    emit(decision.status_message)
-    frame = await pull_plan_to_frame(
-        block_source=block_source,
-        plan=history_plan,
-        output_dir=plan_pull_dir(working_dir, label="history", plan=history_plan),
-        materialization=materialization,
-        controller=controller,
-    )
-    return materialize_dataset(
-        mode="history",
-        materialization=materialization,
-        working_dir=working_dir,
-        validate_result=validate_result,
-        frames=(frame,),
-        outcome=split_outcome(decision.outcome),
+        ),
     )
 
 
@@ -735,77 +901,18 @@ async def _ensure_evaluation_split(
         reusable_range_matches_target_window=reusable_range_matches_target_window,
     )
 
-    if decision.action is SplitMaterializationAction.REJECT_INVALID_STAGED:
-        if staged is None:
-            raise RuntimeError("Cannot resume invalid staged evaluation dataset")
-        reject_invalid_staged(decision, staged)
-
-    if decision.action is SplitMaterializationAction.REUSE_STAGED:
-        if staged is None:
-            raise RuntimeError("evaluation staged reuse decision requires staged dataset")
-        if decision.target_validation is None:
-            raise RuntimeError("evaluation staged reuse decision requires target validation")
-        emit(decision.status_message)
-        return staged_result(
-            staged,
-            validation=decision.target_validation,
-            outcome=split_outcome(decision.outcome),
-        )
-
-    if decision.action is SplitMaterializationAction.REUSE_COMMITTED:
-        if existing is None:
-            raise RuntimeError("evaluation committed reuse decision requires existing dataset")
-        if decision.target_validation is None:
-            raise RuntimeError("evaluation committed reuse decision requires target validation")
-        emit(decision.status_message)
-        return reused_result(existing, validation=decision.target_validation)
-
-    if decision.action is SplitMaterializationAction.EXTEND_COMMITTED:
-        if existing is None:
-            raise RuntimeError("evaluation extension decision requires existing dataset")
-        if decision.reusable_range is None:
-            raise RuntimeError("evaluation extension decision requires reusable range")
-        source_dirs: list[Path] = []
-        source_files, frames = reusable_block_files_and_edges(
-            existing.path,
-            block_range=decision.reusable_range,
-        )
-        for pull_range in decision.pull_ranges:
-            source_dirs.append(
-                await pull_decision_range_to_dir(
-                    block_source=block_source,
-                    pull_range=pull_range,
-                    window=evaluation_plan.window,
-                    working_dir=working_dir,
-                    materialization=materialization,
-                    controller=controller,
-                )
-            )
-        emit(decision.status_message)
-        return materialize_dataset_from_sources(
-            mode="evaluation",
-            materialization=materialization,
+    return await _execute_split_materialization_decision(
+        decision,
+        existing=existing,
+        staged=staged,
+        execution=_SplitDecisionExecution(
+            kind=intent.kind,
+            plan=evaluation_plan,
             working_dir=working_dir,
+            materialization=materialization,
+            block_source=block_source,
+            controller=controller,
+            emit=emit,
             validate_result=validate_result,
-            source_dirs=source_dirs,
-            source_files=source_files,
-            frames=frames,
-            outcome=split_outcome(decision.outcome),
-        )
-
-    emit(decision.status_message)
-    frame = await pull_plan_to_frame(
-        block_source=block_source,
-        plan=evaluation_plan,
-        output_dir=plan_pull_dir(working_dir, label="evaluation", plan=evaluation_plan),
-        materialization=materialization,
-        controller=controller,
-    )
-    return materialize_dataset(
-        mode="evaluation",
-        materialization=materialization,
-        working_dir=working_dir,
-        validate_result=validate_result,
-        frames=(frame,),
-        outcome=split_outcome(decision.outcome),
+        ),
     )
