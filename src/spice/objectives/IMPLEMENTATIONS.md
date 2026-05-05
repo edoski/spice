@@ -42,11 +42,11 @@ Each objective has a direction:
 | `minimize` | Smaller metric is better. |
 | `maximize` | Larger metric is better. |
 
-The direction controls early stopping, best-state selection, and Optuna study optimization.
+The direction controls early stopping, best-state selection, and Optuna study optimization. For evaluation objectives, the direction must match the selected evaluator metric descriptor when that descriptor declares one.
 
 ## Benchmark Binding
 
-Evaluation objectives name a benchmark evaluator id. Train and tune configs must select the same evaluation benchmark. This keeps the optimized metric tied to the intended evaluator.
+Evaluation objectives name a benchmark evaluator id. Train and tune configs must select the same evaluation benchmark, and the resolved evaluator config is part of study/artifact identity. This keeps the optimized metric tied to the intended evaluator and its concrete replay settings.
 
 Evaluate workflow can run a selected diagnostic evaluator directly; artifact inference validates manifest and selected corpus compatibility.
 
@@ -65,6 +65,7 @@ Evaluate workflow can run a selected diagnostic evaluator directly; artifact inf
 | Metric id missing | Objective cannot find configured metric. |
 | Evaluation objective without benchmark | Evaluator scoring target is undefined. |
 | Benchmark mismatch | Training would optimize a different evaluator than requested. |
+| Direction mismatch | Objective direction contradicts the evaluator metric descriptor. |
 | Invalid direction | Best-metric comparison is undefined. |
 
 ## Extension Pattern

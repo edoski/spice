@@ -60,6 +60,7 @@ def manifest_from_tune_config(
         dataset_builder=config.dataset_builder,
         prediction=config.prediction,
         objective=config.objective,
+        evaluation=config.evaluation,
         study_name=study.study_name,
         chain_name=corpus_manifest.chain.name,
         dataset_id=corpus.dataset_id,

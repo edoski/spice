@@ -117,7 +117,7 @@ def _matching_evaluation_summaries(
         summary
         for summary in summaries
         if summary.runtime.delay_seconds == expected_delay
-        and summary.runtime.evaluation_id == selection.evaluator_id
+        and summary.runtime.evaluator_id == selection.evaluator_id
     ]
     if not candidates:
         return []

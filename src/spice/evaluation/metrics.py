@@ -9,21 +9,25 @@ TEMPORAL_REPLAY_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
         id="profit_over_baseline",
         label="profit over baseline",
         role="primary",
+        direction="maximize",
     ),
     MetricDescriptor(
         id="cost_over_optimum",
         label="cost over optimum",
         role="secondary",
+        direction="minimize",
     ),
     MetricDescriptor(
         id="baseline_cost_over_optimum",
         label="baseline cost over optimum",
         role="secondary",
+        direction="minimize",
     ),
     MetricDescriptor(
         id="exact_optimum_hit_rate",
         label="exact optimum hit rate",
         role="secondary",
+        direction="maximize",
     ),
     MetricDescriptor(
         id="realized_fee_sum",

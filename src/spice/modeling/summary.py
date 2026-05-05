@@ -55,7 +55,7 @@ def training_result_fields(
 def evaluation_result_fields(summary: LoadedEvaluationSummary) -> list[tuple[str, str]]:
     runtime = summary.runtime
     fields = [
-        ("evaluation_id", summary.evaluation_id),
+        ("evaluation_storage_id", summary.evaluation_storage_id),
         ("events", str(runtime.total_events)),
     ]
     primary_descriptor = next(

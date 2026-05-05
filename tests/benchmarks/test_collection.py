@@ -133,7 +133,7 @@ def _evaluate_root_ledger(
 
 def _loaded_summary(config):
     return SimpleNamespace(
-        evaluation_id="poisson_replay_2h-36s-storage",
+        evaluation_storage_id="poisson_replay_2h-36s-storage",
         recorded_at=1_700_000_000,
         manifest=SimpleNamespace(
             artifact_id="artifact-1",
@@ -151,7 +151,7 @@ def _loaded_summary(config):
         ),
         runtime=SimpleNamespace(
             delay_seconds=config.delay_seconds,
-            evaluation_id=config.evaluation.id,
+            evaluator_id=config.evaluation.id,
             execution_provenance=SimpleNamespace(
                 execution_ref="slurm:57549",
                 job_id="57549",

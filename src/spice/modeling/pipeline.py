@@ -20,6 +20,7 @@ from ..config.models import (
 )
 from ..corpus.io import load_block_frame
 from ..corpus.metadata import DatasetManifest
+from ..evaluation import EvaluatorConfig
 from ..features import CompiledFeatureContract
 from ..objectives import ObjectiveConfig
 from ..prediction import CompiledPredictionContract
@@ -61,6 +62,7 @@ class TrainingSpec:
     features: FeaturesConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
+    evaluation: EvaluatorConfig | None
     prediction_contract: CompiledPredictionContract
     objective_runtime: CompiledObjectiveRuntime
     input_normalization_contract: CompiledInputNormalizationContract
@@ -143,6 +145,7 @@ def _build_training_spec(
         features=config.features,
         prediction=config.prediction,
         objective=config.objective,
+        evaluation=config.evaluation,
         prediction_contract=context.prediction_contract,
         objective_runtime=context.objective_runtime,
         input_normalization_contract=context.input_normalization_contract,

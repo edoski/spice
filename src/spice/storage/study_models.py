@@ -20,6 +20,7 @@ from ..config.models import (
     TuningSpaceConfig,
 )
 from ..core.errors import ConfigResolutionError, StateLayoutError
+from ..evaluation import EvaluatorConfig
 from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import ModelConfig
 from ..modeling.tuned_config import coerce_tuned_parameter_set
@@ -58,6 +59,7 @@ class StudyManifest:
     pruner_name: str
     enable_pruning: bool
     objective: ObjectiveConfig
+    evaluation: EvaluatorConfig | None
     tuning_space: TuningSpaceConfig
     semantics: StudySemantics
 

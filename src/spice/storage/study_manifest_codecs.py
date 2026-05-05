@@ -15,6 +15,7 @@ from ..config.models import (
     coerce_problem_spec,
 )
 from ..core.errors import StateLayoutError
+from ..evaluation import coerce_evaluator_config
 from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.base import ModelConfig
 from ..modeling.families.registry import coerce_model_config
@@ -31,6 +32,7 @@ class StudyDefinitionPayload(PayloadModel):
     dataset_builder: dict[str, object]
     prediction: dict[str, object]
     objective: dict[str, object]
+    evaluation: dict[str, object] | None = None
     study_name: str
     chain_name: str
     dataset_id: str
@@ -70,6 +72,11 @@ class StudyManifestPayload(PayloadModel):
             dataset_builder=coerce_dataset_builder_config(definition.dataset_builder),
             prediction=prediction,
             objective=coerce_objective_config(definition.objective),
+            evaluation=(
+                None
+                if definition.evaluation is None
+                else coerce_evaluator_config(definition.evaluation)
+            ),
             study_name=definition.study_name,
             chain_name=definition.chain_name,
             dataset_id=definition.dataset_id,

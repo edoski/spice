@@ -31,7 +31,7 @@ evaluation:
 
 The default runnable surface is `current_row_fee_dynamics`. `evaluation.delay_seconds` is usually omitted; evaluation workflows default it from `problem.max_delay_seconds`. `model`, `features`, `objective`, `evaluation`, `tuning_space`, `delay_seconds`, `study`, `variant`, and `trial_count` may be supplied by benchmark cases or CLI overrides when a surface leaves variation to the **Workflow Selection**.
 
-Available evaluator ids are `poisson_replay_2h` and `full_temporal_replay`. The matching evaluation objectives are `profit_poisson_replay_2h` and `profit_full_temporal_replay`. Train and tune workflows require evaluation objectives to match the selected evaluator; evaluate workflows may intentionally use a different diagnostic evaluator for an already-trained artifact.
+Available evaluator ids are `poisson_replay_2h` and `full_temporal_replay`. The matching evaluation objectives are `profit_poisson_replay_2h` and `profit_full_temporal_replay`. Train and tune workflows require evaluation objectives to match the selected evaluator and metric direction; evaluate workflows may intentionally use a different diagnostic evaluator for an already-trained artifact.
 
 ## Workflow Refs
 
@@ -59,7 +59,7 @@ Resolution order:
 4. validate the final workflow config
 5. derive storage identity from the resolved config
 
-Storage identity does not include the surface or benchmark name. It changes when resolved semantic payloads such as model, objective, features, problem, training, split, tuning, or tuning space change.
+Storage identity does not include the surface or benchmark name. It changes when resolved semantic payloads such as model, objective, evaluator config for evaluation objectives, features, problem, training, split, tuning, or tuning space change.
 
 ## Benchmarks
 

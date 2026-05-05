@@ -160,15 +160,15 @@ def artifact_sections(
             evaluation_title = (
                 "evaluation"
                 if not multiple_evaluations
-                else f"evaluation {runtime.evaluation_id} {runtime.delay_seconds}s"
+                else f"evaluation {runtime.evaluator_id} {runtime.delay_seconds}s"
             )
             sections.append(
                 (
                     evaluation_title,
                     [
-                        ("evaluation id", evaluation.evaluation_id),
+                        ("evaluation storage id", evaluation.evaluation_storage_id),
                         ("requested", f"{runtime.delay_seconds}s"),
-                        ("evaluation", runtime.evaluation_id),
+                        ("evaluation", runtime.evaluator_id),
                         (
                             "execution policy",
                             evaluation.manifest.semantics.execution_policy.execution_policy_id,
@@ -216,7 +216,7 @@ def artifact_sections(
                     (
                         "runs"
                         if not multiple_evaluations
-                        else f"runs {runtime.evaluation_id} {runtime.delay_seconds}s"
+                        else f"runs {runtime.evaluator_id} {runtime.delay_seconds}s"
                     ),
                     [
                         (f"run {index}", evaluation_run_string(run))

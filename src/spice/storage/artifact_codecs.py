@@ -13,7 +13,7 @@ from ..config.models import (
     coerce_features_config,
     coerce_problem_spec,
 )
-from ..evaluation import EvaluationRun
+from ..evaluation import EvaluationRun, coerce_evaluator_config
 from ..metrics import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..modeling.dataset_builders import (
     coerce_builder_runtime_metadata,
@@ -58,6 +58,7 @@ class MetricDescriptorPayload(PayloadModel):
     id: str
     label: str
     role: str
+    direction: str | None = None
 
     @classmethod
     def from_descriptor(cls, descriptor: MetricDescriptor) -> MetricDescriptorPayload:
@@ -65,6 +66,7 @@ class MetricDescriptorPayload(PayloadModel):
             id=descriptor.id,
             label=descriptor.label,
             role=descriptor.role,
+            direction=descriptor.direction,
         )
 
     def to_descriptor(self) -> MetricDescriptor:
@@ -72,6 +74,7 @@ class MetricDescriptorPayload(PayloadModel):
             id=self.id,
             label=self.label,
             role=cast(Any, self.role),
+            direction=cast(Any, self.direction),
         )
 
 
@@ -97,6 +100,15 @@ def _metric_descriptor_from_payload(payload: MetricDescriptorPayload) -> MetricD
                 label="evaluation_summary.metric_descriptor.role",
             ),
         ),
+        direction=cast(
+            Any,
+            None
+            if mapping.get("direction") is None
+            else string_payload(
+                mapping["direction"],
+                label="evaluation_summary.metric_descriptor.direction",
+            ),
+        ),
     )
 
 
@@ -105,6 +117,7 @@ class ArtifactManifestPayload(PayloadModel):
     dataset_builder: dict[str, object]
     prediction: dict[str, object]
     objective: dict[str, object]
+    evaluation: dict[str, object] | None = None
     chain_name: str
     dataset_id: str
     dataset_name: str
@@ -128,6 +141,11 @@ class ArtifactManifestPayload(PayloadModel):
             dataset_builder=manifest.dataset_builder.model_dump(mode="json", exclude_none=True),
             prediction=manifest.prediction.model_dump(mode="json"),
             objective=manifest.objective.model_dump(mode="json", exclude_none=True),
+            evaluation=(
+                None
+                if manifest.evaluation is None
+                else manifest.evaluation.model_dump(mode="json", exclude_none=True)
+            ),
             chain_name=manifest.chain_name,
             dataset_id=manifest.dataset_id,
             dataset_name=manifest.dataset_name,
@@ -154,6 +172,9 @@ class ArtifactManifestPayload(PayloadModel):
             dataset_builder=dataset_builder,
             prediction=PredictionConfig.model_validate(self.prediction),
             objective=coerce_objective_config(self.objective),
+            evaluation=(
+                None if self.evaluation is None else coerce_evaluator_config(self.evaluation)
+            ),
             chain_name=self.chain_name,
             dataset_id=self.dataset_id,
             dataset_name=self.dataset_name,
@@ -299,7 +320,7 @@ class EvaluationExecutionProvenancePayload(PayloadModel):
 
 class EvaluationSummaryPayload(PayloadModel):
     delay_seconds: int
-    evaluation_id: str
+    evaluator_id: str
     evaluation_config: dict[str, object]
     execution_provenance: EvaluationExecutionProvenancePayload | None = None
     metric_descriptors: list[MetricDescriptorPayload]
@@ -314,7 +335,7 @@ class EvaluationSummaryPayload(PayloadModel):
     def from_runtime(cls, summary: EvaluationRuntimeSummary) -> EvaluationSummaryPayload:
         return cls(
             delay_seconds=summary.delay_seconds,
-            evaluation_id=summary.evaluation_id,
+            evaluator_id=summary.evaluator_id,
             evaluation_config=summary.evaluation_config.payload(),
             execution_provenance=_execution_provenance_payload(
                 summary.execution_provenance
@@ -339,7 +360,7 @@ class EvaluationSummaryPayload(PayloadModel):
 
         return EvaluationRuntimeSummary(
             delay_seconds=self.delay_seconds,
-            evaluation_id=self.evaluation_id,
+            evaluator_id=self.evaluator_id,
             evaluation_config=EvaluationConfigSnapshot.from_payload(self.evaluation_config),
             execution_provenance=_execution_provenance_from_payload(
                 self.execution_provenance
@@ -466,9 +487,7 @@ def _execution_provenance_from_payload(
 
 def _metadata_value(value: object) -> str | int | float:
     if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
+        raise TypeError("evaluation run metadata values must be str, int, or float")
+    if isinstance(value, (str, int, float)):
         return value
-    if isinstance(value, float):
-        return value
-    return str(value)
+    raise TypeError("evaluation run metadata values must be str, int, or float")

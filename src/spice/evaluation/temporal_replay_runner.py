@@ -40,7 +40,7 @@ class TemporalReplayAdapter(Protocol):
 
 def compile_temporal_replay_evaluator_contract(
     *,
-    evaluation_id: str,
+    evaluator_id: str,
     config: EvaluatorConfig,
     adapter: TemporalReplayAdapter,
 ) -> CompiledEvaluatorContract:
@@ -59,7 +59,7 @@ def compile_temporal_replay_evaluator_contract(
         )
 
     return CompiledEvaluatorContract(
-        evaluation_id=evaluation_id,
+        evaluator_id=evaluator_id,
         metric_descriptors=TEMPORAL_REPLAY_METRIC_DESCRIPTORS,
         primary_metric_id="profit_over_baseline",
         direction="maximize",
@@ -128,7 +128,7 @@ def _validated_metadata(metadata: Mapping[str, object]) -> dict[str, str | int |
         if not isinstance(key, str):
             raise ValueError("temporal replay metadata keys must be strings")
         if isinstance(value, bool):
-            validated[key] = int(value)
+            raise ValueError("temporal replay metadata values must be scalar")
         elif isinstance(value, (str, int, float)):
             validated[key] = value
         else:

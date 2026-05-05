@@ -88,7 +88,7 @@ def test_evaluator_config_supports_explicit_temporal_replay_specs() -> None:
     contract = compile_evaluator_contract(config)
 
     assert config.id == "poisson_replay_2h"
-    assert contract.evaluation_id == "poisson_replay_2h"
+    assert contract.evaluator_id == "poisson_replay_2h"
     assert contract.config == config
     assert contract.accepted_decoded_result_id == OFFSET_DECODED_RESULT_ID
     assert contract.primary_metric_id == "profit_over_baseline"
@@ -98,7 +98,7 @@ def test_evaluator_config_supports_explicit_temporal_replay_specs() -> None:
     full_contract = compile_evaluator_contract(full_config)
 
     assert full_config.id == "full_temporal_replay"
-    assert full_contract.evaluation_id == "full_temporal_replay"
+    assert full_contract.evaluator_id == "full_temporal_replay"
     assert full_contract.config == full_config
     assert full_contract.accepted_decoded_result_id == OFFSET_DECODED_RESULT_ID
     assert full_contract.metric_descriptors == contract.metric_descriptors
@@ -134,7 +134,7 @@ def test_metric_descriptors_and_evaluator_contract_validate_primary_metric() -> 
 
     with pytest.raises(ValueError, match="exactly one primary"):
         CompiledEvaluatorContract(
-            evaluation_id="bad",
+            evaluator_id="bad",
             metric_descriptors=(
                 MetricDescriptor(id="profit", label="Profit", role="secondary"),
             ),

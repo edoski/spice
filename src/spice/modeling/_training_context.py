@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..config.models import ChainRuntimeSpec, TrainConfig, TuneConfig
+from ..evaluation import CompiledEvaluatorContract, compile_evaluator_contract
 from ..features import CompiledFeatureContract, compile_feature_contract
 from ..prediction import CompiledPredictionContract, compile_prediction_contract
 from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
@@ -29,6 +30,7 @@ class CompiledTrainingContext:
     problem_contract: CompiledProblemContract
     prediction_contract: CompiledPredictionContract
     objective_runtime: CompiledObjectiveRuntime
+    evaluator_contract: CompiledEvaluatorContract | None
     dataset_builder_contract: CompiledDatasetBuilderContract
     input_normalization_contract: CompiledInputNormalizationContract
     representation_contract: CompiledRepresentationContract
@@ -44,9 +46,12 @@ def compile_training_context(
         prediction_id=config.prediction.id,
         family_id=config.prediction.family_id,
     )
+    evaluator_contract = (
+        None if config.evaluation is None else compile_evaluator_contract(config.evaluation)
+    )
     objective_runtime = compile_objective_runtime(
         config.objective,
-        evaluation=config.evaluation,
+        evaluator_contract=evaluator_contract,
         prediction_metric_descriptors=prediction_contract.training_metric_descriptors,
     )
     return CompiledTrainingContext(
@@ -58,6 +63,7 @@ def compile_training_context(
         ),
         prediction_contract=prediction_contract,
         objective_runtime=objective_runtime,
+        evaluator_contract=evaluator_contract,
         dataset_builder_contract=compile_dataset_builder_contract(config.dataset_builder),
         input_normalization_contract=compile_input_normalization_contract(
             config.training.input_normalization

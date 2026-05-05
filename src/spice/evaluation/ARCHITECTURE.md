@@ -75,7 +75,7 @@ Temporal Replay Runner
 
 ## Temporal Accounting
 
-Temporal replay evaluator Adapters choose event positions. The **Temporal Replay Runner** owns decoded-result validation and the accounting loop. Temporal Accounting computes realized, baseline, optimum, and event-mean economic metrics for those positions.
+Temporal replay evaluator Adapters choose event positions. The **Temporal Replay Runner** owns decoded-result validation, selected-position validation, strict scalar metadata validation, and the accounting loop. Temporal Accounting computes realized, baseline, optimum, and event-mean economic metrics for those positions.
 
 ```text
 selected sample positions
@@ -95,7 +95,7 @@ Temporal Accounting returns evaluation-private temporal replay result types. The
 metric id -> label -> role(primary | secondary | diagnostic)
 ```
 
-Each evaluator contract must declare exactly one primary metric. Descriptor ids must be unique and path-safe. The primary metric drives objective alignment and reporting; secondary and diagnostic metrics explain behavior.
+Each evaluator contract must declare exactly one primary metric. Descriptor ids must be unique and path-safe. Metric descriptors may also declare optimization direction. Evaluation-backed objectives must use the same direction as the selected evaluator metric, so a cost metric cannot accidentally be maximized and a profit metric cannot accidentally be minimized.
 
 ## Module Map
 

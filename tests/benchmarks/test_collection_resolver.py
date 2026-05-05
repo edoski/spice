@@ -102,7 +102,7 @@ def _summary(
     return SimpleNamespace(
         runtime=SimpleNamespace(
             delay_seconds=config.delay_seconds if delay_seconds is None else delay_seconds,
-            evaluation_id=config.evaluation.id if evaluation_id is None else evaluation_id,
+            evaluator_id=config.evaluation.id if evaluation_id is None else evaluation_id,
             execution_provenance=None
             if execution_ref is None
             else SimpleNamespace(execution_ref=execution_ref),

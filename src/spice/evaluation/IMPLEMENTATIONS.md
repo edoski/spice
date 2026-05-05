@@ -22,7 +22,7 @@ Current evaluators accept `DecodedOffsets`. They interpret offsets through tempo
 
 | Field | Meaning |
 | --- | --- |
-| `evaluation_id` | Stable evaluator config id. |
+| `evaluator_id` | Stable evaluator config id. |
 | `metric_descriptors` | Metric names, roles, and directions. |
 | `primary_metric_id` | Metric used for headline reporting. |
 | `accepted_decoded_result_id` | Decoded ABI the evaluator accepts. |
@@ -40,7 +40,7 @@ fee = exp(log_base_fee)
 
 Ratios are computed on real fee values, not log values. The Temporal Replay Runner validates decoded replay inputs and asks evaluator Adapters for selected events; Temporal Accounting is shared after that selection.
 
-Temporal replay has a private typed result ABI between Temporal Accounting and the Temporal Replay Runner. It carries run metrics, event metric sums, window summaries, and metadata as replay concepts. The runner converts it to generic `EvaluationSummary` at the evaluator boundary.
+Temporal replay has a private typed result ABI between Temporal Accounting and the Temporal Replay Runner. It carries run metrics, event metric sums, window summaries, and metadata as replay concepts. The runner validates metadata as strings, integers, or floats only, then converts the replay result to generic `EvaluationSummary` at the evaluator boundary.
 
 ## Temporal Accounting
 

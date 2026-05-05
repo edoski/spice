@@ -28,13 +28,13 @@ features config         -> feature contract
 problem spec            -> temporal problem contract
 prediction config       -> prediction contract
 objective config        -> objective contract
-objective + evaluation  -> objective runtime
+objective + evaluator contract -> objective runtime
 dataset_builder config  -> dataset builder contract
 input_normalization     -> scaler policy
 model config            -> model family
 ```
 
-The compiled context is the source of truth for model input width, prediction output heads, action-space size, target batches, objective metric direction, and Objective Runtime metric production.
+The compiled context is the source of truth for model input width, prediction output heads, action-space size, target batches, evaluator config identity, objective metric direction, and Objective Runtime metric production.
 
 ## Batch Plan
 

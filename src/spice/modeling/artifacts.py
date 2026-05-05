@@ -46,6 +46,7 @@ def build_training_artifact_manifest(
         dataset_builder=spec.dataset_builder,
         prediction=spec.prediction,
         objective=spec.objective,
+        evaluation=spec.evaluation,
         chain_name=spec.chain.name,
         dataset_id=spec.dataset_id,
         dataset_name=spec.dataset_name,

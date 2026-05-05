@@ -85,7 +85,7 @@ Benchmark-owned durable scheduling facts for a Benchmark Plan Entry: matched loc
 _Avoid_: depends-on tuple, submission helper state
 
 **Benchmark Root Ledger**:
-Benchmark-owned durable root facts for a Benchmark Plan Entry, separating consumed root ids, produced root ids, and artifact-source dataset identity from benchmark selection coordinates.
+Benchmark-owned durable root facts for a Benchmark Plan Entry, recording typed consumed, produced, and source root entries separately from benchmark selection coordinates.
 _Avoid_: injected selection ids, materialization state dict
 
 **Benchmark Plan Materialization**:
@@ -213,7 +213,7 @@ Typed prediction output contract consumed by evaluators after model inference.
 _Avoid_: logits, prediction tensor
 
 **Objective Runtime**:
-Modeling-owned module that pairs a policy-only objective contract with the metric production used by the Training Runner.
+Modeling-owned module that pairs a policy-only objective contract and, for evaluation objectives, the compiled evaluator contract with the metric production used by the Training Runner.
 _Avoid_: objective evaluator, objective callback
 
 **Temporal Replay Runner**:

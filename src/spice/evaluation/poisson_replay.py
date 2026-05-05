@@ -122,7 +122,7 @@ def compile_poisson_replay_evaluator_contract(
     config: PoissonReplayEvaluatorConfig,
 ) -> CompiledEvaluatorContract:
     return compile_temporal_replay_evaluator_contract(
-        evaluation_id=config.id,
+        evaluator_id=config.id,
         config=config,
         adapter=PoissonReplayAdapter(config),
     )

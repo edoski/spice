@@ -68,6 +68,6 @@ Run dirs are canonical benchmark audit state. `results.sqlite` is a rebuildable 
 
 The CLI creates run dirs, submits existing run dirs, collects existing run dirs, exports CSV, and reads the result index. It does not re-plan during submit or collect.
 
-Remote transfer during collection uses an **Execution Session** and `execution.transfer`; matching uses a **Benchmark Collection Resolver**. Collection builds a `BenchmarkCollectionSelection` from the plan entry and submission, pulls the selected artifact once, then passes the pulled local artifact record to the resolver. The resolver reads `pulled.local_record.state_db_path`, validates artifact identity, matches `(evaluation_id, delay_seconds, execution_ref)`, rejects stale or missing execution provenance, and does not re-resolve the local catalog.
+Remote transfer during collection uses an **Execution Session** and `execution.transfer`; matching uses a **Benchmark Collection Resolver**. Collection builds a `BenchmarkCollectionSelection` from the plan entry and submission, pulls the selected artifact once, then passes the pulled local artifact record to the resolver. The resolver reads `pulled.local_record.state_db_path`, validates artifact identity, matches `(evaluator_id, delay_seconds, execution_ref)`, rejects stale or missing execution provenance, and does not re-resolve the local catalog.
 
 Benchmark JSON shapes are operator-facing. Keep them stable unless a field name is part of a deliberate terminology cleanup.

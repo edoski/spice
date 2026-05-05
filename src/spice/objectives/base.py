@@ -12,7 +12,6 @@ from ..core.config_model import ConfigModel
 from ..core.errors import ConfigResolutionError
 from ..core.specs import owner_payload, validate_owner_config
 from ..core.validation import validate_path_segment
-from ..evaluation import EvaluatorConfig
 from ..metrics import MetricSet
 from ..semantics import ObjectiveSemantics
 
@@ -92,7 +91,7 @@ def coerce_objective_config(
 def compile_objective_contract(
     config: ObjectiveConfig,
     *,
-    evaluation: EvaluatorConfig | None,
+    evaluation_id: str | None,
 ) -> CompiledObjectiveContract:
     if config.id == "validation":
         return CompiledObjectiveContract(
@@ -101,17 +100,17 @@ def compile_objective_contract(
             direction=config.direction.value,
             benchmark_id=None,
         )
-    if evaluation is None:
+    if evaluation_id is None:
         raise ConfigResolutionError(
             f"objective benchmark {config.benchmark_id} requires evaluation"
         )
-    if config.benchmark_id != evaluation.id:
+    if config.benchmark_id != evaluation_id:
         raise ConfigResolutionError(
-            f"objective benchmark {config.benchmark_id} does not match evaluation {evaluation.id}"
+            f"objective benchmark {config.benchmark_id} does not match evaluation {evaluation_id}"
         )
     return CompiledObjectiveContract(
         objective_id="evaluation",
         metric_id=config.metric_id,
         direction=config.direction.value,
-        benchmark_id=evaluation.id,
+        benchmark_id=evaluation_id,
     )

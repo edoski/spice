@@ -56,14 +56,14 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
         prepared=prepared,
         evaluation=evaluation,
         delay_seconds=inference_context.delay_seconds,
-        evaluation_id=inference_context.evaluator_contract.evaluation_id,
+        evaluator_id=inference_context.evaluator_contract.evaluator_id,
         evaluation_config=inference_context.evaluator_contract.config,
         metric_descriptors=inference_context.evaluator_contract.metric_descriptors,
         execution_provenance=_current_execution_provenance(),
     )
-    evaluation_id, recorded_at = roots.artifact.upsert_evaluation_state(runtime_summary)
+    evaluation_storage_id, recorded_at = roots.artifact.upsert_evaluation_state(runtime_summary)
     summary = LoadedEvaluationSummary(
-        evaluation_id=evaluation_id,
+        evaluation_storage_id=evaluation_storage_id,
         recorded_at=recorded_at,
         manifest=inference_context.loaded_artifact.manifest,
         runtime=runtime_summary,

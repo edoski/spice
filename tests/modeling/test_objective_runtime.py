@@ -30,7 +30,7 @@ def test_validation_objective_runtime_returns_validation_metrics_unchanged() -> 
     metrics = MetricSet({"score": 1.0})
     runtime = compile_objective_runtime(
         _objective_config(objective_id="validation", benchmark_id=None),
-        evaluation=None,
+        evaluator_contract=None,
         prediction_metric_descriptors=(
             MetricDescriptor(id="score", label="score", role="primary"),
         ),
@@ -49,10 +49,16 @@ def test_evaluation_objective_runtime_scores_with_same_runtime_facts(
     monkeypatch,
 ) -> None:
     evaluator_contract = SimpleNamespace(
-        evaluation_id="poisson_replay_2h",
-        metric_descriptors=(MetricDescriptor(id="score", label="score", role="primary"),),
+        evaluator_id="poisson_replay_2h",
+        metric_descriptors=(
+            MetricDescriptor(
+                id="score",
+                label="score",
+                role="primary",
+                direction="maximize",
+            ),
+        ),
     )
-    evaluation = SimpleNamespace(id="poisson_replay_2h")
     summary = EvaluationSummary(
         metrics=MetricSet({"score": 2.0}),
         window_metrics={},
@@ -60,11 +66,6 @@ def test_evaluation_objective_runtime_scores_with_same_runtime_facts(
         runs=[],
     )
     seen_contexts = []
-    monkeypatch.setattr(
-        "spice.modeling.objective_runtime.compile_evaluator_contract",
-        lambda config: evaluator_contract,
-    )
-
     def fake_score_evaluation(*, model_input, evaluator_contract):
         seen_contexts.append((model_input, evaluator_contract))
         return summary
@@ -78,7 +79,7 @@ def test_evaluation_objective_runtime_scores_with_same_runtime_facts(
             objective_id="evaluation",
             benchmark_id="poisson_replay_2h",
         ),
-        evaluation=cast(Any, evaluation),
+        evaluator_contract=cast(Any, evaluator_contract),
         prediction_metric_descriptors=(
             MetricDescriptor(id="total_loss", label="total loss", role="primary"),
         ),
@@ -109,21 +110,17 @@ def test_validation_objective_runtime_rejects_unknown_prediction_metric() -> Non
     with pytest.raises(ConfigResolutionError, match="objective metric missing"):
         compile_objective_runtime(
             _objective_config(objective_id="validation", benchmark_id=None, metric_id="missing"),
-            evaluation=None,
+            evaluator_contract=None,
             prediction_metric_descriptors=(
                 MetricDescriptor(id="score", label="score", role="primary"),
             ),
         )
 
 
-def test_evaluation_objective_runtime_rejects_unknown_evaluator_metric(monkeypatch) -> None:
+def test_evaluation_objective_runtime_rejects_unknown_evaluator_metric() -> None:
     evaluator_contract = SimpleNamespace(
-        evaluation_id="poisson_replay_2h",
+        evaluator_id="poisson_replay_2h",
         metric_descriptors=(MetricDescriptor(id="profit", label="profit", role="primary"),),
-    )
-    monkeypatch.setattr(
-        "spice.modeling.objective_runtime.compile_evaluator_contract",
-        lambda config: evaluator_contract,
     )
 
     with pytest.raises(ConfigResolutionError, match="objective metric score"):
@@ -132,7 +129,33 @@ def test_evaluation_objective_runtime_rejects_unknown_evaluator_metric(monkeypat
                 objective_id="evaluation",
                 benchmark_id="poisson_replay_2h",
             ),
-            evaluation=cast(Any, SimpleNamespace(id="poisson_replay_2h")),
+            evaluator_contract=cast(Any, evaluator_contract),
+            prediction_metric_descriptors=(
+                MetricDescriptor(id="total_loss", label="total loss", role="primary"),
+            ),
+        )
+
+
+def test_evaluation_objective_runtime_rejects_metric_direction_mismatch() -> None:
+    evaluator_contract = SimpleNamespace(
+        evaluator_id="poisson_replay_2h",
+        metric_descriptors=(
+            MetricDescriptor(
+                id="score",
+                label="score",
+                role="primary",
+                direction="minimize",
+            ),
+        ),
+    )
+
+    with pytest.raises(ConfigResolutionError, match="direction"):
+        compile_objective_runtime(
+            _objective_config(
+                objective_id="evaluation",
+                benchmark_id="poisson_replay_2h",
+            ),
+            evaluator_contract=cast(Any, evaluator_contract),
             prediction_metric_descriptors=(
                 MetricDescriptor(id="total_loss", label="total loss", role="primary"),
             ),

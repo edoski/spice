@@ -50,7 +50,7 @@ RunEvaluatorFn = Callable[
 
 @dataclass(frozen=True, slots=True)
 class CompiledEvaluatorContract:
-    evaluation_id: str
+    evaluator_id: str
     metric_descriptors: tuple[MetricDescriptor, ...]
     primary_metric_id: str
     direction: Literal["maximize", "minimize"]

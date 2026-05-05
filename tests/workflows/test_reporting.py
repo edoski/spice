@@ -92,7 +92,7 @@ def test_evaluate_workflow_delegates_artifact_inference_preparation(
     calls: list[str] = []
     prepared = SimpleNamespace(n_history_rows=10, n_evaluation_rows=5, sample_count=2)
     evaluator_contract = SimpleNamespace(
-        evaluation_id="poisson_replay_2h",
+        evaluator_id="poisson_replay_2h",
         config=coerce_evaluator_config(
             {
                 "id": "poisson_replay_2h",

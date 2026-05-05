@@ -235,27 +235,28 @@ def upsert_evaluation_state(
 def load_evaluation_summary(
     db_path: Path,
     *,
-    evaluation_id: str | None = None,
+    evaluation_storage_id: str | None = None,
 ) -> LoadedEvaluationSummary | None:
     """Load the evaluation read model as manifest plus runtime summary."""
 
     if not table_exists(db_path, evaluation_summary.name):
         return None
     require_root_kind(db_path, ARTIFACT_ROOT_KIND)
-    summaries = list_evaluation_summaries(db_path) if evaluation_id is None else []
-    if evaluation_id is None:
+    summaries = list_evaluation_summaries(db_path) if evaluation_storage_id is None else []
+    if evaluation_storage_id is None:
         if not summaries:
             return None
         if len(summaries) > 1:
             raise StateLayoutError(
                 "Multiple evaluation summaries stored; use list_evaluation_summaries() "
-                "or specify evaluation_id"
+                "or specify evaluation_storage_id"
             )
         return summaries[0]
     summary_by_id = {
-        summary.evaluation_id: summary for summary in list_evaluation_summaries(db_path)
+        summary.evaluation_storage_id: summary
+        for summary in list_evaluation_summaries(db_path)
     }
-    return summary_by_id.get(evaluation_id)
+    return summary_by_id.get(evaluation_storage_id)
 
 
 def list_evaluation_summaries(db_path: Path) -> list[LoadedEvaluationSummary]:
@@ -274,7 +275,7 @@ def list_evaluation_summaries(db_path: Path) -> list[LoadedEvaluationSummary]:
             return []
         return [
             LoadedEvaluationSummary(
-                evaluation_id=str(row["evaluation_id"]),
+                evaluation_storage_id=str(row["evaluation_id"]),
                 recorded_at=int(row["recorded_at"]),
                 manifest=manifest,
                 runtime=evaluation_summary_from_payload(
@@ -291,7 +292,7 @@ def list_evaluation_summaries(db_path: Path) -> list[LoadedEvaluationSummary]:
 def list_evaluation_runs(
     db_path: Path,
     *,
-    evaluation_id: str | None = None,
+    evaluation_storage_id: str | None = None,
 ) -> list[EvaluationRun]:
     if db_path.is_file():
         require_root_kind(db_path, ARTIFACT_ROOT_KIND)
@@ -300,7 +301,7 @@ def list_evaluation_runs(
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
-            resolved_evaluation_id = evaluation_id
+            resolved_evaluation_id = evaluation_storage_id
             if resolved_evaluation_id is None:
                 evaluation_ids = _evaluation_ids(conn)
                 if not evaluation_ids:
@@ -319,16 +320,12 @@ def list_evaluation_runs(
 def _evaluation_storage_id(summary: EvaluationRuntimeSummary) -> str:
     identity_payload: dict[str, object] = {
         "delay_seconds": summary.delay_seconds,
-        "evaluation_id": summary.evaluation_id,
+        "evaluator_id": summary.evaluator_id,
         "evaluation_config": summary.evaluation_config.payload(),
     }
     if summary.execution_provenance is not None:
         identity_payload["execution_provenance"] = {
             "execution_ref": summary.execution_provenance.execution_ref,
-            "job_id": summary.execution_provenance.job_id,
-            "log_path": summary.execution_provenance.log_path,
-            "workflow_task": summary.execution_provenance.workflow_task,
-            "target": summary.execution_provenance.target,
         }
     canonical_payload = json.dumps(
         identity_payload,
@@ -336,7 +333,7 @@ def _evaluation_storage_id(summary: EvaluationRuntimeSummary) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     digest = hashlib.sha256(canonical_payload).hexdigest()[:16]
-    return f"{summary.evaluation_id}-{summary.delay_seconds}s-{digest}"
+    return f"{summary.evaluator_id}-{summary.delay_seconds}s-{digest}"
 
 
 def _evaluation_ids(conn: Connection) -> list[str]:

@@ -57,6 +57,7 @@ class TrainingArtifactManifest:
     dataset_builder: DatasetBuilderConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
+    evaluation: EvaluatorConfig | None
     chain_name: str
     dataset_id: str
     dataset_name: str
@@ -216,7 +217,7 @@ class EvaluationRuntimeSummary:
     """Runtime-only evaluation outcomes stored separately from manifest provenance."""
 
     delay_seconds: int
-    evaluation_id: str
+    evaluator_id: str
     evaluation_config: EvaluationConfigSnapshot
     metric_descriptors: tuple[MetricDescriptor, ...]
     n_history_rows: int
@@ -233,7 +234,7 @@ class EvaluationRuntimeSummary:
 class LoadedEvaluationSummary:
     """Read model that pairs artifact provenance with one evaluation runtime summary."""
 
-    evaluation_id: str
+    evaluation_storage_id: str
     recorded_at: int
     manifest: TrainingArtifactManifest
     runtime: EvaluationRuntimeSummary
@@ -285,14 +286,14 @@ def build_evaluation_runtime_summary(
     prepared: PreparedInferenceDataset,
     evaluation: EvaluationSummary,
     delay_seconds: int,
-    evaluation_id: str,
+    evaluator_id: str,
     evaluation_config: EvaluatorConfig,
     metric_descriptors: tuple[MetricDescriptor, ...],
     execution_provenance: EvaluationExecutionProvenance | None = None,
 ) -> EvaluationRuntimeSummary:
     return EvaluationRuntimeSummary(
         delay_seconds=delay_seconds,
-        evaluation_id=evaluation_id,
+        evaluator_id=evaluator_id,
         evaluation_config=EvaluationConfigSnapshot.from_config(evaluation_config),
         execution_provenance=execution_provenance,
         metric_descriptors=metric_descriptors,

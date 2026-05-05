@@ -19,6 +19,7 @@ from ..config.models import (
     TuningSpaceConfig,
 )
 from ..core.errors import ConfigResolutionError
+from ..evaluation import EvaluatorConfig
 from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import ModelConfig
 from ..objectives import ObjectiveConfig
@@ -37,6 +38,7 @@ class StudyStorageIdentity(IdentityModel):
     problem: ProblemSpec
     prediction: PredictionConfig
     objective: ObjectiveConfig
+    evaluation: SerializeAsAny[EvaluatorConfig] | None
     study: StudyConfig
     split: SplitConfig
     training: TrainingConfig
@@ -52,6 +54,7 @@ class ArtifactStorageIdentity(IdentityModel):
     problem: ProblemSpec
     prediction: PredictionConfig
     objective: ObjectiveConfig
+    evaluation: SerializeAsAny[EvaluatorConfig] | None
     split: SplitConfig
     training: TrainingConfig
     variant: ArtifactVariant
@@ -68,6 +71,7 @@ class StudyDefinitionIdentity(IdentityModel):
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     prediction: PredictionConfig
     objective: ObjectiveConfig
+    evaluation: SerializeAsAny[EvaluatorConfig] | None
     problem: ProblemSpec
     features: FeaturesConfig
     model: SerializeAsAny[ModelConfig]
@@ -101,6 +105,7 @@ def study_storage_identity(
     problem: ProblemSpec,
     prediction: PredictionConfig,
     objective: ObjectiveConfig,
+    evaluation: EvaluatorConfig | None,
     study: StudyConfig,
     split: SplitConfig,
     training: TrainingConfig,
@@ -115,6 +120,7 @@ def study_storage_identity(
         problem=problem,
         prediction=prediction,
         objective=objective,
+        evaluation=evaluation,
         study=study,
         split=split,
         training=training,
@@ -137,6 +143,7 @@ def study_storage_identity_from_config(
         problem=config.problem,
         prediction=config.prediction,
         objective=config.objective,
+        evaluation=config.evaluation,
         study=config.study,
         split=config.split,
         training=config.training,
@@ -161,6 +168,7 @@ def artifact_storage_identity_from_config(
         problem=config.problem,
         prediction=config.prediction,
         objective=config.objective,
+        evaluation=config.evaluation,
         split=config.split,
         training=config.training,
         variant=config.artifact.variant,
@@ -179,6 +187,7 @@ def study_definition_identity(
     dataset_builder: DatasetBuilderConfig,
     prediction: PredictionConfig,
     objective: ObjectiveConfig,
+    evaluation: EvaluatorConfig | None,
     problem: ProblemSpec,
     features: FeaturesConfig,
     model: ModelConfig,
@@ -196,6 +205,7 @@ def study_definition_identity(
         dataset_builder=dataset_builder,
         prediction=prediction,
         objective=objective,
+        evaluation=evaluation,
         problem=problem,
         features=features,
         model=model,
@@ -216,6 +226,7 @@ def study_definition_identity_from_manifest(manifest: StudyManifest) -> StudyDef
         dataset_builder=manifest.dataset_builder,
         prediction=manifest.prediction,
         objective=manifest.objective,
+        evaluation=manifest.evaluation,
         problem=manifest.problem,
         features=manifest.features,
         model=manifest.model,
@@ -247,6 +258,7 @@ def study_definition_identity_from_tuned_config(
         dataset_builder=config.dataset_builder,
         prediction=config.prediction,
         objective=config.objective,
+        evaluation=config.evaluation,
         problem=config.problem,
         features=config.features,
         model=config.model,

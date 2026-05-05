@@ -59,6 +59,7 @@ from spice.storage.artifact import (
 )
 from spice.storage.artifact_codecs import (
     evaluation_run_from_payload,
+    evaluation_run_payload,
     evaluation_summary_from_payload,
     evaluation_summary_payload,
     training_summary_from_payload,
@@ -196,6 +197,7 @@ def _manifest(
         dataset_builder=_dataset_builder_config(),
         prediction=prediction,
         objective=_objective_config(),
+        evaluation=None,
         chain_name="ethereum",
         dataset_id="current_row_fee_dynamics",
         dataset_name="current_row_fee_dynamics",
@@ -323,6 +325,17 @@ def test_evaluation_run_payload_rejects_loose_scalar_types() -> None:
         )
 
 
+def test_evaluation_run_payload_rejects_bool_metadata() -> None:
+    with pytest.raises(TypeError, match="metadata"):
+        evaluation_run_payload(
+            EvaluationRun(
+                n_events=1,
+                metrics={"profit_over_baseline": 0.2},
+                metadata={"mode": True},
+            )
+        )
+
+
 def test_evaluation_summary_payload_rejects_extra_metric_descriptor_keys() -> None:
     payload = evaluation_summary_payload(_evaluation_summary(0.2))
     descriptor = cast(dict[str, object], payload["metric_descriptors"][0])
@@ -344,7 +357,7 @@ def _evaluation_summary(value: float, *, seed: int = 2026) -> EvaluationRuntimeS
     )
     return EvaluationRuntimeSummary(
         delay_seconds=24,
-        evaluation_id="poisson_replay_2h",
+        evaluator_id="poisson_replay_2h",
         evaluation_config=EvaluationConfigSnapshot.from_config(evaluation_config),
         metric_descriptors=(
             MetricDescriptor(
@@ -417,6 +430,43 @@ def test_remote_evaluation_provenance_creates_distinct_summaries(tmp_path) -> No
     }
 
 
+def test_evaluation_storage_identity_uses_execution_ref_not_log_metadata() -> None:
+    summary = _evaluation_summary(0.1)
+    first = replace(
+        summary,
+        execution_provenance=EvaluationExecutionProvenance(
+            execution_ref="slurm:1",
+            job_id="1",
+            log_path="/logs/one.out",
+            workflow_task="evaluate",
+            target="disi_l40",
+        ),
+    )
+    same_execution = replace(
+        summary,
+        execution_provenance=EvaluationExecutionProvenance(
+            execution_ref="slurm:1",
+            job_id="999",
+            log_path="/logs/other.out",
+            workflow_task="evaluate",
+            target="other",
+        ),
+    )
+    other_execution = replace(
+        summary,
+        execution_provenance=EvaluationExecutionProvenance(
+            execution_ref="slurm:2",
+            job_id="2",
+            log_path="/logs/two.out",
+            workflow_task="evaluate",
+            target="disi_l40",
+        ),
+    )
+
+    assert _evaluation_storage_id(first) == _evaluation_storage_id(same_execution)
+    assert _evaluation_storage_id(first) != _evaluation_storage_id(other_execution)
+
+
 def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
     db_path = tmp_path / ".spice" / "state.sqlite"
     manifest = _manifest()
@@ -433,7 +483,7 @@ def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
     loaded_runs = list_evaluation_runs(db_path)
 
     assert loaded_summary is not None
-    assert loaded_summary.evaluation_id == evaluation_id
+    assert loaded_summary.evaluation_storage_id == evaluation_id
     assert loaded_summary.recorded_at == recorded_at
     assert loaded_summary.manifest == manifest
     assert loaded_summary.runtime == base_summary
@@ -450,14 +500,17 @@ def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
         load_evaluation_summary(db_path)
     with pytest.raises(StateLayoutError, match="Multiple evaluation summaries stored"):
         list_evaluation_runs(db_path)
-    assert {summary.evaluation_id for summary in summaries} == {
+    assert {summary.evaluation_storage_id for summary in summaries} == {
         evaluation_id,
         replay_evaluation_id,
     }
-    assert load_evaluation_summary(db_path, evaluation_id=evaluation_id) is not None
-    assert load_evaluation_summary(db_path, evaluation_id=replay_evaluation_id) is not None
-    assert list_evaluation_runs(db_path, evaluation_id=evaluation_id) == base_summary.runs
-    assert list_evaluation_runs(db_path, evaluation_id=replay_evaluation_id) == replay_summary.runs
+    assert load_evaluation_summary(db_path, evaluation_storage_id=evaluation_id) is not None
+    assert load_evaluation_summary(db_path, evaluation_storage_id=replay_evaluation_id) is not None
+    assert list_evaluation_runs(db_path, evaluation_storage_id=evaluation_id) == base_summary.runs
+    assert list_evaluation_runs(
+        db_path,
+        evaluation_storage_id=replay_evaluation_id,
+    ) == replay_summary.runs
 
 
 def test_evaluation_config_snapshot_freezes_storage_identity() -> None:
