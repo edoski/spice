@@ -4,7 +4,7 @@ Benchmark run directories are the audit source of truth. `results.sqlite` is a
 rebuildable query index over completed run snapshots. CSV files are named
 human-readable exports from that index, not durable state.
 
-The ledger records modern evaluator results only. Current result rows may use
+Result records contain modern evaluator results only. Current rows may use
 `evaluation=poisson_replay_2h` or `evaluation=full_temporal_replay`; historical
 `paper_replay_2h` results stay in notes such as `PROGRESS.md` until rerun under
 current semantics.
@@ -68,8 +68,8 @@ Use explicit CSV names for paper and thesis artifacts: one export per table,
 figure, appendix, or analysis slice. For example, write
 `benchmarks/exports/table_1_main_results.csv` for a table input and
 `benchmarks/exports/figure_3_model_comparison.csv` for a plotting input. Regenerate
-these files from `results.sqlite`; do not treat a generic `results.csv` as the
-canonical benchmark ledger.
+these files from `results.sqlite`; do not treat a generic `results.csv` as durable
+benchmark state.
 
 Collection is all-or-nothing. If an expected evaluation summary is missing,
 ambiguous, or does not match the submitted `execution_ref`, collection raises and

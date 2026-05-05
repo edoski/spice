@@ -12,7 +12,7 @@ from ..config.models import WorkflowTask
 from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary
 from .dependency_ledger import BenchmarkDependencyLedger
 from .models import BenchmarkPlanEntry
-from .root_ledger import BenchmarkRootLedger
+from .root_ledger import BenchmarkRootLedger, consumed_dataset_id
 from .runs import BenchmarkSubmissionRecord, format_datetime
 from .selection_ledger import BenchmarkSelectionLedger
 
@@ -43,7 +43,7 @@ class BenchmarkResultRecord(BaseModel):
     dependencies: BenchmarkDependencyLedger
     dimension_labels: dict[str, str]
     selection: BenchmarkSelectionLedger
-    roots: BenchmarkRootLedger
+    root_ledger: BenchmarkRootLedger
 
     job_id: str
     execution_ref: str
@@ -130,7 +130,7 @@ def build_benchmark_result_record(
         dependencies=entry.dependencies,
         dimension_labels=dict(entry.dimension_labels),
         selection=entry.selection,
-        roots=entry.roots,
+        root_ledger=entry.root_ledger,
         job_id=submission.job_id,
         execution_ref=submission.execution_ref,
         git_commit=submission.git_commit,
@@ -145,7 +145,7 @@ def build_benchmark_result_record(
         evaluation_storage_id=evaluation.evaluation_id,
         artifact_dataset_id=manifest.dataset_id,
         artifact_dataset_name=manifest.dataset_name,
-        evaluation_dataset_id=entry.roots.consumed.dataset_id or "",
+        evaluation_dataset_id=consumed_dataset_id(entry.root_ledger) or "",
         chain_name=manifest.chain_name,
         features_id=manifest.features_id,
         model_id=manifest.model.id,

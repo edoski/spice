@@ -12,7 +12,7 @@ from spice.benchmarks.dependency_ledger import BenchmarkDependencyLedger
 from spice.benchmarks.models import BenchmarkPlanEntry
 from spice.benchmarks.result_store import index_counts
 from spice.benchmarks.root_ledger import (
-    BenchmarkConsumedRoots,
+    BenchmarkMaterializedRoot,
     BenchmarkRootLedger,
 )
 from spice.benchmarks.runs import (
@@ -62,11 +62,10 @@ def _write_evaluate_run(run_dir: Path, config) -> None:
             evaluation=config.evaluation.id,
             delay_seconds=config.delay_seconds,
         ),
-        roots=BenchmarkRootLedger(
-            consumed=BenchmarkConsumedRoots(
-                artifact_id=config.artifact_id,
-                dataset_id=config.dataset_id,
-            )
+        root_ledger=_evaluate_root_ledger(
+            "case.evaluate",
+            artifact_id=config.artifact_id,
+            dataset_id=config.dataset_id,
         ),
         config=config,
     )
@@ -100,6 +99,35 @@ def _artifact_record(root_path: Path, artifact_id: str = "artifact-1") -> Catalo
         study_name=None,
         root_path=root_path,
         state_db_path=root_path / ".spice" / "state.sqlite",
+    )
+
+
+def _evaluate_root_ledger(
+    run_id: str,
+    *,
+    artifact_id: str,
+    dataset_id: str,
+) -> BenchmarkRootLedger:
+    return BenchmarkRootLedger(
+        entries=(
+            BenchmarkMaterializedRoot(
+                run_id=run_id,
+                workflow=WorkflowTask.EVALUATE,
+                role="consumed",
+                root_kind="dataset",
+                root_id=dataset_id,
+                dataset_id=dataset_id,
+            ),
+            BenchmarkMaterializedRoot(
+                run_id=run_id,
+                workflow=WorkflowTask.EVALUATE,
+                role="consumed",
+                root_kind="artifact",
+                root_id=artifact_id,
+                artifact_id=artifact_id,
+                dataset_id=dataset_id,
+            ),
+        )
     )
 
 
@@ -170,13 +198,10 @@ def test_benchmark_plan_jsonl_round_trips_plan_entry(tmp_path: Path) -> None:
             surface="current_row_fee_dynamics",
             evaluation=config.evaluation.id,
         ),
-        roots=BenchmarkRootLedger(
-            consumed=BenchmarkConsumedRoots(
-                artifact_id=config.artifact_id,
-                dataset_id=config.dataset_id,
-            ),
-            artifact_from_run_id="case.train",
-            artifact_source_dataset_id=config.dataset_id,
+        root_ledger=_evaluate_root_ledger(
+            "case.evaluate",
+            artifact_id=config.artifact_id,
+            dataset_id=config.dataset_id,
         ),
         config=config,
     )
@@ -192,7 +217,7 @@ def test_benchmark_plan_jsonl_round_trips_plan_entry(tmp_path: Path) -> None:
     assert restored.dimension_labels == {"features": "core"}
     assert restored.dependencies.artifact_from_run_id == "case.train"
     assert restored.selection == entry.selection
-    assert restored.roots == entry.roots
+    assert restored.root_ledger == entry.root_ledger
     assert restored.config.model_dump(mode="json") == config.model_dump(mode="json")
 
 
@@ -215,7 +240,7 @@ def test_benchmark_plan_jsonl_rejects_non_list_dependencies(tmp_path: Path) -> N
         ),
         dimension_labels={},
         selection=BenchmarkSelectionLedger(),
-        roots=BenchmarkRootLedger(),
+        root_ledger=BenchmarkRootLedger(),
         config=config,
     )
     write_plan_jsonl(run_dir, [entry])
@@ -234,7 +259,7 @@ def test_benchmark_plan_jsonl_rejects_non_list_dependencies(tmp_path: Path) -> N
         lambda payload: payload["dependencies"].__setitem__("local_run_ids", [123]),
         lambda payload: payload.__setitem__("dimension_labels", {"models": 123}),
         lambda payload: payload["dependencies"].__setitem__("artifact_from_run_id", 123),
-        lambda payload: payload["roots"]["consumed"].__setitem__("artifact_id", 123),
+        lambda payload: payload["root_ledger"]["entries"][0].__setitem__("root_id", 123),
     ],
 )
 def test_benchmark_plan_jsonl_rejects_non_string_identity_fields(
@@ -259,9 +284,17 @@ def test_benchmark_plan_jsonl_rejects_non_string_identity_fields(
         ),
         dimension_labels={"models": "lstm"},
         selection=BenchmarkSelectionLedger(),
-        roots=BenchmarkRootLedger(
-            consumed=BenchmarkConsumedRoots(artifact_id="artifact-1"),
-            artifact_from_run_id="case.train",
+        root_ledger=BenchmarkRootLedger(
+            entries=(
+                BenchmarkMaterializedRoot(
+                    run_id="case.evaluate",
+                    workflow=WorkflowTask.EVALUATE,
+                    role="consumed",
+                    root_kind="artifact",
+                    root_id="artifact-1",
+                    artifact_id="artifact-1",
+                ),
+            )
         ),
         config=config,
     )
@@ -288,8 +321,8 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
     resolve_calls: list[object] = []
     pull_calls: list[object] = []
 
-    def fake_resolve(config, *, pulled, submission):
-        assert submission.execution_ref == "slurm:57549"
+    def fake_resolve(selection, *, pulled):
+        assert selection.execution_ref == "slurm:57549"
         resolve_calls.append(pulled)
         return SimpleNamespace(
             evaluation=_loaded_summary(config),
@@ -328,9 +361,20 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
     assert snapshot.records[0].git_commit == "abc123"
     assert duplicate_snapshot.records[0].execution_ref == "slurm:57549"
     assert load_collection_snapshot(run_dir).records[0].artifact_id == "artifact-1"
-    assert index_counts(index_path) == {"runs": 1, "observations": 1, "metrics": 6}
+    assert index_counts(index_path) == {
+        "runs": 1,
+        "observations": 1,
+        "metrics": 6,
+        "root_ledger": 2,
+    }
     assert len(resolve_calls) == 2
     assert len(pull_calls) == 2
+    assert pull_calls[0] == {
+        "storage_root": config.storage.root,
+        "session": "s",
+        "artifact_id": config.artifact_id,
+        "replace": True,
+    }
 
 
 def test_benchmark_collect_refuses_partial_snapshot_and_index_write(
@@ -362,6 +406,41 @@ def test_benchmark_collect_refuses_partial_snapshot_and_index_write(
     assert not index_path.exists()
 
 
+def test_benchmark_collect_refuses_partial_write_when_summary_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config = _evaluate_config(tmp_path)
+    run_dir = create_benchmark_run_dir(
+        "missing_summary_case",
+        target="disi_l40",
+        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
+    )
+    _write_evaluate_run(run_dir, config)
+    pulled = PulledArtifactRoot(
+        source_record=_artifact_record(tmp_path / "remote" / "artifact-1"),
+        local_record=_artifact_record(tmp_path / "local" / "artifact-1"),
+        destination_root=tmp_path / "local" / "artifact-1",
+        dataset_present=True,
+    )
+    monkeypatch.setattr("spice.benchmarks.collection.open_execution_session", lambda _target: "s")
+    monkeypatch.setattr(
+        "spice.benchmarks.collection.pull_artifact_from_cluster",
+        lambda **_kwargs: pulled,
+    )
+    monkeypatch.setattr(
+        "spice.benchmarks.collection.resolve_benchmark_evaluation",
+        lambda *_args, **_kwargs: None,
+    )
+    index_path = tmp_path / "benchmarks" / "results.sqlite"
+
+    with pytest.raises(SpiceOperatorError, match="Evaluation summary not found"):
+        collect_benchmark_run(run_dir=run_dir, index_path=index_path)
+
+    assert not collection_snapshot_path(run_dir).exists()
+    assert not index_path.exists()
+
+
 def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
     tmp_path: Path,
     monkeypatch,
@@ -384,15 +463,23 @@ def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
         ),
         dimension_labels={},
         selection=BenchmarkSelectionLedger(),
-        roots=BenchmarkRootLedger(
-            consumed=BenchmarkConsumedRoots(
-                artifact_id=config.artifact_id,
-                dataset_id=config.dataset_id,
-            )
+        root_ledger=_evaluate_root_ledger(
+            "case.evaluate_a",
+            artifact_id=config.artifact_id,
+            dataset_id=config.dataset_id,
         ),
         config=config,
     )
-    second = replace(first, run_id="case.evaluate_b", step_id="evaluate_b")
+    second = replace(
+        first,
+        run_id="case.evaluate_b",
+        step_id="evaluate_b",
+        root_ledger=_evaluate_root_ledger(
+            "case.evaluate_b",
+            artifact_id=config.artifact_id,
+            dataset_id=config.dataset_id,
+        ),
+    )
     write_plan_jsonl(run_dir, [first, second])
     for entry in (first, second):
         append_submission_jsonl(
@@ -416,9 +503,9 @@ def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
     pull_calls: list[dict[str, object]] = []
     submissions: list[str] = []
 
-    def fake_resolve(config, *, pulled: PulledArtifactRoot, submission):
+    def fake_resolve(selection, *, pulled: PulledArtifactRoot):
         assert pulled is not None
-        submissions.append(submission.execution_ref)
+        submissions.append(selection.execution_ref)
         return SimpleNamespace(
             evaluation=_loaded_summary(config),
             training=None,

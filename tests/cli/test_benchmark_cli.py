@@ -15,7 +15,7 @@ from spice.benchmarks.result_records import (
     MetricValueRecord,
 )
 from spice.benchmarks.root_ledger import (
-    BenchmarkConsumedRoots,
+    BenchmarkMaterializedRoot,
     BenchmarkRootLedger,
 )
 from spice.benchmarks.runs import create_benchmark_run_dir, write_collection_snapshot
@@ -46,13 +46,36 @@ def _benchmark_record() -> BenchmarkResultRecord:
         ),
         dimension_labels={"models": "lstm"},
         selection=BenchmarkSelectionLedger(surface="current_row_fee_dynamics"),
-        roots=BenchmarkRootLedger(
-            consumed=BenchmarkConsumedRoots(
-                dataset_id="dataset-1",
-                artifact_id="artifact-1",
+        root_ledger=BenchmarkRootLedger(
+            entries=(
+                BenchmarkMaterializedRoot(
+                    run_id="case.evaluate",
+                    workflow=WorkflowTask.EVALUATE,
+                    role="consumed",
+                    root_kind="dataset",
+                    root_id="dataset-1",
+                    dataset_id="dataset-1",
+                ),
+                BenchmarkMaterializedRoot(
+                    run_id="case.evaluate",
+                    workflow=WorkflowTask.EVALUATE,
+                    role="consumed",
+                    root_kind="artifact",
+                    root_id="artifact-1",
+                    artifact_id="artifact-1",
+                    dataset_id="dataset-1",
+                    source_run_id="case.train",
+                ),
+                BenchmarkMaterializedRoot(
+                    run_id="case.evaluate",
+                    workflow=WorkflowTask.EVALUATE,
+                    role="source",
+                    root_kind="dataset",
+                    root_id="dataset-1",
+                    dataset_id="dataset-1",
+                    source_run_id="case.train",
+                ),
             ),
-            artifact_from_run_id="case.train",
-            artifact_source_dataset_id="dataset-1",
         ),
         job_id="42",
         execution_ref="slurm:42",
@@ -362,9 +385,19 @@ def test_benchmark_index_commands(tmp_path: Path) -> None:
     )
 
     assert rebuild.exit_code == 0, rebuild.stdout
-    assert json.loads(rebuild.stdout) == {"metrics": 1, "observations": 1, "runs": 1}
+    assert json.loads(rebuild.stdout) == {
+        "metrics": 1,
+        "observations": 1,
+        "root_ledger": 3,
+        "runs": 1,
+    }
     assert show.exit_code == 0, show.stdout
-    assert json.loads(show.stdout) == {"metrics": 1, "observations": 1, "runs": 1}
+    assert json.loads(show.stdout) == {
+        "metrics": 1,
+        "observations": 1,
+        "root_ledger": 3,
+        "runs": 1,
+    }
     assert listed.exit_code == 0, listed.stdout
     assert json.loads(listed.stdout)["artifact_id"] == "artifact-1"
     assert exported.exit_code == 0, exported.stdout

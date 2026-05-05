@@ -119,7 +119,12 @@ def _materialize_benchmark_case(case: BenchmarkCase) -> list[BenchmarkPlanEntry]
                 dependencies,
             )
             config = _resolve_benchmark_config(seed.workflow, prepared_roots.selection)
-            roots = root_materializer.finalize_ledger(config, prepared_roots.ledger)
+            root_ledger = root_materializer.finalize_ledger(
+                run_id=run_ids[index],
+                workflow=seed.workflow,
+                config=config,
+                prepared=prepared_roots,
+            )
             entry = BenchmarkPlanEntry(
                 run_id=run_ids[index],
                 case_id=seed.case_id,
@@ -131,11 +136,11 @@ def _materialize_benchmark_case(case: BenchmarkCase) -> list[BenchmarkPlanEntry]
                     source_row=seed.row,
                     workflow_selection=prepared_roots.selection,
                 ),
-                roots=roots,
+                root_ledger=root_ledger,
                 config=config,
             )
             entries.append(entry)
-            root_materializer.record_config(entry.run_id, config)
+            root_materializer.record_config(entry.run_id, config, root_ledger)
         except ConfigResolutionError as exc:
             raise ConfigResolutionError(
                 f"case {case.id} step {seed.step_id}: {exc.message}"

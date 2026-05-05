@@ -76,7 +76,7 @@ def plan_entry_json_dict(entry: BenchmarkPlanEntry) -> dict[str, object]:
         },
         "dimension_labels": dict(entry.dimension_labels),
         "selection": entry.selection.model_dump(mode="json", exclude_none=True),
-        "roots": entry.roots.model_dump(mode="json", exclude_none=True),
+        "root_ledger": entry.root_ledger.model_dump(mode="json", exclude_none=True),
         "config": workflow_config_snapshot_payload(entry.config),
     }
 
@@ -110,13 +110,13 @@ def load_plan_jsonl(run_dir: Path) -> list[BenchmarkPlanEntry]:
                     mapping_payload(payload.get("selection", {}), label="selection"),
                     label="selection",
                 ),
-                roots=_plan_model_payload(
+                root_ledger=_plan_model_payload(
                     BenchmarkRootLedger,
                     mapping_payload(
-                        required_payload(payload, "roots"),
-                        label="roots",
+                        required_payload(payload, "root_ledger"),
+                        label="root_ledger",
                     ),
-                    label="roots",
+                    label="root_ledger",
                 ),
                 config=hydrate_workflow_config_snapshot(workflow, config_payload),
             )

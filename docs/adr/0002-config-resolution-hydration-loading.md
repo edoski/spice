@@ -33,4 +33,4 @@ Runtime evaluator and objective contracts carry typed configs or policy fields. 
 
 ## Consequences
 
-Raw JSON/dict handling is localized to Resolved Workflow Hydration, raw Config Group loading, benchmark/run ledgers, and storage codecs. Surface resolution stays typed after selection overrides. Owner packages keep concrete dispatch for nested configs. There are no compatibility shims for deleted shallow Interfaces.
+Raw JSON/dict handling is localized to Resolved Workflow Hydration, raw Config Group loading, benchmark typed ledgers with benchmark-local run-state codecs, and storage codecs. Surface resolution stays typed after selection overrides. Owner packages keep concrete dispatch for nested configs. There are no compatibility shims for deleted shallow Interfaces.

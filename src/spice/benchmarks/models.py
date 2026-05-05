@@ -22,5 +22,5 @@ class BenchmarkPlanEntry:
     dependencies: BenchmarkDependencyLedger
     dimension_labels: dict[str, str]
     selection: BenchmarkSelectionLedger
-    roots: BenchmarkRootLedger
+    root_ledger: BenchmarkRootLedger
     config: ResolvedWorkflowConfig

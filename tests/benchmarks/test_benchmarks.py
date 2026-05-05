@@ -4,6 +4,7 @@ import pytest
 import yaml
 
 from spice.benchmarks import plan_benchmark
+from spice.benchmarks.root_ledger import consumed_artifact_id, consumed_dataset_id
 from spice.config.models import EvaluateConfig, TrainConfig, WorkflowTask
 from spice.core.errors import ConfigResolutionError
 from spice.storage.catalog import CatalogStudyRecord
@@ -166,7 +167,7 @@ def test_evaluator_objective_grid_keeps_cross_evaluation_bindings() -> None:
     assert poisson_full.selection.surface == "current_row_fee_dynamics"
     assert poisson_full.selection.model == "lstm"
     assert poisson_full.selection.problem == "current_row_nominal"
-    assert poisson_full.roots.consumed.artifact_id == poisson_full.config.artifact_id
+    assert consumed_artifact_id(poisson_full.root_ledger) == poisson_full.config.artifact_id
     assert poisson_full.dependencies.local_run_ids == (
         "evaluator_objective_grid."
         "data-chain-ethereum__dataset_id-cor_9a73b1e88edb488afb1e."
@@ -247,8 +248,8 @@ def test_evaluate_plan_entries_keep_inherited_ledger_context(isolate_conf_root) 
     assert evaluate.selection.objective == "validation_total_loss"
     assert evaluate.selection.model == "lstm"
     assert evaluate.selection.problem == "current_row_nominal"
-    assert evaluate.roots.consumed.dataset_id == ETH_DATASET_ID
-    assert evaluate.roots.consumed.artifact_id == evaluate.config.artifact_id
+    assert consumed_dataset_id(evaluate.root_ledger) == ETH_DATASET_ID
+    assert consumed_artifact_id(evaluate.root_ledger) == evaluate.config.artifact_id
 
 
 def test_artifact_from_explicit_tuned_study_uses_catalog_dataset(

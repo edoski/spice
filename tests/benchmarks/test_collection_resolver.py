@@ -5,8 +5,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from spice.benchmarks.collection_resolver import resolve_benchmark_evaluation
+from spice.benchmarks.collection_resolver import (
+    benchmark_collection_selection,
+    resolve_benchmark_evaluation,
+)
+from spice.benchmarks.dependency_ledger import BenchmarkDependencyLedger
+from spice.benchmarks.models import BenchmarkPlanEntry
+from spice.benchmarks.root_ledger import BenchmarkMaterializedRoot, BenchmarkRootLedger
 from spice.benchmarks.runs import BenchmarkSubmissionRecord
+from spice.benchmarks.selection_ledger import BenchmarkSelectionLedger
 from spice.config import EvaluateConfig, StorageSpec, WorkflowTask
 from spice.config.groups import load_named_group_payload
 from spice.core.errors import SpiceOperatorError
@@ -39,6 +46,52 @@ def _submission(*, execution_ref: str = "slurm:57549") -> BenchmarkSubmissionRec
     )
 
 
+def _entry(config: EvaluateConfig | None = None) -> BenchmarkPlanEntry:
+    config = _evaluate_config(Path("/tmp/spice-test")) if config is None else config
+    return BenchmarkPlanEntry(
+        run_id="case.evaluate",
+        case_id="case",
+        step_id="evaluate",
+        workflow=WorkflowTask.EVALUATE,
+        dependencies=BenchmarkDependencyLedger(
+            local_run_ids=(),
+            external_slurm_dependencies=(),
+            artifact_from_run_id=None,
+        ),
+        dimension_labels={},
+        selection=BenchmarkSelectionLedger(
+            evaluation=config.evaluation.id,
+            delay_seconds=config.delay_seconds,
+        ),
+        root_ledger=BenchmarkRootLedger(
+            entries=(
+                BenchmarkMaterializedRoot(
+                    run_id="case.evaluate",
+                    workflow=WorkflowTask.EVALUATE,
+                    role="consumed",
+                    root_kind="dataset",
+                    root_id=config.dataset_id,
+                    dataset_id=config.dataset_id,
+                ),
+                BenchmarkMaterializedRoot(
+                    run_id="case.evaluate",
+                    workflow=WorkflowTask.EVALUATE,
+                    role="consumed",
+                    root_kind="artifact",
+                    root_id=config.artifact_id,
+                    artifact_id=config.artifact_id,
+                    dataset_id=config.dataset_id,
+                ),
+            )
+        ),
+        config=config,
+    )
+
+
+def _selection(config: EvaluateConfig):
+    return benchmark_collection_selection(_entry(config), _submission())
+
+
 def _summary(
     config,
     *,
@@ -57,13 +110,13 @@ def _summary(
     )
 
 
-def _manifest(*, max_delay_seconds: int = 36):
-    return SimpleNamespace(max_delay_seconds=max_delay_seconds)
+def _manifest(*, max_delay_seconds: int = 36, artifact_id: str = "artifact-1"):
+    return SimpleNamespace(max_delay_seconds=max_delay_seconds, artifact_id=artifact_id)
 
 
-def _artifact_record(root_path: Path) -> CatalogArtifactRecord:
+def _artifact_record(root_path: Path, *, artifact_id: str = "artifact-1") -> CatalogArtifactRecord:
     return CatalogArtifactRecord(
-        artifact_id="artifact-1",
+        artifact_id=artifact_id,
         dataset_id="dataset-1",
         dataset_name="dataset",
         chain_name="ethereum",
@@ -90,7 +143,7 @@ def _pulled_artifact(tmp_path: Path) -> PulledArtifactRoot:
     )
 
 
-def test_collection_resolver_pulls_baseline_artifact_and_loads_matching_summary(
+def test_collection_resolver_uses_pulled_artifact_and_loads_matching_summary(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -113,11 +166,7 @@ def test_collection_resolver_pulls_baseline_artifact_and_loads_matching_summary(
         lambda path: loaded_paths.append(path) or [summary],
     )
 
-    resolved = resolve_benchmark_evaluation(
-        config,
-        pulled=pulled,
-        submission=_submission(),
-    )
+    resolved = resolve_benchmark_evaluation(_selection(config), pulled=pulled)
 
     assert resolved is not None
     assert resolved.evaluation is summary
@@ -144,7 +193,7 @@ def test_collection_resolver_returns_none_when_summary_is_missing(
         lambda _path: [],
     )
 
-    assert resolve_benchmark_evaluation(config, pulled=pulled, submission=_submission()) is None
+    assert resolve_benchmark_evaluation(_selection(config), pulled=pulled) is None
 
 
 def test_collection_resolver_rejects_duplicate_matching_summaries(
@@ -167,11 +216,7 @@ def test_collection_resolver_rejects_duplicate_matching_summaries(
     )
 
     with pytest.raises(SpiceOperatorError, match="Multiple evaluation summaries"):
-        resolve_benchmark_evaluation(
-            config,
-            pulled=pulled,
-            submission=_submission(),
-        )
+        resolve_benchmark_evaluation(_selection(config), pulled=pulled)
 
 
 def test_collection_resolver_rejects_missing_execution_provenance(
@@ -194,11 +239,7 @@ def test_collection_resolver_rejects_missing_execution_provenance(
     )
 
     with pytest.raises(SpiceOperatorError, match="execution provenance"):
-        resolve_benchmark_evaluation(
-            config,
-            pulled=pulled,
-            submission=_submission(),
-        )
+        resolve_benchmark_evaluation(_selection(config), pulled=pulled)
 
 
 def test_collection_resolver_rejects_stale_execution_provenance(
@@ -221,11 +262,7 @@ def test_collection_resolver_rejects_stale_execution_provenance(
     )
 
     with pytest.raises(SpiceOperatorError, match="expected slurm:57549"):
-        resolve_benchmark_evaluation(
-            config,
-            pulled=pulled,
-            submission=_submission(),
-        )
+        resolve_benchmark_evaluation(_selection(config), pulled=pulled)
 
 
 def test_collection_resolver_matches_default_delay_to_artifact_capability(
@@ -249,11 +286,86 @@ def test_collection_resolver_matches_default_delay_to_artifact_capability(
         lambda _path: [stale, matching],
     )
 
-    resolved = resolve_benchmark_evaluation(
-        config,
-        pulled=pulled,
-        submission=_submission(),
-    )
+    resolved = resolve_benchmark_evaluation(_selection(config), pulled=pulled)
 
     assert resolved is not None
     assert resolved.evaluation is matching
+
+
+def test_collection_selection_rejects_run_id_mismatch(tmp_path: Path) -> None:
+    config = _evaluate_config(tmp_path)
+
+    with pytest.raises(SpiceOperatorError, match="run id"):
+        benchmark_collection_selection(
+            _entry(config),
+            _submission().model_copy(update={"run_id": "other.evaluate"}),
+        )
+
+
+def test_collection_selection_rejects_root_ledger_mismatch(tmp_path: Path) -> None:
+    config = _evaluate_config(tmp_path)
+    entry = _entry(config)
+    bad_ledger = BenchmarkRootLedger(
+        entries=(
+            BenchmarkMaterializedRoot(
+                run_id="case.evaluate",
+                workflow=WorkflowTask.EVALUATE,
+                role="consumed",
+                root_kind="artifact",
+                root_id="other-artifact",
+                artifact_id="other-artifact",
+            ),
+        )
+    )
+
+    with pytest.raises(SpiceOperatorError, match="artifact mismatch"):
+        benchmark_collection_selection(
+            entry.__class__(
+                run_id=entry.run_id,
+                case_id=entry.case_id,
+                step_id=entry.step_id,
+                workflow=entry.workflow,
+                dependencies=entry.dependencies,
+                dimension_labels=entry.dimension_labels,
+                selection=entry.selection,
+                root_ledger=bad_ledger,
+                config=entry.config,
+            ),
+            _submission(),
+        )
+
+
+def test_collection_resolver_rejects_pulled_artifact_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config = _evaluate_config(tmp_path)
+    pulled = _pulled_artifact(tmp_path)
+    pulled = PulledArtifactRoot(
+        source_record=pulled.source_record,
+        local_record=_artifact_record(tmp_path / "local" / "other", artifact_id="other"),
+        destination_root=tmp_path / "local" / "other",
+        dataset_present=True,
+    )
+
+    with pytest.raises(SpiceOperatorError, match="Pulled artifact"):
+        resolve_benchmark_evaluation(_selection(config), pulled=pulled)
+
+
+def test_collection_resolver_rejects_manifest_artifact_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config = _evaluate_config(tmp_path)
+    pulled = _pulled_artifact(tmp_path)
+    monkeypatch.setattr(
+        "spice.benchmarks.collection_resolver.load_training_summary",
+        lambda _path: None,
+    )
+    monkeypatch.setattr(
+        "spice.benchmarks.collection_resolver.load_artifact_manifest",
+        lambda _path: _manifest(artifact_id="other"),
+    )
+
+    with pytest.raises(SpiceOperatorError, match="Artifact manifest"):
+        resolve_benchmark_evaluation(_selection(config), pulled=pulled)

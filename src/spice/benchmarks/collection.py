@@ -6,11 +6,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..config.models import EvaluateConfig, WorkflowTask
-from ..core.errors import ConfigResolutionError, SelectorResolutionError, SpiceOperatorError
+from ..config.models import WorkflowTask
+from ..core.errors import SelectorResolutionError, SpiceOperatorError
 from ..execution.session import ExecutionSession, open_execution_session
 from ..execution.transfer import PulledArtifactRoot, pull_artifact_from_cluster
-from .collection_resolver import resolve_benchmark_evaluation
+from .collection_resolver import (
+    BenchmarkCollectionSelection,
+    benchmark_collection_selection,
+    resolve_benchmark_evaluation,
+)
 from .result_index import upsert_benchmark_collection_snapshot
 from .result_records import (
     BenchmarkCollectionSnapshot,
@@ -42,20 +46,18 @@ def collect_benchmark_run(
     pulled_artifacts: dict[str, PulledArtifactRoot] = {}
     records: list[BenchmarkResultRecord] = []
     for entry in evaluate_entries:
-        if not isinstance(entry.config, EvaluateConfig):
-            raise ConfigResolutionError(f"benchmark run {entry.run_id} is not an evaluate config")
         submission = submissions.get(entry.run_id)
         if submission is None:
             raise SpiceOperatorError(f"Missing submission record for benchmark run {entry.run_id}")
+        selection = benchmark_collection_selection(entry, submission)
         try:
             state = resolve_benchmark_evaluation(
-                entry.config,
+                selection,
                 pulled=_cached_artifact_pull(
-                    entry.config,
+                    selection,
                     session=session,
                     cache=pulled_artifacts,
                 ),
-                submission=submission,
             )
         except SelectorResolutionError as exc:
             raise SpiceOperatorError(str(exc)) from exc
@@ -87,19 +89,19 @@ def collect_benchmark_run(
 
 
 def _cached_artifact_pull(
-    config: EvaluateConfig,
+    selection: BenchmarkCollectionSelection,
     *,
     session: ExecutionSession,
     cache: dict[str, PulledArtifactRoot],
 ) -> PulledArtifactRoot:
-    pulled = cache.get(config.artifact_id)
+    pulled = cache.get(selection.artifact_id)
     if pulled is not None:
         return pulled
     pulled = pull_artifact_from_cluster(
-        storage_root=config.storage.root,
+        storage_root=selection.storage_root,
         session=session,
-        artifact_id=config.artifact_id,
+        artifact_id=selection.artifact_id,
         replace=True,
     )
-    cache[config.artifact_id] = pulled
+    cache[selection.artifact_id] = pulled
     return pulled

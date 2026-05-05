@@ -30,7 +30,13 @@ collect all expected evaluate results -> collection.json
 results.sqlite projection -> CSV export/query
 ```
 
-**Benchmark Plan Materialization** expands dimensions, asks the **Benchmark Dependency Ledger** to match local dependencies and `artifact_from` step references, asks the **Benchmark Root Ledger** to derive dependency-produced root ids, calls normal workflow resolution, and produces durable plan entries with resolved workflow snapshots. Inline problem grids produce inline `ProblemSpec` values during materialization; the selection ledger stores the selected problem id, while the resolved workflow config stores the full executable problem.
+**Benchmark Plan Materialization** expands dimensions, asks the **Benchmark Dependency Ledger** to match local dependencies and `artifact_from` step references, asks the **Benchmark Root Ledger** to derive materialized root entries, calls normal workflow resolution, and produces durable plan entries with resolved workflow snapshots. Inline problem grids produce inline `ProblemSpec` values during materialization; the selection ledger stores the selected problem id, while the resolved workflow config stores the full executable problem.
+
+## Root Ledger
+
+The root ledger is benchmark audit state, not storage catalog state. Each plan entry stores typed materialized root entries with `run_id`, workflow, role, root kind, root id, optional source run id, and root-specific ids. Roles are `consumed`, `produced`, and `source`; root kinds are `dataset`, `study`, and `artifact`.
+
+Planning follows one order: prepare dependency-derived selection, resolve the workflow config, finalize the root ledger from resolved config identity, then record the config and ledger for later dependent steps. Tuned train steps can consume a study produced by a prior tune step. Evaluate steps can consume an artifact produced by a prior train step, while separately recording the artifact-source dataset.
 
 ## Module Map
 
@@ -39,7 +45,7 @@ benchmarks/
   schema.py      benchmark YAML schema
   materialization.py  spec expansion and plan-entry orchestration
   dependency_ledger.py  dependency graph validation and row matching
-  root_ledger.py  consumed/produced root-id materialization
+  root_ledger.py  typed materialized root ledger
   selection_ledger.py  typed benchmark coordinate ledger
   models.py      benchmark plan data models
   result_records.py  collection snapshot and result records
@@ -56,12 +62,12 @@ benchmarks/
 
 ## Boundaries
 
-Run dirs are canonical benchmark audit state. `results.sqlite` is a rebuildable projection over `collection.json`; normalized observation and metric tables are the read model for list/export, while JSON payloads remain audit/debug payloads. CSV files are named export artifacts for concrete table, figure, appendix, or analysis inputs and are overwritten from the index.
+Run dirs are canonical benchmark audit state. `results.sqlite` is a rebuildable projection over `collection.json`; normalized observation, metric, and root-ledger tables are the read model for list/export, while JSON payloads remain audit/debug payloads. CSV files are named export artifacts for concrete table, figure, appendix, or analysis inputs and are overwritten from the index.
 
 `runs.py` is the public run-state facade. Benchmark run-state JSON/JSONL encoding stays benchmark-local and must not move into config or shared storage codecs.
 
 The CLI creates run dirs, submits existing run dirs, collects existing run dirs, exports CSV, and reads the result index. It does not re-plan during submit or collect.
 
-Remote transfer during collection goes through a **Benchmark Collection Resolver** using an **Execution Session** and `execution.transfer`. The resolver pulls the submitted artifact, consumes the returned local catalog record, and selects the matching evaluation summary without re-resolving current local catalog state. A collected evaluation must match the submitted `execution_ref`; stale artifact summaries from earlier jobs are rejected.
+Remote transfer during collection uses an **Execution Session** and `execution.transfer`; matching uses a **Benchmark Collection Resolver**. Collection builds a `BenchmarkCollectionSelection` from the plan entry and submission, pulls the selected artifact once, then passes the pulled local artifact record to the resolver. The resolver reads `pulled.local_record.state_db_path`, validates artifact identity, matches `(evaluation_id, delay_seconds, execution_ref)`, rejects stale or missing execution provenance, and does not re-resolve the local catalog.
 
 Benchmark JSON shapes are operator-facing. Keep them stable unless a field name is part of a deliberate terminology cleanup.

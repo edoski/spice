@@ -18,6 +18,8 @@ Private root-kind metadata names the table, primary key field, typed record, pat
 
 Add catalog columns only for stable selector/search fields. Do not store large runtime summaries here; keep those in root-local state.
 
+Benchmark root ledgers are not catalog rows. They are benchmark-run audit state stored in benchmark plan/collection files and projected into the benchmark result index.
+
 ## Catalog Flow
 
 ```text

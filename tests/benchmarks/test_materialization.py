@@ -2,10 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from spice.benchmarks.materialization import plan_benchmark
+from spice.benchmarks.root_ledger import (
+    artifact_source_dataset_id,
+    consumed_artifact_id,
+    consumed_dataset_id,
+    produced_artifact_root_id,
+    produced_study_root_id,
+    root_id,
+)
 from spice.config import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
+from spice.core.errors import ConfigResolutionError
 from spice.storage.catalog import CatalogStudyRecord
 from spice.storage.catalog.index import upsert_catalog_record
 from spice.storage.engine import state_db_path
@@ -59,8 +69,38 @@ def test_materialization_injects_study_id_for_tuned_train_dependency(
     assert isinstance(train.config, TrainConfig)
     assert train.config.study_id == produced_study_id(tune.config)
     assert train.config.dataset_id is None
-    assert train.roots.consumed.study_id == train.config.study_id
+    assert root_id(train.root_ledger, role="consumed", root_kind="study") == (
+        train.config.study_id
+    )
+    assert produced_study_root_id(tune.root_ledger) == produced_study_id(tune.config)
     assert train.selection.study == "case_study"
+
+
+def test_materialization_rejects_tuned_train_without_study_source(
+    isolate_conf_root,
+) -> None:
+    with pytest.raises(ConfigResolutionError, match="tune dependency or explicit study_id"):
+        _materialize(
+            isolate_conf_root,
+            {
+                "cases": [
+                    {
+                        "id": "case",
+                        "base": {
+                            "surface": "current_row_fee_dynamics",
+                            "dataset_id": ETH_DATASET_ID,
+                        },
+                        "steps": [
+                            {
+                                "id": "train",
+                                "workflow": "train",
+                                "set": {"variant": "tuned"},
+                            },
+                        ],
+                    }
+                ]
+            },
+        )
 
 
 def test_materialization_injects_artifact_and_dataset_for_artifact_from(
@@ -100,15 +140,15 @@ def test_materialization_injects_artifact_and_dataset_for_artifact_from(
     assert isinstance(train.config, TrainConfig)
     assert isinstance(evaluate.config, EvaluateConfig)
     assert evaluate.dependencies.artifact_from_run_id == train.run_id
-    assert evaluate.roots.artifact_from_run_id == train.run_id
+    assert produced_artifact_root_id(train.root_ledger) == evaluate.config.artifact_id
     assert evaluate.config.dataset_id == ETH_DATASET_ID
     assert evaluate.config.artifact_id == produced_artifact_id(
         train.config,
         dataset_id=ETH_DATASET_ID,
     )
-    assert evaluate.roots.consumed.dataset_id == ETH_DATASET_ID
-    assert evaluate.roots.consumed.artifact_id == evaluate.config.artifact_id
-    assert evaluate.roots.artifact_source_dataset_id == ETH_DATASET_ID
+    assert consumed_dataset_id(evaluate.root_ledger) == ETH_DATASET_ID
+    assert consumed_artifact_id(evaluate.root_ledger) == evaluate.config.artifact_id
+    assert artifact_source_dataset_id(evaluate.root_ledger) == ETH_DATASET_ID
 
 
 def test_materialization_preserves_explicit_evaluate_dataset_id_with_artifact_from(
@@ -157,9 +197,9 @@ def test_materialization_preserves_explicit_evaluate_dataset_id_with_artifact_fr
         train.config,
         dataset_id=ETH_DATASET_ID,
     )
-    assert evaluate.roots.consumed.dataset_id == evaluate_dataset_id
-    assert evaluate.roots.consumed.artifact_id == evaluate.config.artifact_id
-    assert evaluate.roots.artifact_source_dataset_id == ETH_DATASET_ID
+    assert consumed_dataset_id(evaluate.root_ledger) == evaluate_dataset_id
+    assert consumed_artifact_id(evaluate.root_ledger) == evaluate.config.artifact_id
+    assert artifact_source_dataset_id(evaluate.root_ledger) == ETH_DATASET_ID
 
 
 def test_materialization_uses_catalog_dataset_for_explicit_tuned_study(
@@ -265,5 +305,5 @@ def test_materialization_preserves_selection_ledger_context(
     assert isinstance(evaluate.config, EvaluateConfig)
     assert evaluate.selection.surface == "current_row_fee_dynamics"
     assert evaluate.selection.objective == "validation_total_loss"
-    assert evaluate.roots.consumed.dataset_id == ETH_DATASET_ID
-    assert evaluate.roots.consumed.artifact_id == evaluate.config.artifact_id
+    assert consumed_dataset_id(evaluate.root_ledger) == ETH_DATASET_ID
+    assert consumed_artifact_id(evaluate.root_ledger) == evaluate.config.artifact_id

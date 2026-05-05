@@ -20,7 +20,7 @@ from spice.benchmarks.result_records import (
 )
 from spice.benchmarks.result_store import index_counts
 from spice.benchmarks.root_ledger import (
-    BenchmarkConsumedRoots,
+    BenchmarkMaterializedRoot,
     BenchmarkRootLedger,
 )
 from spice.benchmarks.runs import create_benchmark_run_dir, write_collection_snapshot
@@ -47,13 +47,36 @@ def _record(
         ),
         dimension_labels={"models": "lstm"},
         selection=BenchmarkSelectionLedger(surface="current_row_fee_dynamics"),
-        roots=BenchmarkRootLedger(
-            consumed=BenchmarkConsumedRoots(
-                dataset_id="evaluation-dataset-1",
-                artifact_id="artifact-1",
+        root_ledger=BenchmarkRootLedger(
+            entries=(
+                BenchmarkMaterializedRoot(
+                    run_id=run_id,
+                    workflow=WorkflowTask.EVALUATE,
+                    role="consumed",
+                    root_kind="dataset",
+                    root_id="evaluation-dataset-1",
+                    dataset_id="evaluation-dataset-1",
+                ),
+                BenchmarkMaterializedRoot(
+                    run_id=run_id,
+                    workflow=WorkflowTask.EVALUATE,
+                    role="consumed",
+                    root_kind="artifact",
+                    root_id="artifact-1",
+                    artifact_id="artifact-1",
+                    dataset_id="evaluation-dataset-1",
+                    source_run_id="case.train",
+                ),
+                BenchmarkMaterializedRoot(
+                    run_id=run_id,
+                    workflow=WorkflowTask.EVALUATE,
+                    role="source",
+                    root_kind="dataset",
+                    root_id="dataset-1",
+                    dataset_id="dataset-1",
+                    source_run_id="case.train",
+                ),
             ),
-            artifact_from_run_id="case.train",
-            artifact_source_dataset_id="dataset-1",
         ),
         job_id="42",
         execution_ref="slurm:42",
@@ -119,7 +142,12 @@ def test_result_index_keeps_observations_per_benchmark_run(tmp_path: Path) -> No
     upsert_benchmark_collection_snapshot(first, index_path=index_path)
     upsert_benchmark_collection_snapshot(second, index_path=index_path)
 
-    assert index_counts(index_path) == {"runs": 2, "observations": 2, "metrics": 4}
+    assert index_counts(index_path) == {
+        "runs": 2,
+        "observations": 2,
+        "metrics": 4,
+        "root_ledger": 6,
+    }
     rows = list_benchmark_results(
         index_path=index_path,
         benchmark="bench",
@@ -138,7 +166,7 @@ def test_result_index_rebuild_is_idempotent_from_run_dirs(tmp_path: Path) -> Non
     first = rebuild_benchmark_result_index(runs_root=runs_root, index_path=index_path)
     second = rebuild_benchmark_result_index(runs_root=runs_root, index_path=index_path)
 
-    assert first == {"runs": 1, "observations": 1, "metrics": 2}
+    assert first == {"runs": 1, "observations": 1, "metrics": 2, "root_ledger": 3}
     assert second == first
 
 
@@ -183,6 +211,16 @@ def test_index_query_and_export_use_normalized_rows_not_payload_json(tmp_path: P
             "select artifact_dataset_id, evaluation_dataset_id from result_observations"
         ).fetchone()
     assert indexed == ("dataset-1", "evaluation-dataset-1")
+    with sqlite3.connect(index_path) as connection:
+        root_rows = connection.execute(
+            "select role, root_kind, root_id from benchmark_root_ledger "
+            "order by role, root_kind, root_id"
+        ).fetchall()
+    assert root_rows == [
+        ("consumed", "artifact", "artifact-1"),
+        ("consumed", "dataset", "evaluation-dataset-1"),
+        ("source", "dataset", "dataset-1"),
+    ]
 
 
 def test_index_query_rejects_metric_id_collision_across_sources(tmp_path: Path) -> None:

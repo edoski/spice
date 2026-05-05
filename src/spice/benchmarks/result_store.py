@@ -15,7 +15,13 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from ..core.errors import SpiceOperatorError
 from ..storage.engine import create_sqlite_engine, ensure_table_shapes
 from .result_records import BenchmarkCollectionSnapshot, BenchmarkResultRecord
-from .result_schema import benchmark_runs, metadata, metric_values, result_observations
+from .result_schema import (
+    benchmark_root_ledger,
+    benchmark_runs,
+    metadata,
+    metric_values,
+    result_observations,
+)
 
 BENCHMARK_RESULT_INDEX_PATH = Path("benchmarks") / "results.sqlite"
 
@@ -54,7 +60,12 @@ def ensure_result_index(path: Path) -> None:
         with engine.begin() as conn:
             ensure_table_shapes(
                 conn,
-                tables=(benchmark_runs, result_observations, metric_values),
+                tables=(
+                    benchmark_runs,
+                    result_observations,
+                    metric_values,
+                    benchmark_root_ledger,
+                ),
             )
     finally:
         engine.dispose()
@@ -97,6 +108,11 @@ def upsert_collection_snapshot(path: Path, snapshot: BenchmarkCollectionSnapshot
                 conn.execute(
                     delete(metric_values).where(
                         metric_values.c.observation_id.in_(stale_observation_ids)
+                    )
+                )
+                conn.execute(
+                    delete(benchmark_root_ledger).where(
+                        benchmark_root_ledger.c.observation_id.in_(stale_observation_ids)
                     )
                 )
             conn.execute(
@@ -159,6 +175,25 @@ def upsert_collection_snapshot(path: Path, snapshot: BenchmarkCollectionSnapshot
                             for metric in record.metrics
                         ],
                     )
+                if record.root_ledger.entries:
+                    conn.execute(
+                        benchmark_root_ledger.insert(),
+                        [
+                            {
+                                "observation_id": observation_id,
+                                "run_id": entry.run_id,
+                                "role": entry.role,
+                                "root_kind": entry.root_kind,
+                                "root_id": entry.root_id,
+                                "workflow": entry.workflow.value,
+                                "source_run_id": entry.source_run_id,
+                                "dataset_id": entry.dataset_id,
+                                "study_id": entry.study_id,
+                                "artifact_id": entry.artifact_id,
+                            }
+                            for entry in record.root_ledger.entries
+                        ],
+                    )
     finally:
         engine.dispose()
 
@@ -179,10 +214,14 @@ def index_counts(path: Path) -> dict[str, int]:
             metric_count = conn.execute(
                 select(func.count()).select_from(metric_values)
             ).scalar_one()
+            root_ledger_count = conn.execute(
+                select(func.count()).select_from(benchmark_root_ledger)
+            ).scalar_one()
         return {
             "runs": int(run_count),
             "observations": int(observation_count),
             "metrics": int(metric_count),
+            "root_ledger": int(root_ledger_count),
         }
     finally:
         engine.dispose()
