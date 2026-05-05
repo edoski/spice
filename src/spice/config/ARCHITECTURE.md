@@ -41,9 +41,9 @@ Selections usually refer to problem specs by name. Benchmark problem grids may s
 
 ## Config Group Loading
 
-Config groups have two loading interfaces. `groups.load_named_group_payload()` returns a canonical raw dict for CLI show/edit, templates, fixture mutation, benchmark raw specs, and durable YAML output. `typed_registry` exposes group-specific typed loaders for workflow resolution and other internal runtime setup.
+Config groups have two loading interfaces. `groups.load_named_group_payload()` returns a canonical raw dict for CLI show/edit, templates, fixture mutation, benchmark raw specs, and durable YAML output. `typed_groups.load()` returns context-free typed named groups for workflow resolution and other internal runtime setup.
 
-`groups` owns named group lookup and identity checks. Owner packages own concrete dispatch inside a group. Tuning-space loading stays in resolution because it depends on the selected model and problem. Benchmark typed loading stays in benchmarks.
+`group_catalog` owns group names, directories, identity checks, and validators shared by the raw and typed interfaces. Owner packages own concrete dispatch inside a group. Tuning-space loading stays in resolution because it depends on the selected model and problem. Benchmark typed loading stays in benchmarks.
 
 `selection_application` owns the surface-only step that loads a named surface, understands its nested layout, and emits workflow-shaped refs for acquire/train/tune resolution. `surfaces` owns frame models only.
 

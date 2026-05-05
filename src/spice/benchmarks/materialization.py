@@ -11,6 +11,7 @@ from typing import cast
 
 from pydantic import ValidationError
 
+from ..config import typed_groups as typed
 from ..config.groups import load_named_group_payload
 from ..config.models import (
     EvaluateConfig,
@@ -24,7 +25,6 @@ from ..config.selections import (
     WorkflowSelection,
     workflow_selection_from_values,
 )
-from ..config.typed_registry import load_problem_spec
 from ..config.workflow_snapshots import ResolvedWorkflowConfig
 from ..core.errors import ConfigResolutionError
 from .dependency_ledger import BenchmarkDependencyPlan
@@ -247,7 +247,7 @@ def _expand_problem_entry(entry: ProblemDimensionEntry) -> list[_DimensionVarian
     grid = entry.grid
     if grid is None:
         raise ConfigResolutionError("problem dimension entry is empty")
-    base_problem = load_problem_spec(grid.base)
+    base_problem = typed.load(typed.PROBLEM, grid.base)
     field_names = tuple(grid.fields)
     variants: list[_DimensionVariant] = []
     for values in product(*(grid.fields[field] for field in field_names)):

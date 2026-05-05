@@ -14,7 +14,7 @@ YAML specs should validate through their owning package model. Config ids must m
 
 ## Extension Points
 
-Add a new YAML file when a reusable named concept exists. Add a new group only after adding raw loading in `config.groups`, typed validation in `config.typed_registry`, and owner-package coercion.
+Add a new YAML file when a reusable named concept exists. Add a new group only after adding catalog metadata in `config.group_catalog`, raw access through `config.groups`, typed loading through `config.typed_groups`, and owner-package coercion when needed.
 
 ## Group Map
 

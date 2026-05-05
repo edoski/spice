@@ -25,6 +25,8 @@ Config Group Loading has separate Interfaces:
 - raw canonical payload loading for display, editing, fixture mutation, seed/template creation, benchmark raw specs, and canonical YAML output
 - typed owner config loading for context-free groups used by resolution
 
+Both interfaces may share group catalog metadata and validators, but raw loading still returns canonical dictionaries while typed loading returns concrete typed configs.
+
 Contextual tuning-space loading stays in resolution because its validity depends on the selected model and problem. Benchmark typed loading stays in the benchmark module.
 
 Tuned-parameter application is a typed Workflow Config transform, not a Resolved Workflow Hydration caller. It applies tuned params by constructing validated concrete nested configs and rebuilding the train or tune config directly.

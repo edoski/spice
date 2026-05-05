@@ -4,231 +4,35 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
-from enum import Enum, StrEnum
+from enum import Enum
 from pathlib import Path
 from typing import cast
 
 import yaml
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from ..core.errors import ConfigResolutionError
-from ..evaluation import coerce_evaluator_config
-from ..execution.models import ExecutionSpec
-from ..modeling.dataset_builders import (
-    coerce_dataset_builder_config,
+from .group_catalog import (
+    group_spec,
+    validate_named_group_payload,
 )
-from ..modeling.families.registry import coerce_model_config
-from ..objectives import coerce_objective_config
-from .models import (
-    ChainSpec,
-    DatasetSpec,
-    PredictionConfig,
-    ProviderSpec,
-    SplitConfig,
-    TrainingConfig,
-    TuningConfig,
-    coerce_features_config,
-    coerce_problem_spec,
+from .group_catalog import (
+    named_group_keys as catalog_named_group_keys,
+)
+from .group_catalog import (
+    normalize_group_name as catalog_normalize_group_name,
+)
+from .group_catalog import (
+    normalize_public_group_name as catalog_normalize_public_group_name,
+)
+from .group_catalog import (
+    public_group_tokens as catalog_public_group_tokens,
 )
 
 _PACKAGE_CONF_ROOT = Path(__file__).resolve().parents[1] / "conf"
 _CONF_ROOT = _PACKAGE_CONF_ROOT
-
-
-class ConfigGroup(StrEnum):
-    BENCHMARK = "benchmark"
-    CHAIN = "chain"
-    DATASET = "dataset"
-    DATASET_BUILDER = "dataset-builder"
-    EVALUATION = "evaluation"
-    EXECUTION = "execution"
-    FEATURES = "features"
-    MODEL = "model"
-    OBJECTIVE = "objective"
-    PREDICTION = "prediction"
-    PROBLEM = "problem"
-    PROVIDER = "provider"
-    SPLIT = "split"
-    SURFACE = "surface"
-    TRAINING = "training"
-    TUNING = "tuning"
-    TUNING_SPACE = "tuning-space"
-
-
-_ValidateGroupPayload = Callable[[dict[str, object]], BaseModel | dict[str, object]]
-
-
-@dataclass(frozen=True, slots=True)
-class _GroupSpec:
-    token: str
-    directory: str
-    seed_name: str | None
-    validate: _ValidateGroupPayload
-    identity_field: str | None = None
-    seed_from_requested_name: bool = False
-    public: bool = False
-
-
-def _validate_surface_frame(payload: dict[str, object]) -> BaseModel:
-    from .surfaces import SurfaceFrame
-
-    return SurfaceFrame.model_validate(payload)
-
-
-_GROUP_SPECS = (
-    _GroupSpec(
-        token=ConfigGroup.SURFACE.value,
-        directory="surface",
-        seed_name="current_row_fee_dynamics",
-        validate=_validate_surface_frame,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.BENCHMARK.value,
-        directory="benchmark",
-        seed_name=None,
-        validate=lambda payload: _canonicalize_mapping(payload),
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.TRAINING.value,
-        directory="training",
-        seed_name="default",
-        validate=TrainingConfig.model_validate,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.SPLIT.value,
-        directory="split",
-        seed_name="default",
-        validate=SplitConfig.model_validate,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.TUNING.value,
-        directory="tuning",
-        seed_name="default",
-        validate=TuningConfig.model_validate,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.DATASET.value,
-        directory="dataset",
-        seed_name="icdcs_2026",
-        validate=DatasetSpec.model_validate,
-        identity_field="name",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.CHAIN.value,
-        directory="chain",
-        seed_name="ethereum",
-        validate=ChainSpec.model_validate,
-        identity_field="name",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.PROBLEM.value,
-        directory="problem",
-        seed_name="current_row_nominal",
-        validate=coerce_problem_spec,
-        identity_field="id",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.PROVIDER.value,
-        directory="provider",
-        seed_name="publicnode",
-        validate=ProviderSpec.model_validate,
-        identity_field="name",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.DATASET_BUILDER.value,
-        directory="dataset_builder",
-        seed_name="fixed_sequence_temporal",
-        validate=coerce_dataset_builder_config,
-        identity_field="id",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.EVALUATION.value,
-        directory="evaluation",
-        seed_name="poisson_replay_2h",
-        validate=coerce_evaluator_config,
-        identity_field="id",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.EXECUTION.value,
-        directory="execution",
-        seed_name="disi_l40",
-        validate=ExecutionSpec.model_validate,
-        identity_field="id",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.FEATURES.value,
-        directory="features",
-        seed_name="core_fee_dynamics",
-        validate=coerce_features_config,
-        identity_field="id",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.MODEL.value,
-        directory="model",
-        seed_name="lstm",
-        validate=coerce_model_config,
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.OBJECTIVE.value,
-        directory="objective",
-        seed_name="validation_total_loss",
-        validate=coerce_objective_config,
-        seed_from_requested_name=False,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.PREDICTION.value,
-        directory="prediction",
-        seed_name="icdcs_2026",
-        validate=PredictionConfig.model_validate,
-        identity_field="id",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    _GroupSpec(
-        token=ConfigGroup.TUNING_SPACE.value,
-        directory="tuning_space",
-        seed_name="lstm_default",
-        validate=lambda payload: _canonicalize_mapping(payload),
-        seed_from_requested_name=True,
-        public=True,
-    ),
-)
-_GROUP_SPEC_BY_TOKEN = {spec.token: spec for spec in _GROUP_SPECS}
-_GROUP_SPEC_BY_DIRECTORY = {spec.directory: spec for spec in _GROUP_SPECS}
-_NAMED_GROUP_KEYS = tuple(
-    spec.directory for spec in _GROUP_SPECS if spec.directory != "benchmark"
-)
-_PUBLIC_GROUP_TOKENS = tuple(spec.token for spec in _GROUP_SPECS if spec.public)
-_PUBLIC_GROUP_DIRECTORIES = tuple(
-    _GROUP_SPEC_BY_TOKEN[token].directory for token in _PUBLIC_GROUP_TOKENS
-)
 
 
 def config_root() -> Path:
@@ -236,34 +40,23 @@ def config_root() -> Path:
 
 
 def named_group_keys() -> tuple[str, ...]:
-    return _NAMED_GROUP_KEYS
+    return catalog_named_group_keys()
 
 
 def public_group_tokens() -> tuple[str, ...]:
-    return _PUBLIC_GROUP_TOKENS
+    return catalog_public_group_tokens()
 
 
 def public_group_help() -> str:
     return "One of: " + ", ".join(public_group_tokens()) + "."
 
 
-def _group_spec(group: str) -> _GroupSpec:
-    if group in _GROUP_SPEC_BY_TOKEN:
-        return _GROUP_SPEC_BY_TOKEN[group]
-    if group in _GROUP_SPEC_BY_DIRECTORY:
-        return _GROUP_SPEC_BY_DIRECTORY[group]
-    raise ConfigResolutionError(f"Unsupported config group: {group}")
-
-
 def normalize_group_name(group: str) -> str:
-    return _group_spec(group).directory
+    return catalog_normalize_group_name(group)
 
 
 def normalize_public_group_name(group: str) -> str:
-    spec = _group_spec(group)
-    if spec.directory not in _PUBLIC_GROUP_DIRECTORIES:
-        raise ConfigResolutionError(f"Config group is internal-only: {spec.token}")
-    return spec.directory
+    return catalog_normalize_public_group_name(group)
 
 
 def group_path(group: str) -> Path:
@@ -329,7 +122,7 @@ def dump_canonical_yaml(value: BaseModel | dict[str, object]) -> str:
 
 
 def _seed_payload(group: str, *, name: str) -> dict[str, object]:
-    spec = _group_spec(group)
+    spec = group_spec(group)
     template = _seed_template(group, name=name)
     identity_field = spec.identity_field
     if identity_field is not None:
@@ -341,7 +134,7 @@ def _seed_payload(group: str, *, name: str) -> dict[str, object]:
 
 
 def _seed_template(group: str, *, name: str) -> dict[str, object]:
-    spec = _group_spec(group)
+    spec = group_spec(group)
     package_group_root = _PACKAGE_CONF_ROOT / spec.directory
     candidates: list[Path] = []
     if spec.seed_from_requested_name:
@@ -364,22 +157,7 @@ def _validate_payload(
     name: str,
     payload: dict[str, object],
 ) -> BaseModel | dict[str, object]:
-    spec = _group_spec(group)
-    try:
-        validated = spec.validate(payload)
-    except ConfigResolutionError:
-        raise
-    except (ValidationError, ValueError, TypeError) as exc:
-        raise ConfigResolutionError(str(exc)) from exc
-    if spec.identity_field is None:
-        return validated
-    if isinstance(validated, BaseModel):
-        identity_value = getattr(validated, spec.identity_field)
-    else:
-        identity_value = validated.get(spec.identity_field)
-    if identity_value != name:
-        raise ConfigResolutionError(f"{group} {spec.identity_field} must match spec name: {name}")
-    return validated
+    return validate_named_group_payload(group, name=name, payload=payload)
 
 
 def _canonicalize_model(model: BaseModel) -> dict[str, object]:

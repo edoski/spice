@@ -10,8 +10,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..config import typed_groups as typed
 from ..config.models import WorkflowTask
-from ..config.typed_registry import load_execution_spec
 from ..config.workflow_snapshots import ResolvedWorkflowConfig, workflow_config_snapshot_json
 from ..core.errors import SpiceOperatorError
 from .models import ExecutionSpec, ExecutionWorkflowSpec
@@ -61,7 +61,7 @@ def open_execution_session(target_name: str) -> ExecutionSession:
 def _load_execution_target(name: str) -> ExecutionTarget:
     return ExecutionTarget(
         name=name,
-        spec=load_execution_spec(name),
+        spec=typed.load(typed.EXECUTION, name),
     )
 
 

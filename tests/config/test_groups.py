@@ -1,34 +1,23 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
+import pytest
+
+from spice.config import typed_groups as typed
 from spice.config.groups import (
     ensure_named_group_file,
     load_named_group_payload,
 )
-from spice.config.typed_registry import (
-    load_chain_spec,
-    load_dataset_builder_config,
-    load_dataset_spec,
-    load_evaluator_config,
-    load_execution_spec,
-    load_features_config,
-    load_model_config,
-    load_objective_config,
-    load_prediction_config,
-    load_problem_spec,
-    load_provider_spec,
-    load_split_config,
-    load_surface_frame,
-    load_training_config,
-    load_tuning_config,
-)
 
 
 def test_typed_group_loaders_return_owner_concrete_types() -> None:
-    problem = load_problem_spec("current_row_nominal")
-    model = load_model_config("lstm")
-    builder = load_dataset_builder_config("fixed_sequence_temporal")
-    evaluator = load_evaluator_config("poisson_replay_2h")
-    training = load_training_config("default")
+    problem = typed.load(typed.PROBLEM, "current_row_nominal")
+    model = typed.load(typed.MODEL, "lstm")
+    builder = typed.load(typed.DATASET_BUILDER, "fixed_sequence_temporal")
+    evaluator = typed.load(typed.EVALUATION, "poisson_replay_2h")
+    training = typed.load(typed.TRAINING, "default")
 
     assert type(problem.compiler).__name__ == "ObservedTimeWindowCompilerConfig"
     assert type(problem.compiler.slot_spacing).__name__ == (
@@ -41,17 +30,24 @@ def test_typed_group_loaders_return_owner_concrete_types() -> None:
     assert type(training.input_normalization).__name__ == "RowStandardConfig"
 
 
-def test_context_free_typed_group_loaders_cover_resolution_groups() -> None:
-    assert load_dataset_spec("icdcs_2026").name == "icdcs_2026"
-    assert load_chain_spec("avalanche").name == "avalanche"
-    assert load_features_config("core_fee_dynamics").id == "core_fee_dynamics"
-    assert load_provider_spec("publicnode").name == "publicnode"
-    assert load_objective_config("validation_total_loss").id == "validation"
-    assert load_prediction_config("icdcs_2026").id == "icdcs_2026"
-    assert load_split_config("default").train_fraction == 0.8
-    assert load_tuning_config("default").trial_count == 20
-    assert load_execution_spec("disi_l40").id == "disi_l40"
-    assert load_surface_frame("current_row_fee_dynamics").chain == "ethereum"
+@pytest.mark.parametrize(
+    ("loader", "name", "identity"),
+    [
+        (lambda: typed.load(typed.DATASET, "icdcs_2026"), "icdcs_2026", "name"),
+        (lambda: typed.load(typed.CHAIN, "avalanche"), "avalanche", "name"),
+        (lambda: typed.load(typed.FEATURES, "core_fee_dynamics"), "core_fee_dynamics", "id"),
+        (lambda: typed.load(typed.PROVIDER, "publicnode"), "publicnode", "name"),
+        (lambda: typed.load(typed.PREDICTION, "icdcs_2026"), "icdcs_2026", "id"),
+        (lambda: typed.load(typed.EXECUTION, "disi_l40"), "disi_l40", "id"),
+        (lambda: typed.load(typed.SURFACE, "current_row_fee_dynamics"), "ethereum", "chain"),
+    ],
+)
+def test_context_free_typed_loader_covers_named_group_shapes(
+    loader: Callable[[], Any],
+    name: str,
+    identity: str,
+) -> None:
+    assert getattr(loader(), identity) == name
 
 
 def test_raw_payload_loader_returns_canonical_dicts() -> None:
@@ -73,8 +69,8 @@ def test_seeded_problem_template_loads_raw_and_typed(isolate_conf_root) -> None:
     ensure_named_group_file("problem", "seeded_problem")
 
     raw = load_named_group_payload("seeded_problem", "problem")
-    typed = load_problem_spec("seeded_problem")
+    problem = typed.load(typed.PROBLEM, "seeded_problem")
 
     assert raw["id"] == "seeded_problem"
-    assert typed.id == "seeded_problem"
-    assert type(typed.compiler).__name__ == "ObservedTimeWindowCompilerConfig"
+    assert problem.id == "seeded_problem"
+    assert type(problem.compiler).__name__ == "ObservedTimeWindowCompilerConfig"

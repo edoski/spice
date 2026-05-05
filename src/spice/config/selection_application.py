@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TypeAlias, overload
 
 from ..core.errors import ConfigResolutionError
+from . import typed_groups as typed
 from .models import ArtifactConfig, ArtifactVariant, ProblemSpec, StorageSpec, StudyConfig
 from .selections import (
     AcquireWorkflowSelection,
@@ -16,7 +17,6 @@ from .selections import (
     TuneWorkflowSelection,
 )
 from .surfaces import SurfaceFrame
-from .typed_registry import load_surface_frame
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +97,7 @@ def apply_surface_selection(
 def apply_surface_selection(selection: SurfaceWorkflowSelection) -> AppliedSurfaceSelection:
     if selection.surface is None:
         raise ConfigResolutionError("surface is required")
-    frame = load_surface_frame(selection.surface)
+    frame = typed.load(typed.SURFACE, selection.surface)
     if isinstance(selection, AcquireWorkflowSelection):
         return _apply_acquire_surface(selection.surface, frame, selection)
     if isinstance(selection, TrainWorkflowSelection):

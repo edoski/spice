@@ -21,6 +21,7 @@ from spice.config import (
     WorkflowTask,
     resolve_workflow_config,
 )
+from spice.config.group_catalog import identity_field_for_group
 from spice.config.groups import (
     dump_canonical_yaml,
     load_named_group_payload,
@@ -43,19 +44,6 @@ TEST_EVALUATION_DATE = date(2025, 11, 9)
 TEST_DATASET_ID = "cor_9a73b1e88edb488afb1e"
 TEST_STUDY_ID = "std_test"
 TEST_ARTIFACT_ID = "art_test"
-_IDENTITY_FIELDS = {
-    "chain": "name",
-    "dataset": "name",
-    "dataset_builder": "id",
-    "execution": "id",
-    "evaluation": "id",
-    "features": "id",
-    "model": "id",
-    "prediction": "id",
-    "problem": "id",
-    "provider": "name",
-}
-
 
 def _write_named_spec(
     conf_root: Path,
@@ -65,7 +53,7 @@ def _write_named_spec(
     payload: dict[str, object],
 ) -> None:
     normalized_group = normalize_group_name(group)
-    identity_field = _IDENTITY_FIELDS.get(normalized_group)
+    identity_field = identity_field_for_group(normalized_group)
     if identity_field is not None:
         payload = {**payload, identity_field: name}
     path = conf_root / normalized_group / f"{name}.yaml"
@@ -78,7 +66,7 @@ def _named_group_copy(name: str, group: str) -> dict[str, object]:
 
 
 def _spec_name_for_payload(group: str, default_name: str, payload: Mapping[str, object]) -> str:
-    identity_field = _IDENTITY_FIELDS.get(normalize_group_name(group))
+    identity_field = identity_field_for_group(normalize_group_name(group))
     if identity_field is None:
         return default_name
     identity_value = payload.get(identity_field)

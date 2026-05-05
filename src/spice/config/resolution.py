@@ -14,6 +14,8 @@ from ..evaluation import EvaluatorConfig
 from ..modeling.families.base import ModelConfig
 from ..modeling.tuned_config import coerce_tuning_space_config
 from ..objectives import ObjectiveConfig
+from . import typed_groups as typed
+from .group_catalog import ConfigGroup
 from .groups import load_named_group_payload
 from .models import (
     AcquireConfig,
@@ -53,23 +55,7 @@ from .selections import (
     workflow_selection_from_values,
     workflow_selection_type,
 )
-from .typed_registry import (
-    load_chain_spec,
-    load_dataset_builder_config,
-    load_dataset_spec,
-    load_evaluator_config,
-    load_features_config,
-    load_model_config,
-    load_objective_config,
-    load_prediction_config,
-    load_problem_spec,
-    load_provider_spec,
-    load_split_config,
-    load_training_config,
-    load_tuning_config,
-)
 
-_TUNING_SPACE_GROUP = "tuning_space"
 ConfigModelT = TypeVar("ConfigModelT", bound=ConfigModel)
 
 WorkflowConfig = AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig
@@ -153,7 +139,7 @@ def load_named_tuning_space(
     problem_config: ProblemSpec,
 ) -> TuningSpaceConfig:
     tuning_space = coerce_tuning_space_config(
-        load_named_group_payload(name, _TUNING_SPACE_GROUP),
+        load_named_group_payload(name, ConfigGroup.TUNING_SPACE),
         model_config=model_config,
         problem_config=problem_config,
     )
@@ -249,17 +235,17 @@ def _validate_selection_kind(workflow: WorkflowTask, selection: WorkflowSelectio
 def _resolve_problem(name: str | ProblemSpec) -> ProblemSpec:
     if isinstance(name, ProblemSpec):
         return name
-    return load_problem_spec(name)
+    return typed.load(typed.PROBLEM, name)
 
 
 def _resolve_evaluation(name: str | None) -> EvaluatorConfig | None:
     if name is None:
         return None
-    return load_evaluator_config(name)
+    return typed.load(typed.EVALUATION, name)
 
 
 def _resolve_objective(name: str, *, evaluation_name: str | None) -> ObjectiveConfig:
-    objective = load_objective_config(name)
+    objective = typed.load(typed.OBJECTIVE, name)
     expected_evaluation = _benchmark_evaluation_name(objective)
     if (
         evaluation_name is not None
@@ -298,14 +284,14 @@ def _resolve_model_workflow_base(
     *,
     validate_objective_benchmark: bool,
 ) -> ModelWorkflowBase:
-    dataset = load_dataset_spec(applied.dataset)
-    chain = load_chain_spec(applied.chain)
+    dataset = typed.load(typed.DATASET, applied.dataset)
+    chain = typed.load(typed.CHAIN, applied.chain)
     storage = _resolve_storage(applied.storage)
     problem = _resolve_problem(applied.problem)
-    model = load_model_config(_required(applied.model, "model"))
-    dataset_builder = load_dataset_builder_config(applied.dataset_builder)
-    features = load_features_config(_required(applied.features, "features"))
-    prediction = load_prediction_config(applied.prediction)
+    model = typed.load(typed.MODEL, _required(applied.model, "model"))
+    dataset_builder = typed.load(typed.DATASET_BUILDER, applied.dataset_builder)
+    features = typed.load(typed.FEATURES, _required(applied.features, "features"))
+    prediction = typed.load(typed.PREDICTION, applied.prediction)
     objective = _resolve_objective(
         _required(applied.objective, "objective"),
         evaluation_name=applied.evaluation if validate_objective_benchmark else None,
@@ -338,10 +324,10 @@ def _resolve_model_workflow_spine(
     require_tuning: bool,
     allow_tuned_variant: bool,
 ) -> ModelWorkflowSpine:
-    training = load_training_config(applied.training)
-    split = load_split_config(applied.split)
+    training = typed.load(typed.TRAINING, applied.training)
+    split = typed.load(typed.SPLIT, applied.split)
     if require_tuning or (allow_tuned_variant and artifact.variant.value == "tuned"):
-        tuning = load_tuning_config(applied.tuning)
+        tuning = typed.load(typed.TUNING, applied.tuning)
         tuning_space = load_named_tuning_space(
             _required(applied.tuning_space, "tuning.space"),
             model_config=model,
@@ -362,11 +348,11 @@ def _resolve_model_workflow_spine(
 
 
 def _resolve_acquire_config(applied: AppliedAcquireSurfaceSelection) -> AcquireConfig:
-    dataset = load_dataset_spec(applied.dataset)
-    chain = load_chain_spec(applied.chain)
+    dataset = typed.load(typed.DATASET, applied.dataset)
+    chain = typed.load(typed.CHAIN, applied.chain)
     storage = _resolve_storage(applied.storage)
     problem = _resolve_problem(applied.problem)
-    provider = load_provider_spec(applied.provider)
+    provider = typed.load(typed.PROVIDER, applied.provider)
     endpoint = provider.endpoint_config_for(chain.name)
     rpc_endpoint = ResolvedRpcEndpointConfig(
         provider_name=provider.name,
@@ -376,7 +362,7 @@ def _resolve_acquire_config(applied: AppliedAcquireSurfaceSelection) -> AcquireC
         retry_count=provider.transport.retry_count,
         backoff_factor=provider.transport.backoff_factor,
     )
-    features = load_features_config(_required(applied.features, "features"))
+    features = typed.load(typed.FEATURES, _required(applied.features, "features"))
     if provider.acquisition is None:
         raise ConfigResolutionError(
             f"provider {provider.name} must define acquisition settings"

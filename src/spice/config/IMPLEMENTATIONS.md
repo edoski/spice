@@ -27,17 +27,17 @@ Config Group Loading has two explicit paths:
 groups.load_named_group_payload()
   -> canonical raw dict for show/edit/template/benchmark raw specs
 
-typed_registry.load_model_config(), typed_registry.load_problem_spec(), ...
+typed_groups.load(typed_groups.MODEL, name), typed_groups.load(typed_groups.PROBLEM, name), ...
   -> typed owner config for resolution/runtime callers
 ```
 
-Resolution uses the same typed pattern across registries:
+Resolution uses the same typed pattern across context-free named groups:
 
 ```text
-mapping contains id or name
-  -> lookup local spec
-  -> require matching config type
-  -> compile contract
+workflow-shaped ref
+  -> typed group loader
+  -> owner coercer when the group has concrete implementations
+  -> typed config
 ```
 
 This gives concrete implementations one owner. For example, the evaluation package owns evaluator config models, and the modeling package owns dataset-builder config models.
