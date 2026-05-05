@@ -18,7 +18,6 @@ from spice.config import EvaluateConfig, StorageSpec, WorkflowTask
 from spice.config.groups import load_named_group_payload
 from spice.core.errors import SpiceOperatorError
 from spice.evaluation.registry import coerce_evaluator_config
-from spice.execution.transfer import PulledArtifactRoot
 from spice.storage.catalog import CatalogArtifactRecord
 
 
@@ -132,18 +131,11 @@ def _artifact_record(root_path: Path, *, artifact_id: str = "artifact-1") -> Cat
     )
 
 
-def _pulled_artifact(tmp_path: Path) -> PulledArtifactRoot:
-    source_record = _artifact_record(tmp_path / "remote" / "artifact-1")
-    local_record = _artifact_record(tmp_path / "local" / "artifact-1")
-    return PulledArtifactRoot(
-        source_record=source_record,
-        local_record=local_record,
-        destination_root=local_record.root_path,
-        dataset_present=True,
-    )
+def _local_artifact_record(tmp_path: Path) -> CatalogArtifactRecord:
+    return _artifact_record(tmp_path / "local" / "artifact-1")
 
 
-def test_collection_resolver_uses_pulled_artifact_and_loads_matching_summary(
+def test_collection_resolver_uses_local_artifact_record_and_loads_matching_summary(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -151,7 +143,7 @@ def test_collection_resolver_uses_pulled_artifact_and_loads_matching_summary(
     loaded_paths: list[Path] = []
     training = SimpleNamespace(runtime=SimpleNamespace(test_metrics=None))
     summary = _summary(config)
-    pulled = _pulled_artifact(tmp_path)
+    artifact_record = _local_artifact_record(tmp_path)
 
     monkeypatch.setattr(
         "spice.benchmarks.collection_resolver.load_training_summary",
@@ -166,12 +158,15 @@ def test_collection_resolver_uses_pulled_artifact_and_loads_matching_summary(
         lambda path: loaded_paths.append(path) or [summary],
     )
 
-    resolved = resolve_benchmark_evaluation(_selection(config), pulled=pulled)
+    resolved = resolve_benchmark_evaluation(
+        _selection(config),
+        artifact_record=artifact_record,
+    )
 
     assert resolved is not None
     assert resolved.evaluation is summary
     assert resolved.training is training
-    assert loaded_paths == [pulled.local_record.state_db_path] * 3
+    assert loaded_paths == [artifact_record.state_db_path] * 3
 
 
 def test_collection_resolver_returns_none_when_summary_is_missing(
@@ -179,7 +174,7 @@ def test_collection_resolver_returns_none_when_summary_is_missing(
     monkeypatch,
 ) -> None:
     config = _evaluate_config(tmp_path)
-    pulled = _pulled_artifact(tmp_path)
+    artifact_record = _local_artifact_record(tmp_path)
     monkeypatch.setattr(
         "spice.benchmarks.collection_resolver.load_training_summary",
         lambda _path: None,
@@ -193,7 +188,10 @@ def test_collection_resolver_returns_none_when_summary_is_missing(
         lambda _path: [],
     )
 
-    assert resolve_benchmark_evaluation(_selection(config), pulled=pulled) is None
+    assert (
+        resolve_benchmark_evaluation(_selection(config), artifact_record=artifact_record)
+        is None
+    )
 
 
 def test_collection_resolver_rejects_duplicate_matching_summaries(
@@ -201,7 +199,7 @@ def test_collection_resolver_rejects_duplicate_matching_summaries(
     monkeypatch,
 ) -> None:
     config = _evaluate_config(tmp_path)
-    pulled = _pulled_artifact(tmp_path)
+    artifact_record = _local_artifact_record(tmp_path)
     monkeypatch.setattr(
         "spice.benchmarks.collection_resolver.load_training_summary",
         lambda _path: None,
@@ -216,7 +214,7 @@ def test_collection_resolver_rejects_duplicate_matching_summaries(
     )
 
     with pytest.raises(SpiceOperatorError, match="Multiple evaluation summaries"):
-        resolve_benchmark_evaluation(_selection(config), pulled=pulled)
+        resolve_benchmark_evaluation(_selection(config), artifact_record=artifact_record)
 
 
 def test_collection_resolver_rejects_missing_execution_provenance(
@@ -224,7 +222,7 @@ def test_collection_resolver_rejects_missing_execution_provenance(
     monkeypatch,
 ) -> None:
     config = _evaluate_config(tmp_path)
-    pulled = _pulled_artifact(tmp_path)
+    artifact_record = _local_artifact_record(tmp_path)
     monkeypatch.setattr(
         "spice.benchmarks.collection_resolver.load_training_summary",
         lambda _path: None,
@@ -239,7 +237,7 @@ def test_collection_resolver_rejects_missing_execution_provenance(
     )
 
     with pytest.raises(SpiceOperatorError, match="execution provenance"):
-        resolve_benchmark_evaluation(_selection(config), pulled=pulled)
+        resolve_benchmark_evaluation(_selection(config), artifact_record=artifact_record)
 
 
 def test_collection_resolver_rejects_stale_execution_provenance(
@@ -247,7 +245,7 @@ def test_collection_resolver_rejects_stale_execution_provenance(
     monkeypatch,
 ) -> None:
     config = _evaluate_config(tmp_path)
-    pulled = _pulled_artifact(tmp_path)
+    artifact_record = _local_artifact_record(tmp_path)
     monkeypatch.setattr(
         "spice.benchmarks.collection_resolver.load_training_summary",
         lambda _path: None,
@@ -262,7 +260,7 @@ def test_collection_resolver_rejects_stale_execution_provenance(
     )
 
     with pytest.raises(SpiceOperatorError, match="expected slurm:57549"):
-        resolve_benchmark_evaluation(_selection(config), pulled=pulled)
+        resolve_benchmark_evaluation(_selection(config), artifact_record=artifact_record)
 
 
 def test_collection_resolver_matches_default_delay_to_artifact_capability(
@@ -272,7 +270,7 @@ def test_collection_resolver_matches_default_delay_to_artifact_capability(
     config = _evaluate_config(tmp_path).model_copy(update={"delay_seconds": None})
     matching = _summary(config, delay_seconds=72)
     stale = _summary(config, delay_seconds=36)
-    pulled = _pulled_artifact(tmp_path)
+    artifact_record = _local_artifact_record(tmp_path)
     monkeypatch.setattr(
         "spice.benchmarks.collection_resolver.load_training_summary",
         lambda _path: None,
@@ -286,7 +284,10 @@ def test_collection_resolver_matches_default_delay_to_artifact_capability(
         lambda _path: [stale, matching],
     )
 
-    resolved = resolve_benchmark_evaluation(_selection(config), pulled=pulled)
+    resolved = resolve_benchmark_evaluation(
+        _selection(config),
+        artifact_record=artifact_record,
+    )
 
     assert resolved is not None
     assert resolved.evaluation is matching
@@ -356,21 +357,15 @@ def test_collection_selection_rejects_missing_root_ledger_entries(tmp_path: Path
         )
 
 
-def test_collection_resolver_rejects_pulled_artifact_mismatch(
+def test_collection_resolver_rejects_artifact_record_mismatch(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     config = _evaluate_config(tmp_path)
-    pulled = _pulled_artifact(tmp_path)
-    pulled = PulledArtifactRoot(
-        source_record=pulled.source_record,
-        local_record=_artifact_record(tmp_path / "local" / "other", artifact_id="other"),
-        destination_root=tmp_path / "local" / "other",
-        dataset_present=True,
-    )
+    artifact_record = _artifact_record(tmp_path / "local" / "other", artifact_id="other")
 
-    with pytest.raises(SpiceOperatorError, match="Pulled artifact"):
-        resolve_benchmark_evaluation(_selection(config), pulled=pulled)
+    with pytest.raises(SpiceOperatorError, match="Artifact record"):
+        resolve_benchmark_evaluation(_selection(config), artifact_record=artifact_record)
 
 
 def test_collection_resolver_rejects_manifest_artifact_mismatch(
@@ -378,7 +373,7 @@ def test_collection_resolver_rejects_manifest_artifact_mismatch(
     monkeypatch,
 ) -> None:
     config = _evaluate_config(tmp_path)
-    pulled = _pulled_artifact(tmp_path)
+    artifact_record = _local_artifact_record(tmp_path)
     monkeypatch.setattr(
         "spice.benchmarks.collection_resolver.load_training_summary",
         lambda _path: None,
@@ -389,4 +384,4 @@ def test_collection_resolver_rejects_manifest_artifact_mismatch(
     )
 
     with pytest.raises(SpiceOperatorError, match="Artifact manifest"):
-        resolve_benchmark_evaluation(_selection(config), pulled=pulled)
+        resolve_benchmark_evaluation(_selection(config), artifact_record=artifact_record)

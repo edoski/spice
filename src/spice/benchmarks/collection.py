@@ -8,8 +8,10 @@ from pathlib import Path
 
 from ..config.models import WorkflowTask
 from ..core.errors import SelectorResolutionError, SpiceOperatorError
-from ..execution.session import ExecutionSession, open_execution_session
-from ..execution.transfer import PulledArtifactRoot, pull_artifact_from_cluster
+from ..execution.transfer_transaction import (
+    StorageTransferTransaction,
+    open_storage_transfer_transaction,
+)
 from .collection_resolver import (
     BenchmarkCollectionSelection,
     benchmark_collection_selection,
@@ -42,8 +44,7 @@ def collect_benchmark_run(
     submissions = load_submission_jsonl(run_dir)
     evaluate_entries = [entry for entry in plan if entry.workflow is WorkflowTask.EVALUATE]
     collector_time = utc_now()
-    session = open_execution_session(metadata.target)
-    pulled_artifacts: dict[str, PulledArtifactRoot] = {}
+    transfer_transactions: dict[Path, StorageTransferTransaction] = {}
     records: list[BenchmarkResultRecord] = []
     for entry in evaluate_entries:
         submission = submissions.get(entry.run_id)
@@ -51,13 +52,14 @@ def collect_benchmark_run(
             raise SpiceOperatorError(f"Missing submission record for benchmark run {entry.run_id}")
         selection = benchmark_collection_selection(entry, submission)
         try:
+            transaction = _transfer_transaction_for_selection(
+                selection,
+                target_name=metadata.target,
+                transactions=transfer_transactions,
+            )
             state = resolve_benchmark_evaluation(
                 selection,
-                pulled=_cached_artifact_pull(
-                    selection,
-                    session=session,
-                    cache=pulled_artifacts,
-                ),
+                artifact_record=transaction.pull_artifact(selection.artifact_id).local_record,
             )
         except SelectorResolutionError as exc:
             raise SpiceOperatorError(str(exc)) from exc
@@ -88,20 +90,17 @@ def collect_benchmark_run(
     return snapshot
 
 
-def _cached_artifact_pull(
+def _transfer_transaction_for_selection(
     selection: BenchmarkCollectionSelection,
     *,
-    session: ExecutionSession,
-    cache: dict[str, PulledArtifactRoot],
-) -> PulledArtifactRoot:
-    pulled = cache.get(selection.artifact_id)
-    if pulled is not None:
-        return pulled
-    pulled = pull_artifact_from_cluster(
-        storage_root=selection.storage_root,
-        session=session,
-        artifact_id=selection.artifact_id,
-        replace=True,
-    )
-    cache[selection.artifact_id] = pulled
-    return pulled
+    target_name: str,
+    transactions: dict[Path, StorageTransferTransaction],
+) -> StorageTransferTransaction:
+    transaction = transactions.get(selection.storage_root)
+    if transaction is None:
+        transaction = open_storage_transfer_transaction(
+            target_name,
+            local_storage_root=selection.storage_root,
+        )
+        transactions[selection.storage_root] = transaction
+    return transaction

@@ -76,7 +76,7 @@ RPC acquisition
   -> corpus validation
   -> storage roots
   -> catalog
-  -> sync
+  -> transfer
 ```
 
 Read:

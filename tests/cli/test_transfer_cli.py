@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
-from typing import cast
 
 from typer.testing import CliRunner
 
 from spice.cli import app
-from spice.execution.transfer import PulledArtifactRoot
+from spice.execution.transfer_transaction import TransferredArtifactRoot
 from spice.storage.catalog import CatalogArtifactRecord, CatalogDatasetRecord
 
 runner = CliRunner()
@@ -44,13 +42,19 @@ def _artifact_record(root_path: Path) -> CatalogArtifactRecord:
 def test_transfer_push_dataset_command_routes_to_dataset_transfer(monkeypatch, tmp_path) -> None:
     captured: dict[str, object] = {}
     record = _dataset_record(tmp_path / "outputs" / "corpora" / "ethereum" / "dataset-1")
+
+    class FakeTransaction:
+        def push_dataset(self, dataset_id: str, *, replace: bool):
+            captured["dataset_id"] = dataset_id
+            captured["replace"] = replace
+            return record
+
     monkeypatch.setattr(
-        "spice.cli.commands.transfer.open_execution_session",
-        lambda target: captured.setdefault("target", target) or SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "spice.cli.commands.transfer.push_dataset_to_cluster",
-        lambda **kwargs: captured.update({"kwargs": kwargs}) or record,
+        "spice.cli.commands.transfer.open_storage_transfer_transaction",
+        lambda target, *, local_storage_root: captured.update(
+            {"target": target, "local_storage_root": local_storage_root}
+        )
+        or FakeTransaction(),
     )
 
     result = runner.invoke(
@@ -68,25 +72,27 @@ def test_transfer_push_dataset_command_routes_to_dataset_transfer(monkeypatch, t
 
     assert result.exit_code == 0, result.stdout
     assert captured["target"] == "disi_l40"
-    assert cast(dict[str, object], captured["kwargs"])["dataset_id"] == record.dataset_id
+    assert captured["dataset_id"] == record.dataset_id
     assert "push dataset=dataset dataset_id=dataset-1" in result.stdout
 
 
 def test_transfer_pull_artifact_command_uses_pulled_envelope(monkeypatch, tmp_path) -> None:
     record = _artifact_record(tmp_path / "outputs" / "artifacts" / "ethereum" / "artifact-1")
-    pulled = PulledArtifactRoot(
+    pulled = TransferredArtifactRoot(
         source_record=record,
         local_record=record,
         destination_root=record.root_path,
         dataset_present=False,
     )
+
+    class FakeTransaction:
+        def pull_artifact(self, artifact_id: str, *, replace: bool):
+            del artifact_id, replace
+            return pulled
+
     monkeypatch.setattr(
-        "spice.cli.commands.transfer.open_execution_session",
-        lambda _target: SimpleNamespace(),
-    )
-    monkeypatch.setattr(
-        "spice.cli.commands.transfer.pull_artifact_from_cluster",
-        lambda **_kwargs: pulled,
+        "spice.cli.commands.transfer.open_storage_transfer_transaction",
+        lambda _target, *, local_storage_root: FakeTransaction(),
     )
 
     result = runner.invoke(app, ["transfer", "pull", "artifact", "--artifact-id", "artifact-1"])
@@ -94,4 +100,3 @@ def test_transfer_pull_artifact_command_uses_pulled_envelope(monkeypatch, tmp_pa
     assert result.exit_code == 0, result.stdout
     assert "pull artifact=artifact-1" in result.stdout
     assert "matching local dataset root is missing" in result.stderr
-

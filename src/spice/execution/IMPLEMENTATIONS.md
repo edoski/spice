@@ -68,7 +68,7 @@ Before submission, the workflow config storage root is rewritten to the target's
 
 ## Transfer
 
-Transfer services push local dataset roots to a target and pull remote artifact roots back locally through an **Execution Session**. They resolve catalog records through the remote catalog codec, prepare a hidden staging root, run rsync, then finalize through storage lifecycle validation and catalog reindexing.
+`StorageTransferTransaction` pushes local dataset roots to a target and pulls remote artifact roots back locally through an **Execution Session**. The transaction owns prepare, rsync, promote, and cleanup for both directions; local and remote transfer adapters provide the storage-lifecycle operations on the side that receives the root. Cleanup is best-effort and preserves the primary rsync or promote failure as the raised error.
 
 ## Failure Modes
 

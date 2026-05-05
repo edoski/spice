@@ -6,11 +6,7 @@ from typing import Annotated
 
 import typer
 
-from ...execution.session import open_execution_session
-from ...execution.transfer import (
-    pull_artifact_from_cluster,
-    push_dataset_to_cluster,
-)
+from ...execution.transfer_transaction import open_storage_transfer_transaction
 from ..errors import OperatorTyper
 from ..options import (
     DEFAULT_REMOTE_TARGET,
@@ -50,13 +46,8 @@ def push_dataset_command(
     replace: ReplaceOption = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
-    session = open_execution_session(target)
-    record = push_dataset_to_cluster(
-        storage_root=root,
-        session=session,
-        dataset_id=dataset_id,
-        replace=replace,
-    )
+    transaction = open_storage_transfer_transaction(target, local_storage_root=root)
+    record = transaction.push_dataset(dataset_id, replace=replace)
     typer.echo(f"push dataset={record.dataset_name} dataset_id={record.dataset_id}")
 
 
@@ -71,13 +62,8 @@ def pull_artifact_command(
     replace: ReplaceOption = False,
 ) -> None:
     root = resolve_storage_root(storage_root)
-    session = open_execution_session(target)
-    pulled = pull_artifact_from_cluster(
-        storage_root=root,
-        session=session,
-        artifact_id=artifact_id,
-        replace=replace,
-    )
+    transaction = open_storage_transfer_transaction(target, local_storage_root=root)
+    pulled = transaction.pull_artifact(artifact_id, replace=replace)
     record = pulled.local_record
     typer.echo(f"pull artifact={record.artifact_id}")
     if not pulled.dataset_present:

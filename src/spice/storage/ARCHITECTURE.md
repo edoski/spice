@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`storage` owns deterministic identity, canonical path layout, root-local SQLite state, catalog records, root lifecycle mechanics, inspection, deletion, and the remote-side sync helper.
+`storage` owns deterministic identity, canonical path layout, root-local SQLite state, catalog records, root lifecycle mechanics, inspection, deletion, and the remote-side transfer helper.
 
 ML artifacts need provenance. A model file without its dataset, features, temporal problem, prediction contract, evaluator config, and training config is hard to trust. Spice stores authoritative state inside each root and keeps a separate catalog for discovery.
 
@@ -89,7 +89,7 @@ storage/
   workflow_root_materialization.py  selector/producer identity -> workflow roots
   transactions.py    workflow-facing root commit/reindex transaction boundaries
   lifecycle.py       low-level staging, promotion, validation, and delete cascade
-  sync_cli.py        remote-side path/root-kind helper commands
+  sync_cli.py        remote-side transfer path/root-kind helper commands
   inspect*.py        read-only inspection views
   catalog/           global searchable index, catalog records, schema, store, and codecs
 ```
@@ -102,6 +102,6 @@ Producer identity and consumer selection stay separate inside `storage.workflow_
 
 ## Remote Transfer Boundary
 
-Remote SSH and rsync orchestration lives in `execution.transfer`. Storage exposes local lifecycle/catalog operations and `storage.sync_cli`, the helper module executed on the remote machine for path and root-kind operations.
+Remote SSH and rsync orchestration lives in `execution.transfer_transaction`. Storage exposes local lifecycle/catalog operations and `storage.sync_cli`, the helper module executed on the remote machine for path and root-kind operations.
 
 Catalog kind `dataset` maps intentionally to storage `RootKind.CORPUS`: dataset is the operator/config identity, while corpus is the physical storage root kind. `storage.catalog.index` owns typed catalog list/resolve/upsert/reindex operations, private catalog dispatch owns root-kind metadata, `storage.catalog.materialization` owns canonical destination paths and record construction, and `storage.catalog.codecs` owns the strict remote JSON envelope used by transfer helpers.

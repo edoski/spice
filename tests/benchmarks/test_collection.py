@@ -30,7 +30,7 @@ from spice.config.groups import load_named_group_payload
 from spice.config.models import ArtifactVariant
 from spice.core.errors import SelectorResolutionError, SpiceOperatorError
 from spice.evaluation.registry import coerce_evaluator_config
-from spice.execution.transfer import PulledArtifactRoot
+from spice.execution.transfer_transaction import TransferredArtifactRoot
 from spice.storage.catalog import CatalogArtifactRecord
 
 
@@ -320,10 +320,16 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
     _write_evaluate_run(run_dir, config)
     resolve_calls: list[object] = []
     pull_calls: list[object] = []
+    pulled = TransferredArtifactRoot(
+        source_record=_artifact_record(tmp_path / "remote" / "artifact-1"),
+        local_record=_artifact_record(tmp_path / "local" / "artifact-1"),
+        destination_root=tmp_path / "local" / "artifact-1",
+        dataset_present=True,
+    )
 
-    def fake_resolve(selection, *, pulled):
+    def fake_resolve(selection, *, artifact_record):
         assert selection.execution_ref == "slurm:57549"
-        resolve_calls.append(pulled)
+        resolve_calls.append(artifact_record)
         return SimpleNamespace(
             evaluation=_loaded_summary(config),
             training=SimpleNamespace(
@@ -339,18 +345,14 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
             ),
         )
 
-    monkeypatch.setattr("spice.benchmarks.collection.open_execution_session", lambda _target: "s")
+    class FakeTransferTransaction:
+        def pull_artifact(self, artifact_id: str):
+            pull_calls.append(artifact_id)
+            return pulled
+
     monkeypatch.setattr(
-        "spice.benchmarks.collection.pull_artifact_from_cluster",
-        lambda **kwargs: (
-            pull_calls.append(kwargs)
-            or PulledArtifactRoot(
-                source_record=_artifact_record(tmp_path / "remote" / "artifact-1"),
-                local_record=_artifact_record(tmp_path / "local" / "artifact-1"),
-                destination_root=tmp_path / "local" / "artifact-1",
-                dataset_present=True,
-            )
-        ),
+        "spice.benchmarks.collection.open_storage_transfer_transaction",
+        lambda _target, *, local_storage_root: FakeTransferTransaction(),
     )
     monkeypatch.setattr("spice.benchmarks.collection.resolve_benchmark_evaluation", fake_resolve)
     index_path = tmp_path / "benchmarks" / "results.sqlite"
@@ -369,12 +371,7 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
     }
     assert len(resolve_calls) == 2
     assert len(pull_calls) == 2
-    assert pull_calls[0] == {
-        "storage_root": config.storage.root,
-        "session": "s",
-        "artifact_id": config.artifact_id,
-        "replace": True,
-    }
+    assert pull_calls[0] == config.artifact_id
 
 
 def test_benchmark_collect_refuses_partial_snapshot_and_index_write(
@@ -389,13 +386,14 @@ def test_benchmark_collect_refuses_partial_snapshot_and_index_write(
     )
     _write_evaluate_run(run_dir, config)
 
-    def missing_remote_artifact(**_kwargs):
-        raise SelectorResolutionError(kind="artifact", records=[])
+    class FakeTransferTransaction:
+        def pull_artifact(self, artifact_id: str):
+            del artifact_id
+            raise SelectorResolutionError(kind="artifact", records=[])
 
-    monkeypatch.setattr("spice.benchmarks.collection.open_execution_session", lambda _target: "s")
     monkeypatch.setattr(
-        "spice.benchmarks.collection.pull_artifact_from_cluster",
-        missing_remote_artifact,
+        "spice.benchmarks.collection.open_storage_transfer_transaction",
+        lambda _target, *, local_storage_root: FakeTransferTransaction(),
     )
     index_path = tmp_path / "benchmarks" / "results.sqlite"
 
@@ -417,16 +415,21 @@ def test_benchmark_collect_refuses_partial_write_when_summary_missing(
         runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
     )
     _write_evaluate_run(run_dir, config)
-    pulled = PulledArtifactRoot(
+    pulled = TransferredArtifactRoot(
         source_record=_artifact_record(tmp_path / "remote" / "artifact-1"),
         local_record=_artifact_record(tmp_path / "local" / "artifact-1"),
         destination_root=tmp_path / "local" / "artifact-1",
         dataset_present=True,
     )
-    monkeypatch.setattr("spice.benchmarks.collection.open_execution_session", lambda _target: "s")
+
+    class FakeTransferTransaction:
+        def pull_artifact(self, artifact_id: str):
+            del artifact_id
+            return pulled
+
     monkeypatch.setattr(
-        "spice.benchmarks.collection.pull_artifact_from_cluster",
-        lambda **_kwargs: pulled,
+        "spice.benchmarks.collection.open_storage_transfer_transaction",
+        lambda _target, *, local_storage_root: FakeTransferTransaction(),
     )
     monkeypatch.setattr(
         "spice.benchmarks.collection.resolve_benchmark_evaluation",
@@ -494,27 +497,36 @@ def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
                 log_path="/tmp/spice-evaluate.out",
             ),
         )
-    pulled = PulledArtifactRoot(
+    pulled = TransferredArtifactRoot(
         source_record=_artifact_record(tmp_path / "remote" / "artifact-1"),
         local_record=_artifact_record(tmp_path / "local" / "artifact-1"),
         destination_root=tmp_path / "local" / "artifact-1",
         dataset_present=True,
     )
-    pull_calls: list[dict[str, object]] = []
+    pull_calls: list[str] = []
     submissions: list[str] = []
 
-    def fake_resolve(selection, *, pulled: PulledArtifactRoot):
-        assert pulled is not None
+    def fake_resolve(selection, *, artifact_record: CatalogArtifactRecord):
+        assert artifact_record is pulled.local_record
         submissions.append(selection.execution_ref)
         return SimpleNamespace(
             evaluation=_loaded_summary(config),
             training=None,
         )
 
-    monkeypatch.setattr("spice.benchmarks.collection.open_execution_session", lambda _target: "s")
+    class FakeTransferTransaction:
+        def __init__(self) -> None:
+            self._pulled = False
+
+        def pull_artifact(self, artifact_id: str):
+            if not self._pulled:
+                pull_calls.append(artifact_id)
+                self._pulled = True
+            return pulled
+
     monkeypatch.setattr(
-        "spice.benchmarks.collection.pull_artifact_from_cluster",
-        lambda **kwargs: pull_calls.append(kwargs) or pulled,
+        "spice.benchmarks.collection.open_storage_transfer_transaction",
+        lambda _target, *, local_storage_root: FakeTransferTransaction(),
     )
     monkeypatch.setattr("spice.benchmarks.collection.resolve_benchmark_evaluation", fake_resolve)
 

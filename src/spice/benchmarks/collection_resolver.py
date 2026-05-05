@@ -7,13 +7,13 @@ from pathlib import Path
 
 from ..config.models import EvaluateConfig, WorkflowTask
 from ..core.errors import SpiceOperatorError
-from ..execution.transfer import PulledArtifactRoot
 from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary
 from ..storage.artifact import (
     list_evaluation_summaries,
     load_artifact_manifest,
     load_training_summary,
 )
+from ..storage.catalog import CatalogArtifactRecord
 from .models import BenchmarkPlanEntry
 from .runs import BenchmarkSubmissionRecord
 
@@ -84,17 +84,15 @@ def benchmark_collection_selection(
 def resolve_benchmark_evaluation(
     selection: BenchmarkCollectionSelection,
     *,
-    pulled: PulledArtifactRoot,
+    artifact_record: CatalogArtifactRecord,
 ) -> ResolvedBenchmarkEvaluation | None:
-    if pulled.local_record.artifact_id != selection.artifact_id:
+    if artifact_record.artifact_id != selection.artifact_id:
         raise SpiceOperatorError(
-            "Pulled artifact does not match benchmark collection selection for "
-            f"{selection.run_id}: {pulled.local_record.artifact_id} != "
-            f"{selection.artifact_id}"
+            "Artifact record does not match benchmark collection selection for "
+            f"{selection.run_id}: {artifact_record.artifact_id} != {selection.artifact_id}"
         )
-    record = pulled.local_record
-    training_summary = load_training_summary(record.state_db_path)
-    manifest = load_artifact_manifest(record.state_db_path)
+    training_summary = load_training_summary(artifact_record.state_db_path)
+    manifest = load_artifact_manifest(artifact_record.state_db_path)
     if manifest.artifact_id != selection.artifact_id:
         raise SpiceOperatorError(
             "Artifact manifest does not match benchmark collection selection for "
@@ -103,7 +101,7 @@ def resolve_benchmark_evaluation(
     expected_delay = selection.configured_delay_seconds or manifest.max_delay_seconds
     summaries = _matching_evaluation_summaries(
         selection,
-        summaries=tuple(list_evaluation_summaries(record.state_db_path)),
+        summaries=tuple(list_evaluation_summaries(artifact_record.state_db_path)),
         expected_delay=expected_delay,
     )
     if not summaries:

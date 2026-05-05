@@ -24,4 +24,4 @@ Collection snapshots copy the typed dependency, selection, and root ledgers from
 
 Collection selection is explicit. `BenchmarkCollectionSelection` is built from one evaluate plan entry and its submission record, validates run id/workflow/config/root-ledger consistency, and carries the artifact id, evaluation dataset id, evaluator id, configured delay, storage root, and submitted execution ref.
 
-The resolver consumes a pulled artifact root. It validates that the pulled local catalog record and loaded artifact manifest match the selected artifact id, then matches evaluation summaries by evaluator id, resolved delay, and exact execution provenance. Missing matching summaries return `None` so collection can fail all-or-nothing; stale or duplicate provenance raises an operator error.
+The resolver consumes a local artifact catalog record. It validates that the record and loaded artifact manifest match the selected artifact id, then matches evaluation summaries by evaluator id, resolved delay, and exact execution provenance. Missing matching summaries return `None` so collection can fail all-or-nothing; stale or duplicate provenance raises an operator error.
