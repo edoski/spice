@@ -6,7 +6,7 @@ import math
 import os
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Generic, Literal, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Generic, Literal, Protocol, TypeVar, cast
 
 import numpy as np
 import torch
@@ -26,6 +26,9 @@ from .representations import (
     PreparedRepresentation,
     RepresentationRuntimeContext,
 )
+
+if TYPE_CHECKING:
+    from .runtime_planning import ModelingRuntimePlan
 
 IntVector = NDArray[np.int64]
 BatchT = TypeVar("BatchT", covariant=True)
@@ -285,17 +288,13 @@ class _PreparedPredictionBatches:
 def _build_plan(
     prepared: PreparedBatchRepresentation[BatchT],
     *,
-    runtime_context: BatchRuntimeContext,
-    resolved_device: torch.device,
-    seed: int,
+    runtime_plan: ModelingRuntimePlan,
     shuffle: bool,
 ) -> BatchPlan[BatchT]:
     source, storage_mode = _build_batch_source(
         prepared,
         required_bytes=prepared.estimated_storage_bytes,
-        runtime_context=runtime_context,
-        resolved_device=resolved_device,
-        seed=seed,
+        runtime_plan=runtime_plan,
         shuffle=shuffle,
     )
     return BatchPlan(
@@ -313,13 +312,13 @@ def _prepare_model_representation(
     representation_contract: CompiledRepresentationContract,
     execution_policy: CompiledExecutionPolicyContract,
     action_space: PreparedActionSpace,
-    runtime_context: BatchRuntimeContext,
+    runtime_plan: ModelingRuntimePlan,
 ) -> PreparedRepresentation:
     return representation_contract.prepare(
         store,
         execution_policy=execution_policy,
         action_space=action_space,
-        runtime_context=runtime_context.representation_context(),
+        runtime_context=runtime_plan.batch_runtime_context.representation_context(),
     )
 
 
@@ -330,9 +329,7 @@ def build_prediction_batch_plan(
     representation_contract: CompiledRepresentationContract,
     prediction_contract: CompiledPredictionContract,
     execution_policy: CompiledExecutionPolicyContract,
-    runtime_context: BatchRuntimeContext,
-    resolved_device: torch.device,
-    seed: int,
+    runtime_plan: ModelingRuntimePlan,
     shuffle: bool = False,
 ) -> BatchPlan[PredictionBatch]:
     prepared = _prepare_model_representation(
@@ -340,16 +337,14 @@ def build_prediction_batch_plan(
         representation_contract=representation_contract,
         execution_policy=execution_policy,
         action_space=temporal_facts.action_space,
-        runtime_context=runtime_context,
+        runtime_plan=runtime_plan,
     )
     targets = prediction_contract.prepare_targets(
         temporal_facts=temporal_facts,
     )
     return _build_plan(
         _PreparedPredictionBatches(prepared=prepared, targets=targets),
-        runtime_context=runtime_context,
-        resolved_device=resolved_device,
-        seed=seed,
+        runtime_plan=runtime_plan,
         shuffle=shuffle,
     )
 
@@ -360,22 +355,18 @@ def build_model_input_batch_plan(
     action_space: PreparedActionSpace,
     representation_contract: CompiledRepresentationContract,
     execution_policy: CompiledExecutionPolicyContract,
-    runtime_context: BatchRuntimeContext,
-    resolved_device: torch.device,
-    seed: int,
+    runtime_plan: ModelingRuntimePlan,
 ) -> BatchPlan[ModelInputBatch]:
     prepared = _prepare_model_representation(
         store,
         representation_contract=representation_contract,
         execution_policy=execution_policy,
         action_space=action_space,
-        runtime_context=runtime_context,
+        runtime_plan=runtime_plan,
     )
     return _build_plan(
         prepared,
-        runtime_context=runtime_context,
-        resolved_device=resolved_device,
-        seed=seed,
+        runtime_plan=runtime_plan,
         shuffle=False,
     )
 
@@ -384,9 +375,7 @@ def _build_batch_source(
     prepared: PreparedBatchRepresentation[BatchT],
     *,
     required_bytes: int,
-    runtime_context: BatchRuntimeContext,
-    resolved_device: torch.device,
-    seed: int,
+    runtime_plan: ModelingRuntimePlan,
     shuffle: bool,
 ) -> tuple[
     _HostDataLoaderBatchSource[BatchT] | _DeviceResidentBatchSource[BatchT],
@@ -394,19 +383,19 @@ def _build_batch_source(
 ]:
     batch_sampler = _PositionBatchSampler(
         batch_signatures=prepared.batch_signatures,
-        batch_size=runtime_context.batch_size,
-        seed=seed,
+        batch_size=runtime_plan.batch_runtime_context.batch_size,
+        seed=runtime_plan.seed,
         shuffle=shuffle,
     )
     if _should_use_device_resident(
         required_bytes=required_bytes,
-        runtime_context=runtime_context,
-        resolved_device=resolved_device,
+        runtime_context=runtime_plan.batch_runtime_context,
+        resolved_device=runtime_plan.resolved_device,
     ):
         try:
             return (
                 _DeviceResidentBatchSource(
-                    prepared=prepared.to_device_storage(resolved_device),
+                    prepared=prepared.to_device_storage(runtime_plan.resolved_device),
                     batch_sampler=batch_sampler,
                 ),
                 "cuda_materialized",
@@ -417,8 +406,8 @@ def _build_batch_source(
         _build_host_dataloader_source(
             prepared,
             batch_sampler=batch_sampler,
-            runtime_context=runtime_context,
-            resolved_device=resolved_device,
+            runtime_context=runtime_plan.batch_runtime_context,
+            resolved_device=runtime_plan.resolved_device,
         ),
         prepared.host_storage_mode,
     )

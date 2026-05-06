@@ -49,8 +49,7 @@ def _run_planned_forward(
             _measure_forward_batch_budget(
                 model,
                 loader=warmup_plan.source,
-                resolved_device=warmup_runtime_plan.resolved_device,
-                precision=warmup_runtime_plan.precision,
+                runtime_plan=warmup_runtime_plan,
             )
         ),
     )
@@ -58,8 +57,7 @@ def _run_planned_forward(
     run_model_forward_pass(
         model,
         loader=batch_plan.source,
-        resolved_device=planned_runtime_plan.resolved_device,
-        precision=planned_runtime_plan.precision,
+        runtime_plan=planned_runtime_plan,
         on_outputs=on_outputs,
     )
 
@@ -68,19 +66,18 @@ def _measure_forward_batch_budget(
     model: TemporalModel,
     *,
     loader: BatchSource[ForwardBatch],
-    resolved_device: torch.device,
-    precision: str,
+    runtime_plan: ModelingRuntimePlan,
 ) -> int:
     def _run_forward_probe() -> None:
         model.eval()
         with torch.no_grad():
             batch = next(iter(loader))
-            device_batch = batch.to_device(resolved_device)
-            with precision_context(precision=precision):
+            device_batch = batch.to_device(runtime_plan.resolved_device)
+            with precision_context(precision=runtime_plan.precision):
                 _ = model(**device_batch.model_kwargs())
 
     return measure_device_resident_budget(
-        resolved_device=resolved_device,
+        resolved_device=runtime_plan.resolved_device,
         run_probe=_run_forward_probe,
     )
 
@@ -103,9 +100,7 @@ def run_planned_model_input_forward(
             action_space=action_space,
             representation_contract=representation_contract,
             execution_policy=execution_policy,
-            runtime_context=plan.batch_runtime_context,
-            resolved_device=plan.resolved_device,
-            seed=plan.seed,
+            runtime_plan=plan,
         )
 
     _run_planned_forward(
@@ -136,9 +131,7 @@ def run_planned_prediction_forward(
             representation_contract=representation_contract,
             prediction_contract=prediction_contract,
             execution_policy=execution_policy,
-            runtime_context=plan.batch_runtime_context,
-            resolved_device=plan.resolved_device,
-            seed=plan.seed,
+            runtime_plan=plan,
             shuffle=False,
         )
 

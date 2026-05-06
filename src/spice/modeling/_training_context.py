@@ -20,7 +20,7 @@ from .dataset_builders import (
 from .objective_runtime import CompiledObjectiveRuntime, compile_objective_runtime
 from .representations import (
     CompiledRepresentationContract,
-    sequence_input_contract,
+    compile_representation_contract,
 )
 
 
@@ -68,5 +68,5 @@ def compile_training_context(
         input_normalization_contract=compile_input_normalization_contract(
             config.training.input_normalization
         ),
-        representation_contract=sequence_input_contract(),
+        representation_contract=compile_representation_contract(),
     )

@@ -72,9 +72,7 @@ def plan_training_runtime(
             representation_contract=representation_contract,
             prediction_contract=prediction_contract,
             execution_policy=execution_policy,
-            runtime_context=warmup_runtime_plan.batch_runtime_context,
-            resolved_device=warmup_runtime_plan.resolved_device,
-            seed=warmup_runtime_plan.seed,
+            runtime_plan=warmup_runtime_plan,
             shuffle=False,
         ),
         measure_warmup_budget=lambda warmup_plan, warmup_runtime_plan: (
@@ -83,22 +81,18 @@ def plan_training_runtime(
                 warmup_plan=warmup_plan,
                 prediction_contract=prediction_contract,
                 prediction_training_state=prediction_training_state,
-                resolved_device=warmup_runtime_plan.resolved_device,
                 training_config=training_config,
-                precision=warmup_runtime_plan.precision,
+                runtime_plan=warmup_runtime_plan,
             )
         ),
     )
-    planned_runtime_context = planned_runtime_plan.batch_runtime_context
     train_batch_plan = build_prediction_batch_plan(
         store,
         temporal_facts=train_samples.temporal_facts,
         representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         execution_policy=execution_policy,
-        runtime_context=planned_runtime_context,
-        resolved_device=planned_runtime_plan.resolved_device,
-        seed=planned_runtime_plan.seed,
+        runtime_plan=planned_runtime_plan,
         shuffle=True,
     )
     validation_batch_plan = build_prediction_batch_plan(
@@ -107,9 +101,7 @@ def plan_training_runtime(
         representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         execution_policy=execution_policy,
-        runtime_context=planned_runtime_context,
-        resolved_device=planned_runtime_plan.resolved_device,
-        seed=planned_runtime_plan.seed,
+        runtime_plan=planned_runtime_plan,
         shuffle=False,
     )
     return TrainingRuntimePlan(
@@ -165,9 +157,8 @@ def _measure_training_batch_budget(
     warmup_plan: BatchPlan[PredictionBatch],
     prediction_contract: CompiledPredictionContract,
     prediction_training_state: object | None,
-    resolved_device: torch.device,
     training_config: TrainingConfig,
-    precision: str,
+    runtime_plan: ModelingRuntimePlan,
 ) -> int:
     warmup_state = _clone_cpu_state(_unwrap_compiled_model(model))
     warmup_optimizer = torch.optim.AdamW(
@@ -181,8 +172,7 @@ def _measure_training_batch_budget(
         execute_training_batch(
             model,
             batch,
-            resolved_device=resolved_device,
-            precision=precision,
+            runtime_plan=runtime_plan,
             prediction_contract=prediction_contract,
             prediction_training_state=prediction_training_state,
             optimizer=warmup_optimizer,
@@ -192,7 +182,7 @@ def _measure_training_batch_budget(
 
     try:
         return measure_device_resident_budget(
-            resolved_device=resolved_device,
+            resolved_device=runtime_plan.resolved_device,
             run_probe=_run_training_probe,
         )
     finally:

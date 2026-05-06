@@ -118,13 +118,12 @@ class CompiledRepresentationContract:
         )
 
 
-def sequence_input_contract() -> CompiledRepresentationContract:
-    return _SEQUENCE_INPUT_CONTRACT
-
-
-def validate_representation_id(representation_id: str) -> None:
+def compile_representation_contract(
+    representation_id: str = SEQUENCE_INPUT_REPRESENTATION_ID,
+) -> CompiledRepresentationContract:
     if representation_id != SEQUENCE_INPUT_REPRESENTATION_ID:
         raise ValueError("representation_id must be sequence_inputs")
+    return _SEQUENCE_INPUT_CONTRACT
 
 
 def build_sequence_input_batch(

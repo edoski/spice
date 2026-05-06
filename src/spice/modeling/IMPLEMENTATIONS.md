@@ -51,13 +51,13 @@ The sequence representation builds tensors:
 
 Windows are front-packed. Models use `take_last_valid` to read the final real context position.
 
-Batch Plan binds representation batches with prediction targets, orders samples by batch signature, and chooses host or device-resident storage after runtime device-storage budget is known. `DeviceStorageBudget` names the phase of that budget: disabled host-only storage, coarse startup estimate, or measured residual capacity after a runtime probe. CUDA budget discovery belongs to runtime; Batch Plan consumes `BatchRuntimeContext`, owns host-loader and device-storage policy, and passes only host-memory and batch-size facts into the Representation seam. Selected-sample facts are prepared before Batch Plan: training passes role-bound temporal facts, and inference/scoring passes a prepared Action Space.
+Batch Plan binds representation batches with prediction targets, orders samples by batch signature, and chooses host or device-resident storage after runtime device-storage budget is known. `DeviceStorageBudget` names the phase of that budget: disabled host-only storage, coarse startup estimate, or measured residual capacity after a runtime probe. CUDA budget discovery belongs to runtime; Batch Plan consumes `ModelingRuntimePlan`, owns host-loader and device-storage policy, and passes only host-memory and batch-size facts into the Representation seam. Selected-sample facts are prepared before Batch Plan: training passes role-bound temporal facts, and inference/scoring passes a prepared Action Space.
 
 ## Training Loop
 
 Training is CUDA-only. `runtime_planning.py` builds the executable runtime plan: seed setup, CUDA runtime context, backend determinism, precision, and model placement/compilation. `_runtime.py` owns coarse CUDA budget discovery and shared budget arithmetic.
 
-`training_runtime.prepare_training_runtime()` prepares the model, optimizer, and batch plan from that runtime plan. `plan_training_runtime()` consumes the whole `ModelingRuntimePlan`, uses the private runtime probe helper to build the host warmup plan, measure the budget, and return the final measured runtime plan, then performs the training-specific warmup body: unshuffled host Batch Plan, temporary AdamW, one gradient-bearing probe step, model-state restore, and cache cleanup. Restore and cleanup run even if the probe fails. The returned prediction training state is semantic-immutable and reused for train, validation, returned training results, and split metrics. The final measured runtime plan is the only runtime plan carried by the training batch plan and evaluation objectives.
+`training_runtime.prepare_training_runtime()` prepares the model, optimizer, and batch plan from that runtime plan. `plan_training_runtime()` consumes the whole `ModelingRuntimePlan`, uses the private runtime probe helper to build the host warmup plan, measure the budget, and return the final measured runtime plan, then performs the training-specific warmup body: unshuffled host Batch Plan, temporary AdamW, one gradient-bearing probe step, model-state restore, and cache cleanup. Restore and cleanup run even if the probe fails. The returned prediction training state is semantic-immutable and reused for train, validation, returned training results, and split metrics. The final measured runtime plan is the runtime plan carried by the training batch plan, evaluation objectives, and persisted split-metric scoring.
 
 `_epoch_execution` owns the mechanics inside a train or validation epoch. `_fit_policy` owns finite-metric behavior, objective history, strict `min_delta`, best-state tracking, progress payloads, and patience stopping. `training_runner.run_training_fit()` calls callbacks, keeps the best state in memory, restores it before returning, and assembles the public result.
 
@@ -96,17 +96,17 @@ Early stopping is a model-selection rule. If the objective metric stops improvin
 
 ## Inference
 
-Inference allocates one decoded result buffer sized to the selected samples. Each batch writes decoded offsets back by sample position.
+Inference allocates one decoded result buffer sized to the selected samples. Each batch writes a generic decoded prediction result back by sample position.
 
 ```text
 prepared Action Space
   -> batches
   -> model outputs
   -> prediction contract decode
-  -> DecodedOffsets buffer
+  -> decoded prediction result buffer
 ```
 
-`DecodedOffsets` is the current candidate-offset decoded result ABI consumed by evaluators.
+`DecodedOffsets` is the current candidate-offset decoded result ABI, but generic modeling code depends only on the decoded-result id. Offset narrowing belongs inside the evaluator runner that requires offsets.
 
 Forward-only inference and split-metric passes use `forward_runtime`: callers pass one `ModelingRuntimePlan`, then runtime asks `_runtime_probe.py` to build a host warmup Batch Plan with disabled device-storage budget, measure one no-grad eval forward batch, and return the final measured runtime plan. `forward_runtime` then builds the final Batch Plan with the measured budget and executes model forward. Probe outputs are discarded. Normal forward measurement does not clear CUDA cache; cache clearing is limited to Batch Plan OOM fallback and destructive training-probe cleanup.
 
@@ -116,11 +116,11 @@ Forward-only inference and split-metric passes use `forward_runtime`: callers pa
 
 ```text
 validate evaluator accepts prediction contract
-  -> predict_with_model(runtime plan)
-  -> evaluator.run(store, execution_policy, decoded_offsets)
+  -> score model into decoded result
+  -> evaluator.run(store, execution_policy, decoded_result)
 ```
 
-This keeps evaluation scoring independent from training-loop details while making device, precision, runtime context, determinism, seed, and compile policy explicit through `EvaluationScoringRuntimePlan`.
+This keeps evaluation scoring independent from training-loop details while making device, precision, runtime context, determinism, seed, and compile policy explicit through `EvaluationScoringRuntimePlan`. Prediction metric scoring lives in the same module and consumes the final `ModelingRuntimePlan` instead of rebuilding runtime facts from training config.
 
 ## Artifact Persistence
 

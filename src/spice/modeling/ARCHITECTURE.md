@@ -58,7 +58,7 @@ EvaluationScoringRuntimePlan
 score_evaluation(scoring_plan, evaluator_contract)
   |
   +--> evaluator checks accepted decoded-result id
-  +--> predict_with_model()
+  +--> score model into a decoded result
   +--> evaluator.run()
   |
   v
@@ -123,7 +123,6 @@ modeling/
   _epoch_execution.py     private train/validation batch mechanics
   _fit_policy.py          private best-state and early-stop policy
   objective_runtime.py    objective contract and metric production during training
-  inference.py            model prediction over prepared stores
   scoring.py              model inference -> evaluator bridge
   artifacts.py            artifact loading/validation helpers
   artifact_inference.py   artifact validation -> inference scoring context

@@ -26,7 +26,7 @@ This is the simplest objective: it optimizes the same metric produced by the pre
 
 ```text
 validation samples
-  -> predict offsets
+  -> score model into decoded result
   -> run evaluator
   -> select evaluator metric
 ```

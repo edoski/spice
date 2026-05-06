@@ -6,6 +6,22 @@ import torch
 
 from spice.metrics import MetricSet
 from spice.modeling._epoch_execution import execute_training_batch, run_epoch
+from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
+from spice.modeling.runtime_planning import ModelingRuntimePlan
+
+
+def _runtime_plan() -> ModelingRuntimePlan:
+    return ModelingRuntimePlan(
+        resolved_device=torch.device("cpu"),
+        precision="32-true",
+        batch_runtime_context=BatchRuntimeContext(
+            batch_size=1,
+            available_host_memory_bytes=1024,
+            device_storage_budget=DeviceStorageBudget.disabled(),
+        ),
+        deterministic=None,
+        seed=0,
+    )
 
 
 class _Batch:
@@ -63,8 +79,7 @@ def test_execute_training_batch_preserves_backward_clip_step_order(monkeypatch) 
     state = execute_training_batch(
         model,
         batch,
-        resolved_device=torch.device("cpu"),
-        precision="32-true",
+        runtime_plan=_runtime_plan(),
         prediction_contract=prediction_contract,
         prediction_training_state=object(),
         optimizer=optimizer,
@@ -106,8 +121,7 @@ def test_run_epoch_validation_uses_eval_mode_and_disabled_grad() -> None:
     metrics = run_epoch(
         model,
         loader=[_Batch(events)],
-        resolved_device=torch.device("cpu"),
-        precision="32-true",
+        runtime_plan=_runtime_plan(),
         prediction_contract=prediction_contract,
         prediction_training_state=None,
         optimizer=None,

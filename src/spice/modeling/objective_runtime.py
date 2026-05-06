@@ -11,7 +11,7 @@ from ..core.errors import ConfigResolutionError
 from ..evaluation import CompiledEvaluatorContract
 from ..metrics import MetricDescriptor, MetricSet
 from ..objectives import CompiledObjectiveContract, ObjectiveConfig, compile_objective_contract
-from .scoring import EvaluationScoringRuntimePlan, score_evaluation
+from .scoring import EvaluationScoringRuntimePlan, score_evaluation_metrics
 
 EvaluateObjectiveMetricsFn = Callable[
     [MetricSet, EvaluationScoringRuntimePlan | None],
@@ -76,10 +76,10 @@ def compile_objective_runtime(
             raise ValueError(
                 "evaluation objective runtime requires evaluation scoring runtime plan"
             )
-        return score_evaluation(
+        return score_evaluation_metrics(
             scoring_plan=scoring_plan,
             evaluator_contract=evaluator_contract,
-        ).metrics
+        )
 
     return CompiledObjectiveRuntime(contract=contract, evaluate_metrics_fn=_evaluate)
 

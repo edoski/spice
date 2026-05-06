@@ -5,9 +5,12 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import torch
 
 from spice.metrics import MetricSet
+from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
 from spice.modeling.persisted_training import run_persisted_training
+from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.modeling.training_run import TrainingRunResult
 from spice.modeling.training_runner import TrainingResult
 from spice.temporal.execution_policy import PreparedActionSpace
@@ -28,6 +31,17 @@ def _sample_role(indices: list[int]):
 
 
 def _training_run(*, model: object) -> TrainingRunResult:
+    runtime_plan = ModelingRuntimePlan(
+        resolved_device=torch.device("cpu"),
+        precision="32-true",
+        batch_runtime_context=BatchRuntimeContext(
+            batch_size=1,
+            available_host_memory_bytes=1024,
+            device_storage_budget=DeviceStorageBudget.disabled(),
+        ),
+        deterministic=None,
+        seed=0,
+    )
     prepared = SimpleNamespace(
         execution_policy=SimpleNamespace(),
         store=SimpleNamespace(),
@@ -47,6 +61,7 @@ def _training_run(*, model: object) -> TrainingRunResult:
             validation_history=[MetricSet({"score": 1.0})],
             objective_history=[MetricSet({"score": 1.0})],
             prediction_training_state=object(),
+            runtime_plan=runtime_plan,
         ),
         prediction_training_state=object(),
     )
@@ -97,13 +112,14 @@ def _patch_persisted_training(monkeypatch: pytest.MonkeyPatch, *, training_model
         ),
     )
 
-    def fake_evaluate_training_metrics(metric_spec):
+    def fake_score_prediction_metrics(metric_spec):
         evaluated_models.append(metric_spec.model)
+        assert metric_spec.runtime_plan is training_run.training_result.runtime_plan
         return MetricSet({"score": float(len(evaluated_models))})
 
     monkeypatch.setattr(
-        "spice.modeling.persisted_training.evaluate_training_metrics",
-        fake_evaluate_training_metrics,
+        "spice.modeling.persisted_training.score_prediction_metrics",
+        fake_score_prediction_metrics,
     )
     return evaluated_models
 

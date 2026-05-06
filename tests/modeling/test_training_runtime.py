@@ -58,13 +58,13 @@ def test_plan_training_runtime_uses_unshuffled_host_warmup_and_reuses_state(
     execution_policy = SimpleNamespace()
 
     def fake_build_prediction_batch_plan(
-        *_args, temporal_facts, runtime_context, seed, shuffle, **_kwargs
+        *_args, temporal_facts, runtime_plan, shuffle, **_kwargs
     ):
         calls.append(
             {
-                "budget": runtime_context.device_storage_budget,
-                "host_loader_policy": runtime_context.host_loader_policy,
-                "seed": seed,
+                "budget": runtime_plan.batch_runtime_context.device_storage_budget,
+                "host_loader_policy": runtime_plan.batch_runtime_context.host_loader_policy,
+                "seed": runtime_plan.seed,
                 "shuffle": shuffle,
                 "temporal_facts": temporal_facts,
             }

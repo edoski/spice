@@ -21,12 +21,11 @@ from .results import (
     build_training_runtime_summary,
     iter_epoch_records,
 )
+from .scoring import PredictionMetricScoringRuntimePlan, score_prediction_metrics
 from .training_run import TrainingRunResult
 from .training_runner import (
     EarlyStopCallback,
     EpochEndCallback,
-    TrainingMetricEvaluationSpec,
-    evaluate_training_metrics,
 )
 
 
@@ -45,26 +44,28 @@ def _evaluate_split_metrics(
     model,
 ) -> tuple[MetricSet, MetricSet]:
     prepared = training_run.prepared
-    best_validation_metrics = evaluate_training_metrics(
-        TrainingMetricEvaluationSpec(
+    best_validation_metrics = score_prediction_metrics(
+        PredictionMetricScoringRuntimePlan(
             model=model,
             prediction_contract=spec.prediction_contract,
             representation_contract=spec.representation_contract,
-            prepared=prepared,
-            samples=prepared.samples.validation,
+            execution_policy=prepared.execution_policy,
+            store=prepared.store,
+            temporal_facts=prepared.samples.validation.temporal_facts,
             prediction_training_state=training_run.prediction_training_state,
-            training_config=spec.training,
+            runtime_plan=training_run.training_result.runtime_plan,
         )
     )
-    test_metrics = evaluate_training_metrics(
-        TrainingMetricEvaluationSpec(
+    test_metrics = score_prediction_metrics(
+        PredictionMetricScoringRuntimePlan(
             model=model,
             prediction_contract=spec.prediction_contract,
             representation_contract=spec.representation_contract,
-            prepared=prepared,
-            samples=prepared.samples.test,
+            execution_policy=prepared.execution_policy,
+            store=prepared.store,
+            temporal_facts=prepared.samples.test.temporal_facts,
             prediction_training_state=training_run.prediction_training_state,
-            training_config=spec.training,
+            runtime_plan=training_run.training_result.runtime_plan,
         )
     )
     return best_validation_metrics, test_metrics

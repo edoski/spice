@@ -12,23 +12,23 @@ from ..prediction.contracts import PredictionBatch
 from ._runtime import precision_context
 from .batch_plan import BatchSource
 from .models import TemporalModel
+from .runtime_planning import ModelingRuntimePlan
 
 
 def execute_training_batch(
     model: TemporalModel,
     batch: PredictionBatch,
     *,
-    resolved_device: torch.device,
-    precision: str,
+    runtime_plan: ModelingRuntimePlan,
     prediction_contract: CompiledPredictionContract,
     prediction_training_state: object | None,
     optimizer: torch.optim.Optimizer,
     gradient_clip_norm: float | None,
     zero_after_step: bool = False,
 ) -> object:
-    device_batch = batch.to_device(resolved_device)
+    device_batch = batch.to_device(runtime_plan.resolved_device)
     optimizer.zero_grad(set_to_none=True)
-    with precision_context(precision=precision):
+    with precision_context(precision=runtime_plan.precision):
         outputs = model(**device_batch.model_kwargs())
         loss, batch_state = prediction_contract.compute_batch_loss_and_state(
             outputs,
@@ -48,13 +48,12 @@ def execute_validation_batch(
     model: TemporalModel,
     batch: PredictionBatch,
     *,
-    resolved_device: torch.device,
-    precision: str,
+    runtime_plan: ModelingRuntimePlan,
     prediction_contract: CompiledPredictionContract,
     prediction_training_state: object | None,
 ) -> object:
-    device_batch = batch.to_device(resolved_device)
-    with precision_context(precision=precision):
+    device_batch = batch.to_device(runtime_plan.resolved_device)
+    with precision_context(precision=runtime_plan.precision):
         outputs = model(**device_batch.model_kwargs())
         _, batch_state = prediction_contract.compute_batch_loss_and_state(
             outputs,
@@ -68,8 +67,7 @@ def run_epoch(
     model: TemporalModel,
     *,
     loader: BatchSource[PredictionBatch],
-    resolved_device: torch.device,
-    precision: str,
+    runtime_plan: ModelingRuntimePlan,
     prediction_contract: CompiledPredictionContract,
     prediction_training_state: object | None,
     optimizer: torch.optim.Optimizer | None,
@@ -89,8 +87,7 @@ def run_epoch(
                 batch_state = execute_training_batch(
                     model,
                     batch,
-                    resolved_device=resolved_device,
-                    precision=precision,
+                    runtime_plan=runtime_plan,
                     prediction_contract=prediction_contract,
                     prediction_training_state=prediction_training_state,
                     optimizer=optimizer,
@@ -100,8 +97,7 @@ def run_epoch(
                 batch_state = execute_validation_batch(
                     model,
                     batch,
-                    resolved_device=resolved_device,
-                    precision=precision,
+                    runtime_plan=runtime_plan,
                     prediction_contract=prediction_contract,
                     prediction_training_state=prediction_training_state,
                 )

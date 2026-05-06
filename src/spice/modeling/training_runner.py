@@ -4,26 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import cast
-
-import torch
 
 from ..config.models import TrainingConfig
 from ..metrics import MetricSet
 from ..prediction import CompiledPredictionContract
-from ..prediction.contracts import PredictionBatch
 from ._epoch_execution import run_epoch
 from ._fit_policy import CompletedEpoch, TrainingEpochProgress, TrainingFitPolicy
-from .dataset_builders import PreparedTrainingDataset, PreparedTrainingSampleSelection
-from .forward_runtime import run_planned_prediction_forward
+from .dataset_builders import PreparedTrainingDataset
 from .models import TemporalModel
 from .objective_runtime import CompiledObjectiveRuntime
 from .representations import CompiledRepresentationContract
-from .runtime_planning import (
-    build_cuda_modeling_runtime_plan,
-    modeling_backend_scope,
-    prepare_model_for_runtime,
-)
+from .runtime_planning import ModelingRuntimePlan, modeling_backend_scope
 from .scoring import EvaluationScoringRuntimePlan
 from .training_runtime import prepare_training_runtime
 
@@ -37,6 +28,7 @@ class TrainingResult:
     validation_history: list[MetricSet]
     objective_history: list[MetricSet]
     prediction_training_state: object | None
+    runtime_plan: ModelingRuntimePlan
 
 
 EpochEndCallback = Callable[[TrainingEpochProgress], None]
@@ -56,17 +48,6 @@ class TrainingFitSpec:
     objective_runtime: CompiledObjectiveRuntime
     representation_contract: CompiledRepresentationContract
     prepared: PreparedTrainingDataset
-    training_config: TrainingConfig
-
-
-@dataclass(slots=True)
-class TrainingMetricEvaluationSpec:
-    model: torch.nn.Module
-    prediction_contract: CompiledPredictionContract
-    representation_contract: CompiledRepresentationContract
-    prepared: PreparedTrainingDataset
-    samples: PreparedTrainingSampleSelection
-    prediction_training_state: object | None
     training_config: TrainingConfig
 
 
@@ -118,8 +99,7 @@ def run_training_fit(
             train_metrics = run_epoch(
                 fit_model,
                 loader=training_runtime_plan.train_batch_plan.source,
-                resolved_device=runtime_plan.resolved_device,
-                precision=runtime_plan.precision,
+                runtime_plan=runtime_plan,
                 prediction_contract=spec.prediction_contract,
                 prediction_training_state=prediction_training_state,
                 optimizer=optimizer,
@@ -141,8 +121,7 @@ def run_training_fit(
             validation_metrics = run_epoch(
                 fit_model,
                 loader=training_runtime_plan.validation_batch_plan.source,
-                resolved_device=runtime_plan.resolved_device,
-                precision=runtime_plan.precision,
+                runtime_plan=runtime_plan,
                 prediction_contract=spec.prediction_contract,
                 prediction_training_state=prediction_training_state,
                 optimizer=None,
@@ -208,37 +187,5 @@ def run_training_fit(
         validation_history=policy.validation_history,
         objective_history=policy.objective_history,
         prediction_training_state=prediction_training_state,
+        runtime_plan=runtime_plan,
     )
-
-
-def evaluate_training_metrics(spec: TrainingMetricEvaluationSpec) -> MetricSet:
-    if spec.samples.sample_indices.size == 0:
-        raise ValueError("sample_indices must be non-empty")
-    runtime_plan = build_cuda_modeling_runtime_plan(
-        batch_size=spec.training_config.batch_size,
-        deterministic=spec.training_config.deterministic,
-        seed=spec.training_config.seed,
-    )
-    fit_model = prepare_model_for_runtime(cast(TemporalModel, spec.model), runtime_plan)
-    accumulator = spec.prediction_contract.create_epoch_accumulator()
-
-    def _accumulate(batch: PredictionBatch, outputs) -> None:
-        _, batch_state = spec.prediction_contract.compute_batch_loss_and_state(
-            outputs,
-            batch.targets,
-            training_state=spec.prediction_training_state,
-        )
-        accumulator.update(batch_state)
-
-    with modeling_backend_scope(runtime_plan):
-        run_planned_prediction_forward(
-            fit_model,
-            store=spec.prepared.store,
-            temporal_facts=spec.samples.temporal_facts,
-            representation_contract=spec.representation_contract,
-            prediction_contract=spec.prediction_contract,
-            execution_policy=spec.prepared.execution_policy,
-            runtime_plan=runtime_plan,
-            on_outputs=_accumulate,
-        )
-    return accumulator.finalize()

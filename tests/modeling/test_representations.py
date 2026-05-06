@@ -12,7 +12,11 @@ from spice.modeling.batch_plan import (
     build_prediction_batch_plan,
 )
 from spice.modeling.families.lstm import LstmModelConfig
-from spice.modeling.representations import RepresentationRuntimeContext, sequence_input_contract
+from spice.modeling.representations import (
+    RepresentationRuntimeContext,
+    compile_representation_contract,
+)
+from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.prediction import compile_prediction_contract
 from spice.temporal import (
     CompiledExecutionPolicyContract,
@@ -104,10 +108,24 @@ def _action_space(
     return policy.prepare_action_space(store, sample_indices)
 
 
+def _runtime_plan() -> ModelingRuntimePlan:
+    return ModelingRuntimePlan(
+        resolved_device=torch.device("cuda"),
+        precision="32-true",
+        batch_runtime_context=BatchRuntimeContext(
+            batch_size=2,
+            available_host_memory_bytes=10**12,
+            device_storage_budget=DeviceStorageBudget.disabled(),
+        ),
+        deterministic=None,
+        seed=2026,
+    )
+
+
 def test_sequence_input_storage_modes_yield_identical_batches() -> None:
     store = _test_store()
     sample_indices = np.array([3, 0, 2, 1], dtype=np.int64)
-    contract = sequence_input_contract()
+    contract = compile_representation_contract()
     policy = _execution_policy()
     action_space = _action_space(policy, store, sample_indices)
     streaming = contract.prepare(
@@ -123,10 +141,9 @@ def test_sequence_input_storage_modes_yield_identical_batches() -> None:
         store,
         execution_policy=policy,
         action_space=action_space,
-        runtime_context=BatchRuntimeContext(
+        runtime_context=RepresentationRuntimeContext(
             batch_size=2,
             available_host_memory_bytes=10**12,
-            device_storage_budget=DeviceStorageBudget.disabled(),
         ),
     )
     sample_positions = (
@@ -147,7 +164,7 @@ def test_sequence_input_storage_modes_yield_identical_batches() -> None:
 def test_prediction_batch_source_binds_current_family_targets() -> None:
     store = _test_store()
     sample_indices = np.array([0, 1, 2, 3], dtype=np.int64)
-    representation_contract = sequence_input_contract()
+    representation_contract = compile_representation_contract()
     execution_policy = _execution_policy()
     batch_plan = build_prediction_batch_plan(
         store,
@@ -155,13 +172,7 @@ def test_prediction_batch_source_binds_current_family_targets() -> None:
         representation_contract=representation_contract,
         prediction_contract=_prediction_contract(),
         execution_policy=execution_policy,
-        runtime_context=BatchRuntimeContext(
-            batch_size=2,
-            available_host_memory_bytes=10**12,
-            device_storage_budget=DeviceStorageBudget.disabled(),
-        ),
-        resolved_device=torch.device("cuda"),
-        seed=2026,
+        runtime_plan=_runtime_plan(),
     )
     first_batch = next(iter(batch_plan.source))
 
@@ -179,7 +190,7 @@ def test_sequence_input_batches_use_execution_policy_action_mask() -> None:
     store = _test_store()
     sample_indices = np.array([0, 1], dtype=np.int64)
     policy = _masking_policy()
-    prepared = sequence_input_contract().prepare(
+    prepared = compile_representation_contract().prepare(
         store,
         execution_policy=policy,
         action_space=_action_space(policy, store, sample_indices),

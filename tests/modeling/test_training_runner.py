@@ -17,8 +17,6 @@ from spice.modeling.scoring import EvaluationScoringRuntimePlan
 from spice.modeling.training_runner import (
     TrainingCallbacks,
     TrainingFitSpec,
-    TrainingMetricEvaluationSpec,
-    evaluate_training_metrics,
     run_training_fit,
 )
 from spice.modeling.training_runtime import PreparedTrainingRuntime, TrainingRuntimePlan
@@ -179,6 +177,7 @@ def test_training_fit_restores_best_state_and_calls_early_stop_callback(
     assert len(result.validation_history) == 2
     assert len(result.objective_history) == 2
     assert model.weight.item() == 1.0
+    assert result.runtime_plan.seed == 0
     assert early_stop_calls == [(2, 1)]
 
 
@@ -228,73 +227,3 @@ def test_training_fit_delegates_scoring_plan_to_objective_runtime(
         scoring_plan.action_space.sample_indices,
         np.array([1], dtype=np.int64),
     )
-
-
-def test_evaluate_training_metrics_uses_batch_plan_and_prediction_training_state(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    runtime_context = BatchRuntimeContext(
-        batch_size=1,
-        available_host_memory_bytes=1024,
-        device_storage_budget=DeviceStorageBudget.disabled(),
-    )
-    runtime_plan = ModelingRuntimePlan(
-        resolved_device=torch.device("cpu"),
-        precision="32-true",
-        batch_runtime_context=runtime_context,
-        deterministic=True,
-        seed=1,
-    )
-    monkeypatch.setattr(
-        "spice.modeling.training_runner.build_cuda_modeling_runtime_plan",
-        lambda **_: runtime_plan,
-    )
-    monkeypatch.setattr("spice.modeling.training_runner.modeling_backend_scope", nullcontext)
-
-    seen_training_states: list[object | None] = []
-
-    class Accumulator:
-        def __init__(self) -> None:
-            self.values: list[float] = []
-
-        def update(self, batch_state) -> None:
-            self.values.append(batch_state["score"])
-
-        def finalize(self) -> MetricSet:
-            return MetricSet({"score": sum(self.values)})
-
-    prediction_state = object()
-    prediction_contract = SimpleNamespace(
-        create_epoch_accumulator=Accumulator,
-        compute_batch_loss_and_state=lambda outputs, targets, training_state: (
-            seen_training_states.append(training_state) or torch.tensor(0.0),
-            {"score": 2.5},
-        ),
-    )
-
-    forward_calls = []
-
-    def fake_run_planned_prediction_forward(_model, *, on_outputs, **kwargs):
-        forward_calls.append(kwargs)
-        on_outputs(SimpleNamespace(targets="metrics"), outputs=SimpleNamespace())
-
-    monkeypatch.setattr(
-        "spice.modeling.training_runner.run_planned_prediction_forward",
-        fake_run_planned_prediction_forward,
-    )
-
-    metrics = evaluate_training_metrics(
-        TrainingMetricEvaluationSpec(
-            model=_TinyModel(),
-            prediction_contract=cast(Any, prediction_contract),
-            representation_contract=cast(Any, SimpleNamespace()),
-            prepared=cast(Any, _prepared()),
-            samples=cast(Any, _sample_role([0])),
-            prediction_training_state=prediction_state,
-            training_config=_training_config(),
-        )
-    )
-
-    assert forward_calls[0]["runtime_plan"] is runtime_plan
-    assert seen_training_states == [prediction_state]
-    assert metrics.require("score") == 2.5

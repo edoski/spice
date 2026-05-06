@@ -8,7 +8,7 @@ import subprocess
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
-from typing import Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 import numpy as np
 import torch
@@ -17,6 +17,9 @@ from numpy.typing import NDArray
 from ..core.errors import SpiceOperatorError
 from .batch_plan import BatchRuntimeContext, BatchSource, DeviceStorageBudget
 from .models import ModelOutputs, TemporalModel
+
+if TYPE_CHECKING:
+    from .runtime_planning import ModelingRuntimePlan
 
 IntVector = NDArray[np.int64]
 _CUDA_DEVICE_RESIDENT_BUDGET_FRACTION = 0.5
@@ -203,15 +206,14 @@ def run_model_forward_pass(
     model: TemporalModel,
     *,
     loader: BatchSource[ForwardBatchT],
-    resolved_device: torch.device,
-    precision: str,
+    runtime_plan: ModelingRuntimePlan,
     on_outputs: Callable[[ForwardBatchT, ModelOutputs], None],
 ) -> None:
     model.eval()
     with torch.no_grad():
         for batch in loader:
-            device_batch = cast(ForwardBatchT, batch.to_device(resolved_device))
-            with precision_context(precision=precision):
+            device_batch = cast(ForwardBatchT, batch.to_device(runtime_plan.resolved_device))
+            with precision_context(precision=runtime_plan.precision):
                 outputs = model(**device_batch.model_kwargs())
             on_outputs(device_batch, outputs)
 

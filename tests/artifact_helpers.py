@@ -16,7 +16,7 @@ from spice.modeling.dataset_builders import (
     fixed_sequence_temporal_runtime_metadata,
 )
 from spice.modeling.families.lstm import LstmModelConfig
-from spice.modeling.representations import sequence_input_contract
+from spice.modeling.representations import compile_representation_contract
 from spice.modeling.results import TrainingArtifactManifest
 from spice.objectives import coerce_objective_config
 from spice.prediction import compile_prediction_contract
@@ -147,7 +147,7 @@ def manifest(
         ).runtime,
     )
     model = _model_config()
-    representation_contract = sequence_input_contract()
+    representation_contract = compile_representation_contract()
     temporal_capability = TemporalCapability(
         compiler_id=problem_contract.compiler_id,
         max_delay_seconds=36,

@@ -13,6 +13,7 @@ from spice.modeling.batch_plan import (
     build_model_input_batch_plan,
     build_prediction_batch_plan,
 )
+from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.temporal import (
     PreparedActionSpace,
     PreparedTemporalFacts,
@@ -150,6 +151,25 @@ def _runtime_context(
     )
 
 
+def _runtime_plan(
+    *,
+    resolved_device: torch.device | None = None,
+    device_storage_budget: DeviceStorageBudget | None = None,
+    host_loader_policy: Literal["automatic", "single_process_unpinned"] = "automatic",
+    seed: int = 2026,
+) -> ModelingRuntimePlan:
+    return ModelingRuntimePlan(
+        resolved_device=resolved_device or torch.device("cpu"),
+        precision="32-true",
+        batch_runtime_context=_runtime_context(
+            device_storage_budget=device_storage_budget,
+            host_loader_policy=host_loader_policy,
+        ),
+        deterministic=None,
+        seed=seed,
+    )
+
+
 def test_host_loader_worker_override_rejects_invalid_values(monkeypatch) -> None:
     monkeypatch.setenv("SPICE_DATALOADER_WORKERS", "-1")
 
@@ -159,9 +179,7 @@ def test_host_loader_worker_override_rejects_invalid_values(monkeypatch) -> None
             action_space=_action_space(np.arange(4, dtype=np.int64)),
             representation_contract=_RepresentationContract(_Prepared()),
             execution_policy=_ExecutionPolicy(),
-            runtime_context=_runtime_context(),
-            resolved_device=torch.device("cpu"),
-            seed=2026,
+            runtime_plan=_runtime_plan(),
         )
 
 
@@ -193,9 +211,10 @@ def test_single_process_unpinned_loader_policy_disables_workers_and_pin_memory(
         action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(_Prepared()),
         execution_policy=_ExecutionPolicy(),
-        runtime_context=_runtime_context(host_loader_policy="single_process_unpinned"),
-        resolved_device=torch.device("cuda"),
-        seed=2026,
+        runtime_plan=_runtime_plan(
+            resolved_device=torch.device("cuda"),
+            host_loader_policy="single_process_unpinned",
+        ),
     )
 
     assert next(iter(plan.source)).sample_positions.tolist() == [1, 3]
@@ -217,9 +236,7 @@ def test_batch_plan_orders_samples_deterministically_by_signature() -> None:
         action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(_Prepared()),
         execution_policy=_ExecutionPolicy(),
-        runtime_context=_runtime_context(),
-        resolved_device=torch.device("cpu"),
-        seed=2026,
+        runtime_plan=_runtime_plan(),
     )
 
     assert plan.storage_mode == "host_materialized"
@@ -237,9 +254,7 @@ def test_shuffled_batch_plan_changes_by_epoch_but_keeps_batch_shape() -> None:
         representation_contract=_RepresentationContract(_Prepared()),
         prediction_contract=_PredictionContract(targets),
         execution_policy=_ExecutionPolicy(),
-        runtime_context=_runtime_context(),
-        resolved_device=torch.device("cpu"),
-        seed=2026,
+        runtime_plan=_runtime_plan(),
         shuffle=True,
     )
 
@@ -263,9 +278,7 @@ def test_prediction_batch_plan_binds_targets_to_input_sample_positions() -> None
         representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         execution_policy=_ExecutionPolicy(),
-        runtime_context=_runtime_context(),
-        resolved_device=torch.device("cpu"),
-        seed=2026,
+        runtime_plan=_runtime_plan(),
     )
 
     first_batch = next(iter(plan.source))
@@ -300,9 +313,10 @@ def test_cuda_batch_plan_consumes_device_storage_budget_phase(
         action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(prepared),
         execution_policy=_ExecutionPolicy(),
-        runtime_context=_runtime_context(device_storage_budget=device_storage_budget),
-        resolved_device=torch.device("cuda"),
-        seed=2026,
+        runtime_plan=_runtime_plan(
+            resolved_device=torch.device("cuda"),
+            device_storage_budget=device_storage_budget,
+        ),
     )
 
     assert plan.storage_mode == expected_storage_mode
@@ -316,11 +330,10 @@ def test_device_resident_plan_exposes_storage_mode() -> None:
         action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(_Prepared()),
         execution_policy=_ExecutionPolicy(),
-        runtime_context=_runtime_context(
-            device_storage_budget=DeviceStorageBudget.measured(2048)
+        runtime_plan=_runtime_plan(
+            resolved_device=torch.device("cuda"),
+            device_storage_budget=DeviceStorageBudget.measured(2048),
         ),
-        resolved_device=torch.device("cuda"),
-        seed=2026,
     )
 
     assert plan.storage_mode == "cuda_materialized"
@@ -335,11 +348,10 @@ def test_zero_device_budget_uses_host_loader_without_device_materialization() ->
         action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(prepared),
         execution_policy=_ExecutionPolicy(),
-        runtime_context=_runtime_context(
-            device_storage_budget=DeviceStorageBudget.measured(0)
+        runtime_plan=_runtime_plan(
+            resolved_device=torch.device("cuda"),
+            device_storage_budget=DeviceStorageBudget.measured(0),
         ),
-        resolved_device=torch.device("cuda"),
-        seed=2026,
     )
 
     assert plan.storage_mode == "host_materialized"
@@ -356,11 +368,10 @@ def test_device_resident_oom_falls_back_to_host_loader(monkeypatch) -> None:
         action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(_Prepared(fail_device_storage=True)),
         execution_policy=_ExecutionPolicy(),
-        runtime_context=_runtime_context(
-            device_storage_budget=DeviceStorageBudget.measured(2048)
+        runtime_plan=_runtime_plan(
+            resolved_device=torch.device("cuda"),
+            device_storage_budget=DeviceStorageBudget.measured(2048),
         ),
-        resolved_device=torch.device("cuda"),
-        seed=2026,
     )
 
     assert plan.storage_mode == "host_materialized"

@@ -99,18 +99,16 @@ def test_model_input_forward_builds_host_warmup_then_measured_final_plan(
         _store,
         *,
         action_space: object,
-        runtime_context: BatchRuntimeContext,
-        resolved_device: torch.device,
-        seed: int,
+        runtime_plan: ModelingRuntimePlan,
         **_kwargs,
     ):
         plan_calls.append(
             {
                 "action_space": action_space,
-                "budget": runtime_context.device_storage_budget,
-                "host_loader_policy": runtime_context.host_loader_policy,
-                "resolved_device": resolved_device,
-                "seed": seed,
+                "budget": runtime_plan.batch_runtime_context.device_storage_budget,
+                "host_loader_policy": runtime_plan.batch_runtime_context.host_loader_policy,
+                "resolved_device": runtime_plan.resolved_device,
+                "seed": runtime_plan.seed,
             }
         )
         return SimpleNamespace(source=[_ProbeBatch(f"batch-{len(plan_calls)}")])
@@ -124,12 +122,12 @@ def test_model_input_forward_builds_host_warmup_then_measured_final_plan(
         run_probe()
         return 456
 
-    def fake_run_model_forward_pass(_model, *, loader, resolved_device, precision, on_outputs):
+    def fake_run_model_forward_pass(_model, *, loader, runtime_plan, on_outputs):
         final_calls.append(
             {
                 "loader": [batch.label for batch in loader],
-                "resolved_device": resolved_device,
-                "precision": precision,
+                "resolved_device": runtime_plan.resolved_device,
+                "precision": runtime_plan.precision,
             }
         )
         on_outputs(_ProbeBatch("final"), SimpleNamespace())
@@ -192,16 +190,15 @@ def test_prediction_forward_reuses_temporal_facts_and_keeps_unshuffled_plans(
         _store,
         *,
         temporal_facts: object,
-        runtime_context: BatchRuntimeContext,
-        seed: int,
+        runtime_plan: ModelingRuntimePlan,
         shuffle: bool,
         **_kwargs,
     ):
         plan_calls.append(
             {
                 "temporal_facts": temporal_facts,
-                "budget": runtime_context.device_storage_budget,
-                "seed": seed,
+                "budget": runtime_plan.batch_runtime_context.device_storage_budget,
+                "seed": runtime_plan.seed,
                 "shuffle": shuffle,
             }
         )

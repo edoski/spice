@@ -22,8 +22,7 @@ from .models import TemporalModel
 from .pipeline import TrainingSpec
 from .representations import (
     CompiledRepresentationContract,
-    sequence_input_contract,
-    validate_representation_id,
+    compile_representation_contract,
 )
 from .results import TrainingArtifactManifest
 
@@ -93,11 +92,10 @@ def load_training_artifact(artifact_dir: Path) -> LoadedTrainingArtifact:
     )
     model.load_state_dict(state_dict)
     model.eval()
-    validate_representation_id(manifest.representation_id)
     return LoadedTrainingArtifact(
         manifest=manifest,
         model=model,
-        representation_contract=sequence_input_contract(),
+        representation_contract=compile_representation_contract(manifest.representation_id),
         dataset_builder_contract=compile_dataset_builder_contract(manifest.dataset_builder),
     )
 

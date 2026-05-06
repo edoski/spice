@@ -65,13 +65,13 @@ def test_evaluation_objective_runtime_scores_with_same_runtime_facts(
     )
     seen_scoring_calls: list[tuple[EvaluationScoringRuntimePlan, object]] = []
 
-    def fake_score_evaluation(*, scoring_plan, evaluator_contract):
+    def fake_score_evaluation_metrics(*, scoring_plan, evaluator_contract):
         seen_scoring_calls.append((scoring_plan, evaluator_contract))
-        return summary
+        return summary.metrics
 
     monkeypatch.setattr(
-        "spice.modeling.objective_runtime.score_evaluation",
-        fake_score_evaluation,
+        "spice.modeling.objective_runtime.score_evaluation_metrics",
+        fake_score_evaluation_metrics,
     )
     runtime = compile_objective_runtime(
         _objective_config(
