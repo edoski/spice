@@ -60,18 +60,3 @@ metric_values = Table(
     Column("metric_id", String, primary_key=True),
     Column("value", Float(), nullable=False),
 )
-
-benchmark_root_ledger = Table(
-    "benchmark_root_ledger",
-    metadata,
-    Column("observation_id", String, primary_key=True),
-    Column("run_id", String, primary_key=True),
-    Column("role", String, primary_key=True),
-    Column("root_kind", String, primary_key=True),
-    Column("root_id", String, primary_key=True),
-    Column("workflow", String, nullable=False),
-    Column("source_run_id", String),
-    Column("dataset_id", String),
-    Column("study_id", String),
-    Column("artifact_id", String),
-)

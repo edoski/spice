@@ -291,7 +291,6 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
         "runs": 1,
         "observations": 1,
         "metrics": 6,
-        "root_ledger": 2,
     }
     assert len(resolve_calls) == 2
     assert len(pull_calls) == 2

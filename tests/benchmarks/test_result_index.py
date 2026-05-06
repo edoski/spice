@@ -146,7 +146,6 @@ def test_result_index_keeps_observations_per_benchmark_run(tmp_path: Path) -> No
         "runs": 2,
         "observations": 2,
         "metrics": 4,
-        "root_ledger": 6,
     }
     rows = list_benchmark_results(
         index_path=index_path,
@@ -166,7 +165,7 @@ def test_result_index_rebuild_is_idempotent_from_run_dirs(tmp_path: Path) -> Non
     first = rebuild_benchmark_result_index(runs_root=runs_root, index_path=index_path)
     second = rebuild_benchmark_result_index(runs_root=runs_root, index_path=index_path)
 
-    assert first == {"runs": 1, "observations": 1, "metrics": 2, "root_ledger": 3}
+    assert first == {"runs": 1, "observations": 1, "metrics": 2}
     assert second == first
 
 
@@ -211,18 +210,6 @@ def test_index_query_and_export_use_normalized_rows_not_payload_json(tmp_path: P
             "select artifact_dataset_id, evaluation_dataset_id from result_observations"
         ).fetchone()
     assert indexed == ("dataset-1", "evaluation-dataset-1")
-    with sqlite3.connect(index_path) as connection:
-        root_rows = connection.execute(
-            "select role, root_kind, root_id from benchmark_root_ledger "
-            "order by role, root_kind, root_id"
-        ).fetchall()
-    assert root_rows == [
-        ("consumed", "artifact", "artifact-1"),
-        ("consumed", "dataset", "evaluation-dataset-1"),
-        ("source", "dataset", "dataset-1"),
-    ]
-
-
 def test_index_query_rejects_metric_id_collision_across_sources(tmp_path: Path) -> None:
     index_path = tmp_path / "results.sqlite"
     snapshot = _snapshot(tmp_path / "runs" / "bench" / "one", run_id="case.evaluate")

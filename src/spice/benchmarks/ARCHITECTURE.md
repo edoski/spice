@@ -63,7 +63,7 @@ benchmarks/
 
 ## Boundaries
 
-Run dirs are canonical benchmark audit state. `results.sqlite` is a rebuildable projection over `collection.json`; normalized observation, metric, and root-ledger tables are the read model for list/export, while JSON payloads remain audit/debug payloads. CSV files are named export artifacts for concrete table, figure, appendix, or analysis inputs and are overwritten from the index.
+Run dirs are canonical benchmark audit state. `results.sqlite` is a rebuildable projection over `collection.json`; normalized observation and metric tables are the read model for list/export, while JSON payloads remain audit/debug payloads. CSV files are named export artifacts for concrete table, figure, appendix, or analysis inputs and are overwritten from the index.
 
 `runs.py` is the public run-state facade. Benchmark run-state JSON/JSONL encoding stays benchmark-local and must not move into config or shared storage codecs.
 

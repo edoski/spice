@@ -393,14 +393,12 @@ def test_benchmark_index_commands(tmp_path: Path) -> None:
     assert json.loads(rebuild.stdout) == {
         "metrics": 1,
         "observations": 1,
-        "root_ledger": 3,
         "runs": 1,
     }
     assert show.exit_code == 0, show.stdout
     assert json.loads(show.stdout) == {
         "metrics": 1,
         "observations": 1,
-        "root_ledger": 3,
         "runs": 1,
     }
     assert listed.exit_code == 0, listed.stdout
