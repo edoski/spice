@@ -4,7 +4,7 @@
 
 from .collection import collect_benchmark_run  # noqa: E402
 from .result_index import (  # noqa: E402
-    BenchmarkResultSummary,
+    BenchmarkResultIndexRow,
     benchmark_result_index_counts,
     list_benchmark_results,
     rebuild_benchmark_result_index,
@@ -15,7 +15,7 @@ from .submission import (  # noqa: E402
 )
 
 __all__ = [
-    "BenchmarkResultSummary",
+    "BenchmarkResultIndexRow",
     "benchmark_result_index_counts",
     "collect_benchmark_run",
     "list_benchmark_results",

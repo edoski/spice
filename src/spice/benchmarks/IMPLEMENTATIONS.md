@@ -19,7 +19,7 @@ Benchmark Plan Materialization owns the dependency/root sequence before the plan
 
 Benchmark run dirs remain the audit source of truth. `results.sqlite` is a rebuildable projection over `collection.json`.
 
-Collection snapshots copy the typed dependency, selection, and root ledger from the plan entry. Result records consume Benchmark Root Facts for artifact, artifact dataset, and evaluation dataset identity. Result index rows read normalized coordinates from typed fields, not from raw payload JSON. Artifact dataset identity and evaluation dataset identity are stored separately so cross-corpus evaluation remains inspectable. Root audit state stays in run dirs and collection payload JSON; the result index stores scalar root facts needed for list and export queries.
+Collection snapshots copy the typed dependency, selection, and root ledger from the plan entry. Result records consume Benchmark Root Facts for artifact, artifact dataset, and evaluation dataset identity. The Benchmark Result Index row is the list/export read model and reads normalized coordinates from typed fields, not from raw payload JSON. Artifact dataset identity and evaluation dataset identity are stored separately so cross-corpus evaluation remains inspectable. Root audit state stays in run dirs and collection payload JSON; the result index stores scalar root facts needed for list and export queries.
 
 ## Collection Resolver
 

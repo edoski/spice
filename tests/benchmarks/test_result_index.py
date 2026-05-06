@@ -154,6 +154,9 @@ def test_result_index_keeps_observations_per_benchmark_run(tmp_path: Path) -> No
         model="lstm",
     )
     assert [row.artifact_id for row in rows] == ["artifact-1", "artifact-1"]
+    assert rows[0].chain_name == "ethereum"
+    assert rows[0].model_id == "lstm"
+    assert rows[0].metrics == {"new_metric": 0.12, "total_loss": 0.3}
 
 
 def test_result_index_rebuild_is_idempotent_from_run_dirs(tmp_path: Path) -> None:
@@ -196,13 +199,13 @@ def test_index_query_and_export_use_normalized_rows_not_payload_json(tmp_path: P
     with sqlite3.connect(index_path) as connection:
         connection.execute("update result_observations set payload_json = ?", ('{"broken": true}',))
 
-    summaries = list_benchmark_results(
+    indexed_rows = list_benchmark_results(
         index_path=index_path,
         benchmark="bench",
     )
     rows = export_results_csv(output_path=output_path, index_path=index_path)
 
-    assert [summary.artifact_id for summary in summaries] == ["artifact-1"]
+    assert [row.artifact_id for row in indexed_rows] == ["artifact-1"]
     assert rows[0]["artifact_id"] == "artifact-1"
     assert rows[0]["surface"] == "current_row_fee_dynamics"
     with sqlite3.connect(index_path) as connection:

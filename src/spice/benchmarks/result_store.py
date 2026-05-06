@@ -26,7 +26,7 @@ BENCHMARK_RESULT_INDEX_PATH = Path("benchmarks") / "results.sqlite"
 
 
 @dataclass(frozen=True, slots=True)
-class IndexedBenchmarkResult:
+class BenchmarkResultIndexRow:
     run_id: str
     artifact_id: str
     evaluation_storage_id: str
@@ -205,7 +205,7 @@ def list_indexed_results(
     model: str | None = None,
     evaluation: str | None = None,
     limit: int | None = None,
-) -> list[IndexedBenchmarkResult]:
+) -> list[BenchmarkResultIndexRow]:
     ensure_result_index(path)
     filters: list[ColumnElement[bool]] = []
     if benchmark is not None:
@@ -277,7 +277,7 @@ def list_indexed_results(
                         metric["value"]
                     )
             return [
-                IndexedBenchmarkResult(
+                BenchmarkResultIndexRow(
                     run_id=str(row["run_id"]),
                     artifact_id=str(row["artifact_id"]),
                     evaluation_storage_id=str(row["evaluation_storage_id"]),

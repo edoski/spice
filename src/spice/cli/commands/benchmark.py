@@ -124,7 +124,7 @@ def benchmark_index_show_command(
     _echo_json(benchmark_result_index_counts(index_path=index_path))
 
 
-@index_app.command("list", short_help="List indexed benchmark result summaries.")
+@index_app.command("list", short_help="List indexed benchmark results.")
 def benchmark_index_list_command(
     benchmark: Annotated[str | None, typer.Option("--benchmark")] = None,
     chain: Annotated[str | None, typer.Option("--chain")] = None,

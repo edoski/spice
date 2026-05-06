@@ -7,7 +7,11 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from .result_store import BENCHMARK_RESULT_INDEX_PATH, IndexedBenchmarkResult, list_indexed_results
+from .result_index import (
+    BENCHMARK_RESULT_INDEX_PATH,
+    BenchmarkResultIndexRow,
+    list_benchmark_results,
+)
 
 LEDGER_COLUMNS = (
     "recorded_at_utc",
@@ -55,8 +59,8 @@ def export_results_csv(
 ) -> list[dict[str, str]]:
     rows = [
         result_record_csv_row(row)
-        for row in list_indexed_results(
-            index_path,
+        for row in list_benchmark_results(
+            index_path=index_path,
             benchmark=benchmark,
             chain=chain,
             model=model,
@@ -76,7 +80,7 @@ def write_results_csv(path: Path, rows: list[dict[str, str]]) -> None:
             writer.writerow({column: row[column] for column in LEDGER_COLUMNS})
 
 
-def result_record_csv_row(record: IndexedBenchmarkResult) -> dict[str, str]:
+def result_record_csv_row(record: BenchmarkResultIndexRow) -> dict[str, str]:
     row = {
         "recorded_at_utc": record.recorded_at_utc,
         "git_commit": record.git_commit,
