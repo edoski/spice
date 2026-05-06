@@ -10,7 +10,7 @@ A model family defines the function approximator. It does not define the predict
 
 ## Invariants
 
-Families construct models from typed configs and representation/prediction contracts. They should not resolve YAML, read storage, compute evaluator metrics, or build temporal labels.
+Families construct models from typed configs and representation/prediction contracts. They should not resolve YAML, read storage, compute evaluator metrics, or build prediction target batches.
 
 ## Extension Points
 

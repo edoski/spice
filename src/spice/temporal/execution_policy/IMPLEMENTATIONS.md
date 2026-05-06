@@ -13,7 +13,7 @@ decoded offset
   -> realized fee
 ```
 
-The policy also provides action masks plus baseline and optimum rows used by training targets and evaluation metrics. `CompiledExecutionPolicyContract.prepare_action_space()` validates that the prepared Action Space matches the requested samples, store action width, and mask shape before modeling, prediction, or evaluation consumes it. `prepare_temporal_facts()` prepares the Action Space and supervised execution targets once for a sample set, so prediction training state and target tensors share the same policy facts.
+The policy owns action masks and temporal outcome facts: baseline rows, per-action fee consequences, reachable actions, realized rows, and overflow behavior. `CompiledExecutionPolicyContract.prepare_action_space()` validates that the prepared Action Space matches the requested samples, store action width, and mask shape before modeling, prediction, or evaluation consumes it. `prepare_temporal_facts()` prepares the Action Space and temporal outcome facts once for a sample set; prediction families then build their own target batches from those facts.
 
 ## `strict_deadline_miss`
 
@@ -58,9 +58,9 @@ sample B offset 3 -> post-window row
 
 This is intentional. A true action slot means "the policy can resolve this action," not "this offset is inside the candidate window."
 
-## Target Construction
+## Temporal Outcome Facts
 
-Prediction target batches include candidate fees, baseline index, optimum offset, optimum log fee, and action mask. For short candidate windows, overflow target fees are filled from the post-window row so every action slot has a fee consequence.
+Temporal outcome facts include per-action rows and log fees, baseline rows, reachable action masks, and overflow masks. For short candidate windows, overflow fees are filled from the post-window row so every action slot has a policy consequence. Prediction target batch shape remains prediction-family-owned.
 
 ## Failure Modes
 
@@ -73,4 +73,4 @@ Prediction target batches include candidate fees, baseline index, optimum offset
 
 ## Extension Pattern
 
-A new execution policy should define baseline, optimum, overflow behavior, and target construction together. Prediction families and evaluators should consume the policy through the shared execution interface.
+A new execution policy should define Action Space preparation, baseline, optimum, overflow behavior, and temporal outcome facts together. Prediction families and evaluators should consume the policy through the shared execution interface.

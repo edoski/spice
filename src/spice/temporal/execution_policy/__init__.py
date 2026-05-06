@@ -4,8 +4,8 @@ from .base import (
     CompiledExecutionPolicyContract,
     ExecutionPolicyConfig,
     PreparedActionSpace,
-    PreparedSupervisedExecutionTargets,
     PreparedTemporalFacts,
+    PreparedTemporalOutcomeFacts,
     RealizedSelectionBatch,
     coerce_execution_policy_config,
     compile_execution_policy_contract,
@@ -14,7 +14,7 @@ from .base import (
 __all__ = [
     "CompiledExecutionPolicyContract",
     "PreparedActionSpace",
-    "PreparedSupervisedExecutionTargets",
+    "PreparedTemporalOutcomeFacts",
     "PreparedTemporalFacts",
     "ExecutionPolicyConfig",
     "RealizedSelectionBatch",

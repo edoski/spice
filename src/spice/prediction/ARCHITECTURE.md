@@ -16,11 +16,11 @@ Prediction configs compile into contracts. Contracts prepare targets, define out
 
 ## Invariants
 
-Prediction code may import temporal stores and execution policies because targets are built from temporal examples and policy-owned Action Spaces. Core rendering must not import prediction. Shared masking logic lives in `masking.py` so families apply action masks consistently.
+Prediction code may import prepared temporal facts because target batches are built from policy-owned Action Spaces and Temporal Outcome Facts. Core rendering must not import prediction. Shared masking logic lives in `masking.py` so families apply action masks consistently.
 
-Prediction target preparation receives prepared temporal facts rather than an independent sample selection. Those facts pair the policy-owned Action Space with supervised execution targets for exactly one sample set. Training target batches use the policy-owned mask from the Action Space.
+Prediction target preparation receives prepared temporal facts rather than an independent sample selection. Those facts pair the policy-owned Action Space with Temporal Outcome Facts for exactly one sample set. Training target batches use the policy-owned mask from the Action Space, while family-specific labels and auxiliary targets stay prediction-owned.
 
-Prediction training state is semantic-immutable. `fit_training_state()` derives reusable facts from the same prepared temporal facts used by training targets. Loss computation may cache device/dtype views on that state, but it must not mutate semantic tensors or depend on batch call order.
+Prediction training state is semantic-immutable. `fit_training_state()` derives reusable facts from the same prepared temporal facts used by prediction target batches. Loss computation may cache device/dtype views on that state, but it must not mutate semantic tensors or depend on batch call order.
 
 ## Extension Points
 
@@ -50,8 +50,7 @@ prepared Action Space
       v
 prepared temporal facts
       |
-      v
-target tensors
+prediction target batch
       |
       v
 model output heads

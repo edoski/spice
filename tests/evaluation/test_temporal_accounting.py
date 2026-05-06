@@ -55,12 +55,17 @@ def _execution_policy():
     )
 
 
+def _action_space(store: CompiledProblemStore, sample_indices: np.ndarray):
+    return _execution_policy().prepare_action_space(store, sample_indices)
+
+
 def test_selected_temporal_decisions_compute_exact_event_metrics() -> None:
+    store = _store()
     run = summarize_selected_temporal_decisions(
-        _store(),
+        store,
         _execution_policy(),
         DecodedOffsets(torch.tensor([0, 1], dtype=torch.int64)),
-        np.array([0, 1], dtype=np.int64),
+        _action_space(store, np.array([0, 1], dtype=np.int64)),
         np.array([0, 1], dtype=np.int64),
         metadata={"mode": "unit"},
     )
@@ -80,11 +85,12 @@ def test_selected_temporal_decisions_compute_exact_event_metrics() -> None:
 
 
 def test_selected_temporal_decisions_count_policy_overflow() -> None:
+    store = _overflow_store()
     run = summarize_selected_temporal_decisions(
-        _overflow_store(),
+        store,
         _execution_policy(),
         DecodedOffsets(torch.tensor([2, 1], dtype=torch.int64)),
-        np.array([0, 1], dtype=np.int64),
+        _action_space(store, np.array([0, 1], dtype=np.int64)),
         np.array([0, 1], dtype=np.int64),
         metadata={"mode": "overflow"},
     )

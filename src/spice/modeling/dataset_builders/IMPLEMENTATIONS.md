@@ -17,7 +17,7 @@ canonical rows
 
 The builder must preserve temporal ordering. Random train/test splitting would leak future data into training.
 
-Training preparation ends by binding each split to `PreparedTemporalFacts`. Inference preparation ends by binding selected evaluation samples to a `PreparedActionSpace`. Raw split indices stay builder-local; callers receive prepared selections that already encode selected-sample alignment, action masks, and target facts.
+Training preparation ends by binding each split to `PreparedTemporalFacts`. Inference preparation ends by binding selected evaluation samples to a `PreparedActionSpace`. Raw split indices stay builder-local; callers receive prepared selections that already encode selected-sample alignment, action masks, and temporal outcome facts.
 
 ## `fixed_sequence_temporal`
 

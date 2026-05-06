@@ -99,7 +99,7 @@ def validate_temporal_facts_alignment(
     sample_count = int(action_space.sample_indices.shape[0])
     if sample_count == 0:
         raise ValueError(f"{role} sample selection must be non-empty")
-    if temporal_facts.supervised_targets.optimum_offsets.shape != (sample_count,):
+    if temporal_facts.outcome_facts.baseline_rows.shape != (sample_count,):
         raise ValueError(f"{role} temporal facts do not align with selected samples")
 
 

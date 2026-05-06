@@ -1,6 +1,6 @@
 # Concrete Temporal Problem Compilers
 
-Temporal compilers turn feature rows into supervised decision examples. A problem defines which past rows the model may see, which future rows it may choose, and how many candidate actions exist.
+Temporal compilers turn feature rows into temporal problem stores. A problem defines which past rows the model may see, where future candidate windows sit, and the maximum action width carried into execution-policy preparation.
 
 ## `observed_time_window`
 
@@ -27,7 +27,7 @@ Slot-spacing ids:
 
 The compiler returns a Temporal Capability with `compiler_id`, `max_delay_seconds`, `action_width`, and typed runtime metadata. For `observed_time_window`, runtime metadata contains `slot_spacing_id` and `slot_spacing_seconds`.
 
-This compiler is online-safe because context rows end at the anchor row, candidate-window rows are future outcome rows only, and feature prerequisites/warmup filtering happens before train/validation/test splitting. It does not reveal a future row count from evaluation timestamps to the model; `slot_spacing` only fixes the prediction head width.
+This compiler is online-safe because context rows end at the anchor row, candidate-window rows feed execution-policy outcome facts only, and feature prerequisites/warmup filtering happens before train/validation/test splitting. It does not reveal a future row count from evaluation timestamps to the model; `slot_spacing` only fixes artifact action width.
 
 ## Shared Builder
 
@@ -37,7 +37,7 @@ The shared timestamp builder keeps rows aligned and filters invalid sample ancho
 | --- | --- |
 | Feature table timestamps are nondecreasing. | Timestamp search requires sorted temporal rows. |
 | Enough context history exists. | Inputs must satisfy lookback and feature prerequisites. |
-| Candidate window is non-empty. | The model needs at least one fee choice. |
+| Candidate window is non-empty. | The execution policy needs at least one reachable outcome row. |
 | Post-window row exists when required. | Overflow execution needs a concrete row. |
 | Warmup rows are skipped. | Placeholder feature rows must not become training anchors. |
 

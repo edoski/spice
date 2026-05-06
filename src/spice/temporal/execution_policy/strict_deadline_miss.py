@@ -14,7 +14,7 @@ from .base import (
     ExecutionPolicyConfig,
     IntVector,
     PreparedActionSpace,
-    PreparedSupervisedExecutionTargets,
+    PreparedTemporalOutcomeFacts,
     RealizedSelectionBatch,
 )
 
@@ -65,10 +65,10 @@ def _reachable_optimum(
     return int(start_row + offset), offset, float(candidate_values[offset])
 
 
-def _prepare_supervised_targets(
+def _prepare_outcome_facts(
     store: CompiledProblemStore,
     action_space: PreparedActionSpace,
-) -> PreparedSupervisedExecutionTargets:
+) -> PreparedTemporalOutcomeFacts:
     sample_indices = action_space.sample_indices
     if sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
@@ -78,10 +78,11 @@ def _prepare_supervised_targets(
     window_summary = store.candidate_windows(resolved_indices)
     batch_size = int(resolved_indices.shape[0])
     max_candidate_slots = int(action_space.max_candidate_slots)
-    candidate_log_fees = np.zeros((batch_size, max_candidate_slots), dtype=np.float32)
-    optimum_offsets = np.empty(batch_size, dtype=np.int64)
-    optimum_log_fees = np.empty(batch_size, dtype=np.float32)
-    baseline_candidate_indices = np.zeros(batch_size, dtype=np.int64)
+    action_outcome_rows = np.empty((batch_size, max_candidate_slots), dtype=np.int64)
+    action_outcome_log_fees = np.empty((batch_size, max_candidate_slots), dtype=np.float32)
+    reachable_action_mask = np.zeros((batch_size, max_candidate_slots), dtype=np.bool_)
+    overflow_mask = np.zeros((batch_size, max_candidate_slots), dtype=np.bool_)
+    baseline_rows = window_summary.candidate_start_rows.astype(np.int64, copy=True)
     for row, (start_row, end_row, candidate_count, reachable_end_row) in enumerate(
         zip(
             window_summary.candidate_start_rows,
@@ -91,28 +92,29 @@ def _prepare_supervised_targets(
             strict=True,
         )
     ):
-        candidate_values = store.log_base_fees[start_row:end_row]
+        del reachable_end_row
         slot_count = min(int(candidate_count), max_candidate_slots)
-        candidate_log_fees[row, :slot_count] = candidate_values[:slot_count]
-        _, reachable_offset, reachable_log_fee = _reachable_optimum(
-            store,
-            start_row=int(start_row),
-            reachable_end_row=int(reachable_end_row),
-        )
-        optimum_offsets[row] = reachable_offset
-        optimum_log_fees[row] = reachable_log_fee
+        physical_offsets = np.arange(slot_count, dtype=np.int64)
+        action_outcome_rows[row, :slot_count] = int(start_row) + physical_offsets
+        action_outcome_log_fees[row, :slot_count] = store.log_base_fees[
+            action_outcome_rows[row, :slot_count]
+        ]
+        reachable_action_mask[row, :slot_count] = True
         if int(candidate_count) < max_candidate_slots:
             if int(end_row) >= store.n_rows:
                 raise ValueError(
                     "strict_deadline_miss requires a post-window row "
-                    "for overflow supervision"
+                    "for overflow outcome facts"
                 )
-            candidate_log_fees[row, candidate_count:] = store.log_base_fees[int(end_row)]
-    return PreparedSupervisedExecutionTargets(
-        candidate_log_fees=candidate_log_fees,
-        optimum_offsets=optimum_offsets,
-        optimum_log_fees=optimum_log_fees,
-        baseline_candidate_indices=baseline_candidate_indices,
+            action_outcome_rows[row, candidate_count:] = int(end_row)
+            action_outcome_log_fees[row, candidate_count:] = store.log_base_fees[int(end_row)]
+            overflow_mask[row, candidate_count:] = True
+    return PreparedTemporalOutcomeFacts(
+        action_outcome_rows=action_outcome_rows,
+        action_outcome_log_fees=action_outcome_log_fees,
+        reachable_action_mask=reachable_action_mask,
+        baseline_rows=baseline_rows,
+        overflow_mask=overflow_mask,
     )
 
 
@@ -123,17 +125,9 @@ def _realize_selections(
     selected_positions: IntVector,
 ) -> RealizedSelectionBatch:
     sample_indices = action_space.sample_indices
-    if len(decoded_offsets) != int(sample_indices.shape[0]):
-        raise ValueError("decoded_offsets must align with sample_indices")
-    if selected_positions.size == 0:
-        raise ValueError("selected_positions must be non-empty")
     selected_sample_indices = sample_indices[selected_positions]
     window_summary = store.candidate_windows(selected_sample_indices)
     requested_offsets = decoded_offsets.select(selected_positions).astype(np.int64, copy=False)
-    if np.any(requested_offsets < 0):
-        raise ValueError("decoded_offsets must be non-negative")
-    if np.any(requested_offsets >= int(store.max_candidate_slots)):
-        raise ValueError("decoded_offsets must be smaller than max_candidate_slots")
     overflow_mask = requested_offsets >= window_summary.candidate_counts
     overflow_without_post_window = np.any(
         window_summary.candidate_end_rows[overflow_mask] >= store.n_rows
@@ -177,6 +171,6 @@ def compile_execution_policy(
         baseline_row_mode=BaselineRowMode.FIRST_CANDIDATE,
         requires_post_window_row=True,
         prepare_action_space_fn=_prepare_action_space,
-        prepare_supervised_targets_fn=_prepare_supervised_targets,
+        prepare_outcome_facts_fn=_prepare_outcome_facts,
         realize_selections_fn=_realize_selections,
     )

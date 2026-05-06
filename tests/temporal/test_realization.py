@@ -91,7 +91,7 @@ def test_strict_deadline_miss_action_mask_preserves_full_overflow_semantics() ->
     assert mask.all()
 
 
-def test_supervised_targets_use_best_reachable_fixed_slot() -> None:
+def test_temporal_outcome_facts_preserve_reachable_fee_consequences() -> None:
     store = CompiledProblemStore(
         feature_matrix=np.zeros((6, 1), dtype=np.float32),
         log_base_fees=np.log(np.array([100, 50, 80, 10, 5, 70], dtype=np.float32)),
@@ -113,12 +113,16 @@ def test_supervised_targets_use_best_reachable_fixed_slot() -> None:
         np.array([[True, True, True]], dtype=np.bool_),
     )
     np.testing.assert_array_equal(
-        temporal_facts.supervised_targets.optimum_offsets,
-        np.array([1], dtype=np.int64),
+        temporal_facts.outcome_facts.reachable_action_mask,
+        np.array([[True, True, True]], dtype=np.bool_),
+    )
+    np.testing.assert_array_equal(
+        temporal_facts.outcome_facts.action_outcome_rows,
+        np.array([[0, 1, 2]], dtype=np.int64),
     )
     np.testing.assert_allclose(
-        temporal_facts.supervised_targets.optimum_log_fees,
-        np.log(np.array([50], dtype=np.float32)),
+        temporal_facts.outcome_facts.action_outcome_log_fees,
+        np.log(np.array([[100, 50, 80]], dtype=np.float32)),
     )
 
 

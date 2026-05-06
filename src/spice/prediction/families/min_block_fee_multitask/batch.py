@@ -4,23 +4,50 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
 import torch
 
 from ....temporal.execution_policy import PreparedTemporalFacts
-from ....temporal.problem_store import CompiledProblemStore
+
+
+@dataclass(frozen=True, slots=True)
+class MinBlockFeeObjectiveFacts:
+    min_block_offsets: np.ndarray
+    min_block_log_fees: np.ndarray
+
+
+def materialize_min_block_fee_objective_facts(
+    temporal_facts: PreparedTemporalFacts,
+) -> MinBlockFeeObjectiveFacts:
+    outcome_facts = temporal_facts.outcome_facts
+    reachable_mask = outcome_facts.reachable_action_mask
+    if reachable_mask.shape[0] > 0 and not bool(np.all(reachable_mask.any(axis=1))):
+        raise ValueError("min-block-fee targets require one reachable action per sample")
+    masked_log_fees = np.where(
+        reachable_mask,
+        outcome_facts.action_outcome_log_fees,
+        np.inf,
+    )
+    min_block_offsets = np.argmin(masked_log_fees, axis=1).astype(np.int64, copy=False)
+    min_block_log_fees = masked_log_fees[
+        np.arange(masked_log_fees.shape[0]),
+        min_block_offsets,
+    ].astype(np.float32, copy=False)
+    return MinBlockFeeObjectiveFacts(
+        min_block_offsets=min_block_offsets,
+        min_block_log_fees=min_block_log_fees,
+    )
 
 
 def materialize_min_block_fee_targets(
-    store: CompiledProblemStore,
     temporal_facts: PreparedTemporalFacts,
 ) -> PreparedMinBlockFeeTargets:
-    del store
     action_space = temporal_facts.action_space
-    supervised = temporal_facts.supervised_targets
+    objective_facts = materialize_min_block_fee_objective_facts(temporal_facts)
     return PreparedMinBlockFeeTargets(
         action_mask=torch.from_numpy(action_space.action_mask),
-        min_block_offsets=torch.from_numpy(supervised.optimum_offsets),
-        min_block_log_fees=torch.from_numpy(supervised.optimum_log_fees),
+        min_block_offsets=torch.from_numpy(objective_facts.min_block_offsets),
+        min_block_log_fees=torch.from_numpy(objective_facts.min_block_log_fees),
     )
 
 

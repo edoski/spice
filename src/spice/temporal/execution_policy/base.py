@@ -61,36 +61,79 @@ class PreparedActionSpace:
         object.__setattr__(self, "max_candidate_slots", max_candidate_slots)
         object.__setattr__(self, "action_mask", action_mask)
 
+    def validate_selected_positions(self, selected_positions: IntVector) -> IntVector:
+        resolved = np.asarray(selected_positions)
+        if resolved.ndim != 1:
+            raise ValueError("selected_positions must be one-dimensional")
+        if resolved.size == 0:
+            raise ValueError("selected_positions must be non-empty")
+        if not np.issubdtype(resolved.dtype, np.integer):
+            raise ValueError("selected_positions must be integer indices")
+        resolved = resolved.astype(np.int64, copy=False)
+        sample_count = int(self.sample_indices.shape[0])
+        if bool(np.any(resolved < 0)) or bool(np.any(resolved >= sample_count)):
+            raise ValueError("selected_positions are outside sample_indices")
+        return resolved
+
+    def validate_requested_offsets(
+        self,
+        selected_positions: IntVector,
+        requested_offsets: IntVector,
+    ) -> IntVector:
+        resolved_offsets = np.asarray(requested_offsets)
+        if resolved_offsets.ndim != 1:
+            raise ValueError("decoded_offsets must be one-dimensional")
+        if not np.issubdtype(resolved_offsets.dtype, np.integer):
+            raise ValueError("decoded_offsets must be integer offsets")
+        resolved_offsets = resolved_offsets.astype(np.int64, copy=False)
+        if resolved_offsets.shape != selected_positions.shape:
+            raise ValueError("decoded_offsets must align with selected_positions")
+        if bool(np.any(resolved_offsets < 0)):
+            raise ValueError("decoded_offsets must be non-negative")
+        if bool(np.any(resolved_offsets >= self.max_candidate_slots)):
+            raise ValueError("decoded_offsets must be smaller than max_candidate_slots")
+        if not bool(np.all(self.action_mask[selected_positions, resolved_offsets])):
+            raise ValueError("decoded_offsets contain unavailable actions")
+        return resolved_offsets
+
 
 @dataclass(frozen=True, slots=True)
-class PreparedSupervisedExecutionTargets:
-    candidate_log_fees: FloatMatrix
-    optimum_offsets: IntVector
-    optimum_log_fees: FloatVector
-    baseline_candidate_indices: IntVector
+class PreparedTemporalOutcomeFacts:
+    action_outcome_rows: NDArray[np.int64]
+    action_outcome_log_fees: FloatMatrix
+    reachable_action_mask: BoolMatrix
+    baseline_rows: IntVector
+    overflow_mask: BoolMatrix
 
 
 @dataclass(frozen=True, slots=True)
 class PreparedTemporalFacts:
     action_space: PreparedActionSpace
-    supervised_targets: PreparedSupervisedExecutionTargets
+    outcome_facts: PreparedTemporalOutcomeFacts
 
     def __post_init__(self) -> None:
         sample_count = int(self.action_space.sample_indices.shape[0])
-        if self.supervised_targets.candidate_log_fees.shape != (
-            sample_count,
-            self.action_space.max_candidate_slots,
+        action_shape = (sample_count, self.action_space.max_candidate_slots)
+        if self.outcome_facts.action_outcome_rows.shape != action_shape:
+            raise ValueError("temporal outcome rows must match Action Space shape")
+        if self.outcome_facts.action_outcome_log_fees.shape != action_shape:
+            raise ValueError("temporal outcome log fees must match Action Space shape")
+        if self.outcome_facts.reachable_action_mask.shape != action_shape:
+            raise ValueError("temporal reachable action mask must match Action Space shape")
+        if self.outcome_facts.overflow_mask.shape != action_shape:
+            raise ValueError("temporal overflow mask must match Action Space shape")
+        if self.outcome_facts.baseline_rows.shape != (sample_count,):
+            raise ValueError("temporal baseline rows must match sample count")
+        if self.outcome_facts.reachable_action_mask.shape[0] > 0 and not bool(
+            np.all(self.outcome_facts.reachable_action_mask.any(axis=1))
         ):
+            raise ValueError("temporal outcome facts must keep one reachable action per sample")
+        reachable_actions_available = np.all(
+            self.outcome_facts.reachable_action_mask <= self.action_space.action_mask
+        )
+        if not bool(reachable_actions_available):
             raise ValueError(
-                "supervised target candidate_log_fees must match Action Space shape"
-            )
-        if self.supervised_targets.optimum_offsets.shape != (sample_count,):
-            raise ValueError("supervised target optimum_offsets must match sample count")
-        if self.supervised_targets.optimum_log_fees.shape != (sample_count,):
-            raise ValueError("supervised target optimum_log_fees must match sample count")
-        if self.supervised_targets.baseline_candidate_indices.shape != (sample_count,):
-            raise ValueError(
-                "supervised target baseline_candidate_indices must match sample count"
+                "temporal reachable action mask must be a subset of Action Space action mask"
             )
 
 
@@ -110,9 +153,9 @@ class DecodedOffsetBatch(Protocol):
     def select(self, sample_positions: IntVector) -> IntVector: ...
 
 
-PrepareSupervisedTargetsFn = Callable[
+PrepareOutcomeFactsFn = Callable[
     [CompiledProblemStore, PreparedActionSpace],
-    PreparedSupervisedExecutionTargets,
+    PreparedTemporalOutcomeFacts,
 ]
 PrepareActionSpaceFn = Callable[
     [CompiledProblemStore, IntVector],
@@ -130,7 +173,7 @@ class CompiledExecutionPolicyContract:
     baseline_row_mode: BaselineRowMode
     requires_post_window_row: bool
     prepare_action_space_fn: PrepareActionSpaceFn
-    prepare_supervised_targets_fn: PrepareSupervisedTargetsFn
+    prepare_outcome_facts_fn: PrepareOutcomeFactsFn
     realize_selections_fn: RealizeSelectionsFn
 
     @property
@@ -170,7 +213,7 @@ class CompiledExecutionPolicyContract:
         action_space = self.prepare_action_space(store, sample_indices)
         return PreparedTemporalFacts(
             action_space=action_space,
-            supervised_targets=self.prepare_supervised_targets_fn(store, action_space),
+            outcome_facts=self.prepare_outcome_facts_fn(store, action_space),
         )
 
     def realize_selections(
@@ -180,11 +223,16 @@ class CompiledExecutionPolicyContract:
         action_space: PreparedActionSpace,
         selected_positions: IntVector,
     ) -> RealizedSelectionBatch:
+        if len(decoded_offsets) != int(action_space.sample_indices.shape[0]):
+            raise ValueError("decoded_offsets must align with sample_indices")
+        resolved_positions = action_space.validate_selected_positions(selected_positions)
+        requested_offsets = decoded_offsets.select(resolved_positions)
+        action_space.validate_requested_offsets(resolved_positions, requested_offsets)
         return self.realize_selections_fn(
             store,
             decoded_offsets,
             action_space,
-            selected_positions,
+            resolved_positions,
         )
 
 

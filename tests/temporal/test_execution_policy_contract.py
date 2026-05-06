@@ -4,7 +4,9 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+import torch
 
+from spice.prediction.decoded_offsets import DecodedOffsets
 from spice.temporal import (
     PreparedActionSpace,
     coerce_execution_policy_config,
@@ -100,4 +102,36 @@ def test_prepared_action_space_rejects_all_false_action_rows() -> None:
                 ],
                 dtype=np.bool_,
             ),
+        )
+
+
+def test_realize_selections_validates_selected_positions_before_policy_call() -> None:
+    store = _store()
+    policy = _execution_policy()
+    action_space = policy.prepare_action_space(store, np.arange(2, dtype=np.int64))
+
+    with pytest.raises(ValueError, match="outside sample_indices"):
+        policy.realize_selections(
+            store,
+            DecodedOffsets(torch.tensor([0, 1], dtype=torch.int64)),
+            action_space,
+            np.array([2], dtype=np.int64),
+        )
+
+
+def test_realize_selections_rejects_unavailable_actions() -> None:
+    store = _store()
+    policy = _execution_policy()
+    action_space = PreparedActionSpace(
+        sample_indices=np.array([0], dtype=np.int64),
+        max_candidate_slots=store.max_candidate_slots,
+        action_mask=np.array([[True, False, True]], dtype=np.bool_),
+    )
+
+    with pytest.raises(ValueError, match="unavailable actions"):
+        policy.realize_selections(
+            store,
+            DecodedOffsets(torch.tensor([1], dtype=torch.int64)),
+            action_space,
+            np.array([0], dtype=np.int64),
         )

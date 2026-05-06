@@ -125,7 +125,7 @@ def test_fixed_context_dataset_builder_prepares_seq_len_without_builder_owned_cl
     assert prepared.samples.validation.sample_indices.size > 0
     assert prepared.samples.test.sample_indices.size > 0
     assert prepared.samples.train.action_space.sample_indices.shape == (
-        prepared.samples.train.temporal_facts.supervised_targets.optimum_offsets.shape
+        prepared.samples.train.temporal_facts.outcome_facts.baseline_rows.shape
     )
 
 

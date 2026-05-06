@@ -14,7 +14,7 @@ Policies must be compiled contracts, not workflow branches. Config-facing payloa
 
 The local policy table owns ids, concrete config types, and compile hooks. `core.specs` supplies only the mechanical owner-spec helper for payload coercion and compile-time type assertions.
 
-The prepared Action Space is the policy-owned alignment object for selected samples. It carries sample indices, action width, and the action mask used by model-input representation, prediction targets, decoding, and evaluator replay. The compiled execution-policy contract validates selected-sample alignment, store action width, and action-mask shape when preparing it.
+The prepared Action Space is the policy-owned alignment object for selected samples. It carries sample indices, action width, and the action mask used by model-input representation, prediction target preparation, decoding, and evaluator replay. The compiled execution-policy contract validates selected-sample alignment, store action width, and action-mask shape when preparing it. Prepared temporal facts add policy-owned Temporal Outcome Facts for the same selected samples.
 
 ## Extension Points
 
@@ -40,4 +40,4 @@ The model's output is not automatically an economic result. It is an action. The
 
 ## Contract Rule
 
-Model-input representation, prediction target construction, and evaluators receive an execution-policy contract, not a policy id string. Dataset preparation owns when selected samples become prepared Action Space or prepared temporal facts. Runtime and evaluation consume those prepared facts, so selected-sample alignment is validated at the execution-policy seam rather than re-derived in Batch Plan or evaluator scoring.
+Model-input representation, prediction target construction, and evaluators receive an execution-policy contract, not a policy id string. Dataset preparation owns when selected samples become prepared Action Space or prepared temporal facts. Runtime and evaluation consume those prepared facts, so selected-sample alignment and action validity are validated at the execution-policy seam rather than re-derived in Batch Plan or evaluator scoring.

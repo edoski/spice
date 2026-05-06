@@ -278,7 +278,6 @@ def build_prediction_batch_plan(
         runtime_context=runtime_context,
     )
     targets = prediction_contract.prepare_targets(
-        store,
         temporal_facts=temporal_facts,
     )
     return _build_plan(

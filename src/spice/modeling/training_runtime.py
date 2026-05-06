@@ -63,7 +63,6 @@ def plan_training_runtime(
     training_config: TrainingConfig,
 ) -> TrainingRuntimePlan:
     prediction_training_state = prediction_contract.fit_training_state(
-        store,
         temporal_facts=train_samples.temporal_facts,
     )
     planned_runtime_plan = build_measured_modeling_runtime_plan(

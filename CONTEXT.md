@@ -197,11 +197,19 @@ Modeling seam that turns canonical block frames plus domain facts and compiled/t
 _Avoid_: dataset plumbing, feature loading
 
 **Action Space**:
-Set of decoded actions that an execution policy can resolve for a temporal sample. Prepared once for selected samples during dataset preparation and shared by representation inputs, prediction targets, decode context, and evaluator replay.
+Execution-policy-owned set of decoded actions resolvable for a temporal sample. Prepared once for selected samples during dataset preparation and shared by model-input representation, prediction target preparation, prediction decode context, and evaluator replay.
 _Avoid_: candidate rows, logits width
 
+**Temporal Outcome Facts**:
+Execution-policy-owned selected-sample facts derived from a problem store and Action Space, including action fee consequences, baseline rows, reachable actions, realized rows, and overflow masks. Prediction families consume these facts to build target batches; evaluators consume realized outcome facts to score decoded decisions.
+_Avoid_: prediction targets, evaluator metrics
+
+**Prediction Target Batch**:
+Prediction-family-owned tensors used by training loss and prediction metrics, prepared from Temporal Outcome Facts plus Action Space masks for one selected sample set.
+_Avoid_: temporal labels, policy targets
+
 **Batch Plan**:
-Executable model-batch iteration plan with sample ordering, target binding, and host/device storage-mode choice.
+Executable model-batch iteration plan with sample ordering, representation batches, prediction-owned target batch binding when training, and host/device storage-mode choice.
 _Avoid_: batch source
 
 **Training Runner**:
@@ -221,7 +229,7 @@ Typed prediction output contract consumed by evaluators after model inference.
 _Avoid_: logits, prediction tensor
 
 **Objective Runtime**:
-Modeling-owned module that pairs a policy-only objective contract and, for evaluation objectives, the compiled evaluator contract with the metric production used by the Training Runner.
+Modeling-owned module that pairs a policy-only objective contract and, for evaluation objectives, the compiled evaluator contract with objective metric production used by the Training Runner. It selects and validates objective metric facts; it does not own prediction targets or temporal outcome facts.
 _Avoid_: objective evaluator, objective callback
 
 **Temporal Replay Runner**:
@@ -284,8 +292,10 @@ _Avoid_: execution backend
 - An **Artifact Inference Context** trusts artifact manifest semantics, validates selected corpus compatibility, and prepares model scoring inputs.
 - A **Temporal Dataset Preparation Interface** receives domain facts plus compiled/trusted context and owns temporal sample selection, split assignment, scaler use, builder runtime metadata, selected-sample role facts, and prepared dataset assembly.
 - An **Action Space** is derived by an execution policy from a problem store and selected temporal samples during dataset preparation.
+- **Temporal Outcome Facts** are derived by an execution policy from a problem store and **Action Space** for a selected training split.
+- A **Prediction Target Batch** is derived by a prediction family from **Temporal Outcome Facts** and **Action Space**.
 - A **Training Runner** consumes prepared training data and produces fitted model state plus runtime training metrics.
-- A **Batch Plan** is built by the **Training Runner** and inference paths after runtime memory budget is known, consuming prepared selected-sample facts for inputs, targets, and decode.
+- A **Batch Plan** is built by the **Training Runner** and inference paths after runtime memory budget is known, consuming prepared temporal facts for training or Action Space for inference/decode. It does not derive Action Space, Temporal Outcome Facts, or Prediction Target Batches.
 - A **Modeling Runtime Plan** drives training, inference, split-metric forward passes, and model-bound evaluator scoring without callers passing device, precision, seed, or runtime context fragments.
 - A **Training Runtime Plan** gives the **Training Runner** final train/validation **Batch Plans**, a measured runtime context, one reusable prediction training state, and a **Modeling Runtime Plan** for objective evaluator scoring.
 - A **Training Fit Policy** is internal to the **Training Runner** and does not change model math or callback ownership.

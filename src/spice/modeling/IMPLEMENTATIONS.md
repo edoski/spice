@@ -34,7 +34,7 @@ input_normalization     -> scaler policy
 model config            -> model family
 ```
 
-The compiled context is the source of truth for model input width, prediction output heads, action-space size, target batches, evaluator config identity, objective metric direction, Objective Runtime metric production, and dataset-builder preparation context.
+The compiled context is the source of truth for model input width, prediction output heads, action-space size, prediction target preparation contracts, evaluator config identity, objective metric direction, Objective Runtime metric production, and dataset-builder preparation context.
 
 ## Batch Plan
 

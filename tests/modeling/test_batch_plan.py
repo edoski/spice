@@ -14,8 +14,8 @@ from spice.modeling.batch_plan import (
 from spice.modeling.representations import DeviceStorageBudget, RepresentationRuntimeContext
 from spice.temporal import (
     PreparedActionSpace,
-    PreparedSupervisedExecutionTargets,
     PreparedTemporalFacts,
+    PreparedTemporalOutcomeFacts,
 )
 
 
@@ -46,14 +46,24 @@ def _temporal_facts(sample_indices: np.ndarray) -> PreparedTemporalFacts:
     sample_count = int(sample_indices.shape[0])
     return PreparedTemporalFacts(
         action_space=action_space,
-        supervised_targets=PreparedSupervisedExecutionTargets(
-            candidate_log_fees=np.zeros(
+        outcome_facts=PreparedTemporalOutcomeFacts(
+            action_outcome_rows=np.zeros(
+                (sample_count, action_space.max_candidate_slots),
+                dtype=np.int64,
+            ),
+            action_outcome_log_fees=np.zeros(
                 (sample_count, action_space.max_candidate_slots),
                 dtype=np.float32,
             ),
-            optimum_offsets=np.zeros(sample_count, dtype=np.int64),
-            optimum_log_fees=np.zeros(sample_count, dtype=np.float32),
-            baseline_candidate_indices=np.zeros(sample_count, dtype=np.int64),
+            reachable_action_mask=np.ones(
+                (sample_count, action_space.max_candidate_slots),
+                dtype=np.bool_,
+            ),
+            baseline_rows=np.zeros(sample_count, dtype=np.int64),
+            overflow_mask=np.zeros(
+                (sample_count, action_space.max_candidate_slots),
+                dtype=np.bool_,
+            ),
         ),
     )
 

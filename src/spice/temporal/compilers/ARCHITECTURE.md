@@ -6,7 +6,7 @@
 
 ## Theory
 
-A temporal compiler is a label-construction engine. It answers: for each decision row, how much history is visible, which future actions are legal, and what rows determine target or evaluation outcomes.
+A temporal compiler is a temporal geometry engine. It answers: for each decision row, how much history is visible, where the candidate window starts and ends, and which rows are available for execution-policy outcome facts. It does not own action availability, prediction targets, or evaluator metrics.
 
 ## Pattern
 
@@ -46,9 +46,9 @@ Compilers decide:
 
 - how many past rows are context.
 - which row is the decision anchor.
-- which future rows are legal candidates.
-- how many candidate slots exist.
+- where future candidate windows start and end.
+- the maximum candidate slot width carried by the problem store.
 - what feature prerequisites and warmup rows are needed.
 - what runtime metadata must be persisted.
 
-They should not decide model architecture, loss functions, or evaluator aggregation.
+They should not decide action masks, prediction target batches, model architecture, loss functions, objective metrics, or evaluator aggregation.

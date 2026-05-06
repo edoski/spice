@@ -24,6 +24,9 @@ from spice.prediction.families.min_block_fee_multitask.outputs import (
     OFFSET_LOGITS_HEAD_ID,
 )
 from spice.temporal import (
+    PreparedActionSpace,
+    PreparedTemporalFacts,
+    PreparedTemporalOutcomeFacts,
     coerce_execution_policy_config,
     compile_execution_policy_contract,
 )
@@ -92,7 +95,6 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
 
     prepared_targets = contract.prepare_targets(
-        store,
         temporal_facts=_prepare_temporal_facts(store, sample_indices),
     )
     batch = cast(
@@ -108,7 +110,6 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     assert batch.min_block_log_fees[2].item() == pytest_approx_log(4.0)
 
     training_state = contract.fit_training_state(
-        store,
         temporal_facts=_prepare_temporal_facts(store, sample_indices),
     )
     assert isinstance(training_state, MinBlockFeeTrainingState)
@@ -167,7 +168,7 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
     )
 
 
-def test_min_block_fee_multitask_uses_execution_policy_targets() -> None:
+def test_min_block_fee_multitask_uses_temporal_outcome_facts() -> None:
     store = CompiledProblemStore(
         feature_matrix=np.zeros((8, 1), dtype=np.float32),
         log_base_fees=np.log(
@@ -184,7 +185,6 @@ def test_min_block_fee_multitask_uses_execution_policy_targets() -> None:
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
 
     prepared_targets = contract.prepare_targets(
-        store,
         temporal_facts=_prepare_temporal_facts(store, sample_indices),
     )
     batch = cast(
@@ -210,6 +210,36 @@ def test_min_block_fee_multitask_uses_execution_policy_targets() -> None:
     assert batch.min_block_log_fees[1].item() == pytest_approx_log(6.0)
 
 
+def test_min_block_fee_multitask_labels_ignore_unreachable_cheaper_actions() -> None:
+    contract = _contract()
+    action_space = PreparedActionSpace(
+        sample_indices=np.array([0], dtype=np.int64),
+        max_candidate_slots=3,
+        action_mask=np.array([[True, False, True]], dtype=np.bool_),
+    )
+    temporal_facts = PreparedTemporalFacts(
+        action_space=action_space,
+        outcome_facts=PreparedTemporalOutcomeFacts(
+            action_outcome_rows=np.array([[1, 2, 3]], dtype=np.int64),
+            action_outcome_log_fees=np.log(
+                np.array([[5.0, 1.0, 7.0]], dtype=np.float32)
+            ).astype(np.float32, copy=False),
+            reachable_action_mask=np.array([[True, False, True]], dtype=np.bool_),
+            baseline_rows=np.array([1], dtype=np.int64),
+            overflow_mask=np.array([[False, False, False]], dtype=np.bool_),
+        ),
+    )
+
+    prepared_targets = contract.prepare_targets(temporal_facts=temporal_facts)
+    batch = cast(
+        MinBlockFeeTargetBatch,
+        prepared_targets.build_batch(torch.tensor([0], dtype=torch.int64)),
+    )
+
+    assert batch.min_block_offsets.item() == 0
+    assert batch.min_block_log_fees.item() == pytest_approx_log(5.0)
+
+
 def test_min_block_fee_multitask_targets_follow_action_space_sample_indices() -> None:
     store = _build_store()
     contract = _contract()
@@ -217,7 +247,6 @@ def test_min_block_fee_multitask_targets_follow_action_space_sample_indices() ->
     sample_indices = np.array([2, 0], dtype=np.int64)
 
     prepared_targets = contract.prepare_targets(
-        store,
         temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
     )
     batch = cast(
@@ -298,7 +327,6 @@ def test_reused_training_state_matches_independently_refit_state_loss_and_metric
     execution_policy = _execution_policy()
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     prepared_targets = contract.prepare_targets(
-        store,
         temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
     )
     batch = cast(
@@ -320,11 +348,9 @@ def test_reused_training_state_matches_independently_refit_state_loss_and_metric
         }
     )
     reused_state = contract.fit_training_state(
-        store,
         temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
     )
     refit_state = contract.fit_training_state(
-        store,
         temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
     )
 

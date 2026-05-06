@@ -13,7 +13,6 @@ from numpy.typing import NDArray
 from ..metrics import MetricDescriptor, MetricSet
 from ..semantics import PredictionSemantics
 from ..temporal.execution_policy import PreparedTemporalFacts
-from ..temporal.problem_store import CompiledProblemStore
 from .base import PredictionOutputSpec
 from .decoding import ActionSpaceDecodeContext, DecodedPredictionResult
 
@@ -65,14 +64,14 @@ class EpochMetricAccumulator(Protocol):
 
 BuildOutputSpecFn = Callable[[int], PredictionOutputSpec]
 FitTrainingStateFn = Callable[
-    [CompiledProblemStore, PreparedTemporalFacts],
+    [PreparedTemporalFacts],
     object | None,
 ]
 # Training state is reusable semantic state. Implementations may cache
 # device/dtype views during loss computation, but semantic values must not
 # mutate or depend on batch call order.
 PrepareTargetsFn = Callable[
-    [CompiledProblemStore, PreparedTemporalFacts],
+    [PreparedTemporalFacts],
     PreparedPredictionTargets,
 ]
 ComputeBatchLossAndStateFn = Callable[
@@ -144,21 +143,19 @@ class CompiledPredictionContract:
 
     def fit_training_state(
         self,
-        store: CompiledProblemStore,
         *,
         temporal_facts: PreparedTemporalFacts,
     ) -> object | None:
         if self.fit_training_state_fn is None:
             return None
-        return self.fit_training_state_fn(store, temporal_facts)
+        return self.fit_training_state_fn(temporal_facts)
 
     def prepare_targets(
         self,
-        store: CompiledProblemStore,
         *,
         temporal_facts: PreparedTemporalFacts,
     ) -> PreparedPredictionTargets:
-        return self.prepare_targets_fn(store, temporal_facts)
+        return self.prepare_targets_fn(temporal_facts)
 
     def compute_batch_loss_and_state(
         self,

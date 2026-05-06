@@ -6,7 +6,7 @@
 
 ## Theory
 
-Each family chooses a learning objective. For classification, the target may be a candidate class. For multitask learning, the model may predict both a decision and auxiliary quantities. The family owns how these outputs become loss terms and metrics.
+Each family chooses supervised prediction semantics. For classification, the target may be a candidate class. For multitask learning, the model may predict both a decision and auxiliary quantities. The family owns how temporal outcome facts become target batches, loss terms, and prediction metrics.
 
 ## Invariants
 

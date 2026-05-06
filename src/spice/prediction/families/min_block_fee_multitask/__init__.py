@@ -6,7 +6,6 @@ import torch
 
 from ....modeling.models import ModelOutputs
 from ....temporal.execution_policy import PreparedTemporalFacts
-from ....temporal.problem_store import CompiledProblemStore
 from ...contracts import (
     CompiledPredictionContract,
     PredictionTargetBatch,
@@ -33,16 +32,14 @@ from .outputs import (
 
 
 def _fit_training_state(
-    store: CompiledProblemStore,
     temporal_facts: PreparedTemporalFacts,
 ) -> MinBlockFeeTrainingState:
     targets = materialize_min_block_fee_targets(
-        store,
         temporal_facts=temporal_facts,
     )
     class_weights = inverse_frequency_class_weights(
         targets.min_block_offsets,
-        n_classes=store.max_candidate_slots,
+        n_classes=temporal_facts.action_space.max_candidate_slots,
     )
     fees = targets.min_block_log_fees.detach().to(device="cpu", dtype=torch.float32)
     fee_mean = fees.mean()
@@ -55,11 +52,9 @@ def _fit_training_state(
 
 
 def _prepare_targets(
-    store: CompiledProblemStore,
     temporal_facts: PreparedTemporalFacts,
 ) -> PreparedPredictionTargets:
     return materialize_min_block_fee_targets(
-        store,
         temporal_facts=temporal_facts,
     )
 
