@@ -54,6 +54,9 @@ class PreparedBatchRepresentation(Protocol[BatchT]):
     @property
     def estimated_storage_bytes(self) -> int: ...
 
+    @property
+    def host_storage_mode(self) -> HostStorageMode: ...
+
     def build_batch(self, sample_positions: torch.Tensor) -> BatchT: ...
 
     def to_device_storage(
@@ -194,7 +197,7 @@ class _PreparedPredictionBatches:
 
     @property
     def host_storage_mode(self) -> HostStorageMode:
-        return _host_storage_mode(self.prepared)
+        return self.prepared.host_storage_mode
 
     def build_batch(self, sample_positions: torch.Tensor) -> PredictionBatch:
         input_batch = self.prepared.build_batch(sample_positions)
@@ -352,12 +355,8 @@ def _build_batch_source(
             runtime_context=runtime_context,
             resolved_device=resolved_device,
         ),
-        _host_storage_mode(prepared),
+        prepared.host_storage_mode,
     )
-
-
-def _host_storage_mode(prepared: object) -> HostStorageMode:
-    return getattr(prepared, "host_storage_mode", "host_materialized")
 
 
 def _build_host_dataloader_source(

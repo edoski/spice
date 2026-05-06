@@ -20,6 +20,7 @@ _MAX_AUTOMATIC_MATERIALIZATION_BYTES = 8 * 1024**3
 _CUDA_DEVICE_MATERIALIZATION_STAGING_BYTES = 256 * 1024**2
 SEQUENCE_INPUT_REPRESENTATION_ID = "sequence_inputs"
 BatchT = TypeVar("BatchT", bound=ModelInputBatch, covariant=True)
+HostStorageMode = Literal["host_streaming", "host_materialized"]
 
 
 class SequenceInputBatch(NamedTuple):
@@ -129,6 +130,9 @@ class PreparedRepresentation(Protocol[BatchT]):
 
     @property
     def estimated_storage_bytes(self) -> int: ...
+
+    @property
+    def host_storage_mode(self) -> HostStorageMode: ...
 
     def build_batch(self, sample_positions: torch.Tensor) -> BatchT: ...
 

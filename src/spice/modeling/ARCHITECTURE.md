@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`modeling` owns tensorization, model-family construction, training loops, inference, scoring, trained artifact assembly, and model result payload codecs.
+`modeling` owns tensorization, model-family construction, training loops, inference, scoring, trained artifact assembly, runtime training/evaluation result objects, and model-bound scoring.
 
 It is the bridge between generic temporal examples and neural network execution.
 

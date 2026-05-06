@@ -51,6 +51,7 @@ class _Prepared:
     sample_count = 4
     batch_signatures = np.array([2, 1, 2, 1], dtype=np.int64)
     estimated_storage_bytes = 1024
+    host_storage_mode: Literal["host_materialized"] = "host_materialized"
 
     def __init__(self, *, fail_device_storage: bool = False) -> None:
         self.fail_device_storage = fail_device_storage

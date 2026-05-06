@@ -231,10 +231,6 @@ def public_group_tokens() -> tuple[str, ...]:
     return _PUBLIC_GROUP_TOKENS
 
 
-def public_group_directories() -> tuple[str, ...]:
-    return _PUBLIC_GROUP_DIRECTORIES
-
-
 def group_spec(group: str | ConfigGroup) -> GroupSpec:
     group_value = group.value if isinstance(group, ConfigGroup) else group
     if group_value in _GROUP_SPEC_BY_TOKEN:

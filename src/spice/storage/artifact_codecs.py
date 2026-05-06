@@ -84,33 +84,7 @@ def _metric_descriptor_payload(descriptor: MetricDescriptor) -> MetricDescriptor
 
 
 def _metric_descriptor_from_payload(payload: MetricDescriptorPayload) -> MetricDescriptor:
-    mapping = mapping_payload(
-        payload.model_dump(mode="json"),
-        label="evaluation_summary.metric_descriptor",
-    )
-    return MetricDescriptor(
-        id=string_payload(mapping["id"], label="evaluation_summary.metric_descriptor.id"),
-        label=string_payload(
-            mapping["label"],
-            label="evaluation_summary.metric_descriptor.label",
-        ),
-        role=cast(
-            Any,
-            string_payload(
-                mapping["role"],
-                label="evaluation_summary.metric_descriptor.role",
-            ),
-        ),
-        direction=cast(
-            Any,
-            None
-            if mapping.get("direction") is None
-            else string_payload(
-                mapping["direction"],
-                label="evaluation_summary.metric_descriptor.direction",
-            ),
-        ),
-    )
+    return payload.to_descriptor()
 
 
 class ArtifactManifestPayload(PayloadModel):

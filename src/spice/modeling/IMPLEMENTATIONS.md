@@ -17,7 +17,7 @@ corpus rows
   -> artifact manifest + model.pt
 ```
 
-The artifact manifest records exact configs, semantic fingerprints, scaler, dataset-builder metadata, model metadata, and training/evaluation results.
+The artifact manifest records exact configs, semantic fingerprints, scaler, dataset-builder metadata, and model metadata. Artifact root state stores training and evaluation summaries.
 
 ## Training Context
 

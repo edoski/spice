@@ -79,15 +79,3 @@ def make_block_rows(
             }
         )
     return rows
-
-
-def make_history_rows(config: TrainTuneWorkflowConfig) -> list[dict[str, BlockRowValue]]:
-    block_interval_seconds = synthetic_block_interval_seconds(config.chain.name)
-    count = required_dataset_blocks(config)
-    return make_block_rows(
-        count,
-        start_block=1,
-        start_timestamp=config.evaluation_window_start_timestamp - count * block_interval_seconds,
-        chain_id=config.chain.runtime.chain_id,
-        block_interval_seconds=block_interval_seconds,
-    )

@@ -92,7 +92,7 @@ Evaluation objectives call evaluator scoring on validation samples during traini
 | Empty selected positions | No events to score. |
 | Non-positive fee total | Economic ratio denominator invalid. |
 | Poisson window too long | Not enough timestamp coverage. |
-| Multiple stored summaries without id | Artifact state has several evaluation runs. |
+| Multiple stored summaries without id | Artifact state has several evaluation summaries. |
 
 ## Extension Pattern
 

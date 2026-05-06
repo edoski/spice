@@ -151,12 +151,6 @@ def int_payload(value: object, *, label: str) -> int:
     raise StateLayoutError(f"{label} must be an integer")
 
 
-def bool_payload(value: object, *, label: str) -> bool:
-    if isinstance(value, bool):
-        return value
-    raise StateLayoutError(f"{label} must be a boolean")
-
-
 def optional_int_payload(value: object, *, label: str) -> int | None:
     if value is None:
         return None

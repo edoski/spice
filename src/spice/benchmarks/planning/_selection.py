@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+
 from ...config.models import ProblemSpec
 from ...config.selections import WorkflowSelection
 from ._models import BenchmarkSelectionLedger
