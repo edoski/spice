@@ -41,11 +41,11 @@ Selections usually refer to problem specs by name. Benchmark problem grids may s
 
 ## Config Group Loading
 
-Config groups have two loading interfaces. `groups.load_named_group_payload()` returns a canonical raw dict for CLI show/edit, templates, fixture mutation, benchmark raw specs, and durable YAML output. `typed_groups.load()` returns context-free typed named groups for workflow resolution and other internal runtime setup.
+Config groups have two loading interfaces. `groups.load_named_group_payload()` returns a canonical raw dict for CLI show/edit, templates, fixture mutation, benchmark raw specs, and durable YAML output. `typed_groups.load()` reads group documents directly and returns context-free typed named groups for workflow resolution and other internal runtime setup.
 
 `group_catalog` owns group names, directories, identity checks, and validators shared by the raw and typed interfaces. Owner packages own concrete dispatch inside a group. Tuning-space loading stays in resolution because it depends on the selected model and problem. Benchmark typed loading stays in benchmarks.
 
-`selection_application` owns the surface-only step that loads a named surface, understands its nested layout, and emits workflow-shaped refs for acquire/train/tune resolution. `surfaces` owns frame models only.
+`selection_application` owns the surface-only step that loads a named surface, understands its nested layout, and emits workflow-shaped refs for acquire/train/tune resolution. Selection overrides coalesce only on `None`; empty refs are treated as explicit invalid refs instead of falling back to surface defaults. `surfaces` owns frame models only.
 
 ## Owner Coercion
 
@@ -70,6 +70,8 @@ A Concrete Owner Config is the concrete local-spec config selected by an owner i
 Surface resolution is the fresh path from Workflow Selection to Workflow Config. It applies the selection to the Surface, loads named config groups from the resulting workflow-shaped refs, calls owner coercers, and instantiates `AcquireConfig`, `TrainConfig`, `TuneConfig`, or `EvaluateConfig` from already typed pieces.
 
 Surface resolution does not hydrate raw resolved snapshots. Resolved snapshots are already past selection and surface ownership.
+
+Required workflow refs are checked during fresh resolution: acquire requires acquisition/provider refs, model workflows require model/training/split/objective refs, tune and tuned-train require tuning-space refs, and evaluator-backed objectives require a matching selected evaluation.
 
 ## Resolved Workflow Hydration
 

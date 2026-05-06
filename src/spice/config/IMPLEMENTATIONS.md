@@ -28,7 +28,7 @@ groups.load_named_group_payload()
   -> canonical raw dict for show/edit/template/benchmark raw specs
 
 typed_groups.load(typed_groups.MODEL, name), typed_groups.load(typed_groups.PROBLEM, name), ...
-  -> typed owner config for resolution/runtime callers
+  -> direct document load and typed owner config for resolution/runtime callers
 ```
 
 Resolution uses the same typed pattern across context-free named groups:
@@ -64,6 +64,8 @@ overrides: model=lstm_icdcs_2026, delay_seconds=36
 `selection_application` applies acquire/train/tune selections to the Surface and emits flat workflow refs before final resolution. Evaluate remains root-id based and does not use surface composition. The result is a typed acquire, train, tune, or evaluate config.
 
 Surface resolution is a typed construction path. Once named groups and overrides have been resolved, `resolution.py` instantiates the workflow config from typed pieces. It does not round-trip through raw resolved snapshot hydration.
+
+Selection overrides are explicit: only `None` means “use the surface value.” Empty strings and other invalid refs are carried into typed loading and fail as bad references. Evaluation-backed objectives must select the evaluator they name; missing evaluation is rejected before workflow execution.
 
 Command workflow resolution starts from sparse operator values. `workflow_selection_from_values()` drops unsupported and unset fields for the selected workflow, validates the matching `WorkflowSelection`, and `resolve_workflow_command_config()` resolves that selection into the concrete workflow config. CLI commands pass option dictionaries to this config-owned path instead of constructing selection models locally.
 
@@ -116,7 +118,7 @@ Typical failures:
 | Wrong local config type | A spec was routed to a compiler that does not own it. |
 | Extra fields | The YAML contains fields not accepted by that concrete config. |
 | Missing owner id | Registry dispatch cannot choose an implementation. |
-| Objective benchmark mismatch | Training would optimize a different evaluator than requested. |
+| Objective evaluator mismatch | Training would optimize a different evaluator than requested. |
 
 ## CLI Remote Target Boundary
 

@@ -4,7 +4,7 @@ import pytest
 import yaml
 
 from spice.benchmarks.planning import plan_benchmark
-from spice.config.models import EvaluateConfig, WorkflowTask
+from spice.config.models import EvaluateConfig, TuneConfig, WorkflowTask
 from spice.core.errors import ConfigResolutionError
 
 ETH_DATASET_ID = "cor_9a73b1e88edb488afb1e"
@@ -93,6 +93,13 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
 
     assert len(plan) == 12
     train = next(entry for entry in plan if entry.step_id == "train_tuned")
+    grid_tune = next(
+        entry
+        for entry in plan
+        if entry.step_id == "tune"
+        and "problems-current_row_nominal__lookback_seconds-600__sample_count-1000000"
+        in entry.run_id
+    )
     evaluate = next(
         entry
         for entry in plan
@@ -102,6 +109,12 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
         in entry.run_id
     )
     assert train.config.model_dump()["study_id"]
+    assert isinstance(grid_tune.config, TuneConfig)
+    assert grid_tune.config.problem.id == (
+        "current_row_nominal__lookback_seconds-600__sample_count-1000000"
+    )
+    assert grid_tune.config.problem.lookback_seconds == 600
+    assert grid_tune.config.problem.sample_count == 1000000
     assert isinstance(evaluate.config, EvaluateConfig)
     assert evaluate.dependencies.artifact_from_run_id == evaluate.dependencies.local_run_ids[0]
     assert evaluate.config.dataset_id == ETH_DATASET_ID

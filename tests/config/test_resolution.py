@@ -222,6 +222,24 @@ def test_acquire_resolution_resolves_one_chain_specific_rpc_endpoint(
     assert config.acquisition.dry_run is True
 
 
+def test_empty_selection_override_does_not_fallback_to_surface_default(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    isolate_conf_root()
+
+    with pytest.raises(ConfigResolutionError, match="Unknown chain spec"):
+        resolve_workflow_config(
+            WorkflowTask.TRAIN,
+            TrainWorkflowSelection(
+                surface="current_row_fee_dynamics",
+                chain="",
+                dataset_id=TEST_DATASET_ID,
+                storage_root=tmp_path / "outputs",
+            ),
+        )
+
+
 def test_acquire_resolution_fails_when_provider_lacks_chain_endpoint(
     tmp_path: Path,
     isolate_conf_root,
@@ -369,6 +387,30 @@ def test_benchmark_objective_requires_matching_evaluation(
         )
 
 
+def test_evaluation_objective_requires_selected_evaluation(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    conf_root = isolate_conf_root()
+    payload = _base_surface(conf_root)
+    payload["objective"] = "profit_poisson_replay_2h"
+    payload["evaluation"] = {"id": None}
+    _write_surface(conf_root, "missing_eval", payload)
+
+    with pytest.raises(
+        ConfigResolutionError,
+        match="objective profit_poisson_replay_2h requires evaluation poisson_replay_2h",
+    ):
+        resolve_workflow_config(
+            WorkflowTask.TRAIN,
+            TrainWorkflowSelection(
+                surface="missing_eval",
+                dataset_id=TEST_DATASET_ID,
+                storage_root=tmp_path / "outputs",
+            ),
+        )
+
+
 def test_full_temporal_replay_objective_requires_matching_train_evaluation(
     tmp_path: Path,
     isolate_conf_root,
@@ -407,6 +449,26 @@ def test_full_temporal_replay_objective_requires_matching_train_evaluation(
                 objective="profit_full_temporal_replay",
                 evaluation="poisson_replay_2h",
                 storage_root=tmp_path / "mismatch_outputs",
+            ),
+        )
+
+
+def test_tune_requires_selected_tuning_space(
+    tmp_path: Path,
+    isolate_conf_root,
+) -> None:
+    conf_root = isolate_conf_root()
+    payload = _base_surface(conf_root)
+    payload["tuning"] = {"id": "default", "space": None}
+    _write_surface(conf_root, "missing_tuning_space", payload)
+
+    with pytest.raises(ConfigResolutionError, match="tuning.space is required"):
+        resolve_workflow_config(
+            WorkflowTask.TUNE,
+            TuneWorkflowSelection(
+                surface="missing_tuning_space",
+                dataset_id=TEST_DATASET_ID,
+                storage_root=tmp_path / "outputs",
             ),
         )
 

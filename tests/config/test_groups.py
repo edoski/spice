@@ -50,6 +50,17 @@ def test_context_free_typed_loader_covers_named_group_shapes(
     assert getattr(loader(), identity) == name
 
 
+def test_typed_loader_does_not_use_raw_canonical_payload_loader(monkeypatch) -> None:
+    def fail_raw_loader(*_args, **_kwargs):
+        raise AssertionError("typed loading must not use raw canonical payload loading")
+
+    monkeypatch.setattr("spice.config.groups.load_named_group_payload", fail_raw_loader)
+
+    problem = typed.load(typed.PROBLEM, "current_row_nominal")
+
+    assert problem.id == "current_row_nominal"
+
+
 def test_raw_payload_loader_returns_canonical_dicts() -> None:
     dataset = load_named_group_payload("icdcs_2026", "dataset")
     model = load_named_group_payload("lstm", "model")

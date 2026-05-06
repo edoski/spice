@@ -9,14 +9,14 @@ from dataclasses import dataclass
 from itertools import product
 from typing import cast
 
-from ...config import typed_groups as typed
-from ...config.models import WorkflowTask, coerce_problem_spec
+from ...config.models import WorkflowTask
 from ...core.errors import ConfigResolutionError
 from ..schema import (
     BenchmarkCase,
     ProblemDimensionEntry,
     SetDimensionEntry,
 )
+from ._problem_grid import materialize_problem_variants
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +90,14 @@ def _expand_dimensions(
         if name == "problems":
             variants: list[_DimensionVariant] = []
             for entry in cast(list[ProblemDimensionEntry], entries):
-                variants.extend(_expand_problem_entry(entry))
+                for variant in materialize_problem_variants(entry):
+                    variants.append(
+                        _DimensionVariant(
+                            dimension="problems",
+                            label=variant.label,
+                            patch={"problem": variant.problem},
+                        )
+                    )
             expanded.append(variants)
             continue
         expanded.append(
@@ -122,41 +129,6 @@ def _expand_step_dimensions(
     ]
 
 
-def _expand_problem_entry(entry: ProblemDimensionEntry) -> list[_DimensionVariant]:
-    if entry.ref is not None:
-        return [
-            _DimensionVariant(
-                dimension="problems",
-                label=entry.ref,
-                patch={"problem": entry.ref},
-            )
-        ]
-    grid = entry.grid
-    if grid is None:
-        raise ConfigResolutionError("problem dimension entry is empty")
-    base_problem = typed.load(typed.PROBLEM, grid.base)
-    field_names = tuple(grid.fields)
-    variants: list[_DimensionVariant] = []
-    for values in product(*(grid.fields[field] for field in field_names)):
-        updates = dict(zip(field_names, values, strict=True))
-        problem_id = _problem_grid_id(grid.base, updates)
-        problem = coerce_problem_spec(
-            {
-                **base_problem.model_dump(mode="json"),
-                **updates,
-                "id": problem_id,
-            }
-        )
-        variants.append(
-            _DimensionVariant(
-                dimension="problems",
-                label=problem_id,
-                patch={"problem": problem},
-            )
-        )
-    return variants
-
-
 def _dimension_combinations(
     dimensions: Sequence[Sequence[_DimensionVariant]],
 ) -> list[tuple[_DimensionVariant, ...]]:
@@ -184,8 +156,3 @@ def _label_for_patch(patch: Mapping[str, object]) -> str:
 
 def _label_value(value: object) -> str:
     return str(value).replace(".", "_")
-
-
-def _problem_grid_id(base: str, updates: Mapping[str, int]) -> str:
-    suffix = "__".join(f"{field}-{value}" for field, value in updates.items())
-    return f"{base}__{suffix}"

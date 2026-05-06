@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from ..core.errors import ConfigResolutionError
 from .group_catalog import (
+    ConfigGroup,
     group_spec,
     validate_named_group_payload,
 )
@@ -59,11 +60,11 @@ def normalize_public_group_name(group: str) -> str:
     return catalog_normalize_public_group_name(group)
 
 
-def group_path(group: str) -> Path:
+def group_path(group: str | ConfigGroup) -> Path:
     return config_root() / normalize_group_name(group)
 
 
-def spec_path(group: str, name: str) -> Path:
+def spec_path(group: str | ConfigGroup, name: str) -> Path:
     return group_path(group) / f"{name}.yaml"
 
 
@@ -79,12 +80,17 @@ def load_yaml_mapping(path: Path) -> dict[str, object]:
     return _mapping_payload(cast(Mapping[object, object], payload))
 
 
-def _load_named_group_validated(name: str, group: str) -> BaseModel | dict[str, object]:
+def load_named_group_document(name: str, group: str | ConfigGroup) -> dict[str, object]:
     normalized_group = normalize_group_name(group)
     path = spec_path(normalized_group, name)
     if not path.is_file():
         raise ConfigResolutionError(f"Unknown {normalized_group} spec: {name}")
-    payload = load_yaml_mapping(path)
+    return load_yaml_mapping(path)
+
+
+def _load_named_group_validated(name: str, group: str) -> BaseModel | dict[str, object]:
+    normalized_group = normalize_group_name(group)
+    payload = load_named_group_document(name, normalized_group)
     return _validate_payload(normalized_group, name=name, payload=payload)
 
 

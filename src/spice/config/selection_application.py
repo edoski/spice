@@ -118,7 +118,11 @@ def _apply_acquire_surface(
         problem=base.problem,
         features=base.features,
         storage=base.storage,
-        provider=selection.provider or frame.acquisition.provider,
+        provider=(
+            frame.acquisition.provider
+            if selection.provider is None
+            else selection.provider
+        ),
         dry_run=selection.dry_run,
     )
 
@@ -188,10 +192,10 @@ def _surface_base(
 ) -> AppliedSurfaceBase:
     return AppliedSurfaceBase(
         surface_name=surface_name,
-        chain=selection.chain or frame.chain,
+        chain=frame.chain if selection.chain is None else selection.chain,
         dataset=frame.dataset,
-        problem=selection.problem or frame.problem,
-        features=selection.features or frame.features,
+        problem=frame.problem if selection.problem is None else selection.problem,
+        features=frame.features if selection.features is None else selection.features,
         storage=(
             frame.storage
             if selection.storage_root is None
@@ -218,13 +222,17 @@ def _model_surface(
         storage=base.storage,
         dataset_builder=frame.dataset_builder,
         prediction=frame.prediction,
-        objective=selection.objective or frame.objective,
-        model=selection.model or frame.model,
-        evaluation=selection.evaluation or frame.evaluation.id,
-        training=selection.training or frame.training.id,
-        split=selection.split or frame.training.split,
-        tuning=selection.tuning or frame.tuning.id,
-        tuning_space=selection.tuning_space or frame.tuning.space,
+        objective=frame.objective if selection.objective is None else selection.objective,
+        model=frame.model if selection.model is None else selection.model,
+        evaluation=frame.evaluation.id if selection.evaluation is None else selection.evaluation,
+        training=frame.training.id if selection.training is None else selection.training,
+        split=frame.training.split if selection.split is None else selection.split,
+        tuning=frame.tuning.id if selection.tuning is None else selection.tuning,
+        tuning_space=(
+            frame.tuning.space
+            if selection.tuning_space is None
+            else selection.tuning_space
+        ),
         study=frame.study if selection.study is None else StudyConfig(name=selection.study),
         artifact=artifact,
     )

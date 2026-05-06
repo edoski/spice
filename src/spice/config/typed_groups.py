@@ -13,7 +13,7 @@ from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import ModelConfig
 from ..objectives import ObjectiveConfig
 from .group_catalog import ConfigGroup, validate_named_group_payload
-from .groups import load_named_group_payload
+from .groups import load_named_group_document
 from .models import (
     ChainSpec,
     DatasetSpec,
@@ -53,7 +53,7 @@ TUNING = TypedGroup[TuningConfig](ConfigGroup.TUNING)
 
 
 def load(spec: TypedGroup[ConfigT], name: str) -> ConfigT:
-    payload = load_named_group_payload(name, spec.group)
+    payload = load_named_group_document(name, spec.group)
     return cast(
         ConfigT,
         validate_named_group_payload(spec.group, name=name, payload=payload),

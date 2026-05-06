@@ -247,11 +247,13 @@ def _resolve_evaluation(name: str | None) -> EvaluatorConfig | None:
 def _resolve_objective(name: str, *, evaluation_name: str | None) -> ObjectiveConfig:
     objective = typed.load(typed.OBJECTIVE, name)
     expected_evaluation = _objective_evaluator_id(objective)
-    if (
-        evaluation_name is not None
-        and expected_evaluation is not None
-        and expected_evaluation != evaluation_name
-    ):
+    if expected_evaluation is None:
+        return objective
+    if evaluation_name is None:
+        raise ConfigResolutionError(
+            f"objective {name} requires evaluation {expected_evaluation}"
+        )
+    if expected_evaluation != evaluation_name:
         raise ConfigResolutionError(
             f"objective {name} requires evaluation {expected_evaluation}, "
             f"got {evaluation_name}"
