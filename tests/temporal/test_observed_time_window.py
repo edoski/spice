@@ -9,12 +9,12 @@ import pytest
 from spice.config import coerce_features_config, coerce_problem_spec
 from spice.config.models import ChainRuntimeSpec
 from spice.features import compile_feature_contract
-from spice.temporal.compilers.observed_time_window import ObservedTimeWindowRuntimeMetadata
-from spice.temporal.contracts import (
-    compile_problem_contract,
+from spice.temporal.compilers import (
     problem_runtime_metadata_from_compiler_payload,
     problem_runtime_metadata_payload,
 )
+from spice.temporal.compilers.observed_time_window import ObservedTimeWindowRuntimeMetadata
+from spice.temporal.contracts import compile_problem_contract
 
 
 def _feature_contract():

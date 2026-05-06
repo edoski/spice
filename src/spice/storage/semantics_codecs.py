@@ -7,7 +7,8 @@ from pydantic import TypeAdapter
 from ..core.errors import StateLayoutError
 from ..features import FeaturePrerequisites
 from ..metrics import MetricDescriptor
-from ..semantics import ArtifactSemantics, StudySemantics, TemporalCapabilitySemantics
+from ..semantics import ArtifactSemantics, StudySemantics
+from ..temporal.capability import TemporalCapabilitySemantics
 from .payloads import PayloadCodec, type_adapter_payload, type_adapter_value
 
 _STUDY_SEMANTICS_ADAPTER = TypeAdapter(StudySemantics)

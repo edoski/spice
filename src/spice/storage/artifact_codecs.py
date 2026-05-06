@@ -21,7 +21,7 @@ from ..modeling.dataset_builders import (
 )
 from ..modeling.families.registry import coerce_model_config
 from ..objectives import coerce_objective_config
-from ..temporal.contracts import (
+from ..temporal.capability import (
     temporal_capability_from_payload,
     temporal_capability_payload,
 )
@@ -141,6 +141,18 @@ class ArtifactManifestPayload(PayloadModel):
         from ..modeling.results import TrainingArtifactManifest
 
         dataset_builder = coerce_dataset_builder_config(self.dataset_builder)
+        temporal_capability = temporal_capability_from_payload(
+            mapping_payload(
+                self.temporal_capability,
+                label="artifact_manifest.temporal_capability",
+            )
+        )
+        semantics = ARTIFACT_SEMANTICS_CODEC.decode(self.semantics)
+        if semantics.temporal_capability != temporal_capability.semantics:
+            raise ValueError(
+                "artifact manifest temporal capability semantics do not match "
+                "temporal_capability"
+            )
         return TrainingArtifactManifest(
             artifact_id=self.artifact_id,
             dataset_builder=dataset_builder,
@@ -168,13 +180,8 @@ class ArtifactManifestPayload(PayloadModel):
                     label="artifact_manifest.builder_runtime_metadata",
                 ),
             ),
-            temporal_capability=temporal_capability_from_payload(
-                mapping_payload(
-                    self.temporal_capability,
-                    label="artifact_manifest.temporal_capability",
-                )
-            ),
-            semantics=ARTIFACT_SEMANTICS_CODEC.decode(self.semantics),
+            temporal_capability=temporal_capability,
+            semantics=semantics,
         )
 
 

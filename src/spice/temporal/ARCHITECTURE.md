@@ -56,7 +56,7 @@ CompiledProblemContract
 
 Compilers publish feature prerequisites and runtime metadata codecs. Dataset builders and workflows call compiler contracts; they should not inspect concrete compiler classes.
 
-Training compiles the maximum supported delay into a capability store and a **Temporal Capability**. The capability is the artifact-facing value that carries compiler runtime metadata, maximum delay, and action width into inference. Evaluation compiles a concrete delay store from that capability; it does not rediscover action width from the evaluation corpus.
+Training compiles the maximum supported delay into a capability store and a **Temporal Capability**. The capability is the artifact-facing value that carries compiler runtime metadata, maximum delay, and action width into inference. Evaluation defaults and delay checks use the artifact Temporal Capability as authority; `ProblemSemantics.max_delay_seconds` remains authored problem provenance. Evaluation compiles a concrete delay store from the capability; it does not rediscover action width from the evaluation corpus.
 
 ## Execution Policy
 

@@ -10,7 +10,7 @@ import torch
 from ..core.constants import MODEL_STATE_FILENAME
 from ..core.files import write_path_atomic
 from ..prediction import compile_prediction_contract
-from ..semantics import ArtifactSemantics, TemporalCapabilitySemantics
+from ..semantics import ArtifactSemantics
 from ..storage.artifact import load_artifact_manifest, write_artifact_manifest
 from .dataset_builders import (
     CompiledDatasetBuilderContract,
@@ -70,11 +70,7 @@ def build_training_artifact_manifest(
             input_normalization=spec.input_normalization_contract.semantics,
             representation=spec.representation_contract.semantics,
             dataset_builder=spec.dataset_builder_contract.semantics,
-            temporal_capability=TemporalCapabilitySemantics(
-                compiler_id=prepared.temporal_capability.compiler_id,
-                max_delay_seconds=prepared.temporal_capability.max_delay_seconds,
-                action_width=prepared.temporal_capability.action_width,
-            ),
+            temporal_capability=prepared.temporal_capability.semantics,
         ),
     )
 

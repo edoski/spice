@@ -66,11 +66,12 @@ def prepare_artifact_inference_context(
         family_id=manifest.prediction.family_id,
     )
     evaluator_contract = compile_evaluator_contract(config.evaluation)
-    delay_seconds = config.delay_seconds or manifest.max_delay_seconds
-    if delay_seconds > manifest.max_delay_seconds:
+    capability_max_delay_seconds = manifest.temporal_capability.max_delay_seconds
+    delay_seconds = config.delay_seconds or capability_max_delay_seconds
+    if delay_seconds > capability_max_delay_seconds:
         raise ConfigResolutionError(
             "delay_seconds exceeds artifact capability: "
-            f"{delay_seconds} > {manifest.max_delay_seconds}"
+            f"{delay_seconds} > {capability_max_delay_seconds}"
         )
 
     validate_corpus_coverage(

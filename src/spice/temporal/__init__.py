@@ -1,6 +1,11 @@
 """Temporal package."""
 
-from .capability import TemporalCapability
+from .capability import (
+    TemporalCapability,
+    TemporalCapabilitySemantics,
+    temporal_capability_from_payload,
+    temporal_capability_payload,
+)
 from .execution_policy import (
     CompiledExecutionPolicyContract,
     ExecutionPolicyConfig,
@@ -15,6 +20,7 @@ from .execution_policy import (
 __all__ = [
     "CompiledExecutionPolicyContract",
     "TemporalCapability",
+    "TemporalCapabilitySemantics",
     "PreparedActionSpace",
     "PreparedSupervisedExecutionTargets",
     "PreparedTemporalFacts",
@@ -22,4 +28,6 @@ __all__ = [
     "RealizedSelectionBatch",
     "coerce_execution_policy_config",
     "compile_execution_policy_contract",
+    "temporal_capability_from_payload",
+    "temporal_capability_payload",
 ]

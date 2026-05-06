@@ -25,7 +25,6 @@ from spice.semantics import (
     DatasetBuilderSemantics,
     InputNormalizationSemantics,
     ObjectiveSemantics,
-    TemporalCapabilitySemantics,
 )
 from spice.temporal import TemporalCapability
 from spice.temporal.compilers.observed_time_window import ObservedTimeWindowRuntimeMetadata
@@ -149,6 +148,15 @@ def manifest(
     )
     model = _model_config()
     representation_contract = sequence_input_contract()
+    temporal_capability = TemporalCapability(
+        compiler_id=problem_contract.compiler_id,
+        max_delay_seconds=36,
+        action_width=4,
+        compiler_runtime_metadata=ObservedTimeWindowRuntimeMetadata(
+            slot_spacing_id="nominal",
+            slot_spacing_seconds=12.0,
+        ),
+    )
     return TrainingArtifactManifest(
         artifact_id="artifact-1",
         dataset_builder=_dataset_builder_config(),
@@ -173,15 +181,7 @@ def manifest(
             min_sequence_length=8,
             max_sequence_length=64,
         ),
-        temporal_capability=TemporalCapability(
-            compiler_id=problem_contract.compiler_id,
-            max_delay_seconds=36,
-            action_width=4,
-            compiler_runtime_metadata=ObservedTimeWindowRuntimeMetadata(
-                slot_spacing_id="nominal",
-                slot_spacing_seconds=12.0,
-            ),
-        ),
+        temporal_capability=temporal_capability,
         semantics=ArtifactSemantics(
             problem=problem_contract.semantics,
             execution_policy=problem_contract.execution_policy.semantics,
@@ -198,10 +198,6 @@ def manifest(
             ),
             representation=representation_contract.semantics,
             dataset_builder=DatasetBuilderSemantics(dataset_builder_id="fixed_sequence_temporal"),
-            temporal_capability=TemporalCapabilitySemantics(
-                compiler_id=problem_contract.compiler_id,
-                max_delay_seconds=36,
-                action_width=4,
-            ),
+            temporal_capability=temporal_capability.semantics,
         ),
     )

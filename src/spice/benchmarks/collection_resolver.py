@@ -108,7 +108,10 @@ def resolve_benchmark_evaluation(
             f"selection for {selection.run_id}: {manifest.dataset_id} != "
             f"{selection.artifact_source_dataset_id}"
         )
-    expected_delay = selection.configured_delay_seconds or manifest.max_delay_seconds
+    expected_delay = (
+        selection.configured_delay_seconds
+        or manifest.temporal_capability.max_delay_seconds
+    )
     summaries = _matching_evaluation_summaries(
         selection,
         summaries=tuple(list_evaluation_summaries(artifact_record.state_db_path)),

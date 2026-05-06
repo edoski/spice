@@ -96,7 +96,7 @@ def artifact_sections(
                 ("variant", manifest.variant.value),
                 ("study", manifest.study.name if manifest.study is not None else "n/a"),
                 ("study id", manifest.study_id or "n/a"),
-                ("capability", f"{manifest.max_delay_seconds}s"),
+                ("capability", f"{manifest.temporal_capability.max_delay_seconds}s"),
                 ("action width", str(manifest.action_width)),
                 ("lookback", f"{manifest.lookback_seconds}s"),
                 (

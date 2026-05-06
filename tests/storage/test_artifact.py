@@ -91,6 +91,18 @@ def test_artifact_manifest_codec_round_trips() -> None:
     assert ARTIFACT_MANIFEST_CODEC.decode(ARTIFACT_MANIFEST_CODEC.encode(manifest)) == manifest
 
 
+def test_artifact_manifest_codec_rejects_temporal_capability_projection_drift() -> None:
+    payload = ARTIFACT_MANIFEST_CODEC.encode(_manifest())
+    semantics = dict(payload["semantics"])
+    temporal_projection = dict(semantics["temporal_capability"])
+    temporal_projection["max_delay_seconds"] = 12
+    semantics["temporal_capability"] = temporal_projection
+    payload["semantics"] = semantics
+
+    with pytest.raises(StateLayoutError, match="temporal capability semantics"):
+        ARTIFACT_MANIFEST_CODEC.decode(payload)
+
+
 def test_training_summary_codec_round_trips() -> None:
     summary = TrainingRuntimeSummary(
         n_rows_available=128,

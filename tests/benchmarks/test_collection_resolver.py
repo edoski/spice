@@ -143,7 +143,7 @@ def _manifest(
     dataset_id: str = "dataset-1",
 ):
     return SimpleNamespace(
-        max_delay_seconds=max_delay_seconds,
+        temporal_capability=SimpleNamespace(max_delay_seconds=max_delay_seconds),
         artifact_id=artifact_id,
         dataset_id=dataset_id,
     )

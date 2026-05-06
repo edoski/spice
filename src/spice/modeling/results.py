@@ -95,10 +95,6 @@ class TrainingArtifactManifest:
         return self.semantics.feature.feature_names
 
     @property
-    def max_delay_seconds(self) -> int:
-        return self.semantics.problem.max_delay_seconds
-
-    @property
     def lookback_seconds(self) -> int:
         return self.semantics.problem.lookback_seconds
 

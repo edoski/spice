@@ -64,7 +64,6 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
     loaded_artifact = SimpleNamespace(
         manifest=SimpleNamespace(
             chain_name="ethereum",
-            max_delay_seconds=max_delay,
             dataset_builder=SimpleNamespace(id="fixed_sequence_temporal"),
             builder_runtime_metadata=runtime_metadata,
             scaler=object(),
@@ -182,7 +181,8 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
     def fake_prepare_inference_dataset(*_args, facts, context):
         calls.append("prepare_inference")
         assert facts.delay_seconds == (
-            config.delay_seconds or loaded_artifact.manifest.max_delay_seconds
+            config.delay_seconds
+            or loaded_artifact.manifest.temporal_capability.max_delay_seconds
         )
         assert context.builder_runtime_metadata is runtime_metadata
         assert context.temporal_capability is temporal_capability
