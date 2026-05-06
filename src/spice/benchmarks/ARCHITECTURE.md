@@ -32,6 +32,8 @@ results.sqlite projection -> CSV export/query
 
 **Benchmark Plan Materialization** expands dimensions, asks the benchmark ledger materializer to normalize dependency/root policy, calls normal workflow resolution, and produces durable plan entries with resolved workflow snapshots. Inline problem grids produce inline `ProblemSpec` values during materialization; the selection ledger stores the selected problem id, while the resolved workflow config stores the full executable problem.
 
+The public planning seam is `benchmarks.planning`. Its private internals own case expansion, dependency matching, dependency-derived root selection, root ledger finalization, and selection ledger materialization. Callers use `plan_benchmark()` and the planning models exported from that package; they do not import planning internals.
+
 ## Root Ledger
 
 The root ledger is benchmark audit state, not storage catalog state. Each plan entry stores typed materialized root entries with `run_id`, workflow, role, root kind, root id, optional source run id, and root-specific ids. Roles are `consumed`, `produced`, and `source`; root kinds are `dataset`, `study`, and `artifact`.
@@ -43,11 +45,7 @@ The benchmark ledger materializer owns the required order: prepare dependency-de
 ```text
 benchmarks/
   schema.py      benchmark YAML schema
-  materialization.py  spec expansion and plan-entry assembly
-  dependency_ledger.py  dependency plan normalization and row matching
-  root_ledger.py  typed root ledger plus dependency-aware ledger materialization
-  selection_ledger.py  typed benchmark coordinate ledger
-  models.py      benchmark plan data models
+  planning/      public planning interface plus private expansion/dependency/root/selection internals
   result_records.py  collection snapshot and result records
   result_schema.py   SQLite result projection schema
   result_store.py    low-level SQLite result projection

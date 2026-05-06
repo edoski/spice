@@ -9,9 +9,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..config.models import WorkflowTask
-from ..core.errors import ConfigResolutionError
-from .schema import AfterDependency, BenchmarkStep, SlurmAfterDependency
+from ...config.models import WorkflowTask
+from ...core.errors import ConfigResolutionError
+from ..schema import AfterDependency, BenchmarkStep, SlurmAfterDependency
+from ._models import BenchmarkDependencyLedger
 
 
 class BenchmarkPlanSeed(Protocol):
@@ -23,13 +24,6 @@ class BenchmarkPlanSeed(Protocol):
 
     @property
     def dimension_labels(self) -> Mapping[str, str]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class BenchmarkDependencyLedger:
-    local_run_ids: tuple[str, ...]
-    external_slurm_dependencies: tuple[str, ...]
-    artifact_from_run_id: str | None
 
 
 @dataclass(frozen=True, slots=True)

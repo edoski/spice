@@ -8,13 +8,14 @@ from types import SimpleNamespace
 import pytest
 
 from spice.benchmarks.collection import collect_benchmark_run
-from spice.benchmarks.dependency_ledger import BenchmarkDependencyLedger
-from spice.benchmarks.models import BenchmarkPlanEntry
-from spice.benchmarks.result_store import index_counts
-from spice.benchmarks.root_ledger import (
+from spice.benchmarks.planning import (
+    BenchmarkDependencyLedger,
     BenchmarkMaterializedRoot,
+    BenchmarkPlanEntry,
     BenchmarkRootLedger,
+    BenchmarkSelectionLedger,
 )
+from spice.benchmarks.result_store import index_counts
 from spice.benchmarks.runs import (
     BenchmarkSubmissionRecord,
     append_submission_jsonl,
@@ -24,7 +25,6 @@ from spice.benchmarks.runs import (
     load_plan_jsonl,
     write_plan_jsonl,
 )
-from spice.benchmarks.selection_ledger import BenchmarkSelectionLedger
 from spice.config import EvaluateConfig, StorageSpec, WorkflowTask
 from spice.config.groups import load_named_group_payload
 from spice.config.models import ArtifactVariant

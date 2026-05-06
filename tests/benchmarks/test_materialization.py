@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from spice.benchmarks.materialization import plan_benchmark
+from spice.benchmarks.planning import plan_benchmark
 from spice.config import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.core.errors import ConfigResolutionError
 from spice.storage.catalog import CatalogStudyRecord

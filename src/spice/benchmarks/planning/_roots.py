@@ -6,77 +6,28 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Literal
-
-from ..config.models import ArtifactVariant, TrainConfig, WorkflowTask
-from ..config.selections import (
+from ...config.models import ArtifactVariant, TrainConfig, WorkflowTask
+from ...config.selections import (
     EvaluateWorkflowSelection,
     TrainWorkflowSelection,
     WorkflowSelection,
 )
-from ..config.workflow_snapshots import ResolvedWorkflowConfig
-from ..core.config_model import ConfigModel
-from ..core.errors import ConfigResolutionError, SelectorResolutionError
-from ..storage.catalog.index import resolve_study_record
-from ..storage.root_identity import consumed_root_facts, produced_root_facts
-from ..storage.selectors import StudySelector
-from .dependency_ledger import (
-    BenchmarkDependencyLedger,
+from ...config.workflow_snapshots import ResolvedWorkflowConfig
+from ...core.errors import ConfigResolutionError, SelectorResolutionError
+from ...storage.catalog.index import resolve_study_record
+from ...storage.root_identity import consumed_root_facts, produced_root_facts
+from ...storage.selectors import StudySelector
+from ._dependencies import (
     BenchmarkDependencyPlan,
     BenchmarkDependencyResolver,
     BenchmarkPlanSeed,
 )
-
-BenchmarkRootRole = Literal["consumed", "produced", "source"]
-BenchmarkRootKind = Literal["dataset", "study", "artifact"]
-
-
-class BenchmarkMaterializedRoot(ConfigModel):
-    run_id: str
-    workflow: WorkflowTask
-    role: BenchmarkRootRole
-    root_kind: BenchmarkRootKind
-    root_id: str
-    source_run_id: str | None = None
-    dataset_id: str | None = None
-    study_id: str | None = None
-    artifact_id: str | None = None
-
-
-class BenchmarkRootLedger(ConfigModel):
-    entries: tuple[BenchmarkMaterializedRoot, ...] = ()
-
-    def root_id(
-        self,
-        *,
-        role: BenchmarkRootRole,
-        root_kind: BenchmarkRootKind,
-    ) -> str | None:
-        matches = [
-            entry.root_id
-            for entry in self.entries
-            if entry.role == role and entry.root_kind == root_kind
-        ]
-        if len(matches) > 1:
-            raise ConfigResolutionError(
-                f"benchmark root ledger has multiple {role} {root_kind} roots"
-            )
-        return matches[0] if matches else None
-
-    def consumed_dataset_id(self) -> str | None:
-        return self.root_id(role="consumed", root_kind="dataset")
-
-    def consumed_artifact_id(self) -> str | None:
-        return self.root_id(role="consumed", root_kind="artifact")
-
-    def produced_study_id(self) -> str | None:
-        return self.root_id(role="produced", root_kind="study")
-
-    def produced_artifact_id(self) -> str | None:
-        return self.root_id(role="produced", root_kind="artifact")
-
-    def artifact_source_dataset_id(self) -> str | None:
-        return self.root_id(role="source", root_kind="dataset")
+from ._models import (
+    BenchmarkDependencyLedger,
+    BenchmarkMaterializedRoot,
+    BenchmarkRootKind,
+    BenchmarkRootLedger,
+)
 
 
 @dataclass(frozen=True, slots=True)

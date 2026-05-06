@@ -14,7 +14,7 @@ from ..storage.artifact import (
     load_training_summary,
 )
 from ..storage.catalog import CatalogArtifactRecord
-from .models import BenchmarkPlanEntry
+from .planning import BenchmarkPlanEntry
 from .runs import BenchmarkSubmissionRecord
 
 

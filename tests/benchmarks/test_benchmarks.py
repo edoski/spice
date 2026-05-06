@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from spice.benchmarks import plan_benchmark
+from spice.benchmarks.planning import plan_benchmark
 from spice.config.models import EvaluateConfig, WorkflowTask
 from spice.core.errors import ConfigResolutionError
 

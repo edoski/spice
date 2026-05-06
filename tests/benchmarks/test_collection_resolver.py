@@ -9,11 +9,14 @@ from spice.benchmarks.collection_resolver import (
     benchmark_collection_selection,
     resolve_benchmark_evaluation,
 )
-from spice.benchmarks.dependency_ledger import BenchmarkDependencyLedger
-from spice.benchmarks.models import BenchmarkPlanEntry
-from spice.benchmarks.root_ledger import BenchmarkMaterializedRoot, BenchmarkRootLedger
+from spice.benchmarks.planning import (
+    BenchmarkDependencyLedger,
+    BenchmarkMaterializedRoot,
+    BenchmarkPlanEntry,
+    BenchmarkRootLedger,
+    BenchmarkSelectionLedger,
+)
 from spice.benchmarks.runs import BenchmarkSubmissionRecord
-from spice.benchmarks.selection_ledger import BenchmarkSelectionLedger
 from spice.config import EvaluateConfig, StorageSpec, WorkflowTask
 from spice.config.groups import load_named_group_payload
 from spice.core.errors import SpiceOperatorError

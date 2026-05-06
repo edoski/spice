@@ -9,8 +9,7 @@ from pathlib import Path
 
 from ..core.errors import SpiceOperatorError
 from ..execution.session import ExecutionSession, open_execution_session
-from .materialization import plan_benchmark
-from .models import BenchmarkPlanEntry
+from .planning import BenchmarkPlanEntry, plan_benchmark
 from .runs import (
     BenchmarkSubmissionRecord,
     append_submission_jsonl,

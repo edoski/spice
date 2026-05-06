@@ -1,8 +1,8 @@
 # Benchmark Implementations
 
-## Benchmark Plan Materialization
+## Benchmark Planning
 
-`plan_benchmark()` turns a named benchmark into durable benchmark plan entries. It resolves once. Submit and collect consume persisted run-state files and do not re-plan.
+`benchmarks.planning.plan_benchmark()` turns a named benchmark into durable benchmark plan entries. It resolves once. Submit and collect consume persisted run-state files and do not re-plan.
 
 Materialization keeps three durable ledgers distinct:
 
@@ -10,7 +10,7 @@ Materialization keeps three durable ledgers distinct:
 - `BenchmarkSelectionLedger` owns benchmark coordinate intent such as surface, chain, model, problem, objective, evaluation, runtime knobs, and inline problem ids. It does not carry consumed root ids.
 - `BenchmarkRootLedger` owns typed materialized root entries for consumed, produced, and source roots.
 
-`BenchmarkPlanLedgerMaterializer` owns the dependency/root policy sequence before the plan entry is assembled. It resolves dependency ledgers, prepares dependency-derived selections, resolves the workflow config through the normal config path, finalizes the root ledger, and records produced roots for later dependent steps. Tuned train steps without an explicit `study_id` consume the produced study id from a prior tune dependency. Evaluate steps with `artifact_from` consume the produced artifact id from the referenced train step. Evaluate dataset selection stays explicit when provided; otherwise it inherits the artifact source dataset. Explicit tuned train studies still resolve their dataset through the storage catalog. The persisted plan field is `root_ledger`; it contains root entries, not scattered consumed/produced scalar buckets.
+The planning package owns the dependency/root policy sequence before the plan entry is assembled. It resolves dependency ledgers, prepares dependency-derived selections, resolves the workflow config through the normal config path, finalizes the root ledger, and records produced roots for later dependent steps. Tuned train steps without an explicit `study_id` consume the produced study id from a prior tune dependency. Evaluate steps with `artifact_from` consume the produced artifact id from the referenced train step. Evaluate dataset selection stays explicit when provided; otherwise it inherits the artifact source dataset. Explicit tuned train studies still resolve their dataset through the storage catalog. The persisted plan field is `root_ledger`; it contains root entries, not scattered consumed/produced scalar buckets.
 
 `plan.jsonl` stores the typed ledgers plus a Resolved Workflow Snapshot. Raw JSON validation stays in `run_state_codec.py`; materialization works with typed benchmark and workflow objects.
 
