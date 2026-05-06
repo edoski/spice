@@ -127,8 +127,9 @@ class CompiledDatasetBuilderContract:
                 builder_runtime_metadata=builder_runtime_metadata,
                 scaler=context.scaler,
                 temporal_capability=context.temporal_capability,
-                window_start_timestamp=facts.evaluation_window.start_timestamp,
-                window_end_timestamp=facts.evaluation_window.exclusive_end_timestamp,
+                sample_timestamp_window=(
+                    facts.evaluation_coverage.to_sample_timestamp_window()
+                ),
             ),
         )
 

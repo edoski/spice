@@ -64,7 +64,7 @@ training prepare
   -> reconstruct same assumptions
 ```
 
-Artifact Inference Context validates artifact and corpus compatibility, then passes trusted artifact facts and compiled context into the dataset-builder contract. The contract coerces builder runtime metadata, passes the artifact Temporal Capability through, and normalizes inclusive evaluation-window timestamps before the concrete builder prepares inference data.
+Artifact Inference Context validates artifact and corpus compatibility, then passes observed evaluation coverage plus compiled context into the dataset-builder contract. The contract coerces builder runtime metadata, passes the artifact Temporal Capability through, and converts inclusive coverage facts into a half-open sample timestamp window before the concrete builder prepares inference data.
 
 Builder runtime metadata is builder-local. Compiler runtime metadata is not hidden inside it; compiler metadata travels with Temporal Capability so artifact action width and compiler assumptions stay one typed value.
 

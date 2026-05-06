@@ -33,20 +33,39 @@ class TrainingDatasetPreparationFacts:
     split: SplitConfig
 
 
-@dataclass(slots=True)
-class InclusiveEvaluationWindow:
-    start_timestamp: int
-    end_timestamp: int
+@dataclass(frozen=True, slots=True)
+class EvaluationCoverageWindow:
+    first_timestamp: int
+    last_timestamp: int
 
-    @property
-    def exclusive_end_timestamp(self) -> int:
-        return self.end_timestamp + 1
+    def __post_init__(self) -> None:
+        if self.last_timestamp < self.first_timestamp:
+            raise ValueError("evaluation coverage last_timestamp must be >= first_timestamp")
+
+    def to_sample_timestamp_window(self) -> SampleTimestampWindow:
+        return SampleTimestampWindow(
+            start_timestamp_inclusive=self.first_timestamp,
+            end_timestamp_exclusive=self.last_timestamp + 1,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SampleTimestampWindow:
+    start_timestamp_inclusive: int
+    end_timestamp_exclusive: int
+
+    def __post_init__(self) -> None:
+        if self.end_timestamp_exclusive <= self.start_timestamp_inclusive:
+            raise ValueError(
+                "sample timestamp window end_timestamp_exclusive must be greater "
+                "than start_timestamp_inclusive"
+            )
 
 
 @dataclass(slots=True)
 class ArtifactInferenceDatasetPreparationFacts:
     delay_seconds: int
-    evaluation_window: InclusiveEvaluationWindow
+    evaluation_coverage: EvaluationCoverageWindow
 
 
 @dataclass(slots=True)
@@ -66,8 +85,7 @@ class CompiledInferenceDatasetPreparationRequest:
     builder_runtime_metadata: BuilderRuntimeMetadata
     scaler: ScalerStats
     temporal_capability: TemporalCapability
-    window_start_timestamp: int
-    window_end_timestamp: int
+    sample_timestamp_window: SampleTimestampWindow
 
 
 @dataclass(slots=True)

@@ -36,12 +36,23 @@ def test_sample_timestamp_filtering_uses_anchor_timestamps() -> None:
     store = _store()
 
     selected = store.sample_indices_by_timestamp_window(
-        start_timestamp=40,
-        end_timestamp=70,
+        start_timestamp_inclusive=40,
+        end_timestamp_exclusive=70,
     )
 
     np.testing.assert_array_equal(selected, [1, 2])
     np.testing.assert_array_equal(store.sample_timestamps(selected), [40, 60])
+
+
+def test_sample_timestamp_filtering_uses_half_open_window() -> None:
+    store = _store()
+
+    selected = store.sample_indices_by_timestamp_window(
+        start_timestamp_inclusive=20,
+        end_timestamp_exclusive=60,
+    )
+
+    np.testing.assert_array_equal(store.sample_timestamps(selected), [20, 40])
 
 
 def test_fixed_context_filtering_rewrites_store_sample_rows() -> None:

@@ -114,11 +114,14 @@ class CompiledProblemStore:
     def sample_indices_by_timestamp_window(
         self,
         *,
-        start_timestamp: int,
-        end_timestamp: int,
+        start_timestamp_inclusive: int,
+        end_timestamp_exclusive: int,
     ) -> IntVector:
         sample_timestamps = self.sample_timestamps(np.arange(self.n_samples, dtype=np.int64))
-        mask = (sample_timestamps >= start_timestamp) & (sample_timestamps < end_timestamp)
+        mask = (
+            (sample_timestamps >= start_timestamp_inclusive)
+            & (sample_timestamps < end_timestamp_exclusive)
+        )
         return np.flatnonzero(mask).astype(np.int64, copy=False)
 
     def sample_timestamps(self, sample_indices: IntVector) -> IntVector:

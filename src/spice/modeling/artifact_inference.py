@@ -17,7 +17,7 @@ from .artifacts import LoadedTrainingArtifact, load_training_artifact
 from .dataset_builders import (
     ArtifactInferenceDatasetPreparationContext,
     ArtifactInferenceDatasetPreparationFacts,
-    InclusiveEvaluationWindow,
+    EvaluationCoverageWindow,
     PreparedInferenceDataset,
 )
 from .runtime_planning import build_cuda_modeling_runtime_plan
@@ -87,12 +87,12 @@ def prepare_artifact_inference_context(
         load_block_frame(corpus.evaluation_dir),
         facts=ArtifactInferenceDatasetPreparationFacts(
             delay_seconds=delay_seconds,
-            evaluation_window=InclusiveEvaluationWindow(
-                start_timestamp=_required_timestamp(
+            evaluation_coverage=EvaluationCoverageWindow(
+                first_timestamp=_required_timestamp(
                     corpus_manifest.splits.evaluation.coverage.first_timestamp,
                     "evaluation first timestamp",
                 ),
-                end_timestamp=_required_timestamp(
+                last_timestamp=_required_timestamp(
                     corpus_manifest.splits.evaluation.coverage.last_timestamp,
                     "evaluation last timestamp",
                 ),

@@ -66,6 +66,8 @@ train indices
 
 Inference must recreate the same sample geometry used during training. The artifact supplies builder runtime metadata and Temporal Capability. The requested delay can be shorter than the trained max delay but cannot exceed it.
 
+Inference callers provide observed evaluation coverage as inclusive first/last timestamps. The dataset-builder contract converts that to a half-open sample timestamp window `[first_timestamp, last_timestamp + 1)`; concrete builders consume only the normalized window.
+
 ## Failure Modes
 
 | Failure | Meaning |

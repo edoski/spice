@@ -9,8 +9,8 @@ from spice.config import TrainConfig, WorkflowTask
 from spice.modeling.dataset_builders import (
     ArtifactInferenceDatasetPreparationContext,
     ArtifactInferenceDatasetPreparationFacts,
+    EvaluationCoverageWindow,
     FixedSequenceTemporalBuilderRuntimeMetadata,
-    InclusiveEvaluationWindow,
     TrainingDatasetPreparationContext,
     TrainingDatasetPreparationFacts,
 )
@@ -262,23 +262,24 @@ def test_fixed_sequence_inference_prep_reconstructs_artifact_runtime_state(
     )
     trained = _prepare_training_dataset(history_rows, spec=spec)
     evaluation_rows = make_block_rows(
-        40,
+        42,
         start_block=241,
         start_timestamp=240 * 12,
         chain_id=config.chain.runtime.chain_id,
         block_interval_seconds=12,
     )
     evaluation_start = evaluation_rows[0]["timestamp"]
-    evaluation_end = evaluation_rows[-1]["timestamp"]
+    evaluation_end = evaluation_rows[39]["timestamp"]
+    first_post_window_timestamp = evaluation_rows[40]["timestamp"]
 
     prepared = spec.dataset_builder_contract.prepare_inference_dataset(
         pl.DataFrame(history_rows),
         pl.DataFrame(evaluation_rows),
         facts=ArtifactInferenceDatasetPreparationFacts(
             delay_seconds=12,
-            evaluation_window=InclusiveEvaluationWindow(
-                start_timestamp=evaluation_start,
-                end_timestamp=evaluation_end,
+            evaluation_coverage=EvaluationCoverageWindow(
+                first_timestamp=evaluation_start,
+                last_timestamp=evaluation_end,
             ),
         ),
         context=ArtifactInferenceDatasetPreparationContext(
@@ -297,3 +298,5 @@ def test_fixed_sequence_inference_prep_reconstructs_artifact_runtime_state(
     assert prepared.store.max_candidate_slots == trained.temporal_capability.action_width
     assert int(sample_timestamps.min()) >= evaluation_start
     assert int(sample_timestamps.max()) <= evaluation_end
+    assert evaluation_end in sample_timestamps
+    assert first_post_window_timestamp not in sample_timestamps

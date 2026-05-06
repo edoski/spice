@@ -237,7 +237,7 @@ def test_artifact_inference_context_prepares_scoring_inputs(
     ]
 
 
-def test_artifact_inference_passes_inclusive_corpus_evaluation_window(
+def test_artifact_inference_passes_observed_evaluation_coverage(
     tmp_path,
     monkeypatch,
     load_workflow_config,
@@ -249,8 +249,8 @@ def test_artifact_inference_passes_inclusive_corpus_evaluation_window(
 
     def fake_prepare_inference_dataset(*_args, facts, context):
         del context
-        captured["evaluation_start_timestamp"] = facts.evaluation_window.start_timestamp
-        captured["evaluation_end_timestamp"] = facts.evaluation_window.end_timestamp
+        captured["evaluation_first_timestamp"] = facts.evaluation_coverage.first_timestamp
+        captured["evaluation_last_timestamp"] = facts.evaluation_coverage.last_timestamp
         return SimpleNamespace(
             n_history_rows=10,
             n_evaluation_rows=5,
@@ -272,8 +272,8 @@ def test_artifact_inference_passes_inclusive_corpus_evaluation_window(
     )
 
     assert captured == {
-        "evaluation_start_timestamp": 1000,
-        "evaluation_end_timestamp": 2000,
+        "evaluation_first_timestamp": 1000,
+        "evaluation_last_timestamp": 2000,
     }
 
 

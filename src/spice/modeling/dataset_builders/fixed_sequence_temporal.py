@@ -216,8 +216,12 @@ def prepare_inference_dataset(
         warmup_rows=spec.problem_contract.feature_prerequisites.warmup_rows,
     )
     sample_indices = store.sample_indices_by_timestamp_window(
-        start_timestamp=spec.window_start_timestamp,
-        end_timestamp=spec.window_end_timestamp,
+        start_timestamp_inclusive=(
+            spec.sample_timestamp_window.start_timestamp_inclusive
+        ),
+        end_timestamp_exclusive=(
+            spec.sample_timestamp_window.end_timestamp_exclusive
+        ),
     )
     if sample_indices.size == 0:
         raise ValueError("Evaluation dataset produced no valid inference examples")
