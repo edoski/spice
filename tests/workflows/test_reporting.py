@@ -230,10 +230,8 @@ def test_train_workflow_emits_compact_epoch_output(
 
     monkeypatch.setattr(
         train_workflow,
-        "artifact_full_root_transaction",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            commit=lambda writer: SimpleNamespace(result=writer(tmp_path / "stage"))
-        ),
+        "commit_artifact_root",
+        lambda *_args, writer, **_kwargs: SimpleNamespace(result=writer(tmp_path / "stage")),
     )
     monkeypatch.setattr(
         train_workflow,

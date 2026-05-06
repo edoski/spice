@@ -54,7 +54,7 @@ evaluate existing artifact root
   -> keep catalog unchanged because artifact catalog rows derive from manifest
 ```
 
-`storage.transactions` owns workflow-facing transaction objects. `PartialRootTransaction` always replaces selected paths. `FullRootTransaction.commit()` wraps complete-root staging, writer execution, promotion, cleanup, and reindex. Existing-root mutation helpers validate the expected root kind and reindex after successful mutation. `workflow_roots.py` carries root handles only; it does not own promotion, reindex, or evaluation-state mutation policy.
+`storage.transactions` owns workflow-facing commit and mutation entrypoints. Public callers pass root handles plus staged sources or writer/mutation callbacks; storage derives root kind, destination paths, prune policy, selected-path replacement, promotion, validation, and reindex behavior internally. `workflow_roots.py` carries root handles only; it does not own promotion, reindex, or evaluation-state mutation policy.
 
 ## Identity Rule
 

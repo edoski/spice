@@ -39,7 +39,7 @@ Train creates an artifact root.
 resolve config and identity
   -> materialize roots
   -> prepare active config, corpus manifest, and training spec
-  -> open full-root transaction
+  -> commit artifact root through storage transaction
   -> train model
   -> write manifest/model/state
   -> promote artifact root

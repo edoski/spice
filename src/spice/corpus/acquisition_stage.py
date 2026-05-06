@@ -12,7 +12,7 @@ from ..config.models import AcquireConfig
 from ..core.files import remove_path, write_path_atomic
 from ..storage.corpus import write_dataset_state
 from ..storage.engine import RootKind
-from ..storage.transactions import PartialRootTransaction
+from ..storage.transactions import commit_corpus_acquisition
 from ..storage.workflow_roots import AcquireWorkflowRoots
 from .metadata import (
     AcquireRunRecord,
@@ -169,17 +169,12 @@ class CorpusAcquisitionStage:
             manifest=manifest,
             acquire_run=acquire_run,
         )
-        transaction = PartialRootTransaction(
-            storage_root=self.roots.corpus.storage_root,
-            root_path=self.roots.corpus.root_path,
-        )
-        transaction.add(self.roots.corpus.history_dir, fulfillment.history_result.promote_dir)
-        transaction.add(
-            self.roots.corpus.evaluation_dir,
-            fulfillment.evaluation_result.promote_dir,
-        )
-        transaction.add(self.roots.corpus.state_db_path, temp_state_db)
-        committed_root_kind = transaction.commit().root_kind
+        committed_root_kind = commit_corpus_acquisition(
+            self.roots.corpus,
+            history_dir=fulfillment.history_result.promote_dir,
+            evaluation_dir=fulfillment.evaluation_result.promote_dir,
+            state_db=temp_state_db,
+        ).root_kind
         remove_path(self.temp_root)
         return CorpusAcquisitionPublication(
             history_plan=fulfillment.history_plan,

@@ -92,7 +92,7 @@ Study state stores a SPICE study manifest and Optuna's RDB tables in the same SQ
 
 ## Staging And Commit
 
-`storage.transactions` is the workflow-facing commit API. Full-root commits use hidden staged roots:
+`storage.transactions` is the workflow-facing commit API. Public entrypoints are handle-shaped: corpus acquisition commits selected corpus paths from staged sources, training commits an artifact root through a writer callback, and tuning records study-root mutations. Full-root commits use hidden staged roots:
 
 ```text
 writer receives staged root
@@ -101,7 +101,7 @@ writer receives staged root
   -> reindex catalog
 ```
 
-Partial commits promote selected paths inside an existing root. Existing-root mutation effects validate the expected root kind and reindex after successful mutation; tune uses this for study state. Evaluation state is recorded through `storage.artifact.record_evaluation_state()` and intentionally does not reindex because artifact catalog rows derive from the manifest, not evaluation summaries.
+Corpus acquisition promotes selected paths inside a corpus root from the corpus handle. Existing-root mutation effects validate the expected root kind and reindex after successful mutation; tune uses this for study state. Evaluation state is recorded through `storage.artifact.record_evaluation_state()` and intentionally does not reindex because artifact catalog rows derive from the manifest, not evaluation summaries.
 
 `workflow_roots.py` exposes root handle models and owns handle construction from catalog records and producer identity. `workflow_root_materialization.py` resolves selectors, asks Producer Root Identity for output ids, and assembles workflow root sets; Workflow Preparation consumes those handles for preflight. Storage Transactions own handle-shaped promotion, selected-path commit, mutation, and reindex boundaries.
 
