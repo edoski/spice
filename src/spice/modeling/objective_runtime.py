@@ -11,28 +11,10 @@ from ..core.errors import ConfigResolutionError
 from ..evaluation import CompiledEvaluatorContract
 from ..metrics import MetricDescriptor, MetricSet
 from ..objectives import CompiledObjectiveContract, ObjectiveConfig, compile_objective_contract
-from ..prediction import CompiledPredictionContract
-from ..temporal.execution_policy import CompiledExecutionPolicyContract
-from ..temporal.problem_store import CompiledProblemStore, IntVector
-from .models import TemporalModel
-from .representations import CompiledRepresentationContract
-from .runtime_planning import ModelingRuntimePlan
 from .scoring import EvaluationScoringRuntimePlan, score_evaluation
 
-
-@dataclass(frozen=True, slots=True)
-class ObjectiveMetricContext:
-    model: TemporalModel
-    prediction_contract: CompiledPredictionContract
-    representation_contract: CompiledRepresentationContract
-    execution_policy: CompiledExecutionPolicyContract
-    store: CompiledProblemStore
-    sample_indices: IntVector
-    runtime_plan: ModelingRuntimePlan
-
-
 EvaluateObjectiveMetricsFn = Callable[
-    [MetricSet, ObjectiveMetricContext | None],
+    [MetricSet, EvaluationScoringRuntimePlan | None],
     MetricSet,
 ]
 
@@ -46,9 +28,9 @@ class CompiledObjectiveRuntime:
         self,
         validation_metrics: MetricSet,
         *,
-        context: ObjectiveMetricContext | None = None,
+        scoring_plan: EvaluationScoringRuntimePlan | None = None,
     ) -> MetricSet:
-        return self.evaluate_metrics_fn(validation_metrics, context)
+        return self.evaluate_metrics_fn(validation_metrics, scoring_plan)
 
 
 def compile_objective_runtime(
@@ -87,21 +69,15 @@ def compile_objective_runtime(
 
     def _evaluate(
         validation_metrics: MetricSet,
-        context: ObjectiveMetricContext | None,
+        scoring_plan: EvaluationScoringRuntimePlan | None,
     ) -> MetricSet:
         del validation_metrics
-        if context is None:
-            raise ValueError("evaluation objective runtime requires objective metric context")
+        if scoring_plan is None:
+            raise ValueError(
+                "evaluation objective runtime requires evaluation scoring runtime plan"
+            )
         return score_evaluation(
-            scoring_plan=EvaluationScoringRuntimePlan(
-                model=context.model,
-                prediction_contract=context.prediction_contract,
-                representation_contract=context.representation_contract,
-                execution_policy=context.execution_policy,
-                store=context.store,
-                sample_indices=context.sample_indices,
-                runtime_plan=context.runtime_plan,
-            ),
+            scoring_plan=scoring_plan,
             evaluator_contract=evaluator_contract,
         ).metrics
 
@@ -110,9 +86,9 @@ def compile_objective_runtime(
 
 def _validation_metrics(
     validation_metrics: MetricSet,
-    context: ObjectiveMetricContext | None,
+    scoring_plan: EvaluationScoringRuntimePlan | None,
 ) -> MetricSet:
-    del context
+    del scoring_plan
     return validation_metrics
 
 

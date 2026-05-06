@@ -73,7 +73,7 @@ Persisted training writes model files and artifact state into the directory supp
 
 Tuning Execution is centralized in `modeling.tuning_execution`. It opens compatible study state, validates resume counts, runs Optuna trials in temporary artifact directories, records trial metadata, and returns storage-owned study summaries. Workflows resolve roots, validate coverage, attach reporter callbacks, and delegate study reindex effects to storage.
 
-During training, `Objective Runtime` owns objective metric production. Validation objectives return validation metrics directly. Evaluation objectives receive an `ObjectiveMetricContext`, construct an `EvaluationScoringRuntimePlan`, and call the generic model-to-evaluator scoring bridge; the training loop no longer builds evaluator scoring details inline.
+During training, `Objective Runtime` owns objective metric production. Validation objectives return validation metrics directly. Evaluation objectives receive the `EvaluationScoringRuntimePlan` built by the Training Runner and call the generic model-to-evaluator scoring bridge; the training loop still does not know evaluator internals.
 
 ## Dataset Builders
 

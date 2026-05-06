@@ -40,7 +40,7 @@ The objective is the scalar value used to compare model states or tuning trials.
 
 ## Evaluation Objective Boundary
 
-Objectives are policy-only: metric id, direction, evaluator binding, and semantics. Evaluation-backed objective metrics use `modeling.objective_runtime`, which receives the already compiled evaluator contract plus an `ObjectiveMetricContext`, builds the scoring input, and calls `modeling.scoring` for the generic sequence:
+Objectives are policy-only: metric id, direction, evaluator binding, and semantics. Evaluation-backed objective metrics use `modeling.objective_runtime`, which receives the already compiled evaluator contract plus an `EvaluationScoringRuntimePlan` and calls `modeling.scoring` for the generic sequence:
 
 ```text
 check decoded-result id -> predict -> evaluate -> return metrics

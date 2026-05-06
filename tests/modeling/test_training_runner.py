@@ -10,9 +10,10 @@ import torch
 
 from spice.config.models import TrainingConfig
 from spice.metrics import MetricSet
-from spice.modeling.objective_runtime import CompiledObjectiveRuntime, ObjectiveMetricContext
+from spice.modeling.objective_runtime import CompiledObjectiveRuntime
 from spice.modeling.representations import RepresentationRuntimeContext
 from spice.modeling.runtime_planning import ModelingRuntimePlan
+from spice.modeling.scoring import EvaluationScoringRuntimePlan
 from spice.modeling.training_runner import (
     TrainingCallbacks,
     TrainingFitSpec,
@@ -157,18 +158,18 @@ def test_training_fit_restores_best_state_and_calls_early_stop_callback(
     assert early_stop_calls == [(2, 1)]
 
 
-def test_training_fit_delegates_objective_context_to_runtime(
+def test_training_fit_delegates_scoring_plan_to_objective_runtime(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    seen_contexts: list[ObjectiveMetricContext | None] = []
+    seen_scoring_plans: list[EvaluationScoringRuntimePlan | None] = []
 
     def fake_run_epoch(_model, *, training, **_kwargs):
         return MetricSet({"score": 1.0 if training else 2.0})
 
-    def evaluate_metrics(validation_metrics, context):
+    def evaluate_metrics(validation_metrics, scoring_plan):
         assert validation_metrics == MetricSet({"score": 2.0})
-        seen_contexts.append(context)
+        seen_scoring_plans.append(scoring_plan)
         return MetricSet({"score": 3.0})
 
     _patch_training_runtime(monkeypatch)
@@ -195,16 +196,16 @@ def test_training_fit_delegates_objective_context_to_runtime(
     )
 
     assert result.best_objective_value == 3.0
-    assert len(seen_contexts) == 1
-    context = seen_contexts[0]
-    assert context is not None
-    assert context.model is model
-    assert context.prediction_contract is prediction_contract
-    assert context.representation_contract is representation_contract
-    assert context.execution_policy is execution_policy
-    assert context.store is store
-    assert context.runtime_plan is not None
-    np.testing.assert_array_equal(context.sample_indices, np.array([1], dtype=np.int64))
+    assert len(seen_scoring_plans) == 1
+    scoring_plan = seen_scoring_plans[0]
+    assert scoring_plan is not None
+    assert scoring_plan.model is model
+    assert scoring_plan.prediction_contract is prediction_contract
+    assert scoring_plan.representation_contract is representation_contract
+    assert scoring_plan.execution_policy is execution_policy
+    assert scoring_plan.store is store
+    assert scoring_plan.runtime_plan is not None
+    np.testing.assert_array_equal(scoring_plan.sample_indices, np.array([1], dtype=np.int64))
 
 
 def test_evaluate_training_metrics_uses_batch_plan_and_prediction_training_state(

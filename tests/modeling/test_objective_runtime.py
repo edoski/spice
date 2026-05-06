@@ -8,7 +8,7 @@ import pytest
 from spice.core.errors import ConfigResolutionError
 from spice.evaluation import EvaluationSummary
 from spice.metrics import MetricDescriptor, MetricSet
-from spice.modeling.objective_runtime import ObjectiveMetricContext, compile_objective_runtime
+from spice.modeling.objective_runtime import compile_objective_runtime
 from spice.modeling.scoring import EvaluationScoringRuntimePlan
 from spice.objectives import ObjectiveConfig, ObjectiveDirection
 
@@ -63,10 +63,10 @@ def test_evaluation_objective_runtime_scores_with_same_runtime_facts(
         total_events=1,
         runs=[],
     )
-    seen_contexts: list[tuple[EvaluationScoringRuntimePlan, object]] = []
+    seen_scoring_calls: list[tuple[EvaluationScoringRuntimePlan, object]] = []
 
     def fake_score_evaluation(*, scoring_plan, evaluator_contract):
-        seen_contexts.append((scoring_plan, evaluator_contract))
+        seen_scoring_calls.append((scoring_plan, evaluator_contract))
         return summary
 
     monkeypatch.setattr(
@@ -83,7 +83,7 @@ def test_evaluation_objective_runtime_scores_with_same_runtime_facts(
             MetricDescriptor(id="total_loss", label="total loss", role="primary"),
         ),
     )
-    context = ObjectiveMetricContext(
+    scoring_plan = EvaluationScoringRuntimePlan(
         model=cast(Any, SimpleNamespace(name="model")),
         prediction_contract=cast(Any, SimpleNamespace(name="prediction")),
         representation_contract=cast(Any, SimpleNamespace(name="representation")),
@@ -95,24 +95,18 @@ def test_evaluation_objective_runtime_scores_with_same_runtime_facts(
 
     result = runtime.evaluate_metrics(
         MetricSet({"score": 1.0}),
-        context=context,
+        scoring_plan=scoring_plan,
     )
 
     assert runtime.contract.evaluator_id == "poisson_replay_2h"
     assert result == summary.metrics
-    assert len(seen_contexts) == 1
-    scoring_plan, seen_evaluator_contract = seen_contexts[0]
-    assert scoring_plan.model is context.model
-    assert scoring_plan.prediction_contract is context.prediction_contract
-    assert scoring_plan.representation_contract is context.representation_contract
-    assert scoring_plan.execution_policy is context.execution_policy
-    assert scoring_plan.store is context.store
-    assert scoring_plan.sample_indices is context.sample_indices
-    assert scoring_plan.runtime_plan is context.runtime_plan
+    assert len(seen_scoring_calls) == 1
+    seen_scoring_plan, seen_evaluator_contract = seen_scoring_calls[0]
+    assert seen_scoring_plan is scoring_plan
     assert seen_evaluator_contract is evaluator_contract
 
 
-def test_evaluation_objective_runtime_requires_metric_context() -> None:
+def test_evaluation_objective_runtime_requires_scoring_plan() -> None:
     evaluator_contract = SimpleNamespace(
         evaluator_id="poisson_replay_2h",
         metric_descriptors=(
@@ -135,7 +129,7 @@ def test_evaluation_objective_runtime_requires_metric_context() -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match="objective metric context"):
+    with pytest.raises(ValueError, match="evaluation scoring runtime plan"):
         runtime.evaluate_metrics(MetricSet({"score": 1.0}))
 
 
