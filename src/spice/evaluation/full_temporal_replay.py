@@ -33,9 +33,6 @@ class FullTemporalReplayAdapter:
             )
         ]
 
-    def no_runs_error(self) -> Exception:
-        return ValueError("evaluation produced no runs")
-
 
 def compile_full_temporal_replay_evaluator_contract(
     config: FullTemporalReplayEvaluatorConfig,

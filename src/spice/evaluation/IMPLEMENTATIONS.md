@@ -37,9 +37,9 @@ Problem stores keep fees in log space. Evaluators exponentiate before economic r
 fee = exp(log_base_fee)
 ```
 
-Ratios are computed on real fee values, not log values. The Temporal Replay Runner validates decoded replay inputs and asks evaluator Adapters for selected events; Temporal Accounting is shared after that selection.
+Ratios are computed on real fee values, not log values. The Temporal Replay Runner validates decoded replay inputs, asks evaluator Adapters for selected events, normalizes scalar metadata, handles no-run failures, invokes Temporal Accounting, and converts replay results to `EvaluationSummary`.
 
-Temporal replay has a private typed result ABI between Temporal Accounting and the Temporal Replay Runner. It carries run metrics, event metric sums, window summaries, and metadata as replay concepts. Aggregate ratio metrics are event-weighted across all replay events; `window_metrics` summarize per-run ratio means without event weighting. The runner validates metadata as strings, integers, or floats only, then converts the replay result to generic `EvaluationSummary` at the evaluator boundary.
+Temporal replay has a private typed result ABI between Temporal Accounting and the Temporal Replay Runner. It carries run metrics, event metric sums, window summaries, and metadata as replay concepts. Aggregate ratio metrics are event-weighted across all replay events; `window_metrics` summarize per-run ratio means without event weighting. The runner converts the replay result to generic `EvaluationSummary` at the evaluator boundary.
 
 ## Temporal Accounting
 
@@ -64,7 +64,7 @@ Shared metrics include:
 
 ## Poisson Replay
 
-`poisson_replay_2h` simulates randomly timed transaction opportunities. Its adapter owns replay windows, exponential inter-arrival sampling, and arrival-to-sample mapping. Each repetition picks a uniform replay window, maps each arrival to the latest sample at or before that timestamp, then uses Temporal Accounting.
+`poisson_replay_2h` simulates randomly timed transaction opportunities. Its adapter owns replay windows, exponential inter-arrival sampling, and arrival-to-sample mapping. Each repetition picks a uniform replay window and maps each arrival to the latest sample at or before that timestamp. The Temporal Replay Runner accounts those selected positions.
 
 ```text
 arrivals
@@ -76,7 +76,7 @@ Duplicate selected samples can occur when several arrivals map to the same sampl
 
 ## Full Temporal Replay
 
-`full_temporal_replay` selects every supplied sample position exactly once, then uses Temporal Accounting. In train and tune objectives, supplied samples are validation samples. In the evaluate workflow, supplied samples are held-out evaluation-window samples.
+`full_temporal_replay` selects every supplied sample position exactly once, then the Temporal Replay Runner accounts those selected positions. In train and tune objectives, supplied samples are validation samples. In the evaluate workflow, supplied samples are held-out evaluation-window samples.
 
 ## Objective Link
 
@@ -95,4 +95,4 @@ Evaluation objectives call evaluator scoring on validation samples during traini
 
 ## Extension Pattern
 
-A future evaluator should declare its accepted decoded-result id and metric descriptors, with exactly one primary descriptor. Reuse Temporal Accounting when the evaluator scores selected temporal decisions.
+A future temporal replay evaluator should provide only event selection and selection provenance to the Temporal Replay Runner. Add a separate evaluator path only when scoring semantics are not temporal-decision replay.

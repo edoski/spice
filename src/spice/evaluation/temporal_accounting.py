@@ -1,4 +1,4 @@
-"""Temporal decision accounting shared by evaluator adapters."""
+"""Temporal decision accounting used by the Temporal Replay Runner."""
 
 from __future__ import annotations
 
@@ -42,11 +42,6 @@ def summarize_selected_temporal_decisions(
     *,
     metadata: dict[str, str | int | float],
 ) -> TemporalReplayRunResult:
-    if len(decoded_offsets) != int(sample_indices.shape[0]):
-        raise ValueError("decoded_offsets must align with sample_indices")
-    if selected_positions.size == 0:
-        raise ValueError("selected_positions must be non-empty")
-
     realized = execution_policy.realize_selections(
         store,
         decoded_offsets,

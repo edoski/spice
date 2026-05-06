@@ -212,7 +212,6 @@ Benchmark sweep operator flow:
 
 Deferred architecture roadmap after the current cleanup sweep:
 
-- Temporal Replay Runner generalization only when a second decoded-result Adapter exists.
 - Fine-grained post-window eligibility policy if we deliberately choose to change sample eligibility/performance.
 - Benchmark CSV export projection is deferred. Current exports are named files regenerated from `results.sqlite`, but the CLI only supports coarse filters. Future work should add explicit slice/projection controls for table and figure artifacts: benchmark, chain, model, evaluation, features, variant, study, run id, artifact id, delay, date range, metric list, column list, sort order, and possibly committed named export specs such as `thesis_table_1` or `figure_3_model_comparison`. Do not implement this before real thesis/table/figure needs make the required query vocabulary clear.
 

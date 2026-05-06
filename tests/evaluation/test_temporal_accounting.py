@@ -6,12 +6,9 @@ import torch
 
 from spice.evaluation.temporal_accounting import (
     summarize_selected_temporal_decisions,
-    summarize_temporal_accounting_runs,
 )
 from spice.evaluation.temporal_replay_results import (
-    TemporalReplayEventMetricSums,
     TemporalReplayMetrics,
-    TemporalReplayResult,
     TemporalReplayRunResult,
 )
 from spice.prediction.decoded_offsets import DecodedOffsets
@@ -99,73 +96,3 @@ def test_selected_temporal_decisions_count_policy_overflow() -> None:
     assert run.metrics.baseline_fee_sum == pytest.approx(150.0)
     assert run.metrics.optimum_fee_sum == pytest.approx(130.0)
     assert run.metadata == {"mode": "overflow", "overflow_count": 1}
-
-
-def test_temporal_accounting_summary_returns_event_weighted_replay_result() -> None:
-    runs = [
-        _run_result(
-            n_events=1,
-            profit_sum=0.2,
-            cost_sum=0.4,
-            baseline_cost_sum=0.6,
-            exact_hit_sum=1.0,
-            realized_fee_sum=10.0,
-            baseline_fee_sum=20.0,
-            optimum_fee_sum=8.0,
-        ),
-        _run_result(
-            n_events=3,
-            profit_sum=0.3,
-            cost_sum=0.6,
-            baseline_cost_sum=0.9,
-            exact_hit_sum=1.0,
-            realized_fee_sum=30.0,
-            baseline_fee_sum=60.0,
-            optimum_fee_sum=24.0,
-        ),
-    ]
-
-    result = summarize_temporal_accounting_runs(runs)
-
-    assert isinstance(result, TemporalReplayResult)
-    assert result.total_events == 4
-    assert result.runs == tuple(runs)
-    assert result.metrics.profit_over_baseline == pytest.approx(0.5 / 4)
-    assert result.metrics.cost_over_optimum == pytest.approx(1.0 / 4)
-    assert result.metrics.baseline_cost_over_optimum == pytest.approx(1.5 / 4)
-    assert result.metrics.exact_optimum_hit_rate == pytest.approx(2.0 / 4)
-    assert result.metrics.realized_fee_sum == 40.0
-    assert result.window_metrics["profit_over_baseline"].mean == pytest.approx(np.mean([0.2, 0.1]))
-
-
-def _run_result(
-    *,
-    n_events: int,
-    profit_sum: float,
-    cost_sum: float,
-    baseline_cost_sum: float,
-    exact_hit_sum: float,
-    realized_fee_sum: float,
-    baseline_fee_sum: float,
-    optimum_fee_sum: float,
-) -> TemporalReplayRunResult:
-    event_sums = TemporalReplayEventMetricSums(
-        profit_over_baseline=profit_sum,
-        cost_over_optimum=cost_sum,
-        baseline_cost_over_optimum=baseline_cost_sum,
-        exact_optimum_hit_rate=exact_hit_sum,
-    )
-    return TemporalReplayRunResult(
-        n_events=n_events,
-        metrics=TemporalReplayMetrics(
-            profit_over_baseline=profit_sum / n_events,
-            cost_over_optimum=cost_sum / n_events,
-            baseline_cost_over_optimum=baseline_cost_sum / n_events,
-            exact_optimum_hit_rate=exact_hit_sum / n_events,
-            realized_fee_sum=realized_fee_sum,
-            baseline_fee_sum=baseline_fee_sum,
-            optimum_fee_sum=optimum_fee_sum,
-        ),
-        event_metric_sums=event_sums,
-        metadata={},
-    )

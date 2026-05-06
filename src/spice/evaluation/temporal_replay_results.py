@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..metrics import MetricSet, WindowMetricSummary
-from .contracts import EvaluationMetadataValue, EvaluationRun, EvaluationSummary
+from .contracts import EvaluationMetadataValue
 
 PROFIT_OVER_BASELINE = "profit_over_baseline"
 COST_OVER_OPTIMUM = "cost_over_optimum"
@@ -83,22 +82,3 @@ class TemporalReplayResult:
     window_metrics: dict[str, TemporalReplayWindowMetric]
     total_events: int
     runs: tuple[TemporalReplayRunResult, ...]
-
-
-def temporal_replay_result_to_summary(result: TemporalReplayResult) -> EvaluationSummary:
-    return EvaluationSummary(
-        metrics=MetricSet(values=result.metrics.values()),
-        window_metrics={
-            metric_id: WindowMetricSummary(mean=metric.mean, std=metric.std)
-            for metric_id, metric in result.window_metrics.items()
-        },
-        total_events=result.total_events,
-        runs=[
-            EvaluationRun(
-                n_events=run.n_events,
-                metrics=run.metrics.values(),
-                metadata=dict(run.metadata),
-            )
-            for run in result.runs
-        ],
-    )

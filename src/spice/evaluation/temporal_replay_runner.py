@@ -8,18 +8,61 @@ from typing import Protocol
 
 import numpy as np
 
+from ..core.errors import SpiceOperatorError
+from ..metrics import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..prediction.decoded_offsets import DecodedOffsets, require_decoded_offsets
 from ..prediction.decoding import DecodedPredictionResult
 from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
 from .config import EvaluatorConfig
-from .contracts import CompiledEvaluatorContract, EvaluationSummary, IntVector
-from .metrics import TEMPORAL_REPLAY_METRIC_DESCRIPTORS
+from .contracts import CompiledEvaluatorContract, EvaluationRun, EvaluationSummary, IntVector
 from .temporal_accounting import (
     summarize_selected_temporal_decisions,
     summarize_temporal_accounting_runs,
 )
-from .temporal_replay_results import temporal_replay_result_to_summary
+from .temporal_replay_results import TemporalReplayResult
+
+TEMPORAL_REPLAY_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
+    MetricDescriptor(
+        id="profit_over_baseline",
+        label="profit over baseline",
+        role="primary",
+        direction="maximize",
+    ),
+    MetricDescriptor(
+        id="cost_over_optimum",
+        label="cost over optimum",
+        role="secondary",
+        direction="minimize",
+    ),
+    MetricDescriptor(
+        id="baseline_cost_over_optimum",
+        label="baseline cost over optimum",
+        role="secondary",
+        direction="minimize",
+    ),
+    MetricDescriptor(
+        id="exact_optimum_hit_rate",
+        label="exact optimum hit rate",
+        role="secondary",
+        direction="maximize",
+    ),
+    MetricDescriptor(
+        id="realized_fee_sum",
+        label="realized fee sum",
+        role="diagnostic",
+    ),
+    MetricDescriptor(
+        id="baseline_fee_sum",
+        label="baseline fee sum",
+        role="diagnostic",
+    ),
+    MetricDescriptor(
+        id="optimum_fee_sum",
+        label="optimum fee sum",
+        role="diagnostic",
+    ),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,14 +78,13 @@ class TemporalReplayAdapter(Protocol):
         sample_indices: IntVector,
     ) -> Iterable[TemporalReplaySelection]: ...
 
-    def no_runs_error(self) -> Exception: ...
-
 
 def compile_temporal_replay_evaluator_contract(
     *,
     evaluator_id: str,
     config: EvaluatorConfig,
     adapter: TemporalReplayAdapter,
+    no_runs_error: Exception | None = None,
 ) -> CompiledEvaluatorContract:
     def run_fn(
         store,
@@ -56,6 +98,7 @@ def compile_temporal_replay_evaluator_contract(
             decoded_result,
             sample_indices,
             adapter=adapter,
+            no_runs_error=no_runs_error,
         )
 
     return CompiledEvaluatorContract(
@@ -74,6 +117,7 @@ def run_temporal_replay(
     sample_indices: IntVector,
     *,
     adapter: TemporalReplayAdapter,
+    no_runs_error: Exception | None = None,
 ) -> EvaluationSummary:
     decoded_offsets = require_decoded_offsets(decoded_result)
     if len(decoded_offsets) != int(sample_indices.shape[0]):
@@ -98,8 +142,15 @@ def run_temporal_replay(
             )
         )
     if not runs:
-        raise adapter.no_runs_error()
-    return temporal_replay_result_to_summary(summarize_temporal_accounting_runs(runs))
+        raise no_runs_error or ValueError("evaluation produced no runs")
+    return _temporal_replay_result_to_summary(summarize_temporal_accounting_runs(runs))
+
+
+def poisson_replay_no_runs_error() -> SpiceOperatorError:
+    return SpiceOperatorError(
+        "poisson_arrivals evaluation produced no valid arrivals; "
+        "adjust the benchmark rate or window"
+    )
 
 
 def _validated_selected_positions(
@@ -132,3 +183,22 @@ def _validated_metadata(metadata: Mapping[str, object]) -> dict[str, str | int |
         else:
             raise ValueError("temporal replay metadata values must be scalar")
     return validated
+
+
+def _temporal_replay_result_to_summary(result: TemporalReplayResult) -> EvaluationSummary:
+    return EvaluationSummary(
+        metrics=MetricSet(values=result.metrics.values()),
+        window_metrics={
+            metric_id: WindowMetricSummary(mean=metric.mean, std=metric.std)
+            for metric_id, metric in result.window_metrics.items()
+        },
+        total_events=result.total_events,
+        runs=[
+            EvaluationRun(
+                n_events=run.n_events,
+                metrics=run.metrics.values(),
+                metadata=dict(run.metadata),
+            )
+            for run in result.runs
+        ],
+    )

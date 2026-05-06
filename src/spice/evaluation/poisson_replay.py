@@ -7,13 +7,13 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core.errors import SpiceOperatorError
 from ..temporal.problem_store import CompiledProblemStore
 from .config import PoissonReplayEvaluatorConfig
 from .contracts import CompiledEvaluatorContract, IntVector
 from .temporal_replay_runner import (
     TemporalReplaySelection,
     compile_temporal_replay_evaluator_contract,
+    poisson_replay_no_runs_error,
 )
 
 
@@ -111,12 +111,6 @@ class PoissonReplayAdapter:
             )
         return selections
 
-    def no_runs_error(self) -> Exception:
-        return SpiceOperatorError(
-            "poisson_arrivals evaluation produced no valid arrivals; "
-            "adjust the benchmark rate or window"
-        )
-
 
 def compile_poisson_replay_evaluator_contract(
     config: PoissonReplayEvaluatorConfig,
@@ -125,4 +119,5 @@ def compile_poisson_replay_evaluator_contract(
         evaluator_id=config.id,
         config=config,
         adapter=PoissonReplayAdapter(config),
+        no_runs_error=poisson_replay_no_runs_error(),
     )

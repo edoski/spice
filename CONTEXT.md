@@ -221,7 +221,7 @@ Modeling-owned module that pairs a policy-only objective contract and, for evalu
 _Avoid_: objective evaluator, objective callback
 
 **Temporal Replay Runner**:
-Evaluation-owned module that validates decoded replay inputs, asks a replay Adapter for selected temporal decision events, and delegates fee outcomes to Temporal Accounting.
+Evaluation-owned module that validates decoded replay inputs, asks a replay Adapter for selected temporal decision events, normalizes selection metadata, handles no-run failures, delegates fee outcomes to Temporal Accounting, and converts replay results to `EvaluationSummary`.
 _Avoid_: replay helper, evaluator base class
 
 **Temporal Accounting**:

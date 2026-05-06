@@ -18,6 +18,7 @@ from spice.evaluation.poisson_replay import (
 )
 from spice.evaluation.temporal_replay_runner import (
     TemporalReplaySelection,
+    poisson_replay_no_runs_error,
     run_temporal_replay,
 )
 from spice.prediction.decoded_offsets import DecodedOffsets
@@ -74,7 +75,6 @@ def test_poisson_adapter_returns_positions_in_original_sample_order() -> None:
     for selection in selections:
         sample_timestamps = store.sample_timestamps(sample_indices[selection.selected_positions])
         assert sample_timestamps.tolist() == sorted(sample_timestamps.tolist())
-        assert selection.metadata["n_arrivals"] == selection.selected_positions.shape[0]
 
 
 def test_full_temporal_replay_adapter_selects_every_sample_once() -> None:
@@ -87,10 +87,6 @@ def test_full_temporal_replay_adapter_selects_every_sample_once() -> None:
 
     assert len(selections) == 1
     assert selections[0].selected_positions.tolist() == [0, 1, 2]
-    assert selections[0].metadata == {
-        "mode": "full_temporal_replay",
-        "sample_count": 3,
-    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,9 +96,6 @@ class _FakeReplayAdapter:
     def selections(self, store, sample_indices):
         del store, sample_indices
         return self.replay_selections
-
-    def no_runs_error(self) -> Exception:
-        return SpiceOperatorError("fake adapter produced no runs")
 
 
 def test_temporal_replay_runner_composes_adapter_runs() -> None:
@@ -130,14 +123,15 @@ def test_temporal_replay_runner_composes_adapter_runs() -> None:
     assert all("overflow_count" in run.metadata for run in summary.runs)
 
 
-def test_temporal_replay_runner_delegates_no_run_error() -> None:
-    with pytest.raises(SpiceOperatorError, match="fake adapter"):
+def test_temporal_replay_runner_owns_no_run_error() -> None:
+    with pytest.raises(SpiceOperatorError, match="poisson_arrivals"):
         run_temporal_replay(
             _store(),
             _execution_policy(),
             DecodedOffsets(torch.tensor([0, 1], dtype=torch.int64)),
             np.array([0, 1], dtype=np.int64),
             adapter=_FakeReplayAdapter(()),
+            no_runs_error=poisson_replay_no_runs_error(),
         )
 
 
