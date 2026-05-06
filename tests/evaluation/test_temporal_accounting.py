@@ -6,8 +6,10 @@ import torch
 
 from spice.evaluation.temporal_accounting import (
     summarize_selected_temporal_decisions,
+    summarize_temporal_accounting_runs,
 )
 from spice.evaluation.temporal_replay_results import (
+    TemporalReplayEventMetricSums,
     TemporalReplayMetrics,
     TemporalReplayRunResult,
 )
@@ -96,3 +98,57 @@ def test_selected_temporal_decisions_count_policy_overflow() -> None:
     assert run.metrics.baseline_fee_sum == pytest.approx(150.0)
     assert run.metrics.optimum_fee_sum == pytest.approx(130.0)
     assert run.metadata == {"mode": "overflow", "overflow_count": 1}
+
+
+def test_temporal_accounting_aggregates_event_means_and_window_summaries() -> None:
+    result = summarize_temporal_accounting_runs(
+        [
+            TemporalReplayRunResult(
+                n_events=1,
+                metrics=TemporalReplayMetrics(
+                    profit_over_baseline=1.0,
+                    cost_over_optimum=2.0,
+                    baseline_cost_over_optimum=3.0,
+                    exact_optimum_hit_rate=1.0,
+                    realized_fee_sum=10.0,
+                    baseline_fee_sum=20.0,
+                    optimum_fee_sum=5.0,
+                ),
+                event_metric_sums=TemporalReplayEventMetricSums(
+                    profit_over_baseline=1.0,
+                    cost_over_optimum=2.0,
+                    baseline_cost_over_optimum=3.0,
+                    exact_optimum_hit_rate=1.0,
+                ),
+                metadata={"run": "one"},
+            ),
+            TemporalReplayRunResult(
+                n_events=3,
+                metrics=TemporalReplayMetrics(
+                    profit_over_baseline=0.0,
+                    cost_over_optimum=1.0,
+                    baseline_cost_over_optimum=2.0,
+                    exact_optimum_hit_rate=0.5,
+                    realized_fee_sum=30.0,
+                    baseline_fee_sum=60.0,
+                    optimum_fee_sum=15.0,
+                ),
+                event_metric_sums=TemporalReplayEventMetricSums(
+                    profit_over_baseline=0.0,
+                    cost_over_optimum=3.0,
+                    baseline_cost_over_optimum=6.0,
+                    exact_optimum_hit_rate=1.5,
+                ),
+                metadata={"run": "two"},
+            ),
+        ]
+    )
+
+    assert result.total_events == 4
+    assert result.metrics.profit_over_baseline == pytest.approx(0.25)
+    assert result.metrics.cost_over_optimum == pytest.approx(1.25)
+    assert result.metrics.baseline_cost_over_optimum == pytest.approx(2.25)
+    assert result.metrics.exact_optimum_hit_rate == pytest.approx(0.625)
+    assert result.metrics.realized_fee_sum == pytest.approx(40.0)
+    assert result.window_metrics["profit_over_baseline"].mean == pytest.approx(0.5)
+    assert result.window_metrics["cost_over_optimum"].mean == pytest.approx(1.5)

@@ -8,11 +8,12 @@ from typing import Protocol
 
 import numpy as np
 
-from ..metrics import MetricDescriptor, MetricSet, WindowMetricSummary
+from ..metrics import MetricSet, WindowMetricSummary
 from ..prediction.decoded_offsets import DecodedOffsets, require_decoded_offsets
 from ..prediction.decoding import DecodedPredictionResult
 from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
+from ._temporal_replay_metric_catalog import TEMPORAL_REPLAY_METRIC_DESCRIPTORS
 from .config import EvaluatorConfig
 from .contracts import CompiledEvaluatorContract, EvaluationRun, EvaluationSummary, IntVector
 from .temporal_accounting import (
@@ -20,48 +21,6 @@ from .temporal_accounting import (
     summarize_temporal_accounting_runs,
 )
 from .temporal_replay_results import TemporalReplayResult
-
-TEMPORAL_REPLAY_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (
-    MetricDescriptor(
-        id="profit_over_baseline",
-        label="profit over baseline",
-        role="primary",
-        direction="maximize",
-    ),
-    MetricDescriptor(
-        id="cost_over_optimum",
-        label="cost over optimum",
-        role="secondary",
-        direction="minimize",
-    ),
-    MetricDescriptor(
-        id="baseline_cost_over_optimum",
-        label="baseline cost over optimum",
-        role="secondary",
-        direction="minimize",
-    ),
-    MetricDescriptor(
-        id="exact_optimum_hit_rate",
-        label="exact optimum hit rate",
-        role="secondary",
-        direction="maximize",
-    ),
-    MetricDescriptor(
-        id="realized_fee_sum",
-        label="realized fee sum",
-        role="diagnostic",
-    ),
-    MetricDescriptor(
-        id="baseline_fee_sum",
-        label="baseline fee sum",
-        role="diagnostic",
-    ),
-    MetricDescriptor(
-        id="optimum_fee_sum",
-        label="optimum fee sum",
-        role="diagnostic",
-    ),
-)
 
 
 @dataclass(frozen=True, slots=True)

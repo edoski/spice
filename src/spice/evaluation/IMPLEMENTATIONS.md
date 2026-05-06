@@ -39,7 +39,7 @@ fee = exp(log_base_fee)
 
 Ratios are computed on real fee values, not log values. The Temporal Replay Runner validates decoded replay inputs, builds the replay sample view from supplied sample positions, timestamps, and count, asks evaluator Adapters for selected events, normalizes scalar metadata, handles no-run failures, invokes Temporal Accounting, and converts replay results to `EvaluationSummary`.
 
-Temporal replay has a private typed result ABI between Temporal Accounting and the Temporal Replay Runner. It carries run metrics, event metric sums, window summaries, and metadata as replay concepts. Aggregate ratio metrics are event-weighted across all replay events; `window_metrics` summarize per-run ratio means without event weighting. The runner converts the replay result to generic `EvaluationSummary` at the evaluator boundary.
+Temporal replay has a private typed result ABI between Temporal Accounting and the Temporal Replay Runner. It carries run metrics, event metric sums, window summaries, and metadata as replay concepts. The Temporal Replay Metric Catalog owns metric ids, descriptors, event-mean membership, window-summary membership, and field mapping. Event-mean metrics are event-weighted across all replay events; `window_metrics` summarize per-run means without event weighting. The runner converts the replay result to generic `EvaluationSummary` at the evaluator boundary.
 
 ## Temporal Accounting
 

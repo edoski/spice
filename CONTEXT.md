@@ -225,12 +225,16 @@ Modeling-owned module that pairs a policy-only objective contract and, for evalu
 _Avoid_: objective evaluator, objective callback
 
 **Temporal Replay Runner**:
-Evaluation-owned module that validates decoded replay inputs, asks a replay Adapter for selected temporal decision events, normalizes selection metadata, handles no-run failures, delegates fee outcomes to Temporal Accounting, and converts replay results to `EvaluationSummary`.
+Evaluation-owned module that validates decoded replay inputs, builds the replay sample view, asks a replay Adapter for selected temporal decision events, normalizes selection metadata, handles no-run failures, delegates fee outcomes to Temporal Accounting, and converts replay results to `EvaluationSummary`.
 _Avoid_: replay helper, evaluator base class
 
 **Temporal Accounting**:
 Evaluation-owned module that computes realized, baseline, optimum, and economic metrics for selected temporal fee decisions.
 _Avoid_: fee accounting, replay accounting
+
+**Temporal Replay Metric Catalog**:
+Evaluation-private catalog of Temporal Replay metric ids, descriptors, event-mean/window aggregation facts, and result field mapping.
+_Avoid_: benchmark metric schema, objective metric registry
 
 **Workflow Command Selection**:
 Operator-edge construction of typed workflow selections from explicit CLI values before config resolution.

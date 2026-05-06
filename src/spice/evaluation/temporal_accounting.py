@@ -9,13 +9,13 @@ import numpy as np
 from ..prediction.decoded_offsets import DecodedOffsets
 from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
+from ._temporal_replay_metric_catalog import (
+    TEMPORAL_REPLAY_EVENT_MEAN_METRIC_IDS,
+    TEMPORAL_REPLAY_EVENT_MEAN_METRICS,
+    TEMPORAL_REPLAY_WINDOW_METRICS,
+)
 from .contracts import IntVector
 from .temporal_replay_results import (
-    BASELINE_COST_OVER_OPTIMUM,
-    COST_OVER_OPTIMUM,
-    EXACT_OPTIMUM_HIT_RATE,
-    PROFIT_OVER_BASELINE,
-    TEMPORAL_RATIO_METRIC_IDS,
     TemporalReplayEventMetricSums,
     TemporalReplayMetrics,
     TemporalReplayResult,
@@ -113,37 +113,27 @@ def summarize_temporal_accounting_runs(
         realized_fee_sum=realized_fee_sum,
         baseline_fee_sum=baseline_fee_sum,
         optimum_fee_sum=optimum_fee_sum,
-        event_metric_sums=TemporalReplayEventMetricSums(
-            profit_over_baseline=sum(
-                run.event_metric_sums.profit_over_baseline for run in runs
-            ),
-            cost_over_optimum=sum(run.event_metric_sums.cost_over_optimum for run in runs),
-            baseline_cost_over_optimum=sum(
-                run.event_metric_sums.baseline_cost_over_optimum for run in runs
-            ),
-            exact_optimum_hit_rate=sum(
-                run.event_metric_sums.exact_optimum_hit_rate for run in runs
-            ),
+        event_metric_sums=TemporalReplayEventMetricSums.from_values(
+            {
+                metric.field_name: sum(
+                    run.event_metric_sums.value(metric.id) for run in runs
+                )
+                for metric in TEMPORAL_REPLAY_EVENT_MEAN_METRICS
+            }
         ),
     )
     return TemporalReplayResult(
         metrics=_event_mean_metrics(costs),
-        window_metrics={
-            "profit_over_baseline": _summarize_window_metric(
-                [run.metrics.profit_over_baseline for run in runs]
-            ),
-            "cost_over_optimum": _summarize_window_metric(
-                [run.metrics.cost_over_optimum for run in runs]
-            ),
-            "baseline_cost_over_optimum": _summarize_window_metric(
-                [run.metrics.baseline_cost_over_optimum for run in runs]
-            ),
-            "exact_optimum_hit_rate": _summarize_window_metric(
-                [run.metrics.exact_optimum_hit_rate for run in runs]
-            ),
-        }
-        if len(runs) > 1
-        else {},
+        window_metrics=(
+            {
+                metric.id: _summarize_window_metric(
+                    [getattr(run.metrics, metric.field_name) for run in runs]
+                )
+                for metric in TEMPORAL_REPLAY_WINDOW_METRICS
+            }
+            if len(runs) > 1
+            else {}
+        ),
         total_events=total_events,
         runs=tuple(runs),
     )
@@ -157,27 +147,19 @@ def _summarize_window_metric(values: list[float]) -> TemporalReplayWindowMetric:
 
 
 def _event_mean_metrics(costs: _TemporalCostSummary) -> TemporalReplayMetrics:
+    ratio_means = {
+        metric.field_name: _event_metric_mean(
+            costs.event_metric_sums,
+            metric.id,
+            costs.n_events,
+        )
+        for metric in TEMPORAL_REPLAY_EVENT_MEAN_METRICS
+    }
     return TemporalReplayMetrics(
-        profit_over_baseline=_event_metric_mean(
-            costs.event_metric_sums,
-            PROFIT_OVER_BASELINE,
-            costs.n_events,
-        ),
-        cost_over_optimum=_event_metric_mean(
-            costs.event_metric_sums,
-            COST_OVER_OPTIMUM,
-            costs.n_events,
-        ),
-        baseline_cost_over_optimum=_event_metric_mean(
-            costs.event_metric_sums,
-            BASELINE_COST_OVER_OPTIMUM,
-            costs.n_events,
-        ),
-        exact_optimum_hit_rate=_event_metric_mean(
-            costs.event_metric_sums,
-            EXACT_OPTIMUM_HIT_RATE,
-            costs.n_events,
-        ),
+        profit_over_baseline=ratio_means["profit_over_baseline"],
+        cost_over_optimum=ratio_means["cost_over_optimum"],
+        baseline_cost_over_optimum=ratio_means["baseline_cost_over_optimum"],
+        exact_optimum_hit_rate=ratio_means["exact_optimum_hit_rate"],
         realized_fee_sum=costs.realized_fee_sum,
         baseline_fee_sum=costs.baseline_fee_sum,
         optimum_fee_sum=costs.optimum_fee_sum,
@@ -191,6 +173,6 @@ def _event_metric_mean(
 ) -> float:
     if n_events <= 0:
         raise ValueError("evaluation event count must be positive")
-    if metric_id not in TEMPORAL_RATIO_METRIC_IDS:
+    if metric_id not in TEMPORAL_REPLAY_EVENT_MEAN_METRIC_IDS:
         raise KeyError(metric_id)
     return event_metric_sums.value(metric_id) / n_events

@@ -2,23 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
-from .contracts import EvaluationMetadataValue
-
-PROFIT_OVER_BASELINE = "profit_over_baseline"
-COST_OVER_OPTIMUM = "cost_over_optimum"
-BASELINE_COST_OVER_OPTIMUM = "baseline_cost_over_optimum"
-EXACT_OPTIMUM_HIT_RATE = "exact_optimum_hit_rate"
-REALIZED_FEE_SUM = "realized_fee_sum"
-BASELINE_FEE_SUM = "baseline_fee_sum"
-OPTIMUM_FEE_SUM = "optimum_fee_sum"
-TEMPORAL_RATIO_METRIC_IDS = (
-    PROFIT_OVER_BASELINE,
-    COST_OVER_OPTIMUM,
-    BASELINE_COST_OVER_OPTIMUM,
-    EXACT_OPTIMUM_HIT_RATE,
+from ._temporal_replay_metric_catalog import (
+    TEMPORAL_REPLAY_EVENT_MEAN_METRICS,
+    TEMPORAL_REPLAY_METRIC_FIELD_BY_ID,
+    TEMPORAL_REPLAY_METRICS,
 )
+from .contracts import EvaluationMetadataValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,13 +25,8 @@ class TemporalReplayMetrics:
 
     def values(self) -> dict[str, float]:
         return {
-            PROFIT_OVER_BASELINE: self.profit_over_baseline,
-            COST_OVER_OPTIMUM: self.cost_over_optimum,
-            BASELINE_COST_OVER_OPTIMUM: self.baseline_cost_over_optimum,
-            EXACT_OPTIMUM_HIT_RATE: self.exact_optimum_hit_rate,
-            REALIZED_FEE_SUM: self.realized_fee_sum,
-            BASELINE_FEE_SUM: self.baseline_fee_sum,
-            OPTIMUM_FEE_SUM: self.optimum_fee_sum,
+            metric.id: getattr(self, metric.field_name)
+            for metric in TEMPORAL_REPLAY_METRICS
         }
 
 
@@ -50,16 +37,23 @@ class TemporalReplayEventMetricSums:
     baseline_cost_over_optimum: float
     exact_optimum_hit_rate: float
 
+    @classmethod
+    def from_values(cls, values: Mapping[str, float]) -> TemporalReplayEventMetricSums:
+        return cls(
+            **{
+                metric.field_name: values[metric.field_name]
+                for metric in TEMPORAL_REPLAY_EVENT_MEAN_METRICS
+            }
+        )
+
     def value(self, metric_id: str) -> float:
-        if metric_id == PROFIT_OVER_BASELINE:
-            return self.profit_over_baseline
-        if metric_id == COST_OVER_OPTIMUM:
-            return self.cost_over_optimum
-        if metric_id == BASELINE_COST_OVER_OPTIMUM:
-            return self.baseline_cost_over_optimum
-        if metric_id == EXACT_OPTIMUM_HIT_RATE:
-            return self.exact_optimum_hit_rate
-        raise KeyError(metric_id)
+        try:
+            field_name = TEMPORAL_REPLAY_METRIC_FIELD_BY_ID[metric_id]
+        except KeyError as exc:
+            raise KeyError(metric_id) from exc
+        if not hasattr(self, field_name):
+            raise KeyError(metric_id)
+        return getattr(self, field_name)
 
 
 @dataclass(frozen=True, slots=True)
