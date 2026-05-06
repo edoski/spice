@@ -150,8 +150,8 @@ def test_evaluate_workflow_delegates_artifact_inference_preparation(
     monkeypatch.setattr(evaluate_workflow, "score_evaluation", fake_score)
     monkeypatch.setattr(
         evaluate_workflow,
-        "upsert_evaluation_state",
-        lambda _db_path, *, summary: ("poisson_replay_2h-36s-test", 123),
+        "record_evaluation_state",
+        lambda _db_path, *, summary: SimpleNamespace(runtime=summary),
     )
     monkeypatch.setattr(
         evaluate_workflow,
@@ -228,20 +228,10 @@ def test_train_workflow_emits_compact_epoch_output(
     )
     monkeypatch.setattr(train_workflow, "run_persisted_training", fake_run_persisted_training)
 
-    class FakeStage:
-        staged_root = tmp_path / "stage"
+    def fake_commit(_self, writer):
+        return SimpleNamespace(result=writer(tmp_path / "stage"))
 
-        def __enter__(self):
-            self.staged_root.mkdir(parents=True, exist_ok=True)
-            return self
-
-        def __exit__(self, *_args):
-            return None
-
-        def promote(self) -> None:
-            return None
-
-    monkeypatch.setattr(train_workflow.FullRootTransaction, "open", lambda _self: FakeStage())
+    monkeypatch.setattr(train_workflow.FullRootTransaction, "commit", fake_commit)
     monkeypatch.setattr(
         train_workflow,
         "training_result_fields",
@@ -333,7 +323,11 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
         return object()
 
     monkeypatch.setattr(tune_workflow, "run_tuning_execution", fake_run_tuning_execution)
-    monkeypatch.setattr(tune_workflow, "reindex_root_state", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        tune_workflow,
+        "record_mutated_root",
+        lambda *_args, mutation, **_kwargs: SimpleNamespace(result=mutation()),
+    )
     monkeypatch.setattr(
         tune_workflow,
         "study_result_fields",

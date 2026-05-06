@@ -18,7 +18,7 @@ workflow preparation
 workflow runner
         |
         +--> contracts and services
-        +--> storage transactions
+        +--> one storage effect
         +--> reporter messages
 ```
 
@@ -44,13 +44,11 @@ Acquire is deliberately thin. Corpus Assembly owns capability planning, source r
 ```text
 TrainConfig
   -> prepare train roots, manifest, active config, and training spec
-  -> open full-root transaction
-  -> persisted training
-  -> promote artifact root
+  -> storage full-root commit runs persisted training in a staged root
   -> report result
 ```
 
-Train uses complete-root staging because it produces a full artifact root.
+Train uses complete-root staging because it produces a full artifact root. The workflow supplies the training writer; storage owns promotion, cleanup, root-kind validation, and catalog reindex.
 
 ## Tune
 
@@ -58,7 +56,7 @@ Train uses complete-root staging because it produces a full artifact root.
 TuneConfig
   -> prepare tune roots, manifest, and coverage spec
   -> delegate study opening and trial execution to modeling.tuning_execution
-  -> reindex study root after materialization
+  -> storage records study-root mutation/reindex effects
 ```
 
 Tune mutates study state rather than staging an entire root for each trial.
@@ -69,11 +67,11 @@ Tune mutates study state rather than staging an entire root for each trial.
 EvaluateConfig
   -> prepare evaluation roots and inference context
   -> score model with evaluator through modeling.scoring
-  -> upsert evaluation state with execution provenance when remote
+  -> storage records evaluation state with execution provenance when remote
   -> report result
 ```
 
-Evaluate appends or updates artifact state. It does not stage a full artifact root.
+Evaluate appends or updates artifact state. It does not stage a full artifact root, and storage intentionally does not reindex the artifact catalog for evaluation summaries.
 
 ## Extension Points
 

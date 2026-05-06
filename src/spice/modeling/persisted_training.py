@@ -36,7 +36,6 @@ class PersistedTrainingRun:
     manifest: TrainingArtifactManifest
     summary: LoadedTrainingSummary
     artifact_dir: Path
-    artifact_paths: tuple[Path, ...]
 
 
 def _evaluate_split_metrics(
@@ -96,7 +95,6 @@ def run_persisted_training(
     )
     manifest = build_training_artifact_manifest(training_run.prepared, spec=spec)
 
-    artifact_paths: list[Path] = []
     if persist_artifact:
         persist_training_artifact(
             artifact_dir,
@@ -120,12 +118,6 @@ def run_persisted_training(
             summary=runtime_summary,
             epoch_rows=list(iter_epoch_records(training_run)),
         )
-        artifact_paths.extend(
-            [
-                artifact_dir / ".spice" / "state.sqlite",
-                artifact_dir / "model.pt",
-            ]
-        )
     else:
         best_validation_metrics, test_metrics = _evaluate_split_metrics(
             training_run,
@@ -143,5 +135,4 @@ def run_persisted_training(
         manifest=manifest,
         summary=LoadedTrainingSummary(manifest=manifest, runtime=runtime_summary),
         artifact_dir=artifact_dir,
-        artifact_paths=tuple(artifact_paths),
     )

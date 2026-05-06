@@ -72,11 +72,11 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
         purpose="staging",
         prune_stop_at=artifact_dir.parent.parent,
     )
-    with transaction.open() as artifact_stage:
-        persisted = run_persisted_training(
+    committed = transaction.commit(
+        lambda staged_root: run_persisted_training(
             history_block_path,
             spec=spec,
-            artifact_dir=artifact_stage.staged_root,
+            artifact_dir=staged_root,
             on_prepare_complete=lambda prepared: active_reporter.milestone(
                 f"prepare rows={prepared.n_rows_used} samples={prepared.sample_count}"
             ),
@@ -93,7 +93,8 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
                 f"fit early_stop epoch={epoch} best_epoch={best_epoch}"
             ),
         )
-        artifact_stage.promote()
+    )
+    persisted = committed.result
     active_reporter.result(
         "train",
         training_result_fields(

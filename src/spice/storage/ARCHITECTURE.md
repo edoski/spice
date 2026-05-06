@@ -44,12 +44,17 @@ acquire partial corpus update
   -> atomically replace selected paths
   -> reindex corpus root
 
-tune / evaluate existing roots
-  mutate root-local state directly
-  -> reindex only when search records/materialized state change
+tune existing study root
+  mutate root-local search state
+  -> validate study root kind
+  -> reindex study root
+
+evaluate existing artifact root
+  record evaluation state
+  -> keep catalog unchanged because artifact catalog rows derive from manifest
 ```
 
-`storage.transactions` owns workflow-facing transaction objects. `PartialRootTransaction` always replaces selected paths. `FullRootTransaction` wraps complete-root staging and keeps explicit `replace` behavior because push/pull operations expose overwrite policy. `workflow_roots.py` carries root handles only; it does not own promotion, reindex, or evaluation-state mutation policy.
+`storage.transactions` owns workflow-facing transaction objects. `PartialRootTransaction` always replaces selected paths. `FullRootTransaction.commit()` wraps complete-root staging, writer execution, promotion, cleanup, and reindex. Existing-root mutation helpers validate the expected root kind and reindex after successful mutation. `workflow_roots.py` carries root handles only; it does not own promotion, reindex, or evaluation-state mutation policy.
 
 ## Identity Rule
 
@@ -87,7 +92,7 @@ storage/
   operator.py        show/delete command outcomes and ambiguity policy
   workflow_roots.py  workflow-facing root handles and root-handle factories
   workflow_root_materialization.py  selector/producer identity -> workflow roots
-  transactions.py    workflow-facing root commit/reindex transaction boundaries
+  transactions.py    workflow-facing root commit/mutation/reindex boundaries
   lifecycle.py       low-level staging, promotion, validation, and delete cascade
   sync_cli.py        remote-side transfer path/root-kind helper commands
   inspect*.py        read-only inspection views
@@ -96,7 +101,7 @@ storage/
 
 Storage owns persisted payload ABI. Modeling and evaluation own runtime result objects; named storage `PayloadCodec` objects translate those objects at the SQLite table boundary. Persistence modules call codec objects directly, keeping encode/decode locality at one seam per persisted record type. Artifact manifests persist Temporal Capability as the artifact-facing compiler capability bundle and persist artifact semantics as its normalized semantic projection. Artifact evaluation state stores an **Evaluation Config Snapshot**, not a live evaluator config object, so evaluation storage identity is based on immutable evaluator provenance.
 
-Producer identity and consumer selection stay separate inside `storage.workflow_root_materialization`. Producer paths derive ids and root handles for roots that workflows are about to create. Consumer paths resolve existing roots through the catalog before workflows read them. Root handles expose root facts and manifest loading. Storage transactions expose staging, promotion, selected-path commit, and reindex boundaries; lower-level lifecycle remains path and root-kind infrastructure.
+Producer identity and consumer selection stay separate inside `storage.workflow_root_materialization`. Producer paths derive ids and root handles for roots that workflows are about to create. Consumer paths resolve existing roots through the catalog before workflows read them. Root handles expose root facts and manifest loading. Storage transactions expose staging, promotion, selected-path commit, existing-root mutation, and reindex boundaries; lower-level lifecycle remains path and root-kind infrastructure.
 
 `operator.py` owns Storage Operator Outcomes for show/delete command behavior: list-vs-detail selection, detail ambiguity, narrowing attributes, delete-blocked diagnostics, and refresh rendering. CLI code maps options to selectors, maps narrowing attributes to flag names, and prints renderable sections.
 

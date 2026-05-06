@@ -52,6 +52,7 @@ from spice.storage.artifact import (
     load_artifact_manifest,
     load_evaluation_summary,
     load_training_summary,
+    record_evaluation_state,
     upsert_evaluation_state,
     write_artifact_manifest,
     write_training_state,
@@ -504,6 +505,21 @@ def test_evaluation_artifact_summaries_round_trip_and_coexist(tmp_path) -> None:
         db_path,
         evaluation_storage_id=replay_evaluation_id,
     ) == replay_summary.runs
+
+
+def test_record_evaluation_state_returns_loaded_summary(tmp_path) -> None:
+    db_path = tmp_path / ".spice" / "state.sqlite"
+    manifest = _manifest()
+    summary = _evaluation_summary(0.2)
+
+    write_artifact_manifest(db_path, manifest=manifest)
+
+    loaded = record_evaluation_state(db_path, summary=summary)
+
+    assert loaded.evaluation_storage_id == _evaluation_storage_id(summary)
+    assert loaded.recorded_at > 0
+    assert loaded.manifest == manifest
+    assert loaded.runtime == summary
 
 
 def test_evaluation_config_snapshot_freezes_storage_identity() -> None:

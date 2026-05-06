@@ -113,10 +113,7 @@ def test_persisted_training_split_metrics_use_reloaded_artifact_model(
     )
 
     assert evaluated_models == [loaded_model, loaded_model]
-    assert run.artifact_paths == (
-        tmp_path / "artifact" / ".spice" / "state.sqlite",
-        tmp_path / "artifact" / "model.pt",
-    )
+    assert run.artifact_dir == tmp_path / "artifact"
 
 
 def test_non_persisted_training_split_metrics_use_training_run_model(
@@ -139,5 +136,4 @@ def test_non_persisted_training_split_metrics_use_training_run_model(
     )
 
     assert evaluated_models == [training_model, training_model]
-    assert run.artifact_paths == ()
-
+    assert run.artifact_dir == tmp_path / "artifact"

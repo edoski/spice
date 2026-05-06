@@ -205,6 +205,25 @@ def upsert_evaluation_state(
     return evaluation_storage_id, recorded_at
 
 
+def record_evaluation_state(
+    db_path: Path,
+    *,
+    summary: EvaluationRuntimeSummary,
+) -> LoadedEvaluationSummary:
+    """Persist one evaluation summary and return the artifact read model."""
+
+    evaluation_storage_id, recorded_at = upsert_evaluation_state(db_path, summary=summary)
+    manifest = load_artifact_manifest(db_path)
+    from ..modeling.results import LoadedEvaluationSummary
+
+    return LoadedEvaluationSummary(
+        evaluation_storage_id=evaluation_storage_id,
+        recorded_at=recorded_at,
+        manifest=manifest,
+        runtime=summary,
+    )
+
+
 def load_evaluation_summary(
     db_path: Path,
     *,

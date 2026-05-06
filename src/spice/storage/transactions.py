@@ -2,15 +2,30 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Generic, TypeVar
 
 from ..core.files import replace_paths_atomic
 from .catalog.index import ReindexedCatalogRoot, reindex_catalog_root
-from .engine import RootKind
-from .lifecycle import RootStage, staged_root
+from .engine import RootKind, require_root_kind, state_db_path
+from .lifecycle import RootStage, staged_root, validate_root_destination_path
+
+EffectT = TypeVar("EffectT")
+
+
+@dataclass(frozen=True, slots=True)
+class FullRootCommit(Generic[EffectT]):
+    result: EffectT
+    reindexed: ReindexedCatalogRoot
+
+
+@dataclass(frozen=True, slots=True)
+class RootMutation(Generic[EffectT]):
+    result: EffectT
+    reindexed: ReindexedCatalogRoot
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +49,12 @@ class FullRootTransaction:
         ) as stage:
             yield stage
 
+    def commit(self, writer: Callable[[Path], EffectT]) -> FullRootCommit[EffectT]:
+        with self.open() as stage:
+            result = writer(stage.staged_root)
+            reindexed = stage.promote()
+        return FullRootCommit(result=result, reindexed=reindexed)
+
 
 @dataclass(slots=True)
 class PartialRootTransaction:
@@ -51,5 +72,37 @@ class PartialRootTransaction:
         return reindex_catalog_root(self.storage_root, root_path=self.root_path)
 
 
-def reindex_root_state(storage_root: Path, *, root_path: Path) -> ReindexedCatalogRoot:
+def reindex_root_state(
+    storage_root: Path,
+    *,
+    root_path: Path,
+    expected_root_kind: RootKind,
+) -> ReindexedCatalogRoot:
+    validate_root_destination_path(
+        storage_root,
+        destination_root=root_path,
+        expected_root_kind=expected_root_kind,
+    )
+    require_root_kind(state_db_path(root_path), expected_root_kind)
     return reindex_catalog_root(storage_root, root_path=root_path)
+
+
+def record_mutated_root(
+    storage_root: Path,
+    *,
+    root_path: Path,
+    expected_root_kind: RootKind,
+    mutation: Callable[[], EffectT],
+) -> RootMutation[EffectT]:
+    validate_root_destination_path(
+        storage_root,
+        destination_root=root_path,
+        expected_root_kind=expected_root_kind,
+    )
+    result = mutation()
+    reindexed = reindex_root_state(
+        storage_root,
+        root_path=root_path,
+        expected_root_kind=expected_root_kind,
+    )
+    return RootMutation(result=result, reindexed=reindexed)

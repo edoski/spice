@@ -95,13 +95,13 @@ Study state stores a SPICE study manifest and Optuna's RDB tables in the same SQ
 `storage.transactions` is the workflow-facing commit API. Full-root commits use hidden staged roots:
 
 ```text
-write staged root
+writer receives staged root
   -> validate root kind
   -> atomically promote over destination
   -> reindex catalog
 ```
 
-Partial commits promote selected paths inside an existing root. Acquire uses partial commit because history, evaluation, and state paths are assembled as parts of a corpus root.
+Partial commits promote selected paths inside an existing root. Existing-root mutation effects validate the expected root kind and reindex after successful mutation; tune uses this for study state. Evaluation state is recorded through `storage.artifact.record_evaluation_state()` and intentionally does not reindex because artifact catalog rows derive from the manifest, not evaluation summaries.
 
 `workflow_roots.py` exposes root handles and root-handle factories. `workflow_root_materialization.py` derives produced roots and resolves consumed roots; Workflow Preparation consumes those handles for preflight. Storage Transactions own promotion, selected-path commit, and reindex boundaries.
 

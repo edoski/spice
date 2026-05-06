@@ -31,7 +31,7 @@ build model family
 run_training_fit()
   |
   v
-persist artifact state
+write artifact payloads into storage-provided staged root
 ```
 
 The model family is only one part of learning. The same model architecture can learn a different task if the prediction family changes. The same prediction task can use a different model family if model config changes.
@@ -69,7 +69,9 @@ Artifact inference validation is centralized in `modeling.artifact_inference`. I
 
 Artifact training and temporary tuning trials use separate training-spec entrypoints so artifact identity and study identity stay explicit at the workflow seam.
 
-Tuning Execution is centralized in `modeling.tuning_execution`. It opens compatible study state, validates resume counts, runs Optuna trials in temporary artifact directories, records trial metadata, and returns storage-owned study summaries. Workflows only resolve roots, validate coverage, attach reporter callbacks, and reindex.
+Persisted training writes model files and artifact state into the directory supplied by the workflow storage effect. Modeling owns payload production and split-metric evaluation; storage owns whether that directory becomes the committed artifact root.
+
+Tuning Execution is centralized in `modeling.tuning_execution`. It opens compatible study state, validates resume counts, runs Optuna trials in temporary artifact directories, records trial metadata, and returns storage-owned study summaries. Workflows resolve roots, validate coverage, attach reporter callbacks, and delegate study reindex effects to storage.
 
 During training, `Objective Runtime` owns objective metric production. Validation objectives return validation metrics directly. Evaluation objectives receive an `ObjectiveMetricContext`, construct `ModelScoringInput`, and call the generic model-to-evaluator scoring bridge; the training loop no longer builds evaluator scoring details inline.
 

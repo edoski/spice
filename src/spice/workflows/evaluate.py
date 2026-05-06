@@ -8,12 +8,11 @@ from ..config.models import EvaluateConfig
 from ..core.reporting import Reporter
 from ..modeling.results import (
     EvaluationExecutionProvenance,
-    LoadedEvaluationSummary,
     build_evaluation_runtime_summary,
 )
 from ..modeling.scoring import score_evaluation
 from ..modeling.summary import evaluation_result_fields
-from ..storage.artifact import upsert_evaluation_state
+from ..storage.artifact import record_evaluation_state
 from ..storage.workflow_roots import EvaluateWorkflowRoots
 from .preparation import prepare_evaluate
 
@@ -59,15 +58,9 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
         metric_descriptors=inference_context.evaluator_contract.metric_descriptors,
         execution_provenance=_current_execution_provenance(),
     )
-    evaluation_storage_id, recorded_at = upsert_evaluation_state(
+    summary = record_evaluation_state(
         roots.artifact.state_db_path,
         summary=runtime_summary,
-    )
-    summary = LoadedEvaluationSummary(
-        evaluation_storage_id=evaluation_storage_id,
-        recorded_at=recorded_at,
-        manifest=inference_context.loaded_artifact.manifest,
-        runtime=runtime_summary,
     )
     active_reporter.result("evaluate", evaluation_result_fields(summary))
 

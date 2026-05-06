@@ -12,8 +12,9 @@ from ..modeling.tuning_execution import (
     open_tuning_execution,
     run_tuning_execution,
 )
+from ..storage.engine import STUDY_ROOT_KIND
 from ..storage.study_render import study_result_fields
-from ..storage.transactions import reindex_root_state
+from ..storage.transactions import record_mutated_root
 from ..storage.workflow_roots import TuneWorkflowRoots
 from .preparation import prepare_tune
 
@@ -69,26 +70,36 @@ def run(config: TuneConfig, *, reporter: Reporter | None = None) -> None:
         roots=roots,
         corpus_manifest=corpus_manifest,
     )
-    reindex_root_state(roots.study.storage_root, root_path=roots.study.root_path)
-    summary = run_tuning_execution(
-        opened,
-        config=config,
-        roots=roots,
-        corpus_manifest=corpus_manifest,
-        callbacks=TuningExecutionCallbacks(
-            on_resume=lambda existing, target: active_reporter.milestone(
-                f"resume trials={existing}/{target}"
-            ),
-            on_study_start=lambda remaining: active_reporter.milestone(
-                f"study started trials={remaining}"
-            ),
-            on_trial_complete=lambda progress: active_reporter.milestone(
-                _trial_message(progress)
-            ),
-            on_best_improved=lambda progress: active_reporter.milestone(
-                _best_message(progress)
+    record_mutated_root(
+        roots.study.storage_root,
+        root_path=roots.study.root_path,
+        expected_root_kind=STUDY_ROOT_KIND,
+        mutation=lambda: None,
+    )
+    summary_commit = record_mutated_root(
+        roots.study.storage_root,
+        root_path=roots.study.root_path,
+        expected_root_kind=STUDY_ROOT_KIND,
+        mutation=lambda: run_tuning_execution(
+            opened,
+            config=config,
+            roots=roots,
+            corpus_manifest=corpus_manifest,
+            callbacks=TuningExecutionCallbacks(
+                on_resume=lambda existing, target: active_reporter.milestone(
+                    f"resume trials={existing}/{target}"
+                ),
+                on_study_start=lambda remaining: active_reporter.milestone(
+                    f"study started trials={remaining}"
+                ),
+                on_trial_complete=lambda progress: active_reporter.milestone(
+                    _trial_message(progress)
+                ),
+                on_best_improved=lambda progress: active_reporter.milestone(
+                    _best_message(progress)
+                ),
             ),
         ),
     )
-    reindex_root_state(roots.study.storage_root, root_path=roots.study.root_path)
+    summary = summary_commit.result
     active_reporter.result("tune", study_result_fields(summary))
