@@ -169,7 +169,7 @@ Corpus module that owns hidden acquisition staging roots, split sequencing, stat
 _Avoid_: staging helper, acquire workflow body
 
 **Corpus Capability Planning**:
-Corpus policy that compiles feature/problem capability requirements, plans acquisition windows, counts valid temporal capability samples, and decides bounded history refills.
+Corpus policy that compiles feature/problem capability requirements, plans acquisition windows, counts valid temporal capability samples, and owns the bounded history refill lifecycle including attempt limits and termination.
 _Avoid_: history helper, acquisition scheduler
 
 **Corpus Acquisition Source Requirements**:

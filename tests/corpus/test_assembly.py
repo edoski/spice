@@ -162,10 +162,7 @@ def _exercise_short_history_refill(
     monkeypatch,
     load_workflow_config,
     acquire_override,
-    *,
-    final_sample_count: int | None = None,
-    expect_error: bool = False,
-) -> tuple[list[tuple[int, int]], list[tuple[int, int]], list[TimestampRange], int]:
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
     override = acquire_override()
     override["acquisition"] = {
         "chunk_size": 128,
@@ -221,12 +218,7 @@ def _exercise_short_history_refill(
     ]
     partial_ranges: list[tuple[int, int]] = []
     requested_ranges: list[tuple[int, int]] = []
-    history_windows: list[TimestampRange] = []
-    if final_sample_count is None:
-        sample_counts = [1, config.problem.sample_count]
-    else:
-        sample_counts = [1, final_sample_count, final_sample_count, final_sample_count]
-    resolved_capability_samples = iter(sample_counts)
+    resolved_capability_samples = iter([1, config.problem.sample_count])
     history_plan_calls = 0
 
     class Source:
@@ -243,7 +235,6 @@ def _exercise_short_history_refill(
             nonlocal history_plan_calls
             template = history_plans[history_plan_calls]
             history_plan_calls += 1
-            history_windows.append(window)
             return BlockPullPlan(
                 window=window,
                 block_range=template.block_range
@@ -288,12 +279,8 @@ def _exercise_short_history_refill(
     )
 
     request = CorpusAssemblyRequest(config=config, roots=roots)
-    if expect_error:
-        with pytest.raises(RuntimeError, match="under-requested capability samples"):
-            asyncio.run(assemble_corpus(request, Source()))
-    else:
-        asyncio.run(assemble_corpus(request, Source()))
-    return partial_ranges, requested_ranges, history_windows, history_plan_calls
+    asyncio.run(assemble_corpus(request, Source()))
+    return partial_ranges, requested_ranges
 
 
 def test_assemble_corpus_refills_missing_history_prefix(
@@ -302,7 +289,7 @@ def test_assemble_corpus_refills_missing_history_prefix(
     load_workflow_config,
     acquire_override,
 ) -> None:
-    partial_ranges, requested_ranges, _, _ = _exercise_short_history_refill(
+    partial_ranges, requested_ranges = _exercise_short_history_refill(
         tmp_path,
         monkeypatch,
         load_workflow_config,
@@ -313,20 +300,3 @@ def test_assemble_corpus_refills_missing_history_prefix(
     assert (1_000, 1_050) in requested_ranges
     assert (950, 1_000) in requested_ranges
     assert (950, 1_050) not in requested_ranges
-
-
-def test_assemble_corpus_fails_after_bounded_short_refills(
-    tmp_path,
-    monkeypatch,
-    load_workflow_config,
-    acquire_override,
-) -> None:
-    _, _, _, history_plan_calls = _exercise_short_history_refill(
-        tmp_path,
-        monkeypatch,
-        load_workflow_config,
-        acquire_override,
-        final_sample_count=2,
-        expect_error=True,
-    )
-    assert history_plan_calls == 4

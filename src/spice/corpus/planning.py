@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Generic, Protocol, TypeVar
 
 from ..acquisition import BlockPullPlan, BlockSource, TimestampRange, evaluation_range
 from ..config.models import ChainRuntimeSpec, FeaturesConfig, ProblemSpec
@@ -42,6 +44,41 @@ class CorpusHistoryRefillPlan:
     history_plan: BlockPullPlan
     requested_history_window_seconds: int
     status_message: str
+
+
+@dataclass(frozen=True, slots=True)
+class CorpusHistoryMaterializationStep:
+    plan: BlockPullPlan
+    requested_history_window_seconds: int
+    refill_attempt: int | None
+    status_message: str | None
+
+
+class CorpusHistoryMaterializationResult(Protocol):
+    @property
+    def path(self) -> Path: ...
+
+    @property
+    def validation(self) -> BlockDatasetValidationReport: ...
+
+
+HistoryResultT = TypeVar(
+    "HistoryResultT",
+    bound=CorpusHistoryMaterializationResult,
+)
+HistoryMaterializer = Callable[
+    [CorpusHistoryMaterializationStep],
+    Awaitable[HistoryResultT],
+]
+StatusCallback = Callable[[str], None]
+
+
+@dataclass(frozen=True, slots=True)
+class CorpusHistoryFulfillment(Generic[HistoryResultT]):
+    history_result: HistoryResultT
+    history_plan: BlockPullPlan
+    requested_history_window_seconds: int
+    resolved_capability_samples: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +136,59 @@ class CorpusCapabilityPlanningContext:
         feature_table = self.feature_contract.build_table(blocks)
         return self.problem_contract.count_valid_capability_samples(feature_table)
 
+    async def fulfill_history_with_refills(
+        self,
+        *,
+        block_source: BlockSource,
+        initial_history_plan: BlockPullPlan,
+        requested_history_window_seconds: int,
+        materialize: HistoryMaterializer[HistoryResultT],
+        status: StatusCallback | None = None,
+    ) -> CorpusHistoryFulfillment[HistoryResultT]:
+        emit = status or _noop_status
+        history_plan = initial_history_plan
+        history_result = await materialize(
+            CorpusHistoryMaterializationStep(
+                plan=history_plan,
+                requested_history_window_seconds=requested_history_window_seconds,
+                refill_attempt=None,
+                status_message=None,
+            )
+        )
+        resolved_capability_samples = self.count_valid_history_samples(history_result.path)
+
+        for refill_attempt in range(1, HISTORY_REFILL_ATTEMPT_LIMIT + 1):
+            refill_plan = await self.plan_history_refill(
+                block_source=block_source,
+                validation=history_result.validation,
+                resolved_capability_samples=resolved_capability_samples,
+                requested_history_window_seconds=requested_history_window_seconds,
+            )
+            if refill_plan is None:
+                break
+            requested_history_window_seconds = refill_plan.requested_history_window_seconds
+            history_plan = refill_plan.history_plan
+            emit(refill_plan.status_message)
+            history_result = await materialize(
+                CorpusHistoryMaterializationStep(
+                    plan=history_plan,
+                    requested_history_window_seconds=requested_history_window_seconds,
+                    refill_attempt=refill_attempt,
+                    status_message=refill_plan.status_message,
+                )
+            )
+            resolved_capability_samples = self.count_valid_history_samples(
+                history_result.path,
+            )
+
+        self._ensure_sufficient_history_samples(resolved_capability_samples)
+        return CorpusHistoryFulfillment(
+            history_result=history_result,
+            history_plan=history_plan,
+            requested_history_window_seconds=requested_history_window_seconds,
+            resolved_capability_samples=resolved_capability_samples,
+        )
+
     async def plan_history_refill(
         self,
         *,
@@ -145,7 +235,7 @@ class CorpusCapabilityPlanningContext:
             ),
         )
 
-    def ensure_sufficient_history_samples(self, resolved_capability_samples: int) -> None:
+    def _ensure_sufficient_history_samples(self, resolved_capability_samples: int) -> None:
         if resolved_capability_samples < self.required_sample_count:
             raise RuntimeError(
                 "History sizing policy under-requested capability samples: "
@@ -173,3 +263,7 @@ def build_corpus_capability_planning_context(
 
 def _with_cushion(value: float, ratio: float) -> int:
     return max(1, math.ceil(value * (1.0 + ratio)))
+
+
+def _noop_status(message: str) -> None:
+    del message

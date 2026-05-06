@@ -37,7 +37,7 @@ AcquireConfig
   -> close block source
 ```
 
-Acquire is deliberately thin. Corpus Assembly owns capability planning, source requirements, bounded refill attempts, split materialization, state writing, and commit/reindex mechanics.
+Acquire is deliberately thin. Corpus Assembly delegates source requirements and bounded refill lifecycle to Corpus Capability Planning, delegates split materialization and staging to Corpus Acquisition Stage, then publishes committed corpus state.
 
 ## Train
 

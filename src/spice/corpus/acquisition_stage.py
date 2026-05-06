@@ -21,7 +21,7 @@ from .metadata import (
     build_dataset_manifest,
     provider_metadata,
 )
-from .planning import HISTORY_REFILL_ATTEMPT_LIMIT, CorpusCapabilityPlanningContext
+from .planning import CorpusCapabilityPlanningContext, CorpusHistoryMaterializationStep
 from .split_materialization import (
     CorpusSplitIntent,
     CorpusSplitKind,
@@ -112,14 +112,34 @@ class CorpusAcquisitionStage:
             controller=self.controller,
             status=status,
         )
-        history_result, resolved_capability_samples, history_plan, resolved_history_seconds = (
-            await self._ensure_sufficient_history(
-                block_source=block_source,
-                initial_history_plan=initial_history_plan,
-                requested_history_window_seconds=requested_history_window_seconds,
-                split_session=split_session,
-                status=status,
+        history_output_dir = self.roots.corpus.history_dir
+
+        async def materialize_history(
+            step: CorpusHistoryMaterializationStep,
+        ) -> DatasetBuildResult:
+            nonlocal history_output_dir
+            working_dir = (
+                self.temp_root / "history-initial"
+                if step.refill_attempt is None
+                else self.temp_root / f"history-refill-{step.refill_attempt}"
             )
+            result = await split_session.fulfill(
+                CorpusSplitIntent(
+                    kind=CorpusSplitKind.HISTORY,
+                    output_dir=history_output_dir,
+                    working_dir=working_dir,
+                    plan=step.plan,
+                )
+            )
+            history_output_dir = result.path
+            return result
+
+        history_fulfillment = await self.planning_context.fulfill_history_with_refills(
+            block_source=block_source,
+            initial_history_plan=initial_history_plan,
+            requested_history_window_seconds=requested_history_window_seconds,
+            materialize=materialize_history,
+            status=status,
         )
         evaluation_result = await split_session.fulfill(
             CorpusSplitIntent(
@@ -130,12 +150,14 @@ class CorpusAcquisitionStage:
             )
         )
         return CorpusAcquisitionStageFulfillment(
-            history_result=history_result,
+            history_result=history_fulfillment.history_result,
             evaluation_result=evaluation_result,
-            history_plan=history_plan,
+            history_plan=history_fulfillment.history_plan,
             evaluation_plan=evaluation_plan,
-            requested_history_window_seconds=resolved_history_seconds,
-            resolved_capability_samples=resolved_capability_samples,
+            requested_history_window_seconds=(
+                history_fulfillment.requested_history_window_seconds
+            ),
+            resolved_capability_samples=history_fulfillment.resolved_capability_samples,
         )
 
     def publish(
@@ -189,61 +211,6 @@ class CorpusAcquisitionStage:
             acquire_run=acquire_run,
             committed_root_kind=committed_root_kind,
         )
-
-    async def _ensure_sufficient_history(
-        self,
-        *,
-        block_source: BlockSource,
-        initial_history_plan: BlockPullPlan,
-        requested_history_window_seconds: int,
-        split_session: CorpusSplitMaterializationSession,
-        status: StatusCallback,
-    ) -> tuple[DatasetBuildResult, int, BlockPullPlan, int]:
-        history_plan = initial_history_plan
-        history_result = await split_session.fulfill(
-            CorpusSplitIntent(
-                kind=CorpusSplitKind.HISTORY,
-                output_dir=self.roots.corpus.history_dir,
-                working_dir=self.temp_root / "history-initial",
-                plan=history_plan,
-            )
-        )
-        resolved_capability_samples = self.planning_context.count_valid_history_samples(
-            history_result.path,
-        )
-
-        for refill_attempt in range(1, HISTORY_REFILL_ATTEMPT_LIMIT + 1):
-            refill_plan = await self.planning_context.plan_history_refill(
-                block_source=block_source,
-                validation=history_result.validation,
-                resolved_capability_samples=resolved_capability_samples,
-                requested_history_window_seconds=requested_history_window_seconds,
-            )
-            if refill_plan is None:
-                break
-            requested_history_window_seconds = refill_plan.requested_history_window_seconds
-            history_plan = refill_plan.history_plan
-            status(refill_plan.status_message)
-            history_result = await split_session.fulfill(
-                CorpusSplitIntent(
-                    kind=CorpusSplitKind.HISTORY,
-                    output_dir=history_result.path,
-                    working_dir=self.temp_root / f"history-refill-{refill_attempt}",
-                    plan=history_plan,
-                )
-            )
-            resolved_capability_samples = self.planning_context.count_valid_history_samples(
-                history_result.path,
-            )
-
-        self.planning_context.ensure_sufficient_history_samples(resolved_capability_samples)
-        return (
-            history_result,
-            resolved_capability_samples,
-            history_plan,
-            requested_history_window_seconds,
-        )
-
 
 def acquire_stage_root(roots: AcquireWorkflowRoots) -> Path:
     return roots.corpus.root_path.parent / f".{roots.corpus.dataset_id}{ACQUIRE_STAGE_DIR_NAME}"

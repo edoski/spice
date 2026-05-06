@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -13,6 +14,7 @@ from spice.config.groups import load_named_group_payload
 from spice.corpus.planning import (
     HISTORY_REFILL_ATTEMPT_LIMIT,
     CorpusCapabilityPlanningSpec,
+    CorpusHistoryMaterializationStep,
     build_corpus_capability_planning_context,
 )
 from spice.corpus.validation import BlockDatasetValidationReport
@@ -87,6 +89,12 @@ class _PlanningSource:
     async def get_block_rows(self, start: int, end: int):
         del start, end
         raise AssertionError("planning must not fetch rows")
+
+
+@dataclass(frozen=True, slots=True)
+class _HistoryResult:
+    path: Path
+    validation: BlockDatasetValidationReport
 
 
 def test_initial_capability_planning_computes_evaluation_and_history_windows(
@@ -212,6 +220,7 @@ def test_capability_planning_builds_refill_decision(
 
 def test_capability_planning_reports_bounded_refill_failure(
     tmp_path,
+    monkeypatch,
     load_workflow_config,
     acquire_override,
 ) -> None:
@@ -221,6 +230,111 @@ def test_capability_planning_reports_bounded_refill_failure(
         override=acquire_override(sample_count=4),
     )
     context = build_corpus_capability_planning_context(_planning_spec(config))
+    evaluation_window = TimestampRange(
+        start=config.evaluation_window_start_timestamp,
+        end=config.evaluation_window_end_timestamp,
+    )
+    source = _PlanningSource(evaluation_window)
+    validation = BlockDatasetValidationReport(
+        dataset_path=Path("history"),
+        row_count=51,
+        first_timestamp=config.history_window_end_timestamp - 600,
+        last_timestamp=config.history_window_end_timestamp,
+    )
+    samples = iter([2] * (HISTORY_REFILL_ATTEMPT_LIMIT + 1))
+    materialization_steps: list[CorpusHistoryMaterializationStep] = []
+
+    monkeypatch.setattr(
+        type(context),
+        "count_valid_history_samples",
+        lambda _self, _history_dir: next(samples),
+    )
+
+    async def materialize(step: CorpusHistoryMaterializationStep) -> _HistoryResult:
+        materialization_steps.append(step)
+        return _HistoryResult(
+            path=Path(f"history-{len(materialization_steps)}"),
+            validation=validation,
+        )
+
+    initial_plan = _plan_for_window(
+        context.history_window(600),
+        start_block=100,
+    )
 
     with pytest.raises(RuntimeError, match=f"refill_attempts={HISTORY_REFILL_ATTEMPT_LIMIT}"):
-        context.ensure_sufficient_history_samples(2)
+        asyncio.run(
+            context.fulfill_history_with_refills(
+                block_source=source,
+                initial_history_plan=initial_plan,
+                requested_history_window_seconds=600,
+                materialize=materialize,
+            )
+        )
+
+    assert [step.refill_attempt for step in materialization_steps] == [None, 1, 2, 3]
+
+
+def test_capability_planning_owns_history_refill_lifecycle(
+    tmp_path,
+    monkeypatch,
+    load_workflow_config,
+    acquire_override,
+) -> None:
+    config = _load_acquire_config(
+        load_workflow_config,
+        tmp_path,
+        override=acquire_override(sample_count=4),
+    )
+    context = build_corpus_capability_planning_context(_planning_spec(config))
+    evaluation_window = TimestampRange(
+        start=config.evaluation_window_start_timestamp,
+        end=config.evaluation_window_end_timestamp,
+    )
+    source = _PlanningSource(evaluation_window)
+    validation = BlockDatasetValidationReport(
+        dataset_path=Path("history"),
+        row_count=51,
+        first_timestamp=config.history_window_end_timestamp - 600,
+        last_timestamp=config.history_window_end_timestamp,
+    )
+    samples = iter([1, 4])
+    materialization_steps: list[CorpusHistoryMaterializationStep] = []
+    statuses: list[str] = []
+
+    monkeypatch.setattr(
+        type(context),
+        "count_valid_history_samples",
+        lambda _self, _history_dir: next(samples),
+    )
+
+    async def materialize(step: CorpusHistoryMaterializationStep) -> _HistoryResult:
+        materialization_steps.append(step)
+        return _HistoryResult(
+            path=Path(f"history-{len(materialization_steps)}"),
+            validation=validation,
+        )
+
+    initial_plan = _plan_for_window(
+        context.history_window(600),
+        start_block=100,
+    )
+
+    fulfillment = asyncio.run(
+        context.fulfill_history_with_refills(
+            block_source=source,
+            initial_history_plan=initial_plan,
+            requested_history_window_seconds=600,
+            materialize=materialize,
+            status=statuses.append,
+        )
+    )
+
+    assert [step.refill_attempt for step in materialization_steps] == [None, 1]
+    assert materialization_steps[0].requested_history_window_seconds == 600
+    assert materialization_steps[1].requested_history_window_seconds == 640
+    assert materialization_steps[1].status_message == "history refilling samples=1/4"
+    assert statuses == ["history refilling samples=1/4"]
+    assert fulfillment.history_result.path == Path("history-2")
+    assert fulfillment.requested_history_window_seconds == 640
+    assert fulfillment.resolved_capability_samples == 4
