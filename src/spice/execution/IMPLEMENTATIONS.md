@@ -36,7 +36,7 @@ An execution target defines:
 
 `spice.execution.session` is the target-bound Interface for remote operations. It owns shell quoting, command execution, module execution, rsync, SLURM submission, target follow policy, job following, final-state reads, and remote git commit lookup. A job submission is only the submitted job receipt: workflow task, job id, and log path.
 
-There is no execution backend protocol while SSH/SLURM is the only Adapter.
+There is no additional remote-execution session protocol while SSH/SLURM is the only Adapter.
 
 ## SLURM Submission
 

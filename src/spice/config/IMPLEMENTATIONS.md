@@ -48,7 +48,7 @@ A surface is a named bundle of config choices. Surface application turns it into
 
 ```text
 surface: current_row_fee_dynamics
-overrides: model=lstm_icdcs_2026, delay_seconds=36
+overrides: model=lstm, delay_seconds=36
 
         surface YAML
              |

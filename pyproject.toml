@@ -43,7 +43,7 @@ dev = [
 ]
 
 [project.scripts]
-spice = "spice.cli:main"
+spice = "spice.cli.app:main"
 
 [tool.hatch.build]
 include = ["src/spice/conf/**/*.yaml"]

@@ -105,8 +105,16 @@ modeling/
   pipeline.py             training spec construction and fit orchestration
   dataset_builders/       temporal dataset preparation and tensorization strategies
   families/               neural network family configs/builders/tuning hooks
+  models.py               model protocols and model-output envelope
+  representations.py      representation contracts and device storage budget semantics
+  results.py              runtime training/evaluation result records
+  summary.py              rendered model/training/evaluation summaries
+  tuned_config.py         tuned artifact config alignment
+  tuning.py               tuned artifact parameter application
   batch_plan.py           training/inference batch planning
+  _runtime.py             shared PyTorch/CUDA runtime helpers
   _runtime_probe.py       private host-warmup and measured-budget helpers
+  _training_context.py    training dataset/runtime/spec context helpers
   forward_runtime.py      forward-only warmup, memory measurement, and execution
   runtime_planning.py     device, backend, seed, precision, and model preparation plans
   training_runtime.py     training warmup, budget planning, and prediction state fitting

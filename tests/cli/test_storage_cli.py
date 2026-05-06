@@ -4,7 +4,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from spice.cli import app
+from spice.cli.app import app
 from spice.cli.commands import storage as storage_commands
 from spice.storage.catalog import CatalogArtifactRecord
 from spice.storage.catalog.index import upsert_catalog_record

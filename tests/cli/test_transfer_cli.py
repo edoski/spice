@@ -4,7 +4,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from spice.cli import app
+from spice.cli.app import app
 from spice.execution.transfer_transaction import TransferredArtifactRoot
 from spice.storage.catalog import CatalogArtifactRecord, CatalogDatasetRecord
 
@@ -51,10 +51,10 @@ def test_transfer_push_dataset_command_routes_to_dataset_transfer(monkeypatch, t
 
     monkeypatch.setattr(
         "spice.cli.commands.transfer.open_storage_transfer_transaction",
-        lambda target, *, local_storage_root: captured.update(
-            {"target": target, "local_storage_root": local_storage_root}
-        )
-        or FakeTransaction(),
+        lambda target, *, local_storage_root: (
+            captured.update({"target": target, "local_storage_root": local_storage_root})
+            or FakeTransaction()
+        ),
     )
 
     result = runner.invoke(

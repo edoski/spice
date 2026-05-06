@@ -48,7 +48,7 @@ Each spec table belongs to the package that owns the behavior. Implementation kn
 
 ```text
 features       -> feature families
-temporal       -> compilers, realization policies, input normalization
+temporal       -> compilers, execution policies, input normalization
 prediction     -> prediction families
 evaluation     -> evaluator adapters
 modeling       -> dataset builders and model families

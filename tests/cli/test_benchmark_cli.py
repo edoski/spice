@@ -20,7 +20,7 @@ from spice.benchmarks.result_records import (
     MetricValueRecord,
 )
 from spice.benchmarks.runs import create_benchmark_run_dir, write_collection_snapshot
-from spice.cli import app
+from spice.cli.app import app
 from spice.config import WorkflowTask
 from spice.core.errors import SpiceOperatorError
 from spice.execution.session import ExecutionJobSubmission

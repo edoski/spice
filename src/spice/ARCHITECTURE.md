@@ -88,7 +88,7 @@ spice/
   evaluation/       decoded decision scoring
   execution/        remote execution, transfer, and Slurm submission
   features/         observable feature construction
-  metrics.py        shared metric result ABI
+  metrics.py        shared metric descriptors, metric sets, and window summaries
   modeling/         datasets, models, training, inference
   objectives/       train/tune objective contracts
   prediction/       target/loss/decode semantics

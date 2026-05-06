@@ -8,7 +8,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from spice.cli import app
+from spice.cli.app import app
 from spice.config import AcquireConfig, EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.execution.session import ExecutionJobSubmission
 
@@ -175,7 +175,7 @@ def test_config_edit_seeds_missing_file_and_uses_editor(
         "\n".join(
             [
                 "#!/bin/sh",
-                f'echo \"$1\" > \"{log_path}\"',
+                f'echo "$1" > "{log_path}"',
                 "exit 0",
             ]
         )

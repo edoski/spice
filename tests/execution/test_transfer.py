@@ -16,7 +16,7 @@ from spice.storage.catalog import CatalogArtifactRecord, CatalogDatasetRecord
 from spice.storage.catalog.codecs import encode_remote_catalog_record
 from spice.storage.catalog.index import ReindexedCatalogRoot
 from spice.storage.engine import RootKind
-from tests.storage.test_artifact import _manifest
+from tests.artifact_helpers import manifest
 
 
 class _FakeSession:
@@ -203,7 +203,7 @@ def test_storage_transfer_transaction_pulls_artifact_and_returns_local_record(
 def test_storage_transfer_transaction_uses_promoted_catalog_record(tmp_path) -> None:
     remote_storage_root = tmp_path / "remote-storage"
     remote_root = remote_storage_root / "artifacts" / "ethereum" / "artifact-1"
-    write_artifact_manifest(remote_root / ".spice" / "state.sqlite", manifest=_manifest())
+    write_artifact_manifest(remote_root / ".spice" / "state.sqlite", manifest=manifest())
     record = _artifact_record(remote_root)
     local_storage_root = tmp_path / "local-outputs"
     session = _FakeSession(
@@ -220,7 +220,7 @@ def test_storage_transfer_transaction_uses_promoted_catalog_record(tmp_path) -> 
     destination_root = local_storage_root / "artifacts" / record.chain_name / record.artifact_id
     assert pulled.local_record.root_path == destination_root
     assert pulled.local_record.state_db_path == destination_root / ".spice" / "state.sqlite"
-    assert pulled.local_record.artifact_id == _manifest().artifact_id
+    assert pulled.local_record.artifact_id == manifest().artifact_id
 
 
 def test_storage_transfer_transaction_rejects_existing_destination(tmp_path) -> None:

@@ -19,11 +19,6 @@ from .batch_plan import BatchSource
 from .models import ModelOutputs, TemporalModel
 from .representations import DeviceStorageBudget, RepresentationRuntimeContext
 
-try:
-    import psutil
-except ImportError:  # pragma: no cover - fallback path is covered below
-    psutil = None
-
 IntVector = NDArray[np.int64]
 _CUDA_DEVICE_RESIDENT_BUDGET_FRACTION = 0.5
 ForwardBatchT = TypeVar("ForwardBatchT", bound="ForwardBatch")
@@ -223,9 +218,6 @@ def run_model_forward_pass(
 
 
 def _available_system_memory_bytes() -> int:
-    if psutil is not None:
-        return int(psutil.virtual_memory().available)
-
     page_size = _sysconf_int("SC_PAGE_SIZE")
     available_pages = _sysconf_int("SC_AVPHYS_PAGES")
     if page_size is not None and available_pages is not None:
@@ -278,9 +270,7 @@ def _ensure_cuda_runtime_ready(device: torch.device) -> None:
 
 def _cuda_runtime_error(exc: Exception) -> SpiceOperatorError:
     return SpiceOperatorError(
-        "CUDA runtime initialization failed. "
-        + _cuda_runtime_details()
-        + f" Root cause: {exc}"
+        "CUDA runtime initialization failed. " + _cuda_runtime_details() + f" Root cause: {exc}"
     )
 
 

@@ -138,7 +138,7 @@ def test_study_id_uses_resolved_identity_but_not_trial_limits(
     conf_root = isolate_conf_root()
     payload = {
         **_base_surface(conf_root),
-        "tuning": {"id": "default", "space": "lstm_extensive_calibrated"},
+        "tuning": {"id": "default", "space": "lstm_large_capacity"},
     }
     _write_surface(conf_root, "study_identity_change", payload)
 

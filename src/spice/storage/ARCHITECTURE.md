@@ -74,6 +74,7 @@ Catalog `created_at` is stable across upserts. `updated_at` changes when a recor
 storage/
   layout.py          canonical paths
   identity.py        provenance payload assembly
+  root_identity.py   pure consumed/produced root id/fact helpers
   ids.py             deterministic id hashing
   errors.py          storage-owned operator errors with storage record payloads
   engine.py          SQLite engine and root-kind metadata
@@ -87,6 +88,7 @@ storage/
   study_manifest_codecs.py study-root manifest payload ABI
   study_manifest.py  study-root manifest persistence
   study_models.py    study runtime read models
+  study_render.py    compact study result rendering helpers
   study_optuna.py    Optuna storage adapter and read access
   artifact.py        artifact-root persistence
   operator.py        show/delete command outcomes and ambiguity policy

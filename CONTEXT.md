@@ -45,7 +45,7 @@ A named collection of YAML specs for one kind of selectable configuration.
 _Avoid_: config bucket, config folder
 
 **Config Group Loading**:
-Config registry Interface that loads named Config Group entries either as canonical raw payloads for editing/display or as typed owner configs for workflow resolution.
+Config package interfaces that load named Config Group entries either as canonical raw payloads for editing/display or as typed owner configs for workflow resolution.
 _Avoid_: YAML helper, generic config loader
 
 **Problem Spec**:
