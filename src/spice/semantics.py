@@ -48,7 +48,7 @@ class ObjectiveSemantics:
     objective_id: str
     metric_id: str
     direction: Literal["maximize", "minimize"]
-    benchmark_id: str | None
+    evaluator_id: str | None
 
 
 @dataclass(frozen=True, slots=True)

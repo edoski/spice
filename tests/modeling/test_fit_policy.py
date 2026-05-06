@@ -14,7 +14,7 @@ def _objective(*, direction: str = "maximize") -> CompiledObjectiveContract:
         objective_id="validation",
         metric_id="score",
         direction=direction,
-        benchmark_id=None,
+        evaluator_id=None,
     )
 
 

@@ -10,7 +10,7 @@ import torch
 
 from spice.config.models import TrainingConfig
 from spice.metrics import MetricSet
-from spice.modeling.objective_runtime import CompiledObjectiveRuntime
+from spice.modeling.objective_runtime import CompiledObjectiveRuntime, ObjectiveMetricContext
 from spice.modeling.representations import RepresentationRuntimeContext
 from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.modeling.training_runner import (
@@ -51,7 +51,7 @@ def _objective_contract() -> CompiledObjectiveContract:
         objective_id="validation",
         metric_id="score",
         direction="maximize",
-        benchmark_id=None,
+        evaluator_id=None,
     )
 
 
@@ -59,7 +59,7 @@ def _objective_runtime(evaluate_metrics_fn=None) -> CompiledObjectiveRuntime:
     return CompiledObjectiveRuntime(
         contract=_objective_contract(),
         evaluate_metrics_fn=evaluate_metrics_fn
-        or (lambda validation_metrics, scoring_input_factory: validation_metrics),
+        or (lambda validation_metrics, context: validation_metrics),
     )
 
 
@@ -137,12 +137,6 @@ def test_training_fit_restores_best_state_and_calls_early_stop_callback(
 
     _patch_training_runtime(monkeypatch)
     monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
-    monkeypatch.setattr(
-        "spice.modeling.training_runner.ModelScoringInput",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("validation objective must not build scoring input")
-        ),
-    )
 
     model = _TinyModel()
     result = run_training_fit(
@@ -165,6 +159,56 @@ def test_training_fit_restores_best_state_and_calls_early_stop_callback(
     assert len(result.objective_history) == 2
     assert model.weight.item() == 1.0
     assert early_stop_calls == [(2, 1)]
+
+
+def test_training_fit_delegates_objective_context_to_runtime(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_contexts: list[ObjectiveMetricContext | None] = []
+
+    def fake_run_epoch(_model, *, training, **_kwargs):
+        return MetricSet({"score": 1.0 if training else 2.0})
+
+    def evaluate_metrics(validation_metrics, context):
+        assert validation_metrics == MetricSet({"score": 2.0})
+        seen_contexts.append(context)
+        return MetricSet({"score": 3.0})
+
+    _patch_training_runtime(monkeypatch)
+    monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
+    model = _TinyModel()
+    prediction_contract = cast(Any, SimpleNamespace(fit_training_state=lambda *_, **__: None))
+    representation_contract = cast(Any, SimpleNamespace())
+    execution_policy = cast(Any, SimpleNamespace())
+    store = cast(Any, SimpleNamespace())
+
+    result = run_training_fit(
+        TrainingFitSpec(
+            model=model,
+            model_config=cast(Any, SimpleNamespace()),
+            prediction_contract=prediction_contract,
+            representation_contract=representation_contract,
+            objective_runtime=_objective_runtime(evaluate_metrics),
+            execution_policy=execution_policy,
+            store=store,
+            train_sample_indices=np.array([0], dtype=np.int64),
+            validation_sample_indices=np.array([1], dtype=np.int64),
+            training_config=_training_config(max_epochs=1),
+        )
+    )
+
+    assert result.best_objective_value == 3.0
+    assert len(seen_contexts) == 1
+    context = seen_contexts[0]
+    assert context is not None
+    assert context.model is model
+    assert context.prediction_contract is prediction_contract
+    assert context.representation_contract is representation_contract
+    assert context.execution_policy is execution_policy
+    assert context.store is store
+    assert context.runtime_plan is not None
+    np.testing.assert_array_equal(context.sample_indices, np.array([1], dtype=np.int64))
 
 
 def test_evaluate_training_metrics_uses_batch_plan_and_prediction_training_state(

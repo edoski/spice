@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -52,8 +52,6 @@ RunEvaluatorFn = Callable[
 class CompiledEvaluatorContract:
     evaluator_id: str
     metric_descriptors: tuple[MetricDescriptor, ...]
-    primary_metric_id: str
-    direction: Literal["maximize", "minimize"]
     config: EvaluatorConfig
     accepted_decoded_result_id: str
     run_fn: RunEvaluatorFn
@@ -62,15 +60,23 @@ class CompiledEvaluatorContract:
         descriptor_ids = [descriptor.id for descriptor in self.metric_descriptors]
         if len(descriptor_ids) != len(set(descriptor_ids)):
             raise ValueError("Evaluator metric descriptor ids must be unique")
-        primary_ids = [
-            descriptor.id for descriptor in self.metric_descriptors if descriptor.role == "primary"
+        primary_descriptors = [
+            descriptor for descriptor in self.metric_descriptors if descriptor.role == "primary"
         ]
-        if len(primary_ids) != 1:
+        if len(primary_descriptors) != 1:
             raise ValueError("Evaluator contract must declare exactly one primary metric")
-        if self.primary_metric_id not in descriptor_ids:
-            raise ValueError("Evaluator primary_metric_id must match a descriptor id")
-        if primary_ids[0] != self.primary_metric_id:
-            raise ValueError("Evaluator primary descriptor must match primary_metric_id")
+
+    @property
+    def primary_metric_descriptor(self) -> MetricDescriptor:
+        return next(
+            descriptor
+            for descriptor in self.metric_descriptors
+            if descriptor.role == "primary"
+        )
+
+    @property
+    def primary_metric_id(self) -> str:
+        return self.primary_metric_descriptor.id
 
     def run(
         self,

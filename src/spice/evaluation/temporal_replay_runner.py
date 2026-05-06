@@ -61,8 +61,6 @@ def compile_temporal_replay_evaluator_contract(
     return CompiledEvaluatorContract(
         evaluator_id=evaluator_id,
         metric_descriptors=TEMPORAL_REPLAY_METRIC_DESCRIPTORS,
-        primary_metric_id="profit_over_baseline",
-        direction="maximize",
         config=config,
         accepted_decoded_result_id=DecodedOffsets.decoded_result_id,
         run_fn=run_fn,

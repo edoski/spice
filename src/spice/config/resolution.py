@@ -246,7 +246,7 @@ def _resolve_evaluation(name: str | None) -> EvaluatorConfig | None:
 
 def _resolve_objective(name: str, *, evaluation_name: str | None) -> ObjectiveConfig:
     objective = typed.load(typed.OBJECTIVE, name)
-    expected_evaluation = _benchmark_evaluation_name(objective)
+    expected_evaluation = _objective_evaluator_id(objective)
     if (
         evaluation_name is not None
         and expected_evaluation is not None
@@ -259,12 +259,12 @@ def _resolve_objective(name: str, *, evaluation_name: str | None) -> ObjectiveCo
     return objective
 
 
-def _benchmark_evaluation_name(config: ObjectiveConfig) -> str | None:
+def _objective_evaluator_id(config: ObjectiveConfig) -> str | None:
     if config.id != "evaluation":
         return None
-    if config.benchmark_id is None:
-        raise ConfigResolutionError("evaluation objective.benchmark_id must be a named benchmark")
-    return config.benchmark_id
+    if config.evaluator_id is None:
+        raise ConfigResolutionError("evaluation objective.evaluator_id must be a named evaluator")
+    return config.evaluator_id
 
 
 def _resolve_storage(storage: StorageSpec | None) -> StorageSpec:

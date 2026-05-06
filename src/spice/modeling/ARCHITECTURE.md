@@ -71,6 +71,8 @@ Artifact training and temporary tuning trials use separate training-spec entrypo
 
 Tuning Execution is centralized in `modeling.tuning_execution`. It opens compatible study state, validates resume counts, runs Optuna trials in temporary artifact directories, records trial metadata, and returns storage-owned study summaries. Workflows only resolve roots, validate coverage, attach reporter callbacks, and reindex.
 
+During training, `Objective Runtime` owns objective metric production. Validation objectives return validation metrics directly. Evaluation objectives receive an `ObjectiveMetricContext`, construct `ModelScoringInput`, and call the generic model-to-evaluator scoring bridge; the training loop no longer builds evaluator scoring details inline.
+
 ## Dataset Builders
 
 Dataset builders adapt canonical block frames into model-ready training and inference datasets. They own tensorization policy, split behavior, builder runtime metadata, scaler fitting inputs, and inference-time reconstruction from the artifact Temporal Capability. They do not own corpus IO, feature semantics, prediction losses, or evaluator metrics.

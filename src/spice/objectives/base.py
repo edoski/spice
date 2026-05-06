@@ -25,7 +25,7 @@ class ObjectiveConfig(ConfigModel):
     id: str
     metric_id: str
     direction: ObjectiveDirection
-    benchmark_id: str | None = None
+    evaluator_id: str | None = None
 
     @field_validator("id")
     @classmethod
@@ -37,22 +37,22 @@ class ObjectiveConfig(ConfigModel):
     def validate_metric_id(cls, value: str) -> str:
         return validate_path_segment(value, label="objective.metric_id")
 
-    @field_validator("benchmark_id")
+    @field_validator("evaluator_id")
     @classmethod
-    def validate_benchmark_id(cls, value: str | None) -> str | None:
+    def validate_evaluator_id(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return validate_path_segment(value, label="objective.benchmark_id")
+        return validate_path_segment(value, label="objective.evaluator_id")
 
     @model_validator(mode="after")
     def validate_shape(self) -> ObjectiveConfig:
         if self.id == "validation":
-            if self.benchmark_id is not None:
-                raise ValueError("validation objectives must not declare benchmark_id")
+            if self.evaluator_id is not None:
+                raise ValueError("validation objectives must not declare evaluator_id")
             return self
         if self.id == "evaluation":
-            if self.benchmark_id is None:
-                raise ValueError("evaluation objectives must declare benchmark_id")
+            if self.evaluator_id is None:
+                raise ValueError("evaluation objectives must declare evaluator_id")
             return self
         raise ValueError("objective.id must be one of: validation, evaluation")
 
@@ -62,7 +62,7 @@ class CompiledObjectiveContract:
     objective_id: str
     metric_id: str
     direction: Literal["maximize", "minimize"]
-    benchmark_id: str | None
+    evaluator_id: str | None
 
     @property
     def semantics(self) -> ObjectiveSemantics:
@@ -70,7 +70,7 @@ class CompiledObjectiveContract:
             objective_id=self.objective_id,
             metric_id=self.metric_id,
             direction=self.direction,
-            benchmark_id=self.benchmark_id,
+            evaluator_id=self.evaluator_id,
         )
 
     def value(self, metrics: MetricSet) -> float:
@@ -98,19 +98,19 @@ def compile_objective_contract(
             objective_id="validation",
             metric_id=config.metric_id,
             direction=config.direction.value,
-            benchmark_id=None,
+            evaluator_id=None,
         )
     if evaluator_id is None:
         raise ConfigResolutionError(
-            f"objective benchmark {config.benchmark_id} requires evaluation"
+            f"objective evaluator {config.evaluator_id} requires evaluation"
         )
-    if config.benchmark_id != evaluator_id:
+    if config.evaluator_id != evaluator_id:
         raise ConfigResolutionError(
-            f"objective benchmark {config.benchmark_id} does not match evaluator {evaluator_id}"
+            f"objective evaluator {config.evaluator_id} does not match evaluator {evaluator_id}"
         )
     return CompiledObjectiveContract(
         objective_id="evaluation",
         metric_id=config.metric_id,
         direction=config.direction.value,
-        benchmark_id=evaluator_id,
+        evaluator_id=evaluator_id,
     )

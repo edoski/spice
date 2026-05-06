@@ -342,7 +342,7 @@ def test_benchmark_objective_requires_matching_evaluation(
                 "id: evaluation",
                 "metric_id: profit_over_baseline",
                 "direction: maximize",
-                "benchmark_id: other_evaluation",
+                "evaluator_id: other_evaluation",
             ]
         ),
         encoding="utf-8",
@@ -388,7 +388,7 @@ def test_full_temporal_replay_objective_requires_matching_train_evaluation(
             ),
         ),
     )
-    assert train_config.objective.benchmark_id == "full_temporal_replay"
+    assert train_config.objective.evaluator_id == "full_temporal_replay"
     assert train_config.evaluation is not None
     assert train_config.evaluation.id == "full_temporal_replay"
 

@@ -21,14 +21,13 @@ from ._fit_policy import CompletedEpoch, TrainingEpochProgress, TrainingFitPolic
 from .families.base import ModelConfig
 from .forward_runtime import run_planned_prediction_forward
 from .models import TemporalModel
-from .objective_runtime import CompiledObjectiveRuntime
+from .objective_runtime import CompiledObjectiveRuntime, ObjectiveMetricContext
 from .representations import CompiledRepresentationContract
 from .runtime_planning import (
     build_cuda_modeling_runtime_plan,
     modeling_backend_scope,
     prepare_model_for_runtime,
 )
-from .scoring import ModelScoringInput
 from .training_runtime import prepare_training_runtime
 
 IntVector = NDArray[np.int64]
@@ -114,6 +113,15 @@ def run_training_fit(
     runtime_plan = prepared_runtime.runtime_plan
     prediction_training_state = training_runtime_plan.prediction_training_state
     optimizer = prepared_runtime.optimizer
+    objective_context = ObjectiveMetricContext(
+        model=fit_model,
+        prediction_contract=spec.prediction_contract,
+        representation_contract=spec.representation_contract,
+        execution_policy=spec.execution_policy,
+        store=spec.store,
+        sample_indices=spec.validation_sample_indices,
+        runtime_plan=training_runtime_plan.evaluation_runtime_plan,
+    )
     with modeling_backend_scope(runtime_plan):
         for epoch in range(1, spec.training_config.max_epochs + 1):
             train_metrics = run_epoch(
@@ -164,15 +172,7 @@ def run_training_fit(
                 break
             objective_metrics = spec.objective_runtime.evaluate_metrics(
                 validation_metrics,
-                scoring_input_factory=lambda: ModelScoringInput(
-                    model=fit_model,
-                    prediction_contract=spec.prediction_contract,
-                    representation_contract=spec.representation_contract,
-                    execution_policy=spec.execution_policy,
-                    store=spec.store,
-                    sample_indices=spec.validation_sample_indices,
-                    runtime_plan=training_runtime_plan.evaluation_runtime_plan,
-                ),
+                context=objective_context,
             )
             objective_decision = policy.handle_nonfinite_metrics(
                 epoch=epoch,

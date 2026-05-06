@@ -11,11 +11,28 @@ from ..core.errors import ConfigResolutionError
 from ..evaluation import CompiledEvaluatorContract
 from ..metrics import MetricDescriptor, MetricSet
 from ..objectives import CompiledObjectiveContract, ObjectiveConfig, compile_objective_contract
+from ..prediction import CompiledPredictionContract
+from ..temporal.execution_policy import CompiledExecutionPolicyContract
+from ..temporal.problem_store import CompiledProblemStore, IntVector
+from .models import TemporalModel
+from .representations import CompiledRepresentationContract
+from .runtime_planning import ModelingRuntimePlan
 from .scoring import ModelScoringInput, score_evaluation
 
-ScoringInputFactory = Callable[[], ModelScoringInput]
+
+@dataclass(frozen=True, slots=True)
+class ObjectiveMetricContext:
+    model: TemporalModel
+    prediction_contract: CompiledPredictionContract
+    representation_contract: CompiledRepresentationContract
+    execution_policy: CompiledExecutionPolicyContract
+    store: CompiledProblemStore
+    sample_indices: IntVector
+    runtime_plan: ModelingRuntimePlan
+
+
 EvaluateObjectiveMetricsFn = Callable[
-    [MetricSet, ScoringInputFactory | None],
+    [MetricSet, ObjectiveMetricContext | None],
     MetricSet,
 ]
 
@@ -29,9 +46,9 @@ class CompiledObjectiveRuntime:
         self,
         validation_metrics: MetricSet,
         *,
-        scoring_input_factory: ScoringInputFactory | None = None,
+        context: ObjectiveMetricContext | None = None,
     ) -> MetricSet:
-        return self.evaluate_metrics_fn(validation_metrics, scoring_input_factory)
+        return self.evaluate_metrics_fn(validation_metrics, context)
 
 
 def compile_objective_runtime(
@@ -70,13 +87,21 @@ def compile_objective_runtime(
 
     def _evaluate(
         validation_metrics: MetricSet,
-        scoring_input_factory: ScoringInputFactory | None,
+        context: ObjectiveMetricContext | None,
     ) -> MetricSet:
         del validation_metrics
-        if scoring_input_factory is None:
-            raise ValueError("evaluation objective runtime requires scoring input")
+        if context is None:
+            raise ValueError("evaluation objective runtime requires objective metric context")
         return score_evaluation(
-            model_input=scoring_input_factory(),
+            model_input=ModelScoringInput(
+                model=context.model,
+                prediction_contract=context.prediction_contract,
+                representation_contract=context.representation_contract,
+                execution_policy=context.execution_policy,
+                store=context.store,
+                sample_indices=context.sample_indices,
+                runtime_plan=context.runtime_plan,
+            ),
             evaluator_contract=evaluator_contract,
         ).metrics
 
@@ -85,9 +110,9 @@ def compile_objective_runtime(
 
 def _validation_metrics(
     validation_metrics: MetricSet,
-    scoring_input_factory: ScoringInputFactory | None,
+    context: ObjectiveMetricContext | None,
 ) -> MetricSet:
-    del scoring_input_factory
+    del context
     return validation_metrics
 
 

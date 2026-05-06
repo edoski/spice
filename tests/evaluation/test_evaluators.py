@@ -92,7 +92,7 @@ def test_evaluator_config_supports_explicit_temporal_replay_specs() -> None:
     assert contract.config == config
     assert contract.accepted_decoded_result_id == OFFSET_DECODED_RESULT_ID
     assert contract.primary_metric_id == "profit_over_baseline"
-    assert contract.direction == "maximize"
+    assert contract.primary_metric_descriptor.direction == "maximize"
 
     full_config = coerce_evaluator_config(_full_config())
     full_contract = compile_evaluator_contract(full_config)
@@ -138,8 +138,6 @@ def test_metric_descriptors_and_evaluator_contract_validate_primary_metric() -> 
             metric_descriptors=(
                 MetricDescriptor(id="profit", label="Profit", role="secondary"),
             ),
-            primary_metric_id="profit",
-            direction="maximize",
             config=EvaluatorConfig(id="bad"),
             accepted_decoded_result_id="offsets",
             run_fn=unused_run_fn,

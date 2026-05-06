@@ -24,11 +24,10 @@ Current evaluators accept `DecodedOffsets`. They interpret offsets through tempo
 | --- | --- |
 | `evaluator_id` | Stable evaluator config id. |
 | `metric_descriptors` | Metric names, roles, and directions. |
-| `primary_metric_id` | Metric used for headline reporting. |
 | `accepted_decoded_result_id` | Decoded ABI the evaluator accepts. |
 | `run_fn` | Concrete evaluation function. |
 
-The contract validates metric descriptor uniqueness and decoded-result id before running.
+The contract validates metric descriptor uniqueness, requires exactly one descriptor with `role: primary`, and validates decoded-result id before running. `primary_metric_id` is derived from that primary descriptor; optimization direction belongs to metric descriptors.
 
 ## Fee Math
 
@@ -96,4 +95,4 @@ Evaluation objectives call evaluator scoring on validation samples during traini
 
 ## Extension Pattern
 
-A future evaluator should declare its accepted decoded-result id, metric descriptors, primary metric, and direction. Reuse Temporal Accounting when the evaluator scores selected temporal decisions.
+A future evaluator should declare its accepted decoded-result id and metric descriptors, with exactly one primary descriptor. Reuse Temporal Accounting when the evaluator scores selected temporal decisions.

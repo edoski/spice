@@ -226,7 +226,7 @@ def _manifest(
                 objective_id="validation",
                 metric_id="total_loss",
                 direction="minimize",
-                benchmark_id=None,
+                evaluator_id=None,
             ),
             feature=feature_contract.semantics,
             prediction=prediction_contract.semantics,
