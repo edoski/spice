@@ -251,8 +251,11 @@ Root state DBs and manifests are source of truth. The catalog is derived and can
 ```bash
 uv run ruff check .
 uv run pyright
+uv run vulture
 uv run pytest -q
 ```
+
+`vulture` runs at `min_confidence = 90` from `pyproject.toml`. Treat its output as review input, not proof: manually verify every reported item before deleting code because dynamic Python usage can hide real references.
 
 YAML specs can be validated through raw config group loading:
 
