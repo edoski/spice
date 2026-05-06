@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..temporal.problem_store import CompiledProblemStore
 from .config import FullTemporalReplayEvaluatorConfig
-from .contracts import CompiledEvaluatorContract, IntVector
+from .contracts import CompiledEvaluatorContract
 from .temporal_replay_runner import (
+    TemporalReplaySampleView,
     TemporalReplaySelection,
     compile_temporal_replay_evaluator_contract,
 )
@@ -19,16 +19,14 @@ class FullTemporalReplayAdapter:
 
     def selections(
         self,
-        store: CompiledProblemStore,
-        sample_indices: IntVector,
+        samples: TemporalReplaySampleView,
     ) -> list[TemporalReplaySelection]:
-        del store
         return [
             TemporalReplaySelection(
-                selected_positions=np.arange(sample_indices.shape[0], dtype=np.int64),
+                selected_positions=np.arange(samples.sample_count, dtype=np.int64),
                 metadata={
                     "mode": self.config.id,
-                    "sample_count": int(sample_indices.shape[0]),
+                    "sample_count": samples.sample_count,
                 },
             )
         ]

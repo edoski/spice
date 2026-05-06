@@ -75,7 +75,7 @@ Temporal Replay Runner
 
 ## Temporal Accounting
 
-Temporal replay evaluator Adapters choose event positions. The **Temporal Replay Runner** owns decoded-result validation, selected-position validation, strict scalar metadata validation, and the accounting loop. Temporal Accounting computes realized, baseline, optimum, and event-mean economic metrics for those positions.
+Temporal replay evaluator Adapters choose event positions from a runner-built replay sample view. The **Temporal Replay Runner** owns decoded-result validation, replay sample positions/timestamps/count, selected-position validation, strict scalar metadata validation, and the accounting loop. Temporal Accounting computes realized, baseline, optimum, and event-mean economic metrics for those positions.
 
 ```text
 selected sample positions
@@ -85,7 +85,7 @@ selected sample positions
   -> event-mean metrics and fee sums
 ```
 
-`poisson_replay_2h` owns Poisson windowing, arrival sampling, chronological sample mapping, and arrival-to-position selection. `full_temporal_replay` selects every supplied sample position once. Both feed selections to the runner, which validates metadata, handles no-run failures, and uses Temporal Accounting.
+`poisson_replay_2h` owns Poisson windowing, arrival sampling, chronological ordering of the replay sample view, and arrival-to-position selection. `full_temporal_replay` selects every supplied sample position once. Both feed selections to the runner, which validates metadata, handles no-run failures, and uses Temporal Accounting.
 
 Temporal Accounting returns evaluation-private temporal replay result types. The Temporal Replay Runner converts those typed replay results to generic `EvaluationSummary` before the result leaves `evaluation`, so storage, benchmarks, reporting, and modeling keep one public evaluation result ABI.
 

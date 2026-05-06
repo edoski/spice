@@ -70,11 +70,31 @@ class TemporalReplaySelection:
     metadata: dict[str, str | int | float]
 
 
+@dataclass(frozen=True, slots=True)
+class TemporalReplaySampleView:
+    sample_positions: IntVector
+    sample_timestamps: IntVector
+    sample_count: int
+
+    def __post_init__(self) -> None:
+        if self.sample_positions.ndim != 1:
+            raise ValueError("temporal replay sample_positions must be one-dimensional")
+        if self.sample_timestamps.ndim != 1:
+            raise ValueError("temporal replay sample_timestamps must be one-dimensional")
+        if not np.issubdtype(self.sample_positions.dtype, np.integer):
+            raise ValueError("temporal replay sample_positions must be integer indices")
+        if not np.issubdtype(self.sample_timestamps.dtype, np.integer):
+            raise ValueError("temporal replay sample_timestamps must be integer timestamps")
+        if self.sample_positions.shape[0] != self.sample_timestamps.shape[0]:
+            raise ValueError("temporal replay sample view positions and timestamps must align")
+        if self.sample_count != int(self.sample_positions.shape[0]):
+            raise ValueError("temporal replay sample_count must match sample_positions")
+
+
 class TemporalReplayAdapter(Protocol):
     def selections(
         self,
-        store: CompiledProblemStore,
-        sample_indices: IntVector,
+        samples: TemporalReplaySampleView,
     ) -> Iterable[TemporalReplaySelection]: ...
 
 
@@ -121,14 +141,13 @@ def run_temporal_replay(
     decoded_offsets = require_decoded_offsets(decoded_result)
     if len(decoded_offsets) != int(sample_indices.shape[0]):
         raise ValueError("decoded_offsets must align with sample_indices")
-    if sample_indices.size == 0:
-        raise ValueError("sample_indices must be non-empty")
+    samples = temporal_replay_sample_view(store, sample_indices)
 
     runs = []
-    for selection in adapter.selections(store, sample_indices):
+    for selection in adapter.selections(samples):
         selected_positions = _validated_selected_positions(
             selection.selected_positions,
-            sample_count=int(sample_indices.shape[0]),
+            sample_count=samples.sample_count,
         )
         runs.append(
             summarize_selected_temporal_decisions(
@@ -143,6 +162,21 @@ def run_temporal_replay(
     if not runs:
         raise no_runs_error or ValueError("evaluation produced no runs")
     return _temporal_replay_result_to_summary(summarize_temporal_accounting_runs(runs))
+
+
+def temporal_replay_sample_view(
+    store: CompiledProblemStore,
+    sample_indices: IntVector,
+) -> TemporalReplaySampleView:
+    if sample_indices.size == 0:
+        raise ValueError("sample_indices must be non-empty")
+    resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
+    sample_count = int(resolved_sample_indices.shape[0])
+    return TemporalReplaySampleView(
+        sample_positions=np.arange(sample_count, dtype=np.int64),
+        sample_timestamps=store.sample_timestamps(resolved_sample_indices),
+        sample_count=sample_count,
+    )
 
 
 def _validated_selected_positions(

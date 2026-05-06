@@ -8,10 +8,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..core.errors import SpiceOperatorError
-from ..temporal.problem_store import CompiledProblemStore
 from .config import PoissonReplayEvaluatorConfig
 from .contracts import CompiledEvaluatorContract, IntVector
 from .temporal_replay_runner import (
+    TemporalReplaySampleView,
     TemporalReplaySelection,
     compile_temporal_replay_evaluator_contract,
 )
@@ -41,16 +41,11 @@ def _sample_poisson_arrivals(
     return np.asarray(arrivals, dtype=np.float64)
 
 
-def _chronological_sample_view(
-    store: CompiledProblemStore,
-    sample_indices: IntVector,
-) -> _ChronologicalSampleView:
-    resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
-    sample_timestamps = store.sample_timestamps(resolved_sample_indices)
-    order = np.argsort(sample_timestamps, kind="stable").astype(np.int64, copy=False)
+def _chronological_sample_view(samples: TemporalReplaySampleView) -> _ChronologicalSampleView:
+    order = np.argsort(samples.sample_timestamps, kind="stable").astype(np.int64, copy=False)
     return _ChronologicalSampleView(
-        sample_positions=order,
-        sample_timestamps=sample_timestamps[order],
+        sample_positions=samples.sample_positions[order],
+        sample_timestamps=samples.sample_timestamps[order],
     )
 
 
@@ -70,10 +65,9 @@ class PoissonReplayAdapter:
 
     def selections(
         self,
-        store: CompiledProblemStore,
-        sample_indices: IntVector,
+        samples: TemporalReplaySampleView,
     ) -> list[TemporalReplaySelection]:
-        chronological_samples = _chronological_sample_view(store, sample_indices)
+        chronological_samples = _chronological_sample_view(samples)
         first_timestamp = int(chronological_samples.sample_timestamps[0])
         last_timestamp = int(chronological_samples.sample_timestamps[-1])
         latest_start = last_timestamp - self.config.window_seconds

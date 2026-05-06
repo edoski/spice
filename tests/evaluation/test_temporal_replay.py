@@ -17,8 +17,10 @@ from spice.evaluation.poisson_replay import (
     _select_sample_positions_for_arrivals,
 )
 from spice.evaluation.temporal_replay_runner import (
+    TemporalReplaySampleView,
     TemporalReplaySelection,
     run_temporal_replay,
+    temporal_replay_sample_view,
 )
 from spice.prediction.decoded_offsets import DecodedOffsets
 from spice.temporal import coerce_execution_policy_config, compile_execution_policy_contract
@@ -68,21 +70,26 @@ def test_poisson_adapter_returns_positions_in_original_sample_order() -> None:
         )
     )
 
-    selections = adapter.selections(store, sample_indices)
+    samples = temporal_replay_sample_view(store, sample_indices)
+    selections = adapter.selections(samples)
 
     assert selections
     for selection in selections:
-        sample_timestamps = store.sample_timestamps(sample_indices[selection.selected_positions])
+        sample_timestamps = samples.sample_timestamps[selection.selected_positions]
         assert sample_timestamps.tolist() == sorted(sample_timestamps.tolist())
 
 
 def test_full_temporal_replay_adapter_selects_every_sample_once() -> None:
-    sample_indices = np.array([3, 1, 2], dtype=np.int64)
+    samples = TemporalReplaySampleView(
+        sample_positions=np.array([0, 1, 2], dtype=np.int64),
+        sample_timestamps=np.array([180, 60, 120], dtype=np.int64),
+        sample_count=3,
+    )
     adapter = FullTemporalReplayAdapter(
         FullTemporalReplayEvaluatorConfig(id="full_temporal_replay")
     )
 
-    selections = adapter.selections(_store(), sample_indices)
+    selections = adapter.selections(samples)
 
     assert len(selections) == 1
     assert selections[0].selected_positions.tolist() == [0, 1, 2]
@@ -92,9 +99,39 @@ def test_full_temporal_replay_adapter_selects_every_sample_once() -> None:
 class _FakeReplayAdapter:
     replay_selections: tuple[TemporalReplaySelection, ...]
 
-    def selections(self, store, sample_indices):
-        del store, sample_indices
+    def selections(self, samples):
+        del samples
         return self.replay_selections
+
+
+class _CapturingReplayAdapter:
+    def __init__(self) -> None:
+        self.samples: TemporalReplaySampleView | None = None
+
+    def selections(self, samples: TemporalReplaySampleView):
+        self.samples = samples
+        return (
+            TemporalReplaySelection(
+                selected_positions=np.array([0], dtype=np.int64),
+                metadata={},
+            ),
+        )
+
+
+def test_temporal_replay_runner_builds_adapter_sample_view() -> None:
+    adapter = _CapturingReplayAdapter()
+    run_temporal_replay(
+        _store(),
+        _execution_policy(),
+        DecodedOffsets(torch.tensor([0, 1, 0], dtype=torch.int64)),
+        np.array([3, 1, 2], dtype=np.int64),
+        adapter=adapter,
+    )
+
+    assert adapter.samples is not None
+    assert adapter.samples.sample_positions.tolist() == [0, 1, 2]
+    assert adapter.samples.sample_timestamps.tolist() == [420, 180, 300]
+    assert adapter.samples.sample_count == 3
 
 
 def test_temporal_replay_runner_composes_adapter_runs() -> None:
