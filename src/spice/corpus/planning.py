@@ -59,7 +59,7 @@ class CorpusCapabilityPlanningContext:
         required_columns = frozenset(self.feature_contract.required_source_columns)
         return CorpusAcquisitionSourceRequirements(
             required_columns=CORE_CORPUS_SOURCE_COLUMNS | required_columns,
-            optional_enrichments=self.feature_contract.optional_source_enrichments,
+            optional_enrichments=self.feature_contract.acquisition_enrichments,
             temporal_unit="block",
             ordering_key="block_number",
             partition_key="chain_id",

@@ -13,6 +13,9 @@ FeaturesConfig(id, outputs)
 feature catalog lookup
         |
         v
+CompiledFeatureContract executable plan
+        |
+        v
 SourceSpec availability + lag/null policy
         |
         v
@@ -21,6 +24,8 @@ FeatureSpec formulas
         v
 ResolvedFeatureTable
 ```
+
+`CompiledFeatureContract` directly owns the executable feature plan for a selected catalog: dependency order, source names, required canonical columns, acquisition enrichments, prerequisites, fingerprint facts, and table execution. Callers consume the compiled contract instead of recomputing catalog graph facts.
 
 `SourceSpec` owns causality, availability, required canonical columns, and optional acquisition enrichments. Current base fee is allowed as `base_fee_per_gas[t]` because EIP-1559 base fee for block `t` is deterministic from parent state and observable before block `t` execution. Canonical finalized block facts such as gas used and tx count are exposed only through lagged sources. The explicit unsafe family exposes same-block gas/tx facts only for leakage A/B benchmarks.
 
@@ -55,7 +60,7 @@ All previous-block facts are lagged inside their `SourceSpec`, not ad hoc in dat
 
 Feature matrices are `float32` and finite. Warmup rows use finite placeholders to preserve row alignment, and temporal compilers exclude invalid pre-warmup anchors before splitting. After warmup, required source values must be finite or feature construction fails.
 
-`core_fee_dynamics` requires finite `base_fee_per_gas` after warmup. The global corpus schema may keep that column nullable for generic chain truth, but this feature catalog is only valid where base fee exists.
+Every compiled feature contract requires the canonical series columns `block_number`, `timestamp`, and `base_fee_per_gas`; feature-specific sources add their own required columns. `core_fee_dynamics` requires finite `base_fee_per_gas` after warmup. The global corpus schema may keep that column nullable for generic chain truth, but this feature catalog is only valid where base fee exists.
 
 ## Fingerprints
 

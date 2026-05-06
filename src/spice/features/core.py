@@ -89,6 +89,22 @@ class FeatureCatalog:
     fingerprint_sources: tuple[Path, ...]
 
 
+REQUIRED_CANONICAL_SERIES_COLUMNS = frozenset(
+    {"block_number", "timestamp", "base_fee_per_gas"}
+)
+
+
+class _FeatureTablePlan(Protocol):
+    features_id: str
+    feature_names: tuple[str, ...]
+    ordered_feature_names: tuple[str, ...]
+    required_source_names: tuple[str, ...]
+    feature_graph_fingerprint: str
+    feature_prerequisites: FeaturePrerequisites
+    required_source_columns: frozenset[str]
+    _catalog: FeatureCatalog
+
+
 def validate_feature_names(
     features_id: str,
     feature_names: tuple[str, ...],
@@ -107,53 +123,47 @@ def validate_feature_names(
         raise ValueError("Unknown feature outputs: " + ", ".join(unknown))
 
 
-def feature_prerequisites(
+def _feature_prerequisites(
+    ordered_feature_names: tuple[str, ...],
+    *,
+    required_source_names: tuple[str, ...],
     catalog: FeatureCatalog,
-    feature_names: tuple[str, ...],
 ) -> FeaturePrerequisites:
-    ordered = _dependency_order(feature_names, catalog=catalog)
-    source_names = {
-        source_name
-        for feature_name in ordered
-        for source_name in catalog.features[feature_name].source_dependencies
-    }
     return FeaturePrerequisites(
         history_seconds=max(
-            (catalog.features[name].history_seconds for name in ordered),
+            (catalog.features[name].history_seconds for name in ordered_feature_names),
             default=0,
         ),
         warmup_rows=max(
             (
-                *(catalog.features[name].warmup_rows for name in ordered),
-                *(catalog.sources[name].warmup_rows for name in source_names),
+                *(catalog.features[name].warmup_rows for name in ordered_feature_names),
+                *(catalog.sources[name].warmup_rows for name in required_source_names),
             ),
             default=0,
         ),
     )
 
 
-def feature_source_columns(
+def _feature_source_columns(
+    required_source_names: tuple[str, ...],
+    *,
     catalog: FeatureCatalog,
-    feature_names: tuple[str, ...],
 ) -> frozenset[str]:
-    ordered = _dependency_order(feature_names, catalog=catalog)
-    return frozenset(
+    return REQUIRED_CANONICAL_SERIES_COLUMNS | frozenset(
         column
-        for feature_name in ordered
-        for source_name in catalog.features[feature_name].source_dependencies
+        for source_name in required_source_names
         for column in catalog.sources[source_name].source_columns
     )
 
 
-def feature_optional_enrichments(
+def _feature_optional_enrichments(
+    required_source_names: tuple[str, ...],
+    *,
     catalog: FeatureCatalog,
-    feature_names: tuple[str, ...],
 ) -> frozenset[str]:
-    ordered = _dependency_order(feature_names, catalog=catalog)
     return frozenset(
         enrichment
-        for feature_name in ordered
-        for source_name in catalog.features[feature_name].source_dependencies
+        for source_name in required_source_names
         for enrichment in catalog.sources[source_name].optional_enrichments
     )
 
@@ -187,47 +197,30 @@ def _fingerprint_source_id(source: Path, *, package_root: Path) -> str:
         return source.name
 
 
-def build_feature_table(
+def _build_feature_table(
     blocks: pl.DataFrame,
     *,
-    features_id: str,
-    catalog: FeatureCatalog,
-    feature_names: tuple[str, ...],
+    contract: _FeatureTablePlan,
 ) -> ResolvedFeatureTable:
-    validate_feature_names(
-        features_id,
-        feature_names,
-        known_feature_names=catalog.allowed_outputs,
-    )
     sorted_blocks = blocks.sort("block_number")
-    ordered_features = _dependency_order(feature_names, catalog=catalog)
-    required_source_names = tuple(
-        dict.fromkeys(
-            source_name
-            for feature_name in ordered_features
-            for source_name in catalog.features[feature_name].source_dependencies
-        )
-    )
-    required_columns = {
-        column
-        for source_name in required_source_names
-        for column in catalog.sources[source_name].source_columns
-    }
-    missing_columns = sorted(required_columns.difference(sorted_blocks.columns))
+    missing_columns = sorted(contract.required_source_columns.difference(sorted_blocks.columns))
     if missing_columns:
         raise ValueError("Features require missing block columns: " + ", ".join(missing_columns))
 
-    prerequisites = feature_prerequisites(catalog, feature_names)
     sources = _compute_sources(
         sorted_blocks,
-        catalog=catalog,
-        source_names=required_source_names,
-        warmup_rows=prerequisites.warmup_rows,
+        catalog=contract._catalog,
+        source_names=contract.required_source_names,
+        warmup_rows=contract.feature_prerequisites.warmup_rows,
     )
-    series = _build_series(sorted_blocks, sources=sources, warmup_rows=prerequisites.warmup_rows)
+    series = _build_series(
+        sorted_blocks,
+        sources=sources,
+        warmup_rows=contract.feature_prerequisites.warmup_rows,
+    )
     resolved: dict[str, FloatVector] = {}
-    for feature_name in ordered_features:
-        definition = catalog.features[feature_name]
+    for feature_name in contract.ordered_feature_names:
+        definition = contract._catalog.features[feature_name]
         values = np.asarray(
             definition.compute(sorted_blocks, series, sources, resolved),
             dtype=np.float64,
@@ -239,22 +232,18 @@ def build_feature_table(
         _finite_feature_values(
             feature_name,
             resolved[feature_name],
-            warmup_rows=prerequisites.warmup_rows,
+            warmup_rows=contract.feature_prerequisites.warmup_rows,
         )
-        for feature_name in feature_names
+        for feature_name in contract.feature_names
     ]
     feature_matrix = np.column_stack(matrix_columns).astype(np.float32, copy=False)
     if not np.isfinite(feature_matrix).all():
         raise ValueError("Feature matrix must contain finite values only")
     return ResolvedFeatureTable(
-        features_id=features_id,
-        feature_names=feature_names,
-        feature_graph_fingerprint=feature_graph_fingerprint(
-            features_id,
-            feature_names,
-            fingerprint_sources=catalog.fingerprint_sources,
-        ),
-        feature_prerequisites=prerequisites,
+        features_id=contract.features_id,
+        feature_names=contract.feature_names,
+        feature_graph_fingerprint=contract.feature_graph_fingerprint,
+        feature_prerequisites=contract.feature_prerequisites,
         series=series,
         feature_matrix=feature_matrix,
     )
@@ -374,6 +363,20 @@ def _dependency_order(
     for feature_name in feature_names:
         _visit(feature_name)
     return tuple(ordered)
+
+
+def _required_source_names(
+    ordered_feature_names: tuple[str, ...],
+    *,
+    catalog: FeatureCatalog,
+) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            source_name
+            for feature_name in ordered_feature_names
+            for source_name in catalog.features[feature_name].source_dependencies
+        )
+    )
 
 
 def _float_column(blocks: pl.DataFrame, column: str) -> FloatVector:

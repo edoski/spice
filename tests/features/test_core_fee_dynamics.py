@@ -238,11 +238,22 @@ def test_core_fee_dynamics_source_columns_follow_selected_feature_family() -> No
         features_id="core_fee_dynamics_with_priority_fee",
     )
 
+    assert "block_number" in baseline_contract.required_source_columns
+    assert "timestamp" in baseline_contract.required_source_columns
+    assert "base_fee_per_gas" in baseline_contract.required_source_columns
     assert "priority_fee_p50" not in baseline_contract.required_source_columns
-    assert "priority_fee_percentiles" not in baseline_contract.optional_source_enrichments
+    assert "priority_fee_percentiles" not in baseline_contract.acquisition_enrichments
     assert "gas_used" in baseline_contract.required_source_columns
     assert "priority_fee_p50" in priority_contract.required_source_columns
-    assert "priority_fee_percentiles" in priority_contract.optional_source_enrichments
+    assert "priority_fee_percentiles" in priority_contract.acquisition_enrichments
+
+
+def test_feature_contract_requires_canonical_series_columns_for_all_outputs() -> None:
+    contract = _contract(["prev_gas_utilization"])
+
+    assert {"block_number", "timestamp", "base_fee_per_gas"} <= contract.required_source_columns
+    with pytest.raises(ValueError, match="base_fee_per_gas"):
+        contract.build_table(_frame().drop("base_fee_per_gas"))
 
 
 def test_core_fee_dynamics_local_trends_build_finite_aligned_table() -> None:
