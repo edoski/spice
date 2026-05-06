@@ -15,9 +15,8 @@ import torch
 from numpy.typing import NDArray
 
 from ..core.errors import SpiceOperatorError
-from .batch_plan import BatchSource
+from .batch_plan import BatchRuntimeContext, BatchSource, DeviceStorageBudget
 from .models import ModelOutputs, TemporalModel
-from .representations import DeviceStorageBudget, RepresentationRuntimeContext
 
 IntVector = NDArray[np.int64]
 _CUDA_DEVICE_RESIDENT_BUDGET_FRACTION = 0.5
@@ -27,7 +26,7 @@ ForwardBatchT = TypeVar("ForwardBatchT", bound="ForwardBatch")
 @dataclass(frozen=True, slots=True)
 class CudaModelingRuntime:
     resolved_device: torch.device
-    representation_runtime_context: RepresentationRuntimeContext
+    batch_runtime_context: BatchRuntimeContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +59,7 @@ def build_cuda_modeling_runtime(*, batch_size: int) -> CudaModelingRuntime:
     ensure_cuda_runtime_ready(resolved_device)
     return CudaModelingRuntime(
         resolved_device=resolved_device,
-        representation_runtime_context=build_representation_runtime_context(
+        batch_runtime_context=build_batch_runtime_context(
             device=resolved_device,
             batch_size=batch_size,
         ),
@@ -128,14 +127,14 @@ def require_cuda_device(
         raise SpiceOperatorError("Modeling runtime requires NVIDIA CUDA. ROCm/HIP is unsupported.")
 
 
-def build_representation_runtime_context(
+def build_batch_runtime_context(
     *,
     device: torch.device,
     batch_size: int,
-) -> RepresentationRuntimeContext:
+) -> BatchRuntimeContext:
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
-    return RepresentationRuntimeContext(
+    return BatchRuntimeContext(
         batch_size=batch_size,
         available_host_memory_bytes=_available_system_memory_bytes(),
         device_storage_budget=DeviceStorageBudget.coarse(

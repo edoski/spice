@@ -31,6 +31,7 @@ IntVector = NDArray[np.int64]
 BatchT = TypeVar("BatchT", covariant=True)
 StorageMode = Literal["host_streaming", "host_materialized", "cuda_materialized"]
 HostStorageMode = Literal["host_streaming", "host_materialized"]
+HostLoaderPolicy = Literal["automatic", "single_process_unpinned"]
 
 
 class BatchSource(Protocol[BatchT]):
@@ -46,6 +47,70 @@ class BatchPlan(Generic[BatchT]):
     sample_count: int
     batch_count: int
     estimated_storage_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceStorageBudget:
+    phase: Literal["disabled", "coarse", "measured"]
+    bytes: int | None
+
+    @classmethod
+    def disabled(cls) -> DeviceStorageBudget:
+        return cls(phase="disabled", bytes=0)
+
+    @classmethod
+    def coarse(cls, bytes: int | None) -> DeviceStorageBudget:
+        return cls(phase="coarse", bytes=bytes)
+
+    @classmethod
+    def measured(cls, bytes: int) -> DeviceStorageBudget:
+        return cls(phase="measured", bytes=bytes)
+
+    def __post_init__(self) -> None:
+        if self.phase not in ("disabled", "coarse", "measured"):
+            raise ValueError("device storage budget phase is unsupported")
+        if self.bytes is not None and self.bytes < 0:
+            raise ValueError("device storage budget bytes must be non-negative")
+        if self.phase == "disabled" and self.bytes not in (0, None):
+            raise ValueError("disabled device storage budget must not carry positive bytes")
+        if self.phase == "measured" and self.bytes is None:
+            raise ValueError("measured device storage budget requires bytes")
+
+
+@dataclass(frozen=True, slots=True)
+class BatchRuntimeContext:
+    batch_size: int
+    available_host_memory_bytes: int
+    device_storage_budget: DeviceStorageBudget
+    host_loader_policy: HostLoaderPolicy = "automatic"
+
+    def with_device_storage_budget(
+        self,
+        device_storage_budget: DeviceStorageBudget,
+    ) -> BatchRuntimeContext:
+        return BatchRuntimeContext(
+            batch_size=self.batch_size,
+            available_host_memory_bytes=self.available_host_memory_bytes,
+            device_storage_budget=device_storage_budget,
+            host_loader_policy=self.host_loader_policy,
+        )
+
+    def with_host_loader_policy(
+        self,
+        host_loader_policy: HostLoaderPolicy,
+    ) -> BatchRuntimeContext:
+        return BatchRuntimeContext(
+            batch_size=self.batch_size,
+            available_host_memory_bytes=self.available_host_memory_bytes,
+            device_storage_budget=self.device_storage_budget,
+            host_loader_policy=host_loader_policy,
+        )
+
+    def representation_context(self) -> RepresentationRuntimeContext:
+        return RepresentationRuntimeContext(
+            batch_size=self.batch_size,
+            available_host_memory_bytes=self.available_host_memory_bytes,
+        )
 
 
 class PreparedBatchRepresentation(Protocol[BatchT]):
@@ -220,7 +285,7 @@ class _PreparedPredictionBatches:
 def _build_plan(
     prepared: PreparedBatchRepresentation[BatchT],
     *,
-    runtime_context: RepresentationRuntimeContext,
+    runtime_context: BatchRuntimeContext,
     resolved_device: torch.device,
     seed: int,
     shuffle: bool,
@@ -248,13 +313,13 @@ def _prepare_model_representation(
     representation_contract: CompiledRepresentationContract,
     execution_policy: CompiledExecutionPolicyContract,
     action_space: PreparedActionSpace,
-    runtime_context: RepresentationRuntimeContext,
+    runtime_context: BatchRuntimeContext,
 ) -> PreparedRepresentation:
     return representation_contract.prepare(
         store,
         execution_policy=execution_policy,
         action_space=action_space,
-        runtime_context=runtime_context,
+        runtime_context=runtime_context.representation_context(),
     )
 
 
@@ -265,7 +330,7 @@ def build_prediction_batch_plan(
     representation_contract: CompiledRepresentationContract,
     prediction_contract: CompiledPredictionContract,
     execution_policy: CompiledExecutionPolicyContract,
-    runtime_context: RepresentationRuntimeContext,
+    runtime_context: BatchRuntimeContext,
     resolved_device: torch.device,
     seed: int,
     shuffle: bool = False,
@@ -295,7 +360,7 @@ def build_model_input_batch_plan(
     action_space: PreparedActionSpace,
     representation_contract: CompiledRepresentationContract,
     execution_policy: CompiledExecutionPolicyContract,
-    runtime_context: RepresentationRuntimeContext,
+    runtime_context: BatchRuntimeContext,
     resolved_device: torch.device,
     seed: int,
 ) -> BatchPlan[ModelInputBatch]:
@@ -319,7 +384,7 @@ def _build_batch_source(
     prepared: PreparedBatchRepresentation[BatchT],
     *,
     required_bytes: int,
-    runtime_context: RepresentationRuntimeContext,
+    runtime_context: BatchRuntimeContext,
     resolved_device: torch.device,
     seed: int,
     shuffle: bool,
@@ -363,7 +428,7 @@ def _build_host_dataloader_source(
     prepared: PreparedBatchRepresentation[BatchT],
     *,
     batch_sampler: _PositionBatchSampler,
-    runtime_context: RepresentationRuntimeContext,
+    runtime_context: BatchRuntimeContext,
     resolved_device: torch.device,
 ) -> _HostDataLoaderBatchSource[BatchT]:
     worker_settings = _resolve_host_loader_worker_settings(runtime_context)
@@ -383,7 +448,7 @@ def _build_host_dataloader_source(
 
 
 def _resolve_host_loader_worker_settings(
-    runtime_context: RepresentationRuntimeContext,
+    runtime_context: BatchRuntimeContext,
 ) -> _HostLoaderWorkerSettings:
     if runtime_context.host_loader_policy == "single_process_unpinned":
         return _build_host_loader_worker_settings(num_workers=0)
@@ -438,7 +503,7 @@ def _build_host_loader_worker_settings(*, num_workers: int) -> _HostLoaderWorker
 
 
 def _should_pin_host_memory(
-    runtime_context: RepresentationRuntimeContext,
+    runtime_context: BatchRuntimeContext,
     resolved_device: torch.device,
 ) -> bool:
     if runtime_context.host_loader_policy == "single_process_unpinned":
@@ -449,7 +514,7 @@ def _should_pin_host_memory(
 def _should_use_device_resident(
     *,
     required_bytes: int,
-    runtime_context: RepresentationRuntimeContext,
+    runtime_context: BatchRuntimeContext,
     resolved_device: torch.device,
 ) -> bool:
     if resolved_device.type != "cuda":

@@ -191,7 +191,6 @@ def run_training(
     training_result = run_training_fit(
         TrainingFitSpec(
             model=model,
-            model_config=spec.model,
             prediction_contract=spec.prediction_contract,
             objective_runtime=spec.objective_runtime,
             representation_contract=spec.representation_contract,

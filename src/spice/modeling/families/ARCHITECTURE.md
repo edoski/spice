@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`modeling.families` owns concrete neural network architectures and their model-family config models. The generic strict config base lives in `core.config_model`.
+`modeling.families` owns concrete neural network architectures and their model-family config models. The generic strict config base lives in `core.config_model`, and generic runtime contracts live in `modeling.models`.
 
 ## Theory
 
@@ -10,7 +10,9 @@ A model family defines the function approximator. It does not define the predict
 
 ## Invariants
 
-Families construct models from typed configs and representation/prediction contracts. They should not resolve YAML, read storage, compute evaluator metrics, or build prediction target batches.
+Families construct models from typed configs, model input width, and prediction output specs. They should not receive representation contracts, resolve YAML, read storage, compute evaluator metrics, or build prediction target batches.
+
+Each family module owns its concrete PyTorch class. Shared implementation exists only for real repeated architecture rules: output heads, final-valid sequence selection, and Transformer encoder validation/building. `models.py` does not import family implementations.
 
 ## Extension Points
 
@@ -22,7 +24,7 @@ Add a family for a new architecture. Keep model-specific hyperparameters in the 
 ModelConfig
     |
     v
-representation contract + prediction output spec
+model input width + prediction output spec
     |
     v
 TemporalModel

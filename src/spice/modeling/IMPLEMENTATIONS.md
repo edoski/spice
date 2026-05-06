@@ -11,7 +11,8 @@ corpus rows
   -> feature matrix
   -> temporal problem store
   -> dataset builder
-  -> model batches
+  -> Representation contract
+  -> Batch Plan
   -> prediction contract
   -> loss/metrics
   -> artifact manifest + model.pt
@@ -31,6 +32,7 @@ objective config        -> objective contract
 objective + evaluator contract -> objective runtime
 dataset_builder config  -> dataset builder contract
 input_normalization     -> scaler policy
+representation          -> model-input representation contract
 model config            -> model family
 ```
 
@@ -49,7 +51,7 @@ The sequence representation builds tensors:
 
 Windows are front-packed. Models use `take_last_valid` to read the final real context position.
 
-Batch Plan binds representation batches with prediction targets, orders samples by batch signature, and chooses host or device-resident storage after runtime device-storage budget is known. `DeviceStorageBudget` names the phase of that budget: disabled host-only storage, coarse startup estimate, or measured residual capacity after a runtime probe. CUDA budget discovery belongs to runtime; Batch Plan only consumes the supplied representation runtime context and handles device-materialization OOM fallback. Selected-sample facts are prepared before Batch Plan: training passes role-bound temporal facts, and inference/scoring passes a prepared Action Space.
+Batch Plan binds representation batches with prediction targets, orders samples by batch signature, and chooses host or device-resident storage after runtime device-storage budget is known. `DeviceStorageBudget` names the phase of that budget: disabled host-only storage, coarse startup estimate, or measured residual capacity after a runtime probe. CUDA budget discovery belongs to runtime; Batch Plan consumes `BatchRuntimeContext`, owns host-loader and device-storage policy, and passes only host-memory and batch-size facts into the Representation seam. Selected-sample facts are prepared before Batch Plan: training passes role-bound temporal facts, and inference/scoring passes a prepared Action Space.
 
 ## Training Loop
 

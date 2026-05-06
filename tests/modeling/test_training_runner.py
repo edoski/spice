@@ -10,8 +10,8 @@ import torch
 
 from spice.config.models import TrainingConfig
 from spice.metrics import MetricSet
+from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
 from spice.modeling.objective_runtime import CompiledObjectiveRuntime
-from spice.modeling.representations import RepresentationRuntimeContext
 from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.modeling.scoring import EvaluationScoringRuntimePlan
 from spice.modeling.training_runner import (
@@ -66,14 +66,15 @@ def _objective_runtime(evaluate_metrics_fn=None) -> CompiledObjectiveRuntime:
 
 
 def _patch_training_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    runtime_context = RepresentationRuntimeContext(
+    runtime_context = BatchRuntimeContext(
         batch_size=1,
         available_host_memory_bytes=1024,
+        device_storage_budget=DeviceStorageBudget.disabled(),
     )
     runtime_plan = ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        representation_runtime_context=runtime_context,
+        batch_runtime_context=runtime_context,
         deterministic=None,
         seed=0,
     )
@@ -135,7 +136,6 @@ def _fit_spec(
 ) -> TrainingFitSpec:
     return TrainingFitSpec(
         model=model,
-        model_config=cast(Any, SimpleNamespace()),
         prediction_contract=cast(Any, SimpleNamespace(fit_training_state=lambda *_, **__: None)),
         representation_contract=cast(Any, SimpleNamespace()),
         objective_runtime=objective_runtime or _objective_runtime(),
@@ -206,7 +206,6 @@ def test_training_fit_delegates_scoring_plan_to_objective_runtime(
     result = run_training_fit(
         TrainingFitSpec(
             model=model,
-            model_config=cast(Any, SimpleNamespace()),
             prediction_contract=prediction_contract,
             representation_contract=representation_contract,
             objective_runtime=_objective_runtime(evaluate_metrics),
@@ -234,14 +233,15 @@ def test_training_fit_delegates_scoring_plan_to_objective_runtime(
 def test_evaluate_training_metrics_uses_batch_plan_and_prediction_training_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    runtime_context = RepresentationRuntimeContext(
+    runtime_context = BatchRuntimeContext(
         batch_size=1,
         available_host_memory_bytes=1024,
+        device_storage_budget=DeviceStorageBudget.disabled(),
     )
     runtime_plan = ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        representation_runtime_context=runtime_context,
+        batch_runtime_context=runtime_context,
         deterministic=True,
         seed=1,
     )
@@ -286,7 +286,6 @@ def test_evaluate_training_metrics_uses_batch_plan_and_prediction_training_state
     metrics = evaluate_training_metrics(
         TrainingMetricEvaluationSpec(
             model=_TinyModel(),
-            model_config=cast(Any, SimpleNamespace()),
             prediction_contract=cast(Any, prediction_contract),
             representation_contract=cast(Any, SimpleNamespace()),
             prepared=cast(Any, _prepared()),

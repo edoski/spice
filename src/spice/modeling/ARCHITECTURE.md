@@ -106,12 +106,12 @@ modeling/
   dataset_builders/       temporal dataset preparation and tensorization strategies
   families/               neural network family configs/builders/tuning hooks
   models.py               model protocols and model-output envelope
-  representations.py      representation contracts and device storage budget semantics
+  representations.py      representation contracts and model-input preparation
   results.py              runtime training/evaluation result records
   summary.py              rendered model/training/evaluation summaries
   tuned_config.py         tuned artifact config alignment
   tuning.py               tuned artifact parameter application
-  batch_plan.py           training/inference batch planning
+  batch_plan.py           training/inference batch planning and loader/storage policy
   _runtime.py             shared PyTorch/CUDA runtime helpers
   _runtime_probe.py       private host-warmup and measured-budget helpers
   _training_context.py    training dataset/runtime/spec context helpers
@@ -135,4 +135,4 @@ modeling/
 
 Add a model family for a new neural architecture. Add a dataset builder for a new tensorization strategy. Add scoring behavior only when it is generic model-to-evaluator bridging; evaluator-specific scoring belongs in `evaluation`.
 
-Runtime planning is intentionally split from fit policy. `ModelingRuntimePlan` is the unit callers pass into training, inference, split-metric forward passes, and model-bound evaluator scoring; callers do not pass device, precision, seed, or runtime-context fragments around the seam. A `RepresentationRuntimeContext` carries a `DeviceStorageBudget`, which names whether CUDA-resident batch storage is disabled, coarse, or measured. `_runtime_probe.py` owns the shared host-warmup to measured-plan transition. Forward scoring uses a no-grad eval probe and is non-destructive. Training owns the destructive gradient-bearing probe, temporary optimizer, model-state restoration, and CUDA cache cleanup. Batch planning consumes the budget and caller-prepared temporal facts or Action Space; it does not prepare policy facts, measure CUDA memory, or revalidate selected-sample alignment. `training_runner.py` remains the public fit interface and keeps callback, best-state, and result assembly ownership.
+Runtime planning is intentionally split from fit policy. `ModelingRuntimePlan` is the unit callers pass into training, inference, split-metric forward passes, and model-bound evaluator scoring; callers do not pass device, precision, seed, or runtime-context fragments around the seam. `BatchRuntimeContext` carries the batch size, host-memory facts, host loader policy, and a `DeviceStorageBudget`, which names whether CUDA-resident batch storage is disabled, coarse, or measured. Batch Plan adapts that context into the smaller `RepresentationRuntimeContext` when it asks the Representation seam to prepare model inputs. `_runtime_probe.py` owns the shared host-warmup to measured-plan transition. Forward scoring uses a no-grad eval probe and is non-destructive. Training owns the destructive gradient-bearing probe, temporary optimizer, model-state restoration, and CUDA cache cleanup. Batch planning consumes the budget and caller-prepared temporal facts or Action Space; it does not prepare policy facts, measure CUDA memory, or revalidate selected-sample alignment. `training_runner.py` remains the public fit interface and keeps callback, best-state, and result assembly ownership.

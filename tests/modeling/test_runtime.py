@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
 import pytest
 import torch
 
 from spice.core.errors import SpiceOperatorError
 from spice.modeling._runtime import (
     CudaModelingRuntime,
-    build_representation_runtime_context,
+    build_batch_runtime_context,
     compute_device_resident_budget,
     default_device_resident_safety_margin,
     ensure_cuda_runtime_ready,
     resolve_coarse_device_storage_budget,
 )
-from spice.modeling.representations import DeviceStorageBudget
+from spice.modeling.batch_plan import DeviceStorageBudget
 from spice.modeling.runtime_planning import build_cuda_modeling_runtime_plan
 
 
@@ -75,7 +73,7 @@ def test_coarse_device_storage_budget_uses_explicit_cuda_device(monkeypatch) -> 
     assert seen_devices == [3]
 
 
-def test_representation_runtime_context_wraps_coarse_device_storage_budget(
+def test_batch_runtime_context_wraps_coarse_device_storage_budget(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr("spice.modeling._runtime._available_system_memory_bytes", lambda: 4096)
@@ -84,7 +82,7 @@ def test_representation_runtime_context_wraps_coarse_device_storage_budget(
         lambda _device: 123,
     )
 
-    context = build_representation_runtime_context(
+    context = build_batch_runtime_context(
         device=torch.device("cuda"),
         batch_size=8,
     )
@@ -95,7 +93,7 @@ def test_representation_runtime_context_wraps_coarse_device_storage_budget(
 
 
 def test_cuda_modeling_runtime_plan_owns_precision_and_backend_facts(monkeypatch) -> None:
-    runtime_context = build_representation_runtime_context(
+    runtime_context = build_batch_runtime_context(
         device=torch.device("cpu"),
         batch_size=8,
     )
@@ -103,12 +101,11 @@ def test_cuda_modeling_runtime_plan_owns_precision_and_backend_facts(monkeypatch
         "spice.modeling.runtime_planning.build_cuda_modeling_runtime",
         lambda **_: CudaModelingRuntime(
             resolved_device=torch.device("cpu"),
-            representation_runtime_context=runtime_context,
+            batch_runtime_context=runtime_context,
         ),
     )
 
     plan = build_cuda_modeling_runtime_plan(
-        model_config=cast(Any, object()),
         batch_size=8,
         deterministic=True,
         seed=17,
@@ -116,7 +113,7 @@ def test_cuda_modeling_runtime_plan_owns_precision_and_backend_facts(monkeypatch
 
     assert plan.resolved_device == torch.device("cpu")
     assert plan.precision == "32-true"
-    assert plan.representation_runtime_context is runtime_context
+    assert plan.batch_runtime_context is runtime_context
     assert plan.deterministic is True
     assert plan.seed == 17
     assert plan.compile_enabled is False

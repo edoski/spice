@@ -2,6 +2,8 @@
 
 Model families turn padded temporal input tensors into prediction heads. Current models are neural sequence encoders: they read rows of features over time and produce tensors consumed by a prediction family.
 
+Concrete PyTorch models live with their family config and tuning adapter: `lstm.py` owns `LSTMBaseline`, `transformer.py` owns `TransformerBaseline`, and `transformer_lstm.py` owns `TransformerLSTMBaseline`. Shared private helpers hold only cross-family mechanics: output heads, final-valid selection, and Transformer validation/encoder construction.
+
 ## Mental Model
 
 A model does not know economic metrics. It maps sequences to output heads.
@@ -13,7 +15,7 @@ inputs + input_mask
   -> prediction heads
 ```
 
-Prediction families define the head names and target losses. Model families provide the shared sequence representation.
+Prediction families define the head names and target losses. Model families encode `inputs` and `input_mask` into a hidden state and attach requested heads.
 
 ## Beginner Theory: What The Network Learns
 
@@ -25,7 +27,7 @@ In this package, the input is not one independent row. It is a short time series
 row t-k, row t-k+1, ..., row t
 ```
 
-The model must compress that sequence into a hidden representation. The prediction family then turns the representation into concrete heads such as candidate-offset logits.
+The model must compress that sequence into a hidden state. The prediction family then turns model outputs into concrete heads such as candidate-offset logits.
 
 Two terms matter:
 
@@ -38,7 +40,7 @@ Logits are useful because loss functions can combine them with numerically stabl
 
 ## Shared Sequence Rule
 
-All current families use the final real context row as the sample representation. Padding exists only to batch variable-length windows.
+All current families use the final real context row as the sample hidden state. Padding exists only to batch variable-length windows.
 
 ```text
 input_mask:  true true true false false

@@ -94,4 +94,4 @@ Sampling and split behavior are builder-owned invariants.
 
 ## Extension Points
 
-Add a builder when model input representation changes. Keep it behind `DatasetBuilderConfig`, `CompiledDatasetBuilderContract`, preparation facts/context records, and a local spec entry. Avoid workflow branches on builder ids.
+Add a builder when sample-selection, split, scaler, or builder-runtime metadata policy changes. Add a Representation Adapter when prepared problem/action facts must become a distinct model-input batch contract. Keep builders behind `DatasetBuilderConfig`, `CompiledDatasetBuilderContract`, preparation facts/context records, and a local spec entry. Avoid workflow branches on builder ids.

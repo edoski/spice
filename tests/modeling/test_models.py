@@ -4,14 +4,12 @@ import numpy as np
 import pytest
 import torch
 
-from spice.modeling.families.lstm import LstmModelConfig
+from spice.modeling.families.lstm import LSTMBaseline, LstmModelConfig
 from spice.modeling.families.registry import build_model
-from spice.modeling.families.transformer import TransformerModelConfig
-from spice.modeling.families.transformer_lstm import TransformerLstmModelConfig
-from spice.modeling.models import (
-    LSTMBaseline,
-    TransformerBaseline,
+from spice.modeling.families.transformer import TransformerBaseline, TransformerModelConfig
+from spice.modeling.families.transformer_lstm import (
     TransformerLSTMBaseline,
+    TransformerLstmModelConfig,
 )
 from spice.modeling.representations import build_sequence_input_batch
 from spice.prediction.families.min_block_fee_multitask.outputs import (

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal, NamedTuple, Protocol, TypeVar
 
 import numpy as np
@@ -62,63 +62,9 @@ class SequenceInputBatch(NamedTuple):
 
 
 @dataclass(frozen=True, slots=True)
-class DeviceStorageBudget:
-    phase: Literal["disabled", "coarse", "measured"]
-    bytes: int | None
-
-    @classmethod
-    def disabled(cls) -> DeviceStorageBudget:
-        return cls(phase="disabled", bytes=0)
-
-    @classmethod
-    def coarse(cls, bytes: int | None) -> DeviceStorageBudget:
-        return cls(phase="coarse", bytes=bytes)
-
-    @classmethod
-    def measured(cls, bytes: int) -> DeviceStorageBudget:
-        return cls(phase="measured", bytes=bytes)
-
-    def __post_init__(self) -> None:
-        if self.phase not in ("disabled", "coarse", "measured"):
-            raise ValueError("device storage budget phase is unsupported")
-        if self.bytes is not None and self.bytes < 0:
-            raise ValueError("device storage budget bytes must be non-negative")
-        if self.phase == "disabled" and self.bytes not in (0, None):
-            raise ValueError("disabled device storage budget must not carry positive bytes")
-        if self.phase == "measured" and self.bytes is None:
-            raise ValueError("measured device storage budget requires bytes")
-
-
-@dataclass(frozen=True, slots=True)
 class RepresentationRuntimeContext:
     batch_size: int
     available_host_memory_bytes: int
-    device_storage_budget: DeviceStorageBudget = field(
-        default_factory=DeviceStorageBudget.disabled
-    )
-    host_loader_policy: Literal["automatic", "single_process_unpinned"] = "automatic"
-
-    def with_device_storage_budget(
-        self,
-        device_storage_budget: DeviceStorageBudget,
-    ) -> RepresentationRuntimeContext:
-        return RepresentationRuntimeContext(
-            batch_size=self.batch_size,
-            available_host_memory_bytes=self.available_host_memory_bytes,
-            device_storage_budget=device_storage_budget,
-            host_loader_policy=self.host_loader_policy,
-        )
-
-    def with_host_loader_policy(
-        self,
-        host_loader_policy: Literal["automatic", "single_process_unpinned"],
-    ) -> RepresentationRuntimeContext:
-        return RepresentationRuntimeContext(
-            batch_size=self.batch_size,
-            available_host_memory_bytes=self.available_host_memory_bytes,
-            device_storage_budget=self.device_storage_budget,
-            host_loader_policy=host_loader_policy,
-        )
 
 
 class PreparedRepresentation(Protocol[BatchT]):

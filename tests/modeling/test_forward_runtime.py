@@ -7,11 +7,11 @@ import numpy as np
 import pytest
 import torch
 
+from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
 from spice.modeling.forward_runtime import (
     run_planned_model_input_forward,
     run_planned_prediction_forward,
 )
-from spice.modeling.representations import DeviceStorageBudget, RepresentationRuntimeContext
 from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.temporal.execution_policy import PreparedActionSpace
 
@@ -20,9 +20,10 @@ def _runtime_plan() -> ModelingRuntimePlan:
     return ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        representation_runtime_context=RepresentationRuntimeContext(
+        batch_runtime_context=BatchRuntimeContext(
             batch_size=2,
             available_host_memory_bytes=1024,
+            device_storage_budget=DeviceStorageBudget.disabled(),
         ),
         deterministic=None,
         seed=3,
@@ -98,7 +99,7 @@ def test_model_input_forward_builds_host_warmup_then_measured_final_plan(
         _store,
         *,
         action_space: object,
-        runtime_context: RepresentationRuntimeContext,
+        runtime_context: BatchRuntimeContext,
         resolved_device: torch.device,
         seed: int,
         **_kwargs,
@@ -191,7 +192,7 @@ def test_prediction_forward_reuses_temporal_facts_and_keeps_unshuffled_plans(
         _store,
         *,
         temporal_facts: object,
-        runtime_context: RepresentationRuntimeContext,
+        runtime_context: BatchRuntimeContext,
         seed: int,
         shuffle: bool,
         **_kwargs,

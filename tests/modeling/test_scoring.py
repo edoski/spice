@@ -8,7 +8,7 @@ import torch
 
 from spice.evaluation import EvaluationRun, EvaluationSummary
 from spice.metrics import MetricSet
-from spice.modeling.representations import RepresentationRuntimeContext
+from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
 from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.modeling.scoring import EvaluationScoringRuntimePlan, score_evaluation
 from spice.temporal.execution_policy import PreparedActionSpace
@@ -26,9 +26,10 @@ def test_score_evaluation_validates_predicts_and_runs_evaluator(monkeypatch) -> 
     runtime_plan = ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        representation_runtime_context=RepresentationRuntimeContext(
+        batch_runtime_context=BatchRuntimeContext(
             batch_size=8,
             available_host_memory_bytes=1024,
+            device_storage_budget=DeviceStorageBudget.disabled(),
         ),
         deterministic=None,
         seed=0,
@@ -36,7 +37,7 @@ def test_score_evaluation_validates_predicts_and_runs_evaluator(monkeypatch) -> 
 
     def fake_predict_with_model(*_args, **kwargs):
         calls.append(
-            f"predict:{kwargs['runtime_plan'].representation_runtime_context.batch_size}:"
+            f"predict:{kwargs['runtime_plan'].batch_runtime_context.batch_size}:"
             f"{kwargs['execution_policy'].name}"
         )
         return decoded

@@ -108,7 +108,6 @@ def prepare_artifact_inference_context(
         ),
     )
     runtime_plan = build_cuda_modeling_runtime_plan(
-        model_config=loaded_artifact.manifest.model,
         batch_size=config.batch_size,
         deterministic=manifest.training.deterministic,
         seed=manifest.training.seed,

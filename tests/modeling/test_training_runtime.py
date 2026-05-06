@@ -7,8 +7,8 @@ import pytest
 import torch
 
 from spice.config.models import TrainingConfig
+from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
 from spice.modeling.dataset_builders import PreparedTrainingSampleSelection
-from spice.modeling.representations import DeviceStorageBudget, RepresentationRuntimeContext
 from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.modeling.training_runtime import plan_training_runtime
 
@@ -29,11 +29,11 @@ def _training_config() -> TrainingConfig:
     )
 
 
-def _runtime_plan(runtime_context: RepresentationRuntimeContext) -> ModelingRuntimePlan:
+def _runtime_plan(runtime_context: BatchRuntimeContext) -> ModelingRuntimePlan:
     return ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        representation_runtime_context=runtime_context,
+        batch_runtime_context=runtime_context,
         deterministic=True,
         seed=7,
         compile_enabled=True,
@@ -46,7 +46,7 @@ def test_plan_training_runtime_uses_unshuffled_host_warmup_and_reuses_state(
     model = torch.nn.Linear(1, 1)
     model.weight.data.fill_(4.0)
     original_weight = model.weight.detach().clone()
-    runtime_context = RepresentationRuntimeContext(
+    runtime_context = BatchRuntimeContext(
         batch_size=1,
         available_host_memory_bytes=1024,
         device_storage_budget=DeviceStorageBudget.coarse(999),
@@ -160,7 +160,7 @@ def test_plan_training_runtime_uses_unshuffled_host_warmup_and_reuses_state(
     assert plan.runtime_plan == ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        representation_runtime_context=runtime_context.with_device_storage_budget(
+        batch_runtime_context=runtime_context.with_device_storage_budget(
             DeviceStorageBudget.measured(900)
         ),
         deterministic=True,
@@ -177,7 +177,7 @@ def test_plan_training_runtime_restores_model_and_clears_cache_after_probe_failu
     model = torch.nn.Linear(1, 1)
     model.weight.data.fill_(4.0)
     original_weight = model.weight.detach().clone()
-    runtime_context = RepresentationRuntimeContext(
+    runtime_context = BatchRuntimeContext(
         batch_size=1,
         available_host_memory_bytes=1024,
         device_storage_budget=DeviceStorageBudget.coarse(999),

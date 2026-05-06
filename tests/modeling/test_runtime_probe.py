@@ -8,7 +8,7 @@ from spice.modeling._runtime_probe import (
     build_measured_modeling_runtime_plan,
     measure_device_resident_budget,
 )
-from spice.modeling.representations import DeviceStorageBudget, RepresentationRuntimeContext
+from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
 from spice.modeling.runtime_planning import ModelingRuntimePlan
 
 
@@ -24,7 +24,7 @@ def test_device_storage_budget_rejects_invalid_values() -> None:
 
 
 def test_build_measured_modeling_runtime_plan_uses_host_warmup_then_final_plan() -> None:
-    runtime_context = RepresentationRuntimeContext(
+    runtime_context = BatchRuntimeContext(
         batch_size=4,
         available_host_memory_bytes=1024,
         device_storage_budget=DeviceStorageBudget.coarse(999),
@@ -33,7 +33,7 @@ def test_build_measured_modeling_runtime_plan_uses_host_warmup_then_final_plan()
     runtime_plan = ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        representation_runtime_context=runtime_context,
+        batch_runtime_context=runtime_context,
         deterministic=True,
         seed=42,
         compile_enabled=True,
@@ -57,16 +57,16 @@ def test_build_measured_modeling_runtime_plan_uses_host_warmup_then_final_plan()
 
     warmup_plan = seen_warmup_plans[0]
     assert seen_measure_plans == [warmup_plan]
-    assert warmup_plan.representation_runtime_context.device_storage_budget == (
+    assert warmup_plan.batch_runtime_context.device_storage_budget == (
         DeviceStorageBudget.disabled()
     )
-    assert warmup_plan.representation_runtime_context.host_loader_policy == (
+    assert warmup_plan.batch_runtime_context.host_loader_policy == (
         "single_process_unpinned"
     )
-    assert measured_plan.representation_runtime_context.device_storage_budget == (
+    assert measured_plan.batch_runtime_context.device_storage_budget == (
         DeviceStorageBudget.measured(123)
     )
-    assert measured_plan.representation_runtime_context.host_loader_policy == "automatic"
+    assert measured_plan.batch_runtime_context.host_loader_policy == "automatic"
     assert measured_plan.resolved_device == runtime_plan.resolved_device
     assert measured_plan.precision == runtime_plan.precision
     assert measured_plan.deterministic == runtime_plan.deterministic

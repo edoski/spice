@@ -16,7 +16,6 @@ from ._epoch_execution import execute_training_batch
 from ._runtime_probe import build_measured_modeling_runtime_plan, measure_device_resident_budget
 from .batch_plan import BatchPlan, build_prediction_batch_plan
 from .dataset_builders import PreparedTrainingSampleSelection
-from .families.base import ModelConfig
 from .models import TemporalModel
 from .representations import CompiledRepresentationContract
 from .runtime_planning import (
@@ -73,7 +72,7 @@ def plan_training_runtime(
             representation_contract=representation_contract,
             prediction_contract=prediction_contract,
             execution_policy=execution_policy,
-            runtime_context=warmup_runtime_plan.representation_runtime_context,
+            runtime_context=warmup_runtime_plan.batch_runtime_context,
             resolved_device=warmup_runtime_plan.resolved_device,
             seed=warmup_runtime_plan.seed,
             shuffle=False,
@@ -90,7 +89,7 @@ def plan_training_runtime(
             )
         ),
     )
-    planned_runtime_context = planned_runtime_plan.representation_runtime_context
+    planned_runtime_context = planned_runtime_plan.batch_runtime_context
     train_batch_plan = build_prediction_batch_plan(
         store,
         temporal_facts=train_samples.temporal_facts,
@@ -124,7 +123,6 @@ def plan_training_runtime(
 def prepare_training_runtime(
     model: TemporalModel,
     *,
-    model_config: ModelConfig[str],
     prediction_contract: CompiledPredictionContract,
     execution_policy: CompiledExecutionPolicyContract,
     representation_contract: CompiledRepresentationContract,
@@ -134,7 +132,6 @@ def prepare_training_runtime(
     training_config: TrainingConfig,
 ) -> PreparedTrainingRuntime:
     runtime_plan = build_training_modeling_runtime_plan(
-        model_config=model_config,
         training_config=training_config,
     )
     fit_model = prepare_model_for_runtime(model, runtime_plan)

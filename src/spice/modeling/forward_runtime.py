@@ -103,7 +103,7 @@ def run_planned_model_input_forward(
             action_space=action_space,
             representation_contract=representation_contract,
             execution_policy=execution_policy,
-            runtime_context=plan.representation_runtime_context,
+            runtime_context=plan.batch_runtime_context,
             resolved_device=plan.resolved_device,
             seed=plan.seed,
         )
@@ -136,7 +136,7 @@ def run_planned_prediction_forward(
             representation_contract=representation_contract,
             prediction_contract=prediction_contract,
             execution_policy=execution_policy,
-            runtime_context=plan.representation_runtime_context,
+            runtime_context=plan.batch_runtime_context,
             resolved_device=plan.resolved_device,
             seed=plan.seed,
             shuffle=False,

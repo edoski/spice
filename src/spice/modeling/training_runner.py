@@ -15,7 +15,6 @@ from ..prediction.contracts import PredictionBatch
 from ._epoch_execution import run_epoch
 from ._fit_policy import CompletedEpoch, TrainingEpochProgress, TrainingFitPolicy
 from .dataset_builders import PreparedTrainingDataset, PreparedTrainingSampleSelection
-from .families.base import ModelConfig
 from .forward_runtime import run_planned_prediction_forward
 from .models import TemporalModel
 from .objective_runtime import CompiledObjectiveRuntime
@@ -53,7 +52,6 @@ class TrainingCallbacks:
 @dataclass(slots=True)
 class TrainingFitSpec:
     model: TemporalModel
-    model_config: ModelConfig
     prediction_contract: CompiledPredictionContract
     objective_runtime: CompiledObjectiveRuntime
     representation_contract: CompiledRepresentationContract
@@ -64,7 +62,6 @@ class TrainingFitSpec:
 @dataclass(slots=True)
 class TrainingMetricEvaluationSpec:
     model: torch.nn.Module
-    model_config: ModelConfig
     prediction_contract: CompiledPredictionContract
     representation_contract: CompiledRepresentationContract
     prepared: PreparedTrainingDataset
@@ -94,7 +91,6 @@ def run_training_fit(
 
     prepared_runtime = prepare_training_runtime(
         spec.model,
-        model_config=spec.model_config,
         prediction_contract=spec.prediction_contract,
         execution_policy=spec.prepared.execution_policy,
         representation_contract=spec.representation_contract,
@@ -219,7 +215,6 @@ def evaluate_training_metrics(spec: TrainingMetricEvaluationSpec) -> MetricSet:
     if spec.samples.sample_indices.size == 0:
         raise ValueError("sample_indices must be non-empty")
     runtime_plan = build_cuda_modeling_runtime_plan(
-        model_config=spec.model_config,
         batch_size=spec.training_config.batch_size,
         deterministic=spec.training_config.deterministic,
         seed=spec.training_config.seed,

@@ -13,15 +13,15 @@ from ._runtime import (
     reset_cuda_peak_memory,
     snapshot_cuda_memory,
 )
-from .representations import DeviceStorageBudget, RepresentationRuntimeContext
-from .runtime_planning import ModelingRuntimePlan, with_representation_runtime_context
+from .batch_plan import BatchRuntimeContext, DeviceStorageBudget
+from .runtime_planning import ModelingRuntimePlan, with_batch_runtime_context
 
 WarmupPlanT = TypeVar("WarmupPlanT")
 
 
 def _host_warmup_context(
-    runtime_context: RepresentationRuntimeContext,
-) -> RepresentationRuntimeContext:
+    runtime_context: BatchRuntimeContext,
+) -> BatchRuntimeContext:
     return runtime_context.with_device_storage_budget(
         DeviceStorageBudget.disabled()
     ).with_host_loader_policy("single_process_unpinned")
@@ -33,16 +33,16 @@ def build_measured_modeling_runtime_plan(
     build_warmup_plan: Callable[[ModelingRuntimePlan], WarmupPlanT],
     measure_warmup_budget: Callable[[WarmupPlanT, ModelingRuntimePlan], int],
 ) -> ModelingRuntimePlan:
-    warmup_runtime_plan = with_representation_runtime_context(
+    warmup_runtime_plan = with_batch_runtime_context(
         base_runtime_plan,
-        _host_warmup_context(base_runtime_plan.representation_runtime_context),
+        _host_warmup_context(base_runtime_plan.batch_runtime_context),
     )
     warmup_plan = build_warmup_plan(warmup_runtime_plan)
     budget = measure_warmup_budget(warmup_plan, warmup_runtime_plan)
-    measured_context = base_runtime_plan.representation_runtime_context.with_device_storage_budget(
+    measured_context = base_runtime_plan.batch_runtime_context.with_device_storage_budget(
         DeviceStorageBudget.measured(budget)
     )
-    return with_representation_runtime_context(base_runtime_plan, measured_context)
+    return with_batch_runtime_context(base_runtime_plan, measured_context)
 
 
 def measure_device_resident_budget(

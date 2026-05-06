@@ -4,16 +4,26 @@ from __future__ import annotations
 
 from typing import Literal
 
+import torch
 from pydantic import Field, field_validator, model_validator
+from torch import nn
 
 from ...prediction import PredictionOutputSpec
-from ..models import TemporalModel, TransformerBaseline
+from ..models import ModelOutputs, TemporalModel
+from ._heads import TemporalOutputHead
+from ._sequence import take_last_valid
+from ._transformer_shared import (
+    SinusoidalPositionalEncoding,
+    build_transformer_encoder,
+    derive_feedforward_dim_from_multiplier,
+    validate_transformer_dimensions,
+    validate_transformer_tuning_space,
+)
 from .base import (
     ModelConfig,
     ModelTuningSpaceConfig,
     TunableFieldSpec,
     TunedModelParams,
-    TunedScalar,
 )
 from .registry import ModelSpec
 
@@ -29,10 +39,7 @@ class TransformerModelConfig(ModelConfig[Literal["transformer"]]):
 
     @model_validator(mode="after")
     def validate_transformer_dimensions(self) -> TransformerModelConfig:
-        if self.d_model % self.nhead != 0:
-            raise ValueError("d_model must be divisible by nhead")
-        if self.d_model % 2 != 0:
-            raise ValueError("d_model must be even for sinusoidal positional encodings")
+        validate_transformer_dimensions(self)
         return self
 
 
@@ -89,6 +96,33 @@ class TransformerTunedModelParams(TunedModelParams[Literal["transformer"]]):
         return self
 
 
+class TransformerBaseline(TemporalModel):
+    def __init__(
+        self,
+        n_features: int,
+        output_spec: PredictionOutputSpec,
+        config: TransformerModelConfig,
+    ) -> None:
+        super().__init__()
+        self.input_projection = nn.Linear(n_features, config.d_model)
+        self.position_encoding = SinusoidalPositionalEncoding(config.d_model)
+        self.encoder = build_transformer_encoder(config)
+        self.output_head = TemporalOutputHead(
+            config.d_model,
+            output_spec,
+            config.head_hidden_dim,
+            dropout=config.dropout,
+        )
+
+    def forward(self, inputs: torch.Tensor, input_mask: torch.Tensor) -> ModelOutputs:
+        projected = self.input_projection(inputs)
+        encoded = self.encoder(
+            self.position_encoding(projected),
+            src_key_padding_mask=~input_mask.bool(),
+        )
+        return self.output_head(take_last_valid(encoded, input_mask))
+
+
 def _build_model(
     n_features: int,
     output_spec: PredictionOutputSpec,
@@ -101,29 +135,7 @@ def _validate_tuning_space(
     model_config: TransformerModelConfig,
     tuning_space: TransformerTuningSpaceModelConfig,
 ) -> None:
-    d_model_values = tuning_space.d_model or [model_config.d_model]
-    nhead_values = tuning_space.nhead or [model_config.nhead]
-    for d_model in d_model_values:
-        if d_model % 2 != 0:
-            raise ValueError("tuning_space.model.d_model values must be even")
-        for nhead in nhead_values:
-            if d_model % nhead != 0:
-                raise ValueError(
-                    "tuning_space.model d_model values must be divisible by nhead values"
-                )
-    if tuning_space.feedforward_multiplier is not None and tuning_space.d_model is None:
-        raise ValueError("tuning_space.model.feedforward_multiplier requires d_model")
-
-
-def _derive_tuned_values(sampled: dict[str, TunedScalar]) -> dict[str, TunedScalar]:
-    values = dict(sampled)
-    multiplier = values.pop("feedforward_multiplier", None)
-    if multiplier is not None:
-        d_model = values.get("d_model")
-        if d_model is None:
-            raise ValueError("tuning_space.model.feedforward_multiplier requires d_model")
-        values["feedforward_dim"] = int(d_model) * int(multiplier)
-    return values
+    validate_transformer_tuning_space(model_config, tuning_space)
 
 
 MODEL_SPEC = ModelSpec(
@@ -140,5 +152,5 @@ MODEL_SPEC = ModelSpec(
         TunableFieldSpec("head_hidden_dim", int),
         TunableFieldSpec("dropout", float),
     ),
-    derive_tuned_values=_derive_tuned_values,
+    derive_tuned_values=derive_feedforward_dim_from_multiplier,
 )

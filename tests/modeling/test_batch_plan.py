@@ -8,10 +8,11 @@ import pytest
 import torch
 
 from spice.modeling.batch_plan import (
+    BatchRuntimeContext,
+    DeviceStorageBudget,
     build_model_input_batch_plan,
     build_prediction_batch_plan,
 )
-from spice.modeling.representations import DeviceStorageBudget, RepresentationRuntimeContext
 from spice.temporal import (
     PreparedActionSpace,
     PreparedTemporalFacts,
@@ -140,8 +141,8 @@ def _runtime_context(
     *,
     device_storage_budget: DeviceStorageBudget | None = None,
     host_loader_policy: Literal["automatic", "single_process_unpinned"] = "automatic",
-) -> RepresentationRuntimeContext:
-    return RepresentationRuntimeContext(
+) -> BatchRuntimeContext:
+    return BatchRuntimeContext(
         batch_size=2,
         available_host_memory_bytes=1024,
         device_storage_budget=device_storage_budget or DeviceStorageBudget.disabled(),
