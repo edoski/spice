@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from ...temporal.input_normalization import CompiledInputNormalizationContract
     from ...temporal.problem_store import (
         CompiledProblemStore,
-        DatasetSplitIndices,
         IntVector,
     )
     from ...temporal.scaling import ScalerStats
@@ -31,6 +30,13 @@ class TrainingDatasetPreparationContext:
 @dataclass(slots=True)
 class TrainingDatasetPreparationFacts:
     split: SplitConfig
+
+
+@dataclass(slots=True)
+class DatasetSplitIndices:
+    train: IntVector
+    validation: IntVector
+    test: IntVector
 
 
 @dataclass(frozen=True, slots=True)

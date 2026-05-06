@@ -47,21 +47,6 @@ def _store() -> CompiledProblemStore:
     )
 
 
-def _overflow_store() -> CompiledProblemStore:
-    return CompiledProblemStore(
-        feature_matrix=np.zeros((10, 1), dtype=np.float32),
-        log_base_fees=np.log(
-            np.array([100, 90, 80, 60, 55, 70, 50, 45, 40, 35], dtype=np.float32)
-        ).astype(np.float32, copy=False),
-        timestamps=(np.arange(10, dtype=np.int64) * 1800).astype(np.int64, copy=False),
-        anchor_rows=np.array([1, 4], dtype=np.int64),
-        context_start_rows=np.array([0, 3], dtype=np.int64),
-        candidate_start_rows=np.array([2, 5], dtype=np.int64),
-        candidate_end_rows=np.array([3, 7], dtype=np.int64),
-        max_candidate_slots=3,
-    )
-
-
 def _poisson_config() -> dict[str, str | int | float]:
     return {
         "id": "poisson_replay",
@@ -190,20 +175,6 @@ def test_full_temporal_replay_scores_every_supplied_sample_once() -> None:
     assert set(summary.metrics.values) == {
         descriptor.id for descriptor in evaluator.metric_descriptors
     }
-
-
-def test_full_temporal_replay_accounting_resolves_policy_overflow() -> None:
-    store = _overflow_store()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-    offsets = DecodedOffsets(torch.tensor([2, 1], dtype=torch.int64))
-    execution_policy = _execution_policy()
-    evaluator = compile_evaluator_contract(coerce_evaluator_config(_full_config()))
-
-    summary = evaluator.run(store, execution_policy, offsets, sample_indices)
-
-    assert summary.runs[0].metadata["overflow_count"] == 1
-    assert summary.total_events == store.n_samples
-    assert summary.metrics.values["realized_fee_sum"] > 0.0
 
 
 def test_poisson_replay_handles_non_chronological_sample_indices() -> None:

@@ -34,7 +34,9 @@ max_candidate_slots
 ```
 
 Prediction and evaluation consume this generic shape instead of compiler-specific details.
-Problem stores own row geometry, not action availability. Action validity belongs to the execution policy because overflow and deadline behavior are policy semantics.
+Problem stores own generic row geometry. Construction validates row-aligned feature, fee, and timestamp arrays; monotonic timestamps; aligned sample row arrays; positive action width; context rows inside each anchor; and non-empty candidate windows whose exclusive end stays inside the store. Store sample views also reject negative or out-of-range sample indices instead of relying on NumPy wrapping.
+
+Problem stores do not own action availability. `max_candidate_slots` is the action width, not a guarantee that every physical candidate window has that many rows. Action validity belongs to the execution policy because overflow and deadline behavior are policy semantics.
 
 ## Compiler Flow
 

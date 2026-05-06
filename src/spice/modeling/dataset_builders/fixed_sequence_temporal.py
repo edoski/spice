@@ -9,11 +9,7 @@ import polars as pl
 
 from ...core.errors import ConfigResolutionError
 from ...temporal.contracts import TemporalCapabilityStore
-from ...temporal.problem_store import (
-    CompiledProblemStore,
-    DatasetSplitIndices,
-    chronological_split_indices,
-)
+from ...temporal.problem_store import CompiledProblemStore
 from ...temporal.scaling import transform_feature_matrix
 from .base import (
     CompiledDatasetBuilderContract,
@@ -24,6 +20,7 @@ from .base import (
 )
 from .preparation import (
     CompiledInferenceDatasetPreparationRequest,
+    DatasetSplitIndices,
     PreparedInferenceDataset,
     PreparedTrainingDataset,
     TrainingDatasetPreparationContext,
@@ -104,7 +101,7 @@ def _split_store_indices(
     *,
     facts: TrainingDatasetPreparationFacts,
 ) -> DatasetSplitIndices:
-    split_positions = chronological_split_indices(
+    split_positions = _chronological_split_indices(
         int(selected_sample_indices.shape[0]),
         facts.split,
     )
@@ -112,6 +109,22 @@ def _split_store_indices(
         train=selected_sample_indices[split_positions.train],
         validation=selected_sample_indices[split_positions.validation],
         test=selected_sample_indices[split_positions.test],
+    )
+
+
+def _chronological_split_indices(n_samples: int, split_config) -> DatasetSplitIndices:
+    if n_samples < 3:
+        raise ValueError("Need at least three examples to create train/validation/test splits")
+
+    train_end = int(n_samples * split_config.train_fraction)
+    validation_end = train_end + int(n_samples * split_config.validation_fraction)
+    train_end = max(1, min(train_end, n_samples - 2))
+    validation_end = max(train_end + 1, min(validation_end, n_samples - 1))
+    all_indices = np.arange(n_samples, dtype=np.int64)
+    return DatasetSplitIndices(
+        train=all_indices[:train_end],
+        validation=all_indices[train_end:validation_end],
+        test=all_indices[validation_end:],
     )
 
 

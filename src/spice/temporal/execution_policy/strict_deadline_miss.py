@@ -84,7 +84,7 @@ def _prepare_supervised_targets(
     baseline_candidate_indices = np.zeros(batch_size, dtype=np.int64)
     for row, (start_row, end_row, candidate_count, reachable_end_row) in enumerate(
         zip(
-            window_summary.baseline_rows,
+            window_summary.candidate_start_rows,
             window_summary.candidate_end_rows,
             window_summary.candidate_counts,
             window_summary.reachable_end_rows,
@@ -143,13 +143,13 @@ def _realize_selections(
             "for overflow execution"
         )
     resolved_offsets = requested_offsets.copy()
-    realized_rows = window_summary.baseline_rows + requested_offsets
+    realized_rows = window_summary.candidate_start_rows + requested_offsets
     if np.any(overflow_mask):
         resolved_offsets[overflow_mask] = window_summary.candidate_counts[overflow_mask]
         realized_rows[overflow_mask] = window_summary.candidate_end_rows[overflow_mask]
     optimum_rows = np.empty(selected_sample_indices.shape[0], dtype=np.int64)
     for row, (start_row, reachable_end_row) in enumerate(
-        zip(window_summary.baseline_rows, window_summary.reachable_end_rows, strict=True)
+        zip(window_summary.candidate_start_rows, window_summary.reachable_end_rows, strict=True)
     ):
         optimum_rows[row], _, _ = _reachable_optimum(
             store,
@@ -158,7 +158,7 @@ def _realize_selections(
         )
     return RealizedSelectionBatch(
         realized_rows=realized_rows,
-        baseline_rows=window_summary.baseline_rows,
+        baseline_rows=window_summary.candidate_start_rows,
         optimum_rows=optimum_rows,
         requested_offsets=requested_offsets,
         resolved_offsets=resolved_offsets,

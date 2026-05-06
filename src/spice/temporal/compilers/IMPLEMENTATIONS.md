@@ -35,13 +35,14 @@ The shared timestamp builder keeps rows aligned and filters invalid sample ancho
 
 | Rule | Why |
 | --- | --- |
+| Feature table timestamps are nondecreasing. | Timestamp search requires sorted temporal rows. |
 | Enough context history exists. | Inputs must satisfy lookback and feature prerequisites. |
 | Candidate window is non-empty. | The model needs at least one fee choice. |
 | Post-window row exists when required. | Overflow execution needs a concrete row. |
 | Warmup rows are skipped. | Placeholder feature rows must not become training anchors. |
 
-The feature table remains row-aligned with the corpus. Warmup placeholders exist only so arrays are stable; stores exclude anchors whose context would include invalid warmup state.
+`CompiledProblemStore` validates the resulting generic geometry: feature, fee, and timestamp rows align; sample arrays align; context rows precede anchors; candidate starts are at or after anchors; candidate ends are exclusive and stay inside the store; and `max_candidate_slots` is positive. Warmup placeholders exist only so arrays are stable; stores exclude anchors whose context would include invalid warmup state.
 
 ## Invariants
 
-Timestamps and arrays align by row. Candidate end is exclusive. Evaluation delay cannot exceed trained capability. Runtime compiler metadata must round-trip through the Temporal Capability in artifact manifests.
+Evaluation delay cannot exceed trained capability. Runtime compiler metadata must round-trip through the Temporal Capability in artifact manifests. A capability store must pair a store whose `max_candidate_slots` matches the Temporal Capability action width.

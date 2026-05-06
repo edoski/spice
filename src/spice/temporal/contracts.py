@@ -22,6 +22,12 @@ class TemporalCapabilityStore:
     store: CompiledProblemStore
     capability: TemporalCapability
 
+    def __post_init__(self) -> None:
+        if self.store.max_candidate_slots != self.capability.action_width:
+            raise ValueError(
+                "Temporal Capability action_width must match store max_candidate_slots"
+            )
+
 
 @dataclass(frozen=True, slots=True)
 class CompiledProblemContract:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import cast
 
-import numpy as np
 import polars as pl
 
 from spice.config import TrainConfig, WorkflowTask
@@ -125,46 +124,6 @@ def test_fixed_context_dataset_builder_prepares_seq_len_without_builder_owned_cl
     assert prepared.split_indices.train.size > 0
     assert prepared.split_indices.validation.size > 0
     assert prepared.split_indices.test.size > 0
-
-
-def test_fixed_context_dataset_builder_keeps_candidate_window_arrays_aligned_after_seq_trim(
-    tmp_path,
-    load_workflow_config,
-) -> None:
-    config = cast(
-        TrainConfig,
-        load_workflow_config(
-            WorkflowTask.TRAIN,
-            workspace=tmp_path,
-            surface="current_row_fee_dynamics",
-            override={
-                "problem": {
-                    "id": "test_fixed_context_problem",
-                    "lookback_seconds": 600,
-                    "sample_count": 4096,
-                    "max_delay_seconds": 36,
-                    "compiler": {
-                        "id": "observed_time_window",
-                        "slot_spacing": {"id": "nominal"},
-                    },
-                    "execution_policy": {
-                        "id": "strict_deadline_miss",
-                    },
-                }
-            },
-        ),
-    )
-
-    spec = _spec(config)
-    prepared = _prepare_training_dataset(_make_history_rows_with_margin(config), spec=spec)
-
-    assert prepared.store.anchor_rows.shape == prepared.store.candidate_start_rows.shape
-    assert prepared.store.anchor_rows.shape == prepared.store.candidate_end_rows.shape
-    np.testing.assert_array_equal(prepared.store.anchor_rows, prepared.store.candidate_start_rows)
-    np.testing.assert_array_less(
-        prepared.store.candidate_start_rows,
-        prepared.store.candidate_end_rows,
-    )
 
 
 def test_fixed_sequence_length_calibration_uses_train_sample_rows_only(

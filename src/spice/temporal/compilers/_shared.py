@@ -41,6 +41,8 @@ def build_timestamp_window_store(
     timestamps = feature_table.series.timestamps
     if timestamps.size == 0:
         raise ValueError("Feature table is too short to produce any supervised samples")
+    if np.any(np.diff(timestamps.astype(np.int64, copy=False)) < 0):
+        raise ValueError("Feature table timestamps must be sorted in nondecreasing order")
 
     anchor_candidates = np.arange(timestamps.shape[0], dtype=np.int64)
     context_start_rows = np.searchsorted(

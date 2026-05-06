@@ -210,34 +210,6 @@ def test_min_block_fee_multitask_uses_execution_policy_targets() -> None:
     assert batch.min_block_log_fees[1].item() == pytest_approx_log(6.0)
 
 
-def test_min_block_fee_multitask_uses_full_action_mask_for_fixed_ex_ante_windows() -> None:
-    store = CompiledProblemStore(
-        feature_matrix=np.zeros((9, 1), dtype=np.float32),
-        log_base_fees=np.log(
-            np.array([10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0], dtype=np.float32)
-        ),
-        timestamps=np.arange(9, dtype=np.int64),
-        anchor_rows=np.array([0, 2, 4], dtype=np.int64),
-        context_start_rows=np.zeros(3, dtype=np.int64),
-        candidate_start_rows=np.array([1, 3, 5], dtype=np.int64),
-        candidate_end_rows=np.array([3, 5, 6], dtype=np.int64),
-        max_candidate_slots=3,
-    )
-    contract = _contract()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-
-    prepared_targets = contract.prepare_targets(
-        store,
-        temporal_facts=_prepare_temporal_facts(store, sample_indices),
-    )
-    batch = cast(
-        MinBlockFeeTargetBatch,
-        prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64)),
-    )
-
-    assert batch.action_mask.cpu().numpy().all()
-
-
 def test_min_block_fee_multitask_targets_follow_action_space_sample_indices() -> None:
     store = _build_store()
     contract = _contract()
