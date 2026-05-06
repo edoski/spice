@@ -82,8 +82,8 @@ def _execution_policy():
     )
 
 
-def _prepare_action_space(store: CompiledProblemStore, sample_indices: np.ndarray):
-    return _execution_policy().prepare_action_space(store, sample_indices)
+def _prepare_temporal_facts(store: CompiledProblemStore, sample_indices: np.ndarray):
+    return _execution_policy().prepare_temporal_facts(store, sample_indices)
 
 
 def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
@@ -93,8 +93,7 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
 
     prepared_targets = contract.prepare_targets(
         store,
-        execution_policy=_execution_policy(),
-        action_space=_prepare_action_space(store, sample_indices),
+        temporal_facts=_prepare_temporal_facts(store, sample_indices),
     )
     batch = cast(
         MinBlockFeeTargetBatch,
@@ -110,8 +109,7 @@ def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
 
     training_state = contract.fit_training_state(
         store,
-        sample_indices,
-        execution_policy=_execution_policy(),
+        temporal_facts=_prepare_temporal_facts(store, sample_indices),
     )
     assert isinstance(training_state, MinBlockFeeTrainingState)
     class_weights = training_state.class_weights.cpu().numpy()
@@ -187,8 +185,7 @@ def test_min_block_fee_multitask_uses_execution_policy_targets() -> None:
 
     prepared_targets = contract.prepare_targets(
         store,
-        execution_policy=_execution_policy(),
-        action_space=_prepare_action_space(store, sample_indices),
+        temporal_facts=_prepare_temporal_facts(store, sample_indices),
     )
     batch = cast(
         MinBlockFeeTargetBatch,
@@ -231,8 +228,7 @@ def test_min_block_fee_multitask_uses_full_action_mask_for_fixed_ex_ante_windows
 
     prepared_targets = contract.prepare_targets(
         store,
-        execution_policy=_execution_policy(),
-        action_space=_prepare_action_space(store, sample_indices),
+        temporal_facts=_prepare_temporal_facts(store, sample_indices),
     )
     batch = cast(
         MinBlockFeeTargetBatch,
@@ -247,12 +243,10 @@ def test_min_block_fee_multitask_targets_follow_action_space_sample_indices() ->
     contract = _contract()
     execution_policy = _execution_policy()
     sample_indices = np.array([2, 0], dtype=np.int64)
-    action_space = execution_policy.prepare_action_space(store, sample_indices)
 
     prepared_targets = contract.prepare_targets(
         store,
-        execution_policy=execution_policy,
-        action_space=action_space,
+        temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
     )
     batch = cast(
         MinBlockFeeTargetBatch,
@@ -333,8 +327,7 @@ def test_reused_training_state_matches_independently_refit_state_loss_and_metric
     sample_indices = np.arange(store.n_samples, dtype=np.int64)
     prepared_targets = contract.prepare_targets(
         store,
-        execution_policy=execution_policy,
-        action_space=execution_policy.prepare_action_space(store, sample_indices),
+        temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
     )
     batch = cast(
         MinBlockFeeTargetBatch,
@@ -356,13 +349,11 @@ def test_reused_training_state_matches_independently_refit_state_loss_and_metric
     )
     reused_state = contract.fit_training_state(
         store,
-        sample_indices,
-        execution_policy=execution_policy,
+        temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
     )
     refit_state = contract.fit_training_state(
         store,
-        sample_indices,
-        execution_policy=execution_policy,
+        temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
     )
 
     reused_loss, reused_batch_state = contract.compute_batch_loss_and_state(

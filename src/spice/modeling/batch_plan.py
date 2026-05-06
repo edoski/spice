@@ -15,7 +15,11 @@ from torch.utils.data import DataLoader, Dataset, Sampler
 
 from ..prediction import CompiledPredictionContract
 from ..prediction.contracts import ModelInputBatch, PredictionBatch, PreparedPredictionTargets
-from ..temporal.execution_policy import CompiledExecutionPolicyContract, PreparedActionSpace
+from ..temporal.execution_policy import (
+    CompiledExecutionPolicyContract,
+    PreparedActionSpace,
+    PreparedTemporalFacts,
+)
 from ..temporal.problem_store import CompiledProblemStore
 from .representations import (
     CompiledRepresentationContract,
@@ -256,8 +260,8 @@ def _prepare_model_representation(
 
 def build_prediction_batch_plan(
     store: CompiledProblemStore,
-    sample_indices: IntVector,
     *,
+    temporal_facts: PreparedTemporalFacts,
     representation_contract: CompiledRepresentationContract,
     prediction_contract: CompiledPredictionContract,
     execution_policy: CompiledExecutionPolicyContract,
@@ -266,18 +270,16 @@ def build_prediction_batch_plan(
     seed: int,
     shuffle: bool = False,
 ) -> BatchPlan[PredictionBatch]:
-    action_space = execution_policy.prepare_action_space(store, sample_indices)
     prepared = _prepare_model_representation(
         store,
         representation_contract=representation_contract,
         execution_policy=execution_policy,
-        action_space=action_space,
+        action_space=temporal_facts.action_space,
         runtime_context=runtime_context,
     )
     targets = prediction_contract.prepare_targets(
         store,
-        execution_policy=execution_policy,
-        action_space=action_space,
+        temporal_facts=temporal_facts,
     )
     return _build_plan(
         _PreparedPredictionBatches(prepared=prepared, targets=targets),
@@ -290,15 +292,14 @@ def build_prediction_batch_plan(
 
 def build_model_input_batch_plan(
     store: CompiledProblemStore,
-    sample_indices: IntVector,
     *,
+    action_space: PreparedActionSpace,
     representation_contract: CompiledRepresentationContract,
     execution_policy: CompiledExecutionPolicyContract,
     runtime_context: RepresentationRuntimeContext,
     resolved_device: torch.device,
     seed: int,
 ) -> BatchPlan[ModelInputBatch]:
-    action_space = execution_policy.prepare_action_space(store, sample_indices)
     prepared = _prepare_model_representation(
         store,
         representation_contract=representation_contract,

@@ -94,11 +94,12 @@ def run_planned_model_input_forward(
     on_outputs: Callable[[ModelInputBatch, ModelOutputs], None],
 ) -> None:
     _require_non_empty_samples(sample_indices)
+    action_space = execution_policy.prepare_action_space(store, sample_indices)
 
     def _build_plan(runtime_context: RepresentationRuntimeContext) -> BatchPlan[ModelInputBatch]:
         return build_model_input_batch_plan(
             store,
-            sample_indices,
+            action_space=action_space,
             representation_contract=representation_contract,
             execution_policy=execution_policy,
             runtime_context=runtime_context,
@@ -131,11 +132,12 @@ def run_planned_prediction_forward(
     on_outputs: Callable[[PredictionBatch, ModelOutputs], None],
 ) -> None:
     _require_non_empty_samples(sample_indices)
+    temporal_facts = execution_policy.prepare_temporal_facts(store, sample_indices)
 
     def _build_plan(runtime_context: RepresentationRuntimeContext) -> BatchPlan[PredictionBatch]:
         return build_prediction_batch_plan(
             store,
-            sample_indices,
+            temporal_facts=temporal_facts,
             representation_contract=representation_contract,
             prediction_contract=prediction_contract,
             execution_policy=execution_policy,

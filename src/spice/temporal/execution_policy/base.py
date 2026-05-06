@@ -71,6 +71,30 @@ class PreparedSupervisedExecutionTargets:
 
 
 @dataclass(frozen=True, slots=True)
+class PreparedTemporalFacts:
+    action_space: PreparedActionSpace
+    supervised_targets: PreparedSupervisedExecutionTargets
+
+    def __post_init__(self) -> None:
+        sample_count = int(self.action_space.sample_indices.shape[0])
+        if self.supervised_targets.candidate_log_fees.shape != (
+            sample_count,
+            self.action_space.max_candidate_slots,
+        ):
+            raise ValueError(
+                "supervised target candidate_log_fees must match Action Space shape"
+            )
+        if self.supervised_targets.optimum_offsets.shape != (sample_count,):
+            raise ValueError("supervised target optimum_offsets must match sample count")
+        if self.supervised_targets.optimum_log_fees.shape != (sample_count,):
+            raise ValueError("supervised target optimum_log_fees must match sample count")
+        if self.supervised_targets.baseline_candidate_indices.shape != (sample_count,):
+            raise ValueError(
+                "supervised target baseline_candidate_indices must match sample count"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class RealizedSelectionBatch:
     realized_rows: IntVector
     baseline_rows: IntVector
@@ -116,13 +140,6 @@ class CompiledExecutionPolicyContract:
             baseline_row_mode=self.baseline_row_mode.value,
         )
 
-    def prepare_supervised_targets(
-        self,
-        store: CompiledProblemStore,
-        action_space: PreparedActionSpace,
-    ) -> PreparedSupervisedExecutionTargets:
-        return self.prepare_supervised_targets_fn(store, action_space)
-
     def prepare_action_space(
         self,
         store: CompiledProblemStore,
@@ -144,6 +161,17 @@ class CompiledExecutionPolicyContract:
                 "and action width"
             )
         return action_space
+
+    def prepare_temporal_facts(
+        self,
+        store: CompiledProblemStore,
+        sample_indices: IntVector,
+    ) -> PreparedTemporalFacts:
+        action_space = self.prepare_action_space(store, sample_indices)
+        return PreparedTemporalFacts(
+            action_space=action_space,
+            supervised_targets=self.prepare_supervised_targets_fn(store, action_space),
+        )
 
     def realize_selections(
         self,

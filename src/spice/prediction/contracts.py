@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 
 from ..metrics import MetricDescriptor, MetricSet
 from ..semantics import PredictionSemantics
-from ..temporal.execution_policy import CompiledExecutionPolicyContract, PreparedActionSpace
+from ..temporal.execution_policy import PreparedTemporalFacts
 from ..temporal.problem_store import CompiledProblemStore
 from .base import PredictionOutputSpec
 from .decoding import ActionSpaceDecodeContext, DecodedPredictionResult
@@ -65,14 +65,14 @@ class EpochMetricAccumulator(Protocol):
 
 BuildOutputSpecFn = Callable[[int], PredictionOutputSpec]
 FitTrainingStateFn = Callable[
-    [CompiledProblemStore, IntVector, CompiledExecutionPolicyContract],
+    [CompiledProblemStore, PreparedTemporalFacts],
     object | None,
 ]
 # Training state is reusable semantic state. Implementations may cache
 # device/dtype views during loss computation, but semantic values must not
 # mutate or depend on batch call order.
 PrepareTargetsFn = Callable[
-    [CompiledProblemStore, CompiledExecutionPolicyContract, PreparedActionSpace],
+    [CompiledProblemStore, PreparedTemporalFacts],
     PreparedPredictionTargets,
 ]
 ComputeBatchLossAndStateFn = Callable[
@@ -145,22 +145,20 @@ class CompiledPredictionContract:
     def fit_training_state(
         self,
         store: CompiledProblemStore,
-        train_sample_indices: IntVector,
         *,
-        execution_policy: CompiledExecutionPolicyContract,
+        temporal_facts: PreparedTemporalFacts,
     ) -> object | None:
         if self.fit_training_state_fn is None:
             return None
-        return self.fit_training_state_fn(store, train_sample_indices, execution_policy)
+        return self.fit_training_state_fn(store, temporal_facts)
 
     def prepare_targets(
         self,
         store: CompiledProblemStore,
         *,
-        execution_policy: CompiledExecutionPolicyContract,
-        action_space: PreparedActionSpace,
+        temporal_facts: PreparedTemporalFacts,
     ) -> PreparedPredictionTargets:
-        return self.prepare_targets_fn(store, execution_policy, action_space)
+        return self.prepare_targets_fn(store, temporal_facts)
 
     def compute_batch_loss_and_state(
         self,

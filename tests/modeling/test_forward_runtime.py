@@ -23,12 +23,24 @@ def test_planned_model_input_forward_uses_host_warmup_then_measured_budget(
     )
     sources = [[SimpleNamespace(name="warmup")], [SimpleNamespace(name="final")]]
     budgets: list[DeviceStorageBudget] = []
-    execution_policy = SimpleNamespace(name="policy")
+    action_space = object()
+    action_space_calls = []
+    execution_policy = SimpleNamespace(
+        name="policy",
+        prepare_action_space=lambda _store, sample_indices: action_space_calls.append(
+            sample_indices.tolist()
+        )
+        or action_space,
+    )
     policies = []
+    action_spaces = []
 
-    def fake_build_model_input_batch_plan(*_args, runtime_context, execution_policy, **_kwargs):
+    def fake_build_model_input_batch_plan(
+        *_args, runtime_context, execution_policy, action_space, **_kwargs
+    ):
         budgets.append(runtime_context.device_storage_budget)
         policies.append(execution_policy)
+        action_spaces.append(action_space)
         return SimpleNamespace(source=sources[len(budgets) - 1])
 
     measured_sources = []
@@ -65,7 +77,9 @@ def test_planned_model_input_forward_uses_host_warmup_then_measured_budget(
     )
 
     assert budgets == [DeviceStorageBudget.disabled(), DeviceStorageBudget.measured(77)]
+    assert action_space_calls == [[0]]
     assert policies == [execution_policy, execution_policy]
+    assert action_spaces == [action_space, action_space]
     assert measured_sources == [sources[0]]
     assert seen_batches == sources[1]
 
@@ -81,10 +95,22 @@ def test_planned_prediction_forward_preserves_callback_and_final_source(
     sources = [[SimpleNamespace(name="warmup")], [SimpleNamespace(name="final")]]
     budgets: list[DeviceStorageBudget] = []
     shuffles: list[bool | None] = []
+    temporal_facts = object()
+    temporal_fact_calls = []
+    execution_policy = SimpleNamespace(
+        prepare_temporal_facts=lambda _store, sample_indices: temporal_fact_calls.append(
+            sample_indices.tolist()
+        )
+        or temporal_facts,
+    )
+    seen_temporal_facts = []
 
-    def fake_build_prediction_batch_plan(*_args, runtime_context, shuffle=None, **_kwargs):
+    def fake_build_prediction_batch_plan(
+        *_args, runtime_context, temporal_facts, shuffle=None, **_kwargs
+    ):
         budgets.append(runtime_context.device_storage_budget)
         shuffles.append(shuffle)
+        seen_temporal_facts.append(temporal_facts)
         return SimpleNamespace(source=sources[len(budgets) - 1])
 
     seen_batches = []
@@ -112,7 +138,7 @@ def test_planned_prediction_forward_preserves_callback_and_final_source(
         sample_indices=np.array([0], dtype=np.int64),
         representation_contract=SimpleNamespace(),
         prediction_contract=SimpleNamespace(),
-        execution_policy=SimpleNamespace(),
+        execution_policy=execution_policy,
         base_runtime_context=runtime_context,
         resolved_device=torch.device("cpu"),
         precision="32-true",
@@ -122,6 +148,8 @@ def test_planned_prediction_forward_preserves_callback_and_final_source(
 
     assert budgets == [DeviceStorageBudget.disabled(), DeviceStorageBudget.measured(55)]
     assert shuffles == [False, False]
+    assert temporal_fact_calls == [[0]]
+    assert seen_temporal_facts == [temporal_facts, temporal_facts]
     assert seen_batches == sources[1]
 
 

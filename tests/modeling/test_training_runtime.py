@@ -42,13 +42,25 @@ def test_plan_training_runtime_uses_unshuffled_host_warmup_and_reuses_state(
     )
     calls = []
     prediction_state = object()
+    train_facts = object()
+    validation_facts = object()
+    temporal_fact_calls = []
+    execution_policy = SimpleNamespace(
+        prepare_temporal_facts=lambda _store, sample_indices: temporal_fact_calls.append(
+            sample_indices.tolist()
+        )
+        or (train_facts if sample_indices.tolist() == [0] else validation_facts)
+    )
 
-    def fake_build_prediction_batch_plan(*_args, runtime_context, seed, shuffle, **_kwargs):
+    def fake_build_prediction_batch_plan(
+        *_args, temporal_facts, runtime_context, seed, shuffle, **_kwargs
+    ):
         calls.append(
             {
                 "budget": runtime_context.device_storage_budget,
                 "seed": seed,
                 "shuffle": shuffle,
+                "temporal_facts": temporal_facts,
             }
         )
         return SimpleNamespace(source=[SimpleNamespace()])
@@ -98,7 +110,7 @@ def test_plan_training_runtime_uses_unshuffled_host_warmup_and_reuses_state(
     plan = plan_training_runtime(
         cast(Any, model),
         prediction_contract=cast(Any, prediction_contract),
-        execution_policy=cast(Any, SimpleNamespace()),
+        execution_policy=cast(Any, execution_policy),
         representation_contract=cast(Any, SimpleNamespace()),
         store=cast(Any, SimpleNamespace()),
         train_sample_indices=np.array([0], dtype=np.int64),
@@ -110,13 +122,30 @@ def test_plan_training_runtime_uses_unshuffled_host_warmup_and_reuses_state(
     )
 
     assert calls == [
-        {"budget": DeviceStorageBudget.disabled(), "seed": 7, "shuffle": False},
-        {"budget": DeviceStorageBudget.measured(900), "seed": 7, "shuffle": True},
-        {"budget": DeviceStorageBudget.measured(900), "seed": 7, "shuffle": False},
+        {
+            "budget": DeviceStorageBudget.disabled(),
+            "seed": 7,
+            "shuffle": False,
+            "temporal_facts": train_facts,
+        },
+        {
+            "budget": DeviceStorageBudget.measured(900),
+            "seed": 7,
+            "shuffle": True,
+            "temporal_facts": train_facts,
+        },
+        {
+            "budget": DeviceStorageBudget.measured(900),
+            "seed": 7,
+            "shuffle": False,
+            "temporal_facts": validation_facts,
+        },
     ]
     assert optimizers[0].lr == 0.02
     assert optimizers[0].weight_decay == 0.03
     assert len(fit_state_calls) == 1
+    assert fit_state_calls[0][1]["temporal_facts"] is train_facts
+    assert temporal_fact_calls == [[0], [1]]
     assert plan.prediction_training_state is prediction_state
     assert plan.runtime_context.device_storage_budget == DeviceStorageBudget.measured(900)
     assert plan.evaluation_runtime_plan == ModelingRuntimePlan(
@@ -142,6 +171,9 @@ def test_plan_training_runtime_restores_model_and_clears_cache_after_probe_failu
         device_storage_budget=DeviceStorageBudget.coarse(999),
     )
     empty_cache_calls = []
+    execution_policy = SimpleNamespace(
+        prepare_temporal_facts=lambda _store, sample_indices: object()
+    )
 
     monkeypatch.setattr(
         "spice.modeling.training_runtime.build_prediction_batch_plan",
@@ -174,9 +206,9 @@ def test_plan_training_runtime_restores_model_and_clears_cache_after_probe_failu
 
     with pytest.raises(RuntimeError, match="probe failed"):
         plan_training_runtime(
-            cast(Any, model),
-            prediction_contract=cast(Any, prediction_contract),
-            execution_policy=cast(Any, SimpleNamespace()),
+                cast(Any, model),
+                prediction_contract=cast(Any, prediction_contract),
+                execution_policy=cast(Any, execution_policy),
             representation_contract=cast(Any, SimpleNamespace()),
             store=cast(Any, SimpleNamespace()),
             train_sample_indices=np.array([0], dtype=np.int64),

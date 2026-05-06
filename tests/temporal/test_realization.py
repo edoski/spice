@@ -99,18 +99,23 @@ def test_supervised_targets_use_best_reachable_fixed_slot() -> None:
         max_candidate_slots=3,
     )
 
-    action_space = _execution_policy().prepare_action_space(
+    temporal_facts = _execution_policy().prepare_temporal_facts(
         store,
         np.array([0], dtype=np.int64),
     )
-    targets = _execution_policy().prepare_supervised_targets(store, action_space)
 
     np.testing.assert_array_equal(
-        action_space.action_mask,
+        temporal_facts.action_space.action_mask,
         np.array([[True, True, True]], dtype=np.bool_),
     )
-    np.testing.assert_array_equal(targets.optimum_offsets, np.array([1], dtype=np.int64))
-    np.testing.assert_allclose(targets.optimum_log_fees, np.log(np.array([50], dtype=np.float32)))
+    np.testing.assert_array_equal(
+        temporal_facts.supervised_targets.optimum_offsets,
+        np.array([1], dtype=np.int64),
+    )
+    np.testing.assert_allclose(
+        temporal_facts.supervised_targets.optimum_log_fees,
+        np.log(np.array([50], dtype=np.float32)),
+    )
 
 
 def test_evaluation_optimum_uses_best_reachable_fixed_slot() -> None:

@@ -68,6 +68,10 @@ execution policy + problem store + sample indices
              +--> action width
              +--> action mask
         |
+        +--> prepared temporal facts
+             +--> Action Space
+             +--> supervised execution targets
+        |
 decoded offsets
         |
         v
@@ -79,7 +83,7 @@ execute selected rows
         +--> overflow mask
 ```
 
-Model-input representation and prediction target construction consume the same prepared Action Space. Evaluators receive an execution-policy contract, not a policy id string.
+Model-input representation and prediction target construction consume the same prepared Action Space. Supervised prediction training consumes prepared temporal facts so training state and targets share one per-split policy preparation. Evaluators receive an execution-policy contract, not a policy id string.
 
 ## Extension Points
 

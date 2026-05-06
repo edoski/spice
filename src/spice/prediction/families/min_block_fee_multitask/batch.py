@@ -6,19 +6,17 @@ from dataclasses import dataclass, field
 
 import torch
 
-from ....temporal.execution_policy import CompiledExecutionPolicyContract, PreparedActionSpace
+from ....temporal.execution_policy import PreparedTemporalFacts
 from ....temporal.problem_store import CompiledProblemStore
 
 
 def materialize_min_block_fee_targets(
     store: CompiledProblemStore,
-    execution_policy: CompiledExecutionPolicyContract,
-    action_space: PreparedActionSpace,
+    temporal_facts: PreparedTemporalFacts,
 ) -> PreparedMinBlockFeeTargets:
-    supervised = execution_policy.prepare_supervised_targets(
-        store,
-        action_space,
-    )
+    del store
+    action_space = temporal_facts.action_space
+    supervised = temporal_facts.supervised_targets
     return PreparedMinBlockFeeTargets(
         action_mask=torch.from_numpy(action_space.action_mask),
         min_block_offsets=torch.from_numpy(supervised.optimum_offsets),

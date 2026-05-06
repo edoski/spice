@@ -12,7 +12,11 @@ from spice.modeling.batch_plan import (
     build_prediction_batch_plan,
 )
 from spice.modeling.representations import DeviceStorageBudget, RepresentationRuntimeContext
-from spice.temporal import PreparedActionSpace
+from spice.temporal import (
+    PreparedActionSpace,
+    PreparedSupervisedExecutionTargets,
+    PreparedTemporalFacts,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +35,27 @@ class _ExecutionPolicy:
                 (sample_indices.shape[0], store.max_candidate_slots), dtype=np.bool_
             )
         )
+
+
+def _action_space(sample_indices: np.ndarray) -> PreparedActionSpace:
+    return _ExecutionPolicy().prepare_action_space(_Store(), sample_indices)
+
+
+def _temporal_facts(sample_indices: np.ndarray) -> PreparedTemporalFacts:
+    action_space = _action_space(sample_indices)
+    sample_count = int(sample_indices.shape[0])
+    return PreparedTemporalFacts(
+        action_space=action_space,
+        supervised_targets=PreparedSupervisedExecutionTargets(
+            candidate_log_fees=np.zeros(
+                (sample_count, action_space.max_candidate_slots),
+                dtype=np.float32,
+            ),
+            optimum_offsets=np.zeros(sample_count, dtype=np.int64),
+            optimum_log_fees=np.zeros(sample_count, dtype=np.float32),
+            baseline_candidate_indices=np.zeros(sample_count, dtype=np.int64),
+        ),
+    )
 
 
 @dataclass(slots=True)
@@ -94,10 +119,10 @@ class _Targets:
 class _PredictionContract:
     def __init__(self, targets: _Targets) -> None:
         self.targets = targets
-        self.action_space: PreparedActionSpace | None = None
+        self.temporal_facts: PreparedTemporalFacts | None = None
 
     def prepare_targets(self, *_args, **_kwargs) -> _Targets:
-        self.action_space = _kwargs["action_space"]
+        self.temporal_facts = _kwargs["temporal_facts"]
         return self.targets
 
 
@@ -120,7 +145,7 @@ def test_host_loader_worker_override_rejects_invalid_values(monkeypatch) -> None
     with pytest.raises(ValueError, match="must be non-negative"):
         build_model_input_batch_plan(
             _Store(),
-            np.arange(4, dtype=np.int64),
+            action_space=_action_space(np.arange(4, dtype=np.int64)),
             representation_contract=_RepresentationContract(_Prepared()),
             execution_policy=_ExecutionPolicy(),
             runtime_context=_runtime_context(),
@@ -154,7 +179,7 @@ def test_single_process_unpinned_loader_policy_disables_workers_and_pin_memory(
 
     plan = build_model_input_batch_plan(
         _Store(),
-        np.arange(4, dtype=np.int64),
+        action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(_Prepared()),
         execution_policy=_ExecutionPolicy(),
         runtime_context=_runtime_context(host_loader_policy="single_process_unpinned"),
@@ -178,7 +203,7 @@ def test_single_process_unpinned_loader_policy_disables_workers_and_pin_memory(
 def test_batch_plan_orders_samples_deterministically_by_signature() -> None:
     plan = build_model_input_batch_plan(
         _Store(),
-        np.arange(4, dtype=np.int64),
+        action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(_Prepared()),
         execution_policy=_ExecutionPolicy(),
         runtime_context=_runtime_context(),
@@ -197,7 +222,7 @@ def test_shuffled_batch_plan_changes_by_epoch_but_keeps_batch_shape() -> None:
     targets = _Targets()
     plan = build_prediction_batch_plan(
         _Store(),
-        np.arange(4, dtype=np.int64),
+        temporal_facts=_temporal_facts(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(_Prepared()),
         prediction_contract=_PredictionContract(targets),
         execution_policy=_ExecutionPolicy(),
@@ -223,7 +248,7 @@ def test_prediction_batch_plan_binds_targets_to_input_sample_positions() -> None
     prediction_contract = _PredictionContract(targets)
     plan = build_prediction_batch_plan(
         _Store(),
-        np.arange(4, dtype=np.int64),
+        temporal_facts=_temporal_facts(np.arange(4, dtype=np.int64)),
         representation_contract=representation_contract,
         prediction_contract=prediction_contract,
         execution_policy=_ExecutionPolicy(),
@@ -237,7 +262,8 @@ def test_prediction_batch_plan_binds_targets_to_input_sample_positions() -> None
     assert first_batch.inputs.sample_positions.tolist() == [1, 3]
     assert first_batch.targets.tolist() == [11, 13]
     assert targets.positions == [[1, 3]]
-    assert representation_contract.action_space is prediction_contract.action_space
+    assert prediction_contract.temporal_facts is not None
+    assert representation_contract.action_space is prediction_contract.temporal_facts.action_space
     assert plan.estimated_storage_bytes == 1280
 
 
@@ -260,7 +286,7 @@ def test_cuda_batch_plan_consumes_device_storage_budget_phase(
 
     plan = build_model_input_batch_plan(
         _Store(),
-        np.arange(4, dtype=np.int64),
+        action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(prepared),
         execution_policy=_ExecutionPolicy(),
         runtime_context=_runtime_context(device_storage_budget=device_storage_budget),
@@ -276,7 +302,7 @@ def test_cuda_batch_plan_consumes_device_storage_budget_phase(
 def test_device_resident_plan_exposes_storage_mode() -> None:
     plan = build_model_input_batch_plan(
         _Store(),
-        np.arange(4, dtype=np.int64),
+        action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(_Prepared()),
         execution_policy=_ExecutionPolicy(),
         runtime_context=_runtime_context(
@@ -295,7 +321,7 @@ def test_zero_device_budget_uses_host_loader_without_device_materialization() ->
 
     plan = build_model_input_batch_plan(
         _Store(),
-        np.arange(4, dtype=np.int64),
+        action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(prepared),
         execution_policy=_ExecutionPolicy(),
         runtime_context=_runtime_context(
@@ -316,7 +342,7 @@ def test_device_resident_oom_falls_back_to_host_loader(monkeypatch) -> None:
 
     plan = build_model_input_batch_plan(
         _Store(),
-        np.arange(4, dtype=np.int64),
+        action_space=_action_space(np.arange(4, dtype=np.int64)),
         representation_contract=_RepresentationContract(_Prepared(fail_device_storage=True)),
         execution_policy=_ExecutionPolicy(),
         runtime_context=_runtime_context(

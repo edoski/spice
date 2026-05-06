@@ -143,12 +143,13 @@ def test_prediction_batch_source_binds_current_family_targets() -> None:
     store = _test_store()
     sample_indices = np.array([0, 1, 2, 3], dtype=np.int64)
     representation_contract = sequence_input_contract()
+    execution_policy = _execution_policy()
     batch_plan = build_prediction_batch_plan(
         store,
-        sample_indices,
+        temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
         representation_contract=representation_contract,
         prediction_contract=_prediction_contract(),
-        execution_policy=_execution_policy(),
+        execution_policy=execution_policy,
         runtime_context=RepresentationRuntimeContext(
             batch_size=2,
             available_host_memory_bytes=10**12,

@@ -18,9 +18,9 @@ Prediction configs compile into contracts. Contracts prepare targets, define out
 
 Prediction code may import temporal stores and execution policies because targets are built from temporal examples and policy-owned Action Spaces. Core rendering must not import prediction. Shared masking logic lives in `masking.py` so families apply action masks consistently.
 
-Prediction target preparation receives a prepared Action Space rather than an independent sample selection. Supervised execution targets do not carry their own duplicate action mask; training target batches use the policy-owned mask from the Action Space.
+Prediction target preparation receives prepared temporal facts rather than an independent sample selection. Those facts pair the policy-owned Action Space with supervised execution targets for exactly one sample set. Training target batches use the policy-owned mask from the Action Space.
 
-Prediction training state is semantic-immutable. `fit_training_state()` returns reusable facts derived from the training split. Loss computation may cache device/dtype views on that state, but it must not mutate semantic tensors or depend on batch call order.
+Prediction training state is semantic-immutable. `fit_training_state()` derives reusable facts from the same prepared temporal facts used by training targets. Loss computation may cache device/dtype views on that state, but it must not mutate semantic tensors or depend on batch call order.
 
 ## Extension Points
 
@@ -46,6 +46,9 @@ CompiledProblemStore
       |
       v
 prepared Action Space
+      |
+      v
+prepared temporal facts
       |
       v
 target tensors
