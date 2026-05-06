@@ -129,7 +129,6 @@ def test_surface_refs_and_selection_defaults_resolve(
     config = cast(
         TrainConfig,
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(surface="child_train", dataset_id=TEST_DATASET_ID),
         ),
     )
@@ -143,7 +142,7 @@ def test_surface_refs_and_selection_defaults_resolve(
     assert config.artifact.variant.value == "baseline"
 
 
-def test_selection_application_resolves_train_override_outcomes(
+def test_surface_resolution_resolves_train_override_outcomes(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
@@ -173,7 +172,6 @@ def test_selection_application_resolves_train_override_outcomes(
     config = cast(
         TrainConfig,
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 training="short_run",
@@ -206,7 +204,6 @@ def test_acquire_resolution_resolves_one_chain_specific_rpc_endpoint(
     config = cast(
         AcquireConfig,
         resolve_workflow_config(
-            WorkflowTask.ACQUIRE,
             AcquireWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 chain="avalanche",
@@ -230,7 +227,6 @@ def test_empty_selection_override_does_not_fallback_to_surface_default(
 
     with pytest.raises(ConfigResolutionError, match="Unknown chain spec"):
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 chain="",
@@ -283,7 +279,6 @@ def test_acquire_resolution_fails_when_provider_lacks_chain_endpoint(
         match="provider eth_only does not define endpoint for avalanche",
     ):
         resolve_workflow_config(
-            WorkflowTask.ACQUIRE,
             AcquireWorkflowSelection(
                 surface="eth_only_acquire",
                 chain="avalanche",
@@ -340,7 +335,6 @@ def test_invalid_resolution_selections_fail_cleanly(
 
     with pytest.raises(ConfigResolutionError, match=message):
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface=surface,
                 dataset_id=TEST_DATASET_ID,
@@ -378,7 +372,6 @@ def test_benchmark_objective_requires_matching_evaluation(
         ),
     ):
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="mismatch",
                 dataset_id=TEST_DATASET_ID,
@@ -402,7 +395,6 @@ def test_evaluation_objective_requires_selected_evaluation(
         match="objective profit_poisson_replay_2h requires evaluation poisson_replay_2h",
     ):
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="missing_eval",
                 dataset_id=TEST_DATASET_ID,
@@ -420,7 +412,6 @@ def test_full_temporal_replay_objective_requires_matching_train_evaluation(
     train_config = cast(
         TrainConfig,
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 dataset_id=TEST_DATASET_ID,
@@ -442,7 +433,6 @@ def test_full_temporal_replay_objective_requires_matching_train_evaluation(
         ),
     ):
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 dataset_id=TEST_DATASET_ID,
@@ -464,7 +454,6 @@ def test_tune_requires_selected_tuning_space(
 
     with pytest.raises(ConfigResolutionError, match="tuning.space is required"):
         resolve_workflow_config(
-            WorkflowTask.TUNE,
             TuneWorkflowSelection(
                 surface="missing_tuning_space",
                 dataset_id=TEST_DATASET_ID,
@@ -482,7 +471,6 @@ def test_evaluate_resolves_eval_only_controls(
     config = cast(
         EvaluateConfig,
         resolve_workflow_config(
-            WorkflowTask.EVALUATE,
             EvaluateWorkflowSelection(
                 artifact_id=TEST_ARTIFACT_ID,
                 dataset_id=TEST_DATASET_ID,
@@ -505,7 +493,6 @@ def test_tuned_train_rejects_dataset_id(
 
     with pytest.raises(ConfigResolutionError, match="tuned training must not define dataset_id"):
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 dataset_id=TEST_DATASET_ID,
@@ -525,7 +512,6 @@ def test_selection_overrides_allow_problem_features_and_evaluation_selection(
     train_config = cast(
         TrainConfig,
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 dataset_id=TEST_DATASET_ID,
@@ -557,7 +543,6 @@ def test_selection_accepts_inline_problem_spec(
     config = cast(
         TrainConfig,
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 dataset_id=TEST_DATASET_ID,
@@ -580,7 +565,6 @@ def test_selection_overrides_allow_objective_selection(
     train_config = cast(
         TrainConfig,
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 dataset_id=TEST_DATASET_ID,
@@ -596,7 +580,6 @@ def test_selection_overrides_allow_objective_selection(
     tune_config = cast(
         TuneConfig,
         resolve_workflow_config(
-            WorkflowTask.TUNE,
             TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 dataset_id=TEST_DATASET_ID,
@@ -618,7 +601,6 @@ def test_selection_overrides_allow_model_and_tuning_space_selection(
     config = cast(
         TuneConfig,
         resolve_workflow_config(
-            WorkflowTask.TUNE,
             TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 dataset_id=TEST_DATASET_ID,
@@ -654,7 +636,6 @@ def test_large_capacity_tuning_spaces_resolve(
     config = cast(
         TuneConfig,
         resolve_workflow_config(
-            WorkflowTask.TUNE,
             TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 dataset_id=TEST_DATASET_ID,

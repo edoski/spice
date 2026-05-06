@@ -44,7 +44,6 @@ def test_remote_runner_rehydrates_resolved_workflow_snapshots(
         },
     }[task]
     config = resolve_workflow_config(
-        task,
         workflow_selection_type(task).model_validate(selection_payload),
     )
 

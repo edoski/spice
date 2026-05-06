@@ -61,13 +61,13 @@ overrides: model=lstm, delay_seconds=36
       workflow config model
 ```
 
-`selection_application` applies acquire/train/tune selections to the Surface and emits flat workflow refs before final resolution. Evaluate remains root-id based and does not use surface composition. The result is a typed acquire, train, tune, or evaluate config.
+Fresh resolution applies acquire/train/tune selections to the Surface inside `resolution.py` and constructs the workflow config directly from typed pieces. Evaluate remains root-id based and does not use surface composition. The result is a typed acquire, train, tune, or evaluate config.
 
 Surface resolution is a typed construction path. Once named groups and overrides have been resolved, `resolution.py` instantiates the workflow config from typed pieces. It does not round-trip through raw resolved snapshot hydration.
 
 Selection overrides are explicit: only `None` means “use the surface value.” Empty strings and other invalid refs are carried into typed loading and fail as bad references. Evaluation-backed objectives must select the evaluator they name; missing evaluation is rejected before workflow execution.
 
-Command workflow resolution starts from sparse operator values. `workflow_selection_from_values()` drops unsupported and unset fields for the selected workflow, validates the matching `WorkflowSelection`, and `resolve_workflow_command_config()` resolves that selection into the concrete workflow config. CLI commands pass option dictionaries to this config-owned path instead of constructing selection models locally.
+Workflow Command Selection lives at the CLI edge. Workflow commands construct typed `WorkflowSelection` models from operator options, then call `resolve_workflow_config()` to produce concrete workflow configs. Benchmarks construct typed selections inside benchmark materialization before using the same fresh resolution path.
 
 ## Resolved Workflow Hydration
 

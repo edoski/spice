@@ -39,7 +39,6 @@ def _resolved_config(task: WorkflowTask) -> TrainConfig | TuneConfig | EvaluateC
         },
     }[task]
     config = resolve_workflow_config(
-        task,
         workflow_selection_type(task).model_validate(selection_payload),
     )
     assert isinstance(config, (TrainConfig, TuneConfig, EvaluateConfig))

@@ -9,7 +9,14 @@ import yaml
 from typer.testing import CliRunner
 
 from spice.cli.app import app
-from spice.config import AcquireConfig, EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
+from spice.config import (
+    AcquireConfig,
+    EvaluateConfig,
+    TrainConfig,
+    TrainWorkflowSelection,
+    TuneConfig,
+    WorkflowTask,
+)
 from spice.execution.session import ExecutionJobSubmission
 
 runner = CliRunner()
@@ -250,8 +257,10 @@ def test_acquire_rejects_objective_option() -> None:
 def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:
     from spice.cli.commands import workflows as workflow_commands
 
-    def _fake_resolve(task: WorkflowTask, values) -> object:
-        del task, values
+    def _fake_resolve(selection) -> object:
+        assert isinstance(selection, TrainWorkflowSelection)
+        assert selection.surface == "current_row_fee_dynamics"
+        assert selection.dataset_id == "cor_9a73b1e88edb488afb1e"
         return TrainConfig.model_construct(workflow=WorkflowTask.TRAIN)
 
     class FakeSession:
@@ -274,7 +283,7 @@ def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:
         def follow_job(self, _submission: ExecutionJobSubmission) -> str:
             return "FAILED"
 
-    monkeypatch.setattr(workflow_commands, "resolve_workflow_command_config", _fake_resolve)
+    monkeypatch.setattr(workflow_commands, "resolve_workflow_config", _fake_resolve)
     monkeypatch.setattr(
         workflow_commands,
         "open_execution_session",

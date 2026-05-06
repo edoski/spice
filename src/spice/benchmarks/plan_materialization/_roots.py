@@ -7,7 +7,6 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from ...config.models import WorkflowTask
 from ...config.selections import WorkflowSelection
 from ...config.workflow_snapshots import ResolvedWorkflowConfig
 from ._dependencies import (
@@ -60,14 +59,14 @@ class BenchmarkPlanLedgerMaterializer:
         seed: BenchmarkPlanSeed,
         run_id: str,
         workflow_selection: WorkflowSelection,
-        resolve_config: Callable[[WorkflowTask, WorkflowSelection], ResolvedWorkflowConfig],
+        resolve_config: Callable[[WorkflowSelection], ResolvedWorkflowConfig],
     ) -> BenchmarkPlanLedgers:
         dependencies = self.dependency_resolver.resolve(seed)
         prepared_roots = self.root_ledger_builder.prepare_selection(
             workflow_selection,
             dependencies,
         )
-        config = resolve_config(seed.workflow, prepared_roots.selection)
+        config = resolve_config(prepared_roots.selection)
         finalized_roots = self.root_ledger_builder.finalize_roots(
             run_id=run_id,
             workflow=seed.workflow,

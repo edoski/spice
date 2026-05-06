@@ -45,7 +45,7 @@ Config groups have two loading interfaces. `groups.load_named_group_payload()` r
 
 `group_catalog` owns group names, directories, identity checks, and validators shared by the raw and typed interfaces. Owner packages own concrete dispatch inside a group. Tuning-space loading stays in resolution because it depends on the selected model and problem. Benchmark typed loading stays in benchmarks.
 
-`selection_application` owns the surface-only step that loads a named surface, understands its nested layout, and emits workflow-shaped refs for acquire/train/tune resolution. Selection overrides coalesce only on `None`; empty refs are treated as explicit invalid refs instead of falling back to surface defaults. `surfaces` owns frame models only.
+Fresh resolution loads the named surface directly from the concrete Workflow Selection and constructs acquire/train/tune configs from the selected Surface values plus overrides. Selection overrides coalesce only on `None`; empty refs are treated as explicit invalid refs instead of falling back to surface defaults. `surfaces` owns frame models only.
 
 ## Owner Coercion
 
@@ -99,7 +99,7 @@ Tuned-parameter application is a typed transform. It rebuilds `TrainConfig` or `
 
 ## Public API Boundary
 
-`spice.config` exports resolved config types, workflow selection types, `resolve_workflow_config()`, `resolve_workflow_command_config()`, workflow snapshot codecs, and config-owned coercers such as `coerce_problem_spec()` and `coerce_features_config()`.
+`spice.config` exports resolved config types, workflow selection types, `resolve_workflow_config()`, workflow snapshot codecs, and config-owned coercers such as `coerce_problem_spec()` and `coerce_features_config()`.
 
 The generic `ConfigModel` base is intentionally not a public `spice.config` export. Modules that define config models import it from `spice.core.config_model`.
 

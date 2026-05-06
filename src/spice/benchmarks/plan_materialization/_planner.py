@@ -16,7 +16,8 @@ from ...config.models import (
 from ...config.resolution import resolve_workflow_config
 from ...config.selections import (
     WorkflowSelection,
-    workflow_selection_from_values,
+    workflow_selection_fields,
+    workflow_selection_type,
 )
 from ...config.workflow_snapshots import ResolvedWorkflowConfig
 from ...core.errors import ConfigResolutionError
@@ -115,10 +116,9 @@ def _materialize_benchmark_case(case: BenchmarkCase) -> list[BenchmarkPlanEntry]
 
 
 def _resolve_benchmark_config(
-    workflow: WorkflowTask,
     selection: WorkflowSelection,
 ) -> ResolvedWorkflowConfig:
-    config = resolve_workflow_config(workflow, selection)
+    config = resolve_workflow_config(selection)
     if isinstance(config, (TrainConfig, TuneConfig, EvaluateConfig)):
         return config
     raise ConfigResolutionError("benchmark plans support train, tune, and evaluate workflows")
@@ -126,7 +126,13 @@ def _resolve_benchmark_config(
 
 def _selection_for_seed(seed: PlanSeed) -> WorkflowSelection:
     try:
-        selection = workflow_selection_from_values(seed.workflow, seed.row)
+        fields = frozenset(workflow_selection_fields(seed.workflow))
+        payload = {
+            key: value
+            for key, value in seed.row.items()
+            if key in fields and value is not None
+        }
+        selection = workflow_selection_type(seed.workflow).model_validate(payload)
         if (
             seed.workflow is not WorkflowTask.EVALUATE
             and getattr(selection, "surface", None) is None

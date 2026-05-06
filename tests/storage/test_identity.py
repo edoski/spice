@@ -11,7 +11,6 @@ from spice.config import (
     TrainWorkflowSelection,
     TuneConfig,
     TuneWorkflowSelection,
-    WorkflowTask,
     resolve_workflow_config,
 )
 from spice.config.groups import load_named_group_payload
@@ -57,7 +56,6 @@ def _tune_config(tmp_path, *, surface: str, objective: str | None = None) -> Tun
     return cast(
         TuneConfig,
         resolve_workflow_config(
-            WorkflowTask.TUNE,
             TuneWorkflowSelection(
                 surface=surface,
                 dataset_id=TEST_DATASET_ID,
@@ -78,7 +76,6 @@ def _train_config(
     return cast(
         TrainConfig,
         resolve_workflow_config(
-            WorkflowTask.TRAIN,
             TrainWorkflowSelection(
                 surface=surface,
                 dataset_id=None if study_id is not None else TEST_DATASET_ID,
@@ -147,7 +144,6 @@ def test_study_id_uses_resolved_identity_but_not_trial_limits(
     limited = cast(
         TuneConfig,
         resolve_workflow_config(
-            WorkflowTask.TUNE,
             TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 dataset_id=TEST_DATASET_ID,
@@ -265,7 +261,6 @@ def test_corpus_id_uses_dataset_evaluation_date(tmp_path, isolate_conf_root) -> 
     base = cast(
         AcquireConfig,
         resolve_workflow_config(
-            WorkflowTask.ACQUIRE,
             AcquireWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 storage_root=tmp_path / "outputs",
@@ -281,7 +276,6 @@ def test_corpus_id_uses_dataset_evaluation_date(tmp_path, isolate_conf_root) -> 
     changed = cast(
         AcquireConfig,
         resolve_workflow_config(
-            WorkflowTask.ACQUIRE,
             AcquireWorkflowSelection(
                 surface="current_row_fee_dynamics",
                 storage_root=tmp_path / "outputs",

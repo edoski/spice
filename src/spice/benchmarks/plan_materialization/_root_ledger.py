@@ -16,8 +16,8 @@ from ...config.workflow_snapshots import ResolvedWorkflowConfig
 from ...core.errors import ConfigResolutionError
 from ._models import (
     BenchmarkDependencyLedger,
-    BenchmarkRootKind,
     BenchmarkRootFacts,
+    BenchmarkRootKind,
     BenchmarkRootLedger,
     BenchmarkRootLedgerEntry,
 )

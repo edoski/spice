@@ -322,9 +322,6 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
             selection_values["surface"] = surface_name
         selection_type = workflow_selection_type(workflow)
         selection = cast(WorkflowSelection, selection_type.model_validate(selection_values))
-        return resolve_workflow_config(
-            workflow,
-            selection,
-        )
+        return resolve_workflow_config(selection)
 
     return _load

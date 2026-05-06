@@ -4,12 +4,15 @@
 
 from __future__ import annotations
 
-from typing import Literal, TypeAlias, cast
-
 import typer
 
-from ...config.models import WorkflowTask
-from ...config.resolution import resolve_workflow_command_config
+from ...config import (
+    AcquireWorkflowSelection,
+    EvaluateWorkflowSelection,
+    TrainWorkflowSelection,
+    TuneWorkflowSelection,
+)
+from ...config.resolution import resolve_workflow_config
 from ...config.workflow_snapshots import ResolvedWorkflowConfig
 from ...core.errors import SpiceOperatorError
 from ...execution.session import ExecutionSession, open_execution_session
@@ -44,17 +47,15 @@ from ..options import (
     WorkflowVariantOption,
 )
 
-ModelWorkflowTask: TypeAlias = Literal[WorkflowTask.TRAIN, WorkflowTask.TUNE]
-
 
 def _submit_selected_workflow(
     *,
-    task: WorkflowTask,
     config: ResolvedWorkflowConfig,
     session: ExecutionSession,
     dependency: str | None,
     detach: bool,
 ) -> None:
+    task = config.workflow
     submission = session.submit_workflow(
         task,
         config=config,
@@ -86,16 +87,14 @@ def _submit_selected_workflow(
 
 def _submit_model_workflow(
     *,
-    task: ModelWorkflowTask,
-    selection_values: dict[str, object | None],
+    selection: TrainWorkflowSelection | TuneWorkflowSelection,
     target: str,
     dependency: str | None,
     detach: bool,
 ) -> None:
-    config = cast(ResolvedWorkflowConfig, resolve_workflow_command_config(task, selection_values))
+    config = resolve_workflow_config(selection)
     session = open_execution_session(target)
     _submit_selected_workflow(
-        task=task,
         config=config,
         session=session,
         dependency=dependency,
@@ -115,17 +114,16 @@ def acquire_command(
     from ...workflows import acquire
 
     acquire.run(
-        resolve_workflow_command_config(
-            WorkflowTask.ACQUIRE,
-            {
-                "surface": surface,
-                "chain": chain,
-                "problem": problem,
-                "features": features,
-                "provider": provider,
-                "storage_root": storage_root,
-                "dry_run": dry_run,
-            },
+        resolve_workflow_config(
+            AcquireWorkflowSelection(
+                surface=surface,
+                chain=chain,
+                problem=problem,
+                features=features,
+                provider=provider,
+                storage_root=storage_root,
+                dry_run=dry_run,
+            )
         )
     )
 
@@ -151,24 +149,23 @@ def train_command(
     detach: WorkflowDetachOption = False,
 ) -> None:
     _submit_model_workflow(
-        task=WorkflowTask.TRAIN,
-        selection_values={
-            "surface": surface,
-            "chain": chain,
-            "problem": problem,
-            "features": features,
-            "objective": objective,
-            "evaluation": evaluation,
-            "model": model,
-            "tuning_space": tuning_space,
-            "training": training,
-            "split": split,
-            "tuning": tuning,
-            "study": study,
-            "dataset_id": dataset_id,
-            "study_id": study_id,
-            "variant": variant,
-        },
+        selection=TrainWorkflowSelection(
+            surface=surface,
+            chain=chain,
+            problem=problem,
+            features=features,
+            objective=objective,
+            evaluation=evaluation,
+            model=model,
+            tuning_space=tuning_space,
+            training=training,
+            split=split,
+            tuning=tuning,
+            study=study,
+            dataset_id=dataset_id,
+            study_id=study_id,
+            variant=variant,
+        ),
         target=target,
         dependency=dependency,
         detach=detach,
@@ -195,23 +192,22 @@ def tune_command(
     detach: WorkflowDetachOption = False,
 ) -> None:
     _submit_model_workflow(
-        task=WorkflowTask.TUNE,
-        selection_values={
-            "surface": surface,
-            "chain": chain,
-            "problem": problem,
-            "features": features,
-            "objective": objective,
-            "evaluation": evaluation,
-            "model": model,
-            "tuning_space": tuning_space,
-            "training": training,
-            "split": split,
-            "tuning": tuning,
-            "study": study,
-            "dataset_id": dataset_id,
-            "trial_count": trial_count,
-        },
+        selection=TuneWorkflowSelection(
+            surface=surface,
+            chain=chain,
+            problem=problem,
+            features=features,
+            objective=objective,
+            evaluation=evaluation,
+            model=model,
+            tuning_space=tuning_space,
+            training=training,
+            split=split,
+            tuning=tuning,
+            study=study,
+            dataset_id=dataset_id,
+            trial_count=trial_count,
+        ),
         target=target,
         dependency=dependency,
         detach=detach,
@@ -228,19 +224,17 @@ def evaluate_command(
     target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
     detach: WorkflowDetachOption = False,
 ) -> None:
-    config = resolve_workflow_command_config(
-        WorkflowTask.EVALUATE,
-        {
-            "artifact_id": artifact_id,
-            "dataset_id": dataset_id,
-            "evaluation": evaluation,
-            "delay_seconds": delay_seconds,
-            "batch_size": batch_size,
-        },
+    config = resolve_workflow_config(
+        EvaluateWorkflowSelection(
+            artifact_id=artifact_id,
+            dataset_id=dataset_id,
+            evaluation=evaluation,
+            delay_seconds=delay_seconds,
+            batch_size=batch_size,
+        )
     )
     session = open_execution_session(target)
     _submit_selected_workflow(
-        task=WorkflowTask.EVALUATE,
         config=config,
         session=session,
         dependency=dependency,

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from spice.config import (
@@ -15,8 +13,6 @@ from spice.config import (
 from spice.config.groups import load_named_group_payload
 from spice.config.selections import (
     workflow_selection_fields,
-    workflow_selection_from_values,
-    workflow_selection_payload,
     workflow_selection_type,
 )
 
@@ -28,88 +24,23 @@ def test_workflow_selection_type_maps_each_workflow() -> None:
     assert workflow_selection_type(WorkflowTask.EVALUATE) is EvaluateWorkflowSelection
 
 
-def test_workflow_selection_payload_keeps_only_supported_non_null_fields() -> None:
-    payload = workflow_selection_payload(
-        WorkflowTask.TRAIN,
-        {
-            "surface": "current_row_fee_dynamics",
-            "model": "lstm",
-            "trial_count": 3,
-            "provider": "publicnode",
-            "storage_root": Path("outputs"),
-            "features": None,
-        },
-    )
-
-    assert payload == {
-        "surface": "current_row_fee_dynamics",
-        "model": "lstm",
-        "storage_root": Path("outputs"),
-    }
-
-
-def test_workflow_selection_from_values_builds_sparse_surface_selection(
-    tmp_path: Path,
-) -> None:
-    selection = workflow_selection_from_values(
-        WorkflowTask.TRAIN,
-        {
-            "surface": "current_row_fee_dynamics",
-            "chain": None,
-            "problem": None,
-            "features": None,
-            "provider": "publicnode",
-            "storage_root": tmp_path / "outputs",
-            "study": "experiment",
-            "dataset_id": "cor_123",
-            "study_id": None,
-            "variant": "baseline",
-        },
-    )
-
-    assert isinstance(selection, TrainWorkflowSelection)
-    assert selection.model_dump(exclude_none=True) == {
-        "surface": "current_row_fee_dynamics",
-        "storage_root": tmp_path / "outputs",
-        "study": "experiment",
-        "dataset_id": "cor_123",
-        "variant": "baseline",
-    }
-
-
-def test_workflow_selection_from_values_builds_evaluate_id_selection() -> None:
-    selection = workflow_selection_from_values(
-        WorkflowTask.EVALUATE,
-        {
-            "surface": "current_row_fee_dynamics",
-            "chain": "ethereum",
-            "artifact_id": "art_123",
-            "dataset_id": "cor_123",
-            "evaluation": "poisson_replay_2h",
-            "delay_seconds": 12,
-            "batch_size": 64,
-        },
-    )
-
-    assert isinstance(selection, EvaluateWorkflowSelection)
-    assert selection.model_dump(exclude_none=True) == {
-        "artifact_id": "art_123",
-        "dataset_id": "cor_123",
-        "evaluation": "poisson_replay_2h",
-        "delay_seconds": 12,
-        "batch_size": 64,
-    }
-    assert "surface" not in workflow_selection_fields(WorkflowTask.EVALUATE)
-
-
-def test_workflow_selection_from_values_validates_command_values() -> None:
+def test_workflow_selections_validate_command_values() -> None:
     with pytest.raises(ValueError):
-        workflow_selection_from_values(
-            WorkflowTask.TUNE,
+        TuneWorkflowSelection(
+            surface="current_row_fee_dynamics",
+            trial_count=0,
+        )
+
+
+def test_evaluate_selection_rejects_surface_fields() -> None:
+    with pytest.raises(ValueError, match="surface"):
+        EvaluateWorkflowSelection.model_validate(
             {
                 "surface": "current_row_fee_dynamics",
-                "trial_count": 0,
-            },
+                "artifact_id": "art_123",
+                "dataset_id": "cor_123",
+                "evaluation": "poisson_replay_2h",
+            }
         )
 
 

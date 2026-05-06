@@ -8,7 +8,6 @@ from optuna.trial import FixedTrial
 from spice.config import (
     TrainWorkflowSelection,
     TunedParameterSet,
-    WorkflowTask,
     coerce_problem_spec,
     resolve_workflow_config,
 )
@@ -288,7 +287,6 @@ def test_apply_tuned_parameters_revalidates_model_config() -> None:
 
 def test_apply_study_best_params_uses_manifest_study_name(tmp_path, monkeypatch) -> None:
     config = resolve_workflow_config(
-        WorkflowTask.TRAIN,
         TrainWorkflowSelection(
             surface="current_row_fee_dynamics",
             study_id="std_manifest",
@@ -348,7 +346,6 @@ def test_apply_study_best_params_rejects_mismatched_manifest_before_loading_para
     monkeypatch,
 ) -> None:
     config = resolve_workflow_config(
-        WorkflowTask.TRAIN,
         TrainWorkflowSelection(
             surface="current_row_fee_dynamics",
             study_id="std_manifest",
