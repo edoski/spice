@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -144,11 +143,6 @@ def upsert_collection_snapshot(path: Path, snapshot: BenchmarkCollectionSnapshot
                         sample_count=record.sample_count,
                         total_events=record.total_events,
                         recorded_at_utc=record.recorded_at_utc,
-                        payload_json=json.dumps(
-                            record.model_dump(mode="json"),
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
                         updated_at=now,
                     )
                 )

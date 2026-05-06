@@ -40,7 +40,7 @@ Benchmark Root Facts are the caller-facing root identity interface on each plan 
 
 The Benchmark Root Ledger is audit state, not storage catalog state and not the caller-facing read model. Each plan entry stores typed root ledger entries with `run_id`, workflow, role, root kind, root id, optional source run id, and root-specific ids. Roles are `consumed`, `produced`, and `source`; root kinds are `dataset`, `study`, and `artifact`.
 
-Benchmark Plan Materialization owns the required order: prepare dependency-derived selection, resolve the workflow config, finalize root facts and the root ledger from resolved config identity, then record produced roots for later dependent steps. Tuned train steps can consume a study produced by a prior tune step. Evaluate steps can consume an artifact produced by a prior train step, while separately recording the artifact-source dataset.
+Benchmark Plan Materialization owns the required order: prepare dependency-derived selection, resolve the workflow config, finalize root facts and the root ledger from resolved config identity, then record produced root facts for later dependent steps. Tuned train steps can consume a study produced by a prior tune step. Evaluate steps can consume an artifact produced by a prior train step, while separately recording the artifact-source dataset.
 
 ## Module Map
 
@@ -63,12 +63,12 @@ benchmarks/
 
 ## Boundaries
 
-Run dirs are canonical benchmark audit state. `results.sqlite` is a rebuildable projection over `collection.json`; list and export consume the Benchmark Result Index row as the single read model, backed by normalized observation and metric tables. JSON payloads remain audit/debug payloads. CSV files are named export artifacts for concrete table, figure, appendix, or analysis inputs and are overwritten from the index.
+Run dirs are canonical benchmark audit state. `results.sqlite` is a rebuildable projection over `collection.json`; list and export consume the Benchmark Result Index row as the single read model, backed by normalized observation and metric tables. CSV files are named export artifacts for concrete table, figure, appendix, or analysis inputs and are overwritten from the index.
 
 `runs.py` is the public run-state facade. Benchmark run-state JSON/JSONL encoding stays benchmark-local and must not move into config or shared storage codecs.
 
 The CLI creates run dirs, submits existing run dirs, collects existing run dirs, exports CSV, and reads the result index. It does not re-plan during submit or collect.
 
-Remote transfer during collection uses an execution-owned `StorageTransferTransaction`; matching uses a **Benchmark Collection Resolver**. Collection builds a `BenchmarkCollectionSelection` from the plan entry and submission, asks the transaction for the selected local artifact record, then passes that record to the resolver. The resolver materializes the local artifact state path from storage root plus artifact identity, validates artifact and artifact-source dataset identity, matches `(evaluator_id, delay_seconds, execution_ref)`, rejects stale or missing execution provenance, and does not re-resolve the local catalog.
+Remote transfer during collection uses an execution-owned `StorageTransferTransaction`; matching uses a **Benchmark Collection Resolver**. Collection builds a `BenchmarkCollectionSelection` from the plan entry, submission, and benchmark target, asks the transaction for the selected local artifact record, then passes that record to the resolver. The resolver materializes the local artifact state path from storage root plus artifact identity, validates artifact and artifact dataset identity, matches evaluator id, resolved delay, and full execution provenance, returns Benchmark Collection Match Facts for result records, and does not re-resolve the local catalog.
 
 Benchmark JSON shapes are operator-facing. Keep them stable unless a field name is part of a deliberate terminology cleanup.

@@ -9,8 +9,7 @@ from typer.testing import CliRunner
 
 from spice.benchmarks.plan_materialization import (
     BenchmarkDependencyLedger,
-    BenchmarkRootLedger,
-    BenchmarkRootLedgerEntry,
+    BenchmarkRootFacts,
     BenchmarkSelectionLedger,
 )
 from spice.benchmarks.result_index import upsert_benchmark_collection_snapshot
@@ -50,36 +49,11 @@ def _benchmark_record() -> BenchmarkResultRecord:
         ),
         dimension_labels={"models": "lstm"},
         selection=BenchmarkSelectionLedger(surface="current_row_fee_dynamics"),
-        root_ledger=BenchmarkRootLedger(
-            entries=(
-                BenchmarkRootLedgerEntry(
-                    run_id="case.evaluate",
-                    workflow=WorkflowTask.EVALUATE,
-                    role="consumed",
-                    root_kind="dataset",
-                    root_id="dataset-1",
-                    dataset_id="dataset-1",
-                ),
-                BenchmarkRootLedgerEntry(
-                    run_id="case.evaluate",
-                    workflow=WorkflowTask.EVALUATE,
-                    role="consumed",
-                    root_kind="artifact",
-                    root_id="artifact-1",
-                    artifact_id="artifact-1",
-                    dataset_id="dataset-1",
-                    source_run_id="case.train",
-                ),
-                BenchmarkRootLedgerEntry(
-                    run_id="case.evaluate",
-                    workflow=WorkflowTask.EVALUATE,
-                    role="source",
-                    root_kind="dataset",
-                    root_id="dataset-1",
-                    dataset_id="dataset-1",
-                    source_run_id="case.train",
-                ),
-            ),
+        root_facts=BenchmarkRootFacts(
+            consumed_dataset_id="dataset-1",
+            consumed_artifact_id="artifact-1",
+            consumed_artifact_dataset_id="dataset-1",
+            artifact_source_dataset_id="dataset-1",
         ),
         job_id="42",
         execution_ref="slurm:42",

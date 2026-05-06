@@ -74,7 +74,10 @@ class BenchmarkPlanLedgerMaterializer:
             prepared=prepared_roots,
         )
         root_ledger = finalized_roots.ledger
-        self.root_ledger_builder.record_ledger(root_ledger)
+        self.root_ledger_builder.record_facts(
+            run_id=run_id,
+            facts=finalized_roots.facts,
+        )
         return BenchmarkPlanLedgers(
             dependencies=dependencies,
             selection=prepared_roots.selection,

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from spice.benchmarks.collection import collect_benchmark_run
+from spice.benchmarks.collection_resolver import BenchmarkCollectionMatchFacts
 from spice.benchmarks.plan_materialization import (
     BenchmarkDependencyLedger,
     BenchmarkPlanEntry,
@@ -181,6 +182,22 @@ def _loaded_summary(config):
     )
 
 
+def _match_facts(config, selection) -> BenchmarkCollectionMatchFacts:
+    return BenchmarkCollectionMatchFacts(
+        artifact_id=selection.artifact_id,
+        artifact_dataset_id=selection.artifact_dataset_id,
+        evaluation_dataset_id=selection.evaluation_dataset_id,
+        evaluation_storage_id="poisson_replay-36s-storage",
+        evaluator_id=config.evaluation.id,
+        delay_seconds=config.delay_seconds,
+        evaluation_execution_ref=selection.execution_ref,
+        evaluation_job_id=selection.job_id,
+        evaluation_log_path=selection.log_path,
+        evaluation_workflow_task=selection.workflow_task,
+        evaluation_target=selection.target,
+    )
+
+
 def test_benchmark_plan_jsonl_round_trips_plan_entry(tmp_path: Path) -> None:
     config = _evaluate_config(tmp_path)
     run_dir = create_benchmark_run_dir(
@@ -253,6 +270,7 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
 
     def fake_resolve(selection, *, artifact_record):
         assert selection.execution_ref == "slurm:57549"
+        assert selection.target == "disi_l40"
         resolve_calls.append(artifact_record)
         return SimpleNamespace(
             evaluation=_loaded_summary(config),
@@ -267,6 +285,7 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
                     )
                 )
             ),
+            match_facts=_match_facts(config, selection),
         )
 
     class FakeTransferTransaction:
@@ -276,7 +295,7 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
 
     monkeypatch.setattr(
         "spice.benchmarks.collection.open_storage_transfer_transaction",
-        lambda _target, *, local_storage_root: FakeTransferTransaction(),
+        lambda _target, **_kwargs: FakeTransferTransaction(),
     )
     monkeypatch.setattr("spice.benchmarks.collection.resolve_benchmark_evaluation", fake_resolve)
     index_path = tmp_path / "benchmarks" / "results.sqlite"
@@ -316,7 +335,7 @@ def test_benchmark_collect_refuses_partial_snapshot_and_index_write(
 
     monkeypatch.setattr(
         "spice.benchmarks.collection.open_storage_transfer_transaction",
-        lambda _target, *, local_storage_root: FakeTransferTransaction(),
+        lambda _target, **_kwargs: FakeTransferTransaction(),
     )
     index_path = tmp_path / "benchmarks" / "results.sqlite"
 
@@ -352,7 +371,7 @@ def test_benchmark_collect_refuses_partial_write_when_summary_missing(
 
     monkeypatch.setattr(
         "spice.benchmarks.collection.open_storage_transfer_transaction",
-        lambda _target, *, local_storage_root: FakeTransferTransaction(),
+        lambda _target, **_kwargs: FakeTransferTransaction(),
     )
     monkeypatch.setattr(
         "spice.benchmarks.collection.resolve_benchmark_evaluation",
@@ -439,6 +458,7 @@ def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
         return SimpleNamespace(
             evaluation=_loaded_summary(config),
             training=None,
+            match_facts=_match_facts(config, selection),
         )
 
     class FakeTransferTransaction:
@@ -453,7 +473,7 @@ def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
 
     monkeypatch.setattr(
         "spice.benchmarks.collection.open_storage_transfer_transaction",
-        lambda _target, *, local_storage_root: FakeTransferTransaction(),
+        lambda _target, **_kwargs: FakeTransferTransaction(),
     )
     monkeypatch.setattr("spice.benchmarks.collection.resolve_benchmark_evaluation", fake_resolve)
 

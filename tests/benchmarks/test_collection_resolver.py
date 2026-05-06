@@ -116,7 +116,11 @@ def _entry(
 
 
 def _selection(config: EvaluateConfig):
-    return benchmark_collection_selection(_entry(config), _submission())
+    return benchmark_collection_selection(
+        _entry(config),
+        _submission(),
+        target="disi_l40",
+    )
 
 
 def _summary(
@@ -127,12 +131,19 @@ def _summary(
     execution_ref: str | None = "slurm:57549",
 ):
     return SimpleNamespace(
+        evaluation_storage_id="poisson_replay-36s-storage",
         runtime=SimpleNamespace(
             delay_seconds=config.delay_seconds if delay_seconds is None else delay_seconds,
             evaluator_id=config.evaluation.id if evaluator_id is None else evaluator_id,
             execution_provenance=None
             if execution_ref is None
-            else SimpleNamespace(execution_ref=execution_ref),
+            else SimpleNamespace(
+                execution_ref=execution_ref,
+                job_id="57549",
+                log_path="/tmp/spice-evaluate-57549.out",
+                workflow_task="evaluate",
+                target="disi_l40",
+            ),
         )
     )
 
@@ -322,6 +333,7 @@ def test_collection_selection_rejects_run_id_mismatch(tmp_path: Path) -> None:
         benchmark_collection_selection(
             _entry(config),
             _submission().model_copy(update={"run_id": "other.evaluate"}),
+            target="disi_l40",
         )
 
 
@@ -346,6 +358,7 @@ def test_collection_selection_rejects_root_facts_mismatch(tmp_path: Path) -> Non
                 config=entry.config,
             ),
             _submission(),
+            target="disi_l40",
         )
 
 
@@ -368,6 +381,7 @@ def test_collection_selection_rejects_missing_root_facts(tmp_path: Path) -> None
                 config=entry.config,
             ),
             _submission(),
+            target="disi_l40",
         )
 
 
@@ -419,7 +433,8 @@ def test_collection_resolver_rejects_artifact_source_dataset_mismatch(
     selection = benchmark_collection_selection(
         _entry(config, artifact_source_dataset_id="source-dataset"),
         _submission(),
+        target="disi_l40",
     )
 
-    with pytest.raises(SpiceOperatorError, match="source dataset"):
+    with pytest.raises(SpiceOperatorError, match="manifest dataset"):
         resolve_benchmark_evaluation(selection, artifact_record=artifact_record)

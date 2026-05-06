@@ -95,14 +95,29 @@ REQUIRED_CANONICAL_SERIES_COLUMNS = frozenset(
 
 
 class _FeatureTablePlan(Protocol):
-    features_id: str
-    feature_names: tuple[str, ...]
-    ordered_feature_names: tuple[str, ...]
-    required_source_names: tuple[str, ...]
-    feature_graph_fingerprint: str
-    feature_prerequisites: FeaturePrerequisites
-    required_source_columns: frozenset[str]
-    _catalog: FeatureCatalog
+    @property
+    def features_id(self) -> str: ...
+
+    @property
+    def feature_names(self) -> tuple[str, ...]: ...
+
+    @property
+    def ordered_feature_names(self) -> tuple[str, ...]: ...
+
+    @property
+    def required_source_names(self) -> tuple[str, ...]: ...
+
+    @property
+    def feature_graph_fingerprint(self) -> str: ...
+
+    @property
+    def feature_prerequisites(self) -> FeaturePrerequisites: ...
+
+    @property
+    def required_source_columns(self) -> frozenset[str]: ...
+
+    @property
+    def _catalog(self) -> FeatureCatalog: ...
 
 
 def validate_feature_names(

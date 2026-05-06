@@ -244,6 +244,10 @@ _Avoid_: CLI request builder
 Benchmark module that consumes a pulled artifact root plus the submitted evaluate record and selects the matching evaluation summary.
 _Avoid_: benchmark artifact loader
 
+**Benchmark Collection Match Facts**:
+Benchmark-owned facts returned by the Benchmark Collection Resolver after validating artifact identity, artifact dataset identity, evaluator, delay, and full Evaluation Execution Provenance.
+_Avoid_: resolved summary tuple, copied submission fields
+
 **Execution Session**:
 Target-bound SSH/SLURM session for remote commands, module execution, rsync transfer, workflow submission, job following, and remote metadata lookup.
 _Avoid_: execution backend

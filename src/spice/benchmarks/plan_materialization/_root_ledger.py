@@ -18,7 +18,6 @@ from ...storage.workflow_root_materialization import materialize_workflow_root_f
 from ._models import (
     BenchmarkDependencyLedger,
     BenchmarkRootFacts,
-    BenchmarkRootKind,
     BenchmarkRootLedger,
     BenchmarkRootLedgerEntry,
 )
@@ -44,69 +43,68 @@ class FinalizedBenchmarkRoots:
 
 
 @dataclass(slots=True)
+class ProducedRootFactRecord:
+    run_id: str
+    facts: BenchmarkRootFacts
+
+
+@dataclass(slots=True)
 class BenchmarkProducedRootIndex:
-    root_entries: list[BenchmarkRootLedgerEntry]
+    records: list[ProducedRootFactRecord]
 
     @classmethod
     def create(cls) -> BenchmarkProducedRootIndex:
-        return cls(root_entries=[])
+        return cls(records=[])
 
-    def record_ledger(self, ledger: BenchmarkRootLedger) -> None:
-        self.root_entries.extend(ledger.entries)
+    def record_facts(self, *, run_id: str, facts: BenchmarkRootFacts) -> None:
+        self.records.append(ProducedRootFactRecord(run_id=run_id, facts=facts))
 
     def dependency_study_id(self, depends_on: tuple[str, ...]) -> str:
         for run_id in depends_on:
-            entry = self.produced_root_for_run(run_id, root_kind="study")
-            if entry is not None:
-                return entry.root_id
+            facts = self._produced_facts_for_run(run_id)
+            if facts is not None and facts.produced_study_id is not None:
+                return facts.produced_study_id
         raise ConfigResolutionError("tuned train requires a tune dependency or explicit study_id")
 
     def dependency_artifact_source(self, artifact_from_run_id: str) -> BenchmarkArtifactSource:
-        entry = self.produced_root_for_run(artifact_from_run_id, root_kind="artifact")
-        if entry is None:
+        facts = self._produced_facts_for_run(artifact_from_run_id)
+        if facts is None or facts.produced_artifact_id is None:
             raise ConfigResolutionError("artifact_from may reference train steps only")
-        if entry.dataset_id is None or entry.artifact_id is None:
-            raise ConfigResolutionError("artifact_from train step has incomplete root ledger")
+        if facts.produced_artifact_dataset_id is None:
+            raise ConfigResolutionError("artifact_from train step has incomplete root facts")
         return BenchmarkArtifactSource(
-            artifact_id=entry.artifact_id,
-            dataset_id=entry.dataset_id,
+            artifact_id=facts.produced_artifact_id,
+            dataset_id=facts.produced_artifact_dataset_id,
         )
 
     def produced_study_dataset_ids(self) -> dict[str, str]:
         return {
-            entry.study_id: entry.dataset_id
-            for entry in self.root_entries
-            if entry.role == "produced"
-            and entry.root_kind == "study"
-            and entry.study_id is not None
-            and entry.dataset_id is not None
+            record.facts.produced_study_id: record.facts.produced_study_dataset_id
+            for record in self.records
+            if record.facts.produced_study_id is not None
+            and record.facts.produced_study_dataset_id is not None
         }
 
     def produced_artifact_dataset_ids(self) -> dict[str, str]:
         return {
-            entry.artifact_id: entry.dataset_id
-            for entry in self.root_entries
-            if entry.role == "produced"
-            and entry.root_kind == "artifact"
-            and entry.artifact_id is not None
-            and entry.dataset_id is not None
+            record.facts.produced_artifact_id: record.facts.produced_artifact_dataset_id
+            for record in self.records
+            if record.facts.produced_artifact_id is not None
+            and record.facts.produced_artifact_dataset_id is not None
         }
 
-    def produced_root_for_run(
-        self,
-        run_id: str,
-        *,
-        root_kind: BenchmarkRootKind,
-    ) -> BenchmarkRootLedgerEntry | None:
+    def _produced_facts_for_run(self, run_id: str) -> BenchmarkRootFacts | None:
         matches = [
-            entry
-            for entry in self.root_entries
-            if entry.run_id == run_id and entry.role == "produced" and entry.root_kind == root_kind
+            record.facts
+            for record in self.records
+            if record.run_id == run_id
+            and (
+                record.facts.produced_study_id is not None
+                or record.facts.produced_artifact_id is not None
+            )
         ]
         if len(matches) > 1:
-            raise ConfigResolutionError(
-                f"benchmark run {run_id} produced multiple {root_kind} roots"
-            )
+            raise ConfigResolutionError(f"benchmark run {run_id} produced multiple roots")
         return matches[0] if matches else None
 
 
@@ -269,5 +267,5 @@ class BenchmarkRootLedgerBuilder:
             ledger=BenchmarkRootLedger(entries=tuple(entries)),
         )
 
-    def record_ledger(self, ledger: BenchmarkRootLedger) -> None:
-        self.produced_roots.record_ledger(ledger)
+    def record_facts(self, *, run_id: str, facts: BenchmarkRootFacts) -> None:
+        self.produced_roots.record_facts(run_id=run_id, facts=facts)

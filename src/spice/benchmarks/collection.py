@@ -50,7 +50,11 @@ def collect_benchmark_run(
         submission = submissions.get(entry.run_id)
         if submission is None:
             raise SpiceOperatorError(f"Missing submission record for benchmark run {entry.run_id}")
-        selection = benchmark_collection_selection(entry, submission)
+        selection = benchmark_collection_selection(
+            entry,
+            submission,
+            target=metadata.target,
+        )
         try:
             transaction = _transfer_transaction_for_selection(
                 selection,
@@ -71,8 +75,7 @@ def collect_benchmark_run(
             build_benchmark_result_record(
                 entry=entry,
                 submission=submission,
-                evaluation=state.evaluation,
-                training=state.training,
+                resolved=state,
                 collector_time=collector_time,
             )
         )

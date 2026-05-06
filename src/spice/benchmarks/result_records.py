@@ -9,12 +9,11 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ConfigDict
 
 from ..config.models import WorkflowTask
-from ..core.errors import SpiceOperatorError
-from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary
+from .collection_resolver import ResolvedBenchmarkEvaluation
 from .plan_materialization import (
     BenchmarkDependencyLedger,
     BenchmarkPlanEntry,
-    BenchmarkRootLedger,
+    BenchmarkRootFacts,
     BenchmarkSelectionLedger,
 )
 from .runs import BenchmarkSubmissionRecord, format_datetime
@@ -46,7 +45,7 @@ class BenchmarkResultRecord(BaseModel):
     dependencies: BenchmarkDependencyLedger
     dimension_labels: dict[str, str]
     selection: BenchmarkSelectionLedger
-    root_ledger: BenchmarkRootLedger
+    root_facts: BenchmarkRootFacts
 
     job_id: str
     execution_ref: str
@@ -103,28 +102,14 @@ def build_benchmark_result_record(
     *,
     entry: BenchmarkPlanEntry,
     submission: BenchmarkSubmissionRecord,
-    evaluation: LoadedEvaluationSummary,
-    training: LoadedTrainingSummary | None,
+    resolved: ResolvedBenchmarkEvaluation,
     collector_time: datetime,
 ) -> BenchmarkResultRecord:
+    evaluation = resolved.evaluation
+    training = resolved.training
+    match = resolved.match_facts
     manifest = evaluation.manifest
     runtime = evaluation.runtime
-    facts = entry.root_facts
-    artifact_id = _required_root_fact(
-        facts.consumed_artifact_id,
-        run_id=entry.run_id,
-        label="consumed artifact",
-    )
-    artifact_dataset_id = _required_root_fact(
-        facts.consumed_artifact_dataset_id,
-        run_id=entry.run_id,
-        label="consumed artifact dataset",
-    )
-    evaluation_dataset_id = _required_root_fact(
-        facts.consumed_dataset_id,
-        run_id=entry.run_id,
-        label="consumed dataset",
-    )
     metrics: list[MetricValueRecord] = []
     if training is not None:
         metrics.extend(
@@ -140,7 +125,6 @@ def build_benchmark_result_record(
         if evaluation.recorded_at > 0
         else format_datetime(collector_time)
     )
-    provenance = runtime.execution_provenance
     return BenchmarkResultRecord(
         run_id=entry.run_id,
         case_id=entry.case_id,
@@ -149,30 +133,30 @@ def build_benchmark_result_record(
         dependencies=entry.dependencies,
         dimension_labels=dict(entry.dimension_labels),
         selection=entry.selection,
-        root_ledger=entry.root_ledger,
-        job_id=submission.job_id,
-        execution_ref=submission.execution_ref,
+        root_facts=entry.root_facts,
+        job_id=match.evaluation_job_id or submission.job_id,
+        execution_ref=match.evaluation_execution_ref,
         git_commit=submission.git_commit,
         dependency=submission.dependency,
-        log_path=submission.log_path,
-        evaluation_execution_ref=None if provenance is None else provenance.execution_ref,
-        evaluation_job_id=None if provenance is None else provenance.job_id,
-        evaluation_log_path=None if provenance is None else provenance.log_path,
-        evaluation_workflow_task=None if provenance is None else provenance.workflow_task,
-        evaluation_target=None if provenance is None else provenance.target,
-        artifact_id=artifact_id,
-        evaluation_storage_id=evaluation.evaluation_storage_id,
-        artifact_dataset_id=artifact_dataset_id,
+        log_path=match.evaluation_log_path or submission.log_path,
+        evaluation_execution_ref=match.evaluation_execution_ref,
+        evaluation_job_id=match.evaluation_job_id,
+        evaluation_log_path=match.evaluation_log_path,
+        evaluation_workflow_task=match.evaluation_workflow_task,
+        evaluation_target=match.evaluation_target,
+        artifact_id=match.artifact_id,
+        evaluation_storage_id=match.evaluation_storage_id,
+        artifact_dataset_id=match.artifact_dataset_id,
         artifact_dataset_name=manifest.dataset_name,
-        evaluation_dataset_id=evaluation_dataset_id,
+        evaluation_dataset_id=match.evaluation_dataset_id,
         chain_name=manifest.chain_name,
         features_id=manifest.features_id,
         model_id=manifest.model.id,
         problem_id=manifest.problem_id,
         prediction_id=manifest.prediction_id,
         objective_id=manifest.objective.id,
-        evaluator_id=runtime.evaluator_id,
-        delay_seconds=runtime.delay_seconds,
+        evaluator_id=match.evaluator_id,
+        delay_seconds=match.delay_seconds,
         variant=manifest.variant.value,
         study_id=manifest.study_id,
         study_name=None if manifest.study is None else manifest.study.name,
@@ -187,9 +171,3 @@ def build_benchmark_result_record(
             for metric_id, summary in runtime.window_metrics.items()
         ),
     )
-
-
-def _required_root_fact(value: str | None, *, run_id: str, label: str) -> str:
-    if value is None:
-        raise SpiceOperatorError(f"benchmark run {run_id} root facts are missing {label}")
-    return value

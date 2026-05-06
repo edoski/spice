@@ -48,7 +48,6 @@ result_observations = Table(
     Column("sample_count", Integer, nullable=False),
     Column("total_events", Integer, nullable=False),
     Column("recorded_at_utc", String, nullable=False),
-    Column("payload_json", String, nullable=False),
     Column("updated_at", Integer, nullable=False),
 )
 

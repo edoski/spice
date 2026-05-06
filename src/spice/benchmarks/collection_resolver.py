@@ -24,22 +24,45 @@ class BenchmarkCollectionSelection:
     run_id: str
     storage_root: Path
     artifact_id: str
+    artifact_dataset_id: str
     evaluation_dataset_id: str
-    artifact_source_dataset_id: str | None
     evaluator_id: str
     configured_delay_seconds: int | None
     execution_ref: str
+    job_id: str
+    log_path: str
+    workflow_task: str
+    target: str
+
+
+@dataclass(frozen=True, slots=True)
+class BenchmarkCollectionMatchFacts:
+    artifact_id: str
+    artifact_dataset_id: str
+    evaluation_dataset_id: str
+    evaluation_storage_id: str
+    evaluator_id: str
+    delay_seconds: int
+    evaluation_execution_ref: str
+    evaluation_job_id: str | None
+    evaluation_log_path: str | None
+    evaluation_workflow_task: str | None
+    evaluation_target: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedBenchmarkEvaluation:
+    selection: BenchmarkCollectionSelection
     evaluation: LoadedEvaluationSummary
     training: LoadedTrainingSummary | None
+    match_facts: BenchmarkCollectionMatchFacts
 
 
 def benchmark_collection_selection(
     entry: BenchmarkPlanEntry,
     submission: BenchmarkSubmissionRecord,
+    *,
+    target: str,
 ) -> BenchmarkCollectionSelection:
     if entry.run_id != submission.run_id:
         raise SpiceOperatorError(
@@ -71,15 +94,23 @@ def benchmark_collection_selection(
             f"benchmark run {entry.run_id} root facts dataset mismatch: "
             f"{facts.consumed_dataset_id} != {entry.config.dataset_id}"
         )
+    if facts.consumed_artifact_dataset_id is None:
+        raise SpiceOperatorError(
+            f"benchmark run {entry.run_id} root facts are missing consumed artifact dataset"
+        )
     return BenchmarkCollectionSelection(
         run_id=entry.run_id,
         storage_root=entry.config.storage.root,
         artifact_id=facts.consumed_artifact_id,
+        artifact_dataset_id=facts.consumed_artifact_dataset_id,
         evaluation_dataset_id=facts.consumed_dataset_id,
-        artifact_source_dataset_id=facts.artifact_source_dataset_id,
         evaluator_id=entry.config.evaluation.id,
         configured_delay_seconds=entry.config.delay_seconds,
         execution_ref=submission.execution_ref,
+        job_id=submission.job_id,
+        log_path=submission.log_path,
+        workflow_task=submission.workflow.value,
+        target=target,
     )
 
 
@@ -101,14 +132,11 @@ def resolve_benchmark_evaluation(
             "Artifact manifest does not match benchmark collection selection for "
             f"{selection.run_id}: {manifest.artifact_id} != {selection.artifact_id}"
         )
-    if (
-        selection.artifact_source_dataset_id is not None
-        and manifest.dataset_id != selection.artifact_source_dataset_id
-    ):
+    if manifest.dataset_id != selection.artifact_dataset_id:
         raise SpiceOperatorError(
-            "Artifact manifest source dataset does not match benchmark collection "
+            "Artifact manifest dataset does not match benchmark collection "
             f"selection for {selection.run_id}: {manifest.dataset_id} != "
-            f"{selection.artifact_source_dataset_id}"
+            f"{selection.artifact_dataset_id}"
         )
     expected_delay = (
         selection.configured_delay_seconds
@@ -121,9 +149,28 @@ def resolve_benchmark_evaluation(
     )
     if not summaries:
         return None
+    evaluation = summaries[0]
+    _validate_matching_provenance(selection, evaluation)
+    provenance = evaluation.runtime.execution_provenance
+    if provenance is None:
+        raise AssertionError("validated evaluation provenance cannot be None")
     return ResolvedBenchmarkEvaluation(
-        evaluation=summaries[0],
+        selection=selection,
+        evaluation=evaluation,
         training=training_summary,
+        match_facts=BenchmarkCollectionMatchFacts(
+            artifact_id=selection.artifact_id,
+            artifact_dataset_id=selection.artifact_dataset_id,
+            evaluation_dataset_id=selection.evaluation_dataset_id,
+            evaluation_storage_id=evaluation.evaluation_storage_id,
+            evaluator_id=selection.evaluator_id,
+            delay_seconds=expected_delay,
+            evaluation_execution_ref=selection.execution_ref,
+            evaluation_job_id=getattr(provenance, "job_id", None),
+            evaluation_log_path=getattr(provenance, "log_path", None),
+            evaluation_workflow_task=getattr(provenance, "workflow_task", None),
+            evaluation_target=getattr(provenance, "target", None),
+        ),
     )
 
 
@@ -144,10 +191,17 @@ def _matching_evaluation_summaries(
     provenance_matches = [
         summary
         for summary in candidates
-        if summary.runtime.execution_provenance is not None
-        and summary.runtime.execution_provenance.execution_ref == selection.execution_ref
+        if _provenance_matches(selection, summary)
     ]
     if not provenance_matches:
+        execution_ref_matches = [
+            summary
+            for summary in candidates
+            if summary.runtime.execution_provenance is not None
+            and summary.runtime.execution_provenance.execution_ref == selection.execution_ref
+        ]
+        if execution_ref_matches:
+            _validate_matching_provenance(selection, execution_ref_matches[0])
         raise SpiceOperatorError(
             "No evaluation summary matches submitted execution provenance for "
             f"benchmark run {selection.run_id}: expected {selection.execution_ref}"
@@ -158,3 +212,54 @@ def _matching_evaluation_summaries(
             f"benchmark run {selection.run_id}"
         )
     return provenance_matches
+
+
+def _provenance_matches(
+    selection: BenchmarkCollectionSelection,
+    summary: LoadedEvaluationSummary,
+) -> bool:
+    provenance = summary.runtime.execution_provenance
+    if provenance is None:
+        return False
+    return (
+        provenance.execution_ref == selection.execution_ref
+        and getattr(provenance, "job_id", None) == selection.job_id
+        and getattr(provenance, "log_path", None) == selection.log_path
+        and getattr(provenance, "workflow_task", None) == selection.workflow_task
+        and getattr(provenance, "target", None) == selection.target
+    )
+
+
+def _validate_matching_provenance(
+    selection: BenchmarkCollectionSelection,
+    summary: LoadedEvaluationSummary,
+) -> None:
+    provenance = summary.runtime.execution_provenance
+    if provenance is None:
+        raise SpiceOperatorError(
+            "No evaluation summary matches submitted execution provenance for "
+            f"benchmark run {selection.run_id}: expected {selection.execution_ref}"
+        )
+    expected = {
+        "job_id": selection.job_id,
+        "log_path": selection.log_path,
+        "workflow_task": selection.workflow_task,
+        "target": selection.target,
+    }
+    actual = {
+        "job_id": getattr(provenance, "job_id", None),
+        "log_path": getattr(provenance, "log_path", None),
+        "workflow_task": getattr(provenance, "workflow_task", None),
+        "target": getattr(provenance, "target", None),
+    }
+    mismatches = [
+        f"{field}={actual[field]} expected {expected[field]}"
+        for field in expected
+        if actual[field] != expected[field]
+    ]
+    if mismatches:
+        raise SpiceOperatorError(
+            "Evaluation summary provenance does not match benchmark submission for "
+            f"{selection.run_id}: "
+            + ", ".join(mismatches)
+        )

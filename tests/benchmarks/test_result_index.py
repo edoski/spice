@@ -9,8 +9,7 @@ import pytest
 from spice.benchmarks.ledger import export_results_csv
 from spice.benchmarks.plan_materialization import (
     BenchmarkDependencyLedger,
-    BenchmarkRootLedger,
-    BenchmarkRootLedgerEntry,
+    BenchmarkRootFacts,
     BenchmarkSelectionLedger,
 )
 from spice.benchmarks.result_index import (
@@ -47,36 +46,11 @@ def _record(
         ),
         dimension_labels={"models": "lstm"},
         selection=BenchmarkSelectionLedger(surface="current_row_fee_dynamics"),
-        root_ledger=BenchmarkRootLedger(
-            entries=(
-                BenchmarkRootLedgerEntry(
-                    run_id=run_id,
-                    workflow=WorkflowTask.EVALUATE,
-                    role="consumed",
-                    root_kind="dataset",
-                    root_id="evaluation-dataset-1",
-                    dataset_id="evaluation-dataset-1",
-                ),
-                BenchmarkRootLedgerEntry(
-                    run_id=run_id,
-                    workflow=WorkflowTask.EVALUATE,
-                    role="consumed",
-                    root_kind="artifact",
-                    root_id="artifact-1",
-                    artifact_id="artifact-1",
-                    dataset_id="evaluation-dataset-1",
-                    source_run_id="case.train",
-                ),
-                BenchmarkRootLedgerEntry(
-                    run_id=run_id,
-                    workflow=WorkflowTask.EVALUATE,
-                    role="source",
-                    root_kind="dataset",
-                    root_id="dataset-1",
-                    dataset_id="dataset-1",
-                    source_run_id="case.train",
-                ),
-            ),
+        root_facts=BenchmarkRootFacts(
+            consumed_dataset_id="evaluation-dataset-1",
+            consumed_artifact_id="artifact-1",
+            consumed_artifact_dataset_id="dataset-1",
+            artifact_source_dataset_id="dataset-1",
         ),
         job_id="42",
         execution_ref="slurm:42",
@@ -189,16 +163,13 @@ def test_csv_export_overwrites_from_index(tmp_path: Path) -> None:
     assert exported[0]["total_loss"] == "0.3"
 
 
-def test_index_query_and_export_use_normalized_rows_not_payload_json(tmp_path: Path) -> None:
+def test_index_query_and_export_use_normalized_rows(tmp_path: Path) -> None:
     index_path = tmp_path / "results.sqlite"
     output_path = tmp_path / "results.csv"
     upsert_benchmark_collection_snapshot(
         _snapshot(tmp_path / "runs" / "bench" / "one", run_id="case.evaluate"),
         index_path=index_path,
     )
-    with sqlite3.connect(index_path) as connection:
-        connection.execute("update result_observations set payload_json = ?", ('{"broken": true}',))
-
     indexed_rows = list_benchmark_results(
         index_path=index_path,
         benchmark="bench",
@@ -213,6 +184,7 @@ def test_index_query_and_export_use_normalized_rows_not_payload_json(tmp_path: P
             "select artifact_dataset_id, evaluation_dataset_id from result_observations"
         ).fetchone()
     assert indexed == ("dataset-1", "evaluation-dataset-1")
+
 def test_index_query_rejects_metric_id_collision_across_sources(tmp_path: Path) -> None:
     index_path = tmp_path / "results.sqlite"
     snapshot = _snapshot(tmp_path / "runs" / "bench" / "one", run_id="case.evaluate")
