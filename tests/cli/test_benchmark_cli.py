@@ -28,7 +28,6 @@ from spice.cli.app import app
 from spice.config import TrainConfig, WorkflowTask
 from spice.core.errors import SpiceOperatorError
 from spice.execution.provenance import ExecutionJobProvenance
-from spice.execution.session import ExecutionJobSubmission
 
 runner = CliRunner()
 
@@ -218,13 +217,11 @@ def test_benchmark_submit_uses_persisted_plan(
             del config
             job_id = str(100 + len(calls))
             calls.append((task.value, "disi_l40", dependency))
-            return ExecutionJobSubmission(
-                provenance=ExecutionJobProvenance.slurm(
-                    task=task,
-                    target="disi_l40",
-                    job_id=job_id,
-                    log_path=Path(f"/tmp/spice-{task.value}-{job_id}.out"),
-                ),
+            return ExecutionJobProvenance.slurm(
+                task=task,
+                target="disi_l40",
+                job_id=job_id,
+                log_path=Path(f"/tmp/spice-{task.value}-{job_id}.out"),
             )
 
     monkeypatch.setattr(

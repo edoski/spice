@@ -9,7 +9,7 @@ from typing import cast
 from spice.config import TrainWorkflowSelection, WorkflowTask, resolve_workflow_config
 from spice.execution.models import ExecutionWorkflowSpec
 from spice.execution.provenance import ExecutionJobProvenance
-from spice.execution.session import ExecutionJobSubmission, ExecutionSession, ExecutionTarget
+from spice.execution.session import ExecutionSession, ExecutionTarget
 
 
 def _target(tmp_path: Path | None = None) -> ExecutionTarget:
@@ -137,7 +137,7 @@ def test_execution_session_submit_workflow_forwards_sbatch_dependency(
 
     monkeypatch.setattr(ExecutionSession, "run_command", fake_run_command)
 
-    submission = session.submit_workflow(
+    provenance = session.submit_workflow(
         WorkflowTask.TRAIN,
         config=resolve_workflow_config(
             TrainWorkflowSelection(
@@ -148,7 +148,7 @@ def test_execution_session_submit_workflow_forwards_sbatch_dependency(
         dependency="afterok:99999",
     )
 
-    assert submission.provenance == ExecutionJobProvenance.slurm(
+    assert provenance == ExecutionJobProvenance.slurm(
         task=WorkflowTask.TRAIN,
         target="disi_l40",
         job_id="12345",
@@ -188,27 +188,25 @@ def test_execution_session_follow_job_uses_quoted_tail_command(
             return 0
 
     monkeypatch.setattr("spice.execution.session.subprocess.Popen", FakePopen)
-    monkeypatch.setattr(ExecutionSession, "read_job_state", lambda _self, _submission: None)
+    monkeypatch.setattr(ExecutionSession, "read_job_state", lambda _self, _provenance: None)
     monkeypatch.setattr(
         ExecutionSession,
         "read_job_final_state",
-        lambda _self, _submission: "COMPLETED",
+        lambda _self, _provenance: "COMPLETED",
     )
-    submission = ExecutionJobSubmission(
-        provenance=ExecutionJobProvenance.slurm(
-            task=WorkflowTask.TRAIN,
-            target="disi_l40",
-            job_id="12345",
-            log_path=tmp_path / "spice-train-12345.out",
-        ),
+    provenance = ExecutionJobProvenance.slurm(
+        task=WorkflowTask.TRAIN,
+        target="disi_l40",
+        job_id="12345",
+        log_path=tmp_path / "spice-train-12345.out",
     )
 
-    state = session.follow_job(submission)
+    state = session.follow_job(provenance)
 
     assert state == "COMPLETED"
     argv = cast(list[str], captured["args"])
     assert argv[:3] == ["ssh", "edoardo.galli3@giano.cs.unibo.it", "bash"]
-    assert str(submission.provenance.log_path) in argv[-1]
+    assert str(provenance.log_path) in argv[-1]
     assert "tail -n +1 -F" in argv[-1]
     assert captured["text"] is True
     assert captured["stdout"] is sys.stderr

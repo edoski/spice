@@ -8,7 +8,8 @@ from typing import Literal
 
 from ..config.resolved_workflows import ResolvedWorkflowConfig
 from ..core.errors import SpiceOperatorError
-from .session import ExecutionJobSubmission, ExecutionSession, open_execution_session
+from .provenance import ExecutionJobProvenance
+from .session import ExecutionSession, open_execution_session
 
 WorkflowSubmissionEventKind = Literal["submitted", "detached", "finished"]
 WorkflowSubmissionEventFn = Callable[["WorkflowSubmissionEvent"], None]
@@ -17,13 +18,13 @@ WorkflowSubmissionEventFn = Callable[["WorkflowSubmissionEvent"], None]
 @dataclass(frozen=True, slots=True)
 class WorkflowSubmissionEvent:
     kind: WorkflowSubmissionEventKind
-    submission: ExecutionJobSubmission
+    provenance: ExecutionJobProvenance
     state: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class WorkflowSubmissionResult:
-    submission: ExecutionJobSubmission
+    provenance: ExecutionJobProvenance
     state: str | None
     detached: bool
 
@@ -40,27 +41,25 @@ def submit_resolved_workflow(
     if session_factory is None:
         session_factory = open_execution_session
     session = session_factory(target)
-    submission = session.submit_workflow(
+    provenance = session.submit_workflow(
         config.workflow,
         config=config,
         dependency=dependency,
     )
-    _emit(on_event, WorkflowSubmissionEvent("submitted", submission))
+    _emit(on_event, WorkflowSubmissionEvent("submitted", provenance))
     if detach or not session.follow_by_default:
-        return WorkflowSubmissionResult(submission=submission, state=None, detached=True)
+        return WorkflowSubmissionResult(provenance=provenance, state=None, detached=True)
     try:
-        state = session.follow_job(submission)
+        state = session.follow_job(provenance)
     except KeyboardInterrupt:
-        _emit(on_event, WorkflowSubmissionEvent("detached", submission, state="running"))
-        return WorkflowSubmissionResult(submission=submission, state="running", detached=True)
+        _emit(on_event, WorkflowSubmissionEvent("detached", provenance, state="running"))
+        return WorkflowSubmissionResult(provenance=provenance, state="running", detached=True)
     if state is None:
-        return WorkflowSubmissionResult(submission=submission, state=None, detached=False)
-    _emit(on_event, WorkflowSubmissionEvent("finished", submission, state=state))
+        return WorkflowSubmissionResult(provenance=provenance, state=None, detached=False)
+    _emit(on_event, WorkflowSubmissionEvent("finished", provenance, state=state))
     if state != "COMPLETED":
-        raise SpiceOperatorError(
-            f"Job {submission.provenance.job_id} ended with state {state}"
-        )
-    return WorkflowSubmissionResult(submission=submission, state=state, detached=False)
+        raise SpiceOperatorError(f"Job {provenance.job_id} ended with state {state}")
+    return WorkflowSubmissionResult(provenance=provenance, state=state, detached=False)
 
 
 def _emit(

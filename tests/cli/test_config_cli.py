@@ -18,7 +18,6 @@ from spice.config import (
     WorkflowTask,
 )
 from spice.execution.provenance import ExecutionJobProvenance
-from spice.execution.session import ExecutionJobSubmission
 
 runner = CliRunner()
 
@@ -108,13 +107,11 @@ def test_model_workflow_cli_resolves_and_submits_selection_surface(
             del dependency
             captured["task"] = task
             captured["config"] = config
-            return ExecutionJobSubmission(
-                provenance=ExecutionJobProvenance.slurm(
-                    task=task,
-                    target="disi_l40",
-                    job_id="12345",
-                    log_path=Path("/tmp/spice-job.out"),
-                ),
+            return ExecutionJobProvenance.slurm(
+                task=task,
+                target="disi_l40",
+                job_id="12345",
+                log_path=Path("/tmp/spice-job.out"),
             )
 
     monkeypatch.setattr(
@@ -215,13 +212,11 @@ def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
         def submit_workflow(self, task, *, config, dependency):
             del config, dependency
             captured["task"] = task
-            return ExecutionJobSubmission(
-                provenance=ExecutionJobProvenance.slurm(
-                    task=task,
-                    target="disi_l40",
-                    job_id="12345",
-                    log_path=Path("/tmp/spice-train-12345.out"),
-                ),
+            return ExecutionJobProvenance.slurm(
+                task=task,
+                target="disi_l40",
+                job_id="12345",
+                log_path=Path("/tmp/spice-train-12345.out"),
             )
 
     def fake_open_session(target_name: str) -> FakeSession:
@@ -279,18 +274,16 @@ def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:
             *,
             config,
             dependency: str | None = None,
-        ) -> ExecutionJobSubmission:
+        ) -> ExecutionJobProvenance:
             del config, dependency
-            return ExecutionJobSubmission(
-                provenance=ExecutionJobProvenance.slurm(
-                    task=task,
-                    target="disi_l40",
-                    job_id="12345",
-                    log_path=Path("/remote/logs/spice-train-12345.out"),
-                ),
+            return ExecutionJobProvenance.slurm(
+                task=task,
+                target="disi_l40",
+                job_id="12345",
+                log_path=Path("/remote/logs/spice-train-12345.out"),
             )
 
-        def follow_job(self, _submission: ExecutionJobSubmission) -> str:
+        def follow_job(self, _provenance: ExecutionJobProvenance) -> str:
             return "FAILED"
 
     monkeypatch.setattr(workflow_commands, "resolve_workflow_config", _fake_resolve)

@@ -58,11 +58,6 @@ class ExecutionTarget:
         return f"{self.spec.ssh.user}@{self.spec.ssh.host}"
 
 
-@dataclass(frozen=True, slots=True)
-class ExecutionJobSubmission:
-    provenance: ExecutionJobProvenance
-
-
 def open_execution_session(target_name: str) -> ExecutionSession:
     return ExecutionSession(_load_execution_target(target_name))
 
@@ -174,7 +169,7 @@ class ExecutionSession:
         *,
         config: ResolvedWorkflowConfig,
         dependency: str | None = None,
-    ) -> ExecutionJobSubmission:
+    ) -> ExecutionJobProvenance:
         workflow_spec = _workflow_spec(self.target, task)
         log_path_template = self.target.spec.paths.log_root / f"spice-{task.value}-%j.out"
         script = _render_sbatch_script(
@@ -203,23 +198,21 @@ class ExecutionSession:
             )
         job_id = match.group("job_id")
         log_path = Path(str(log_path_template).replace("%j", job_id))
-        return ExecutionJobSubmission(
-            provenance=ExecutionJobProvenance.slurm(
-                task=task,
-                target=self.target.name,
-                job_id=job_id,
-                log_path=log_path,
-            ),
+        return ExecutionJobProvenance.slurm(
+            task=task,
+            target=self.target.name,
+            job_id=job_id,
+            log_path=log_path,
         )
 
-    def follow_job(self, submission: ExecutionJobSubmission) -> str | None:
+    def follow_job(self, provenance: ExecutionJobProvenance) -> str | None:
         tail_process = subprocess.Popen(
             self.build_shell_argv(
                 (
                     "while [ ! -f "
-                    f"{shlex.quote(str(submission.provenance.log_path))}"
+                    f"{shlex.quote(str(provenance.log_path))}"
                     " ]; do sleep 2; done; "
-                    f"tail -n +1 -F {shlex.quote(str(submission.provenance.log_path))}"
+                    f"tail -n +1 -F {shlex.quote(str(provenance.log_path))}"
                 ),
             ),
             text=True,
@@ -227,12 +220,12 @@ class ExecutionSession:
         )
         try:
             while True:
-                state = self.read_job_state(submission)
+                state = self.read_job_state(provenance)
                 if state in _FINAL_JOB_STATES:
                     time.sleep(2)
                     return state
                 if state is None:
-                    return self.read_job_final_state(submission)
+                    return self.read_job_final_state(provenance)
                 time.sleep(5)
         finally:
             if tail_process.poll() is None:
@@ -243,24 +236,24 @@ class ExecutionSession:
                     tail_process.kill()
                     tail_process.wait(timeout=5)
 
-    def read_job_state(self, submission: ExecutionJobSubmission) -> str | None:
+    def read_job_state(self, provenance: ExecutionJobProvenance) -> str | None:
         squeue_result = self.run_command(
-            f"squeue -h -j {shlex.quote(submission.provenance.job_id)} -o %T",
-            check_action=f"query job {submission.provenance.job_id}",
+            f"squeue -h -j {shlex.quote(provenance.job_id)} -o %T",
+            check_action=f"query job {provenance.job_id}",
         )
         state = _first_output_line(squeue_result.stdout)
         if state:
             return state
-        return self.read_job_final_state(submission)
+        return self.read_job_final_state(provenance)
 
-    def read_job_final_state(self, submission: ExecutionJobSubmission) -> str | None:
+    def read_job_final_state(self, provenance: ExecutionJobProvenance) -> str | None:
         result = self.run_command(
             " ".join(
                 [
                     "sacct",
                     "-n",
                     "-X",
-                    f"-j {shlex.quote(submission.provenance.job_id)}",
+                    f"-j {shlex.quote(provenance.job_id)}",
                     "--format=State",
                 ]
             ),

@@ -222,7 +222,7 @@ def _report_workflow_submission_event(
     reporter: Reporter,
     event: WorkflowSubmissionEvent,
 ) -> None:
-    provenance = event.submission.provenance
+    provenance = event.provenance
     if event.kind == "submitted":
         reporter.header(
             "submit",

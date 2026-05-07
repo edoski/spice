@@ -69,12 +69,11 @@ def _submit_benchmark_entries(
             local_job_ids=[submitted[run_id] for run_id in entry.dependencies.local_run_ids],
             external_dependencies=entry.dependencies.external_slurm_dependencies,
         )
-        submission = session.submit_workflow(
+        provenance = session.submit_workflow(
             entry.workflow,
             config=entry.config,
             dependency=dependency,
         )
-        provenance = submission.provenance
         submitted[entry.run_id] = provenance.job_id
         record = BenchmarkSubmissionRecord(
             run_id=entry.run_id,

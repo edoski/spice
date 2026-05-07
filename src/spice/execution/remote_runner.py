@@ -11,7 +11,7 @@ from ..config.models import (
     WorkflowTask,
 )
 from ..config.resolution import WorkflowConfig
-from ..config.resolved_workflows import SUPPORTED_RESOLVED_WORKFLOWS, ResolvedWorkflowConfig
+from ..config.resolved_workflows import SUPPORTED_RESOLVED_WORKFLOWS
 from ..config.workflow_snapshots import hydrate_workflow_config_snapshot_json
 
 
@@ -40,10 +40,6 @@ def run_remote_workflow(task: WorkflowTask, config: WorkflowConfig) -> None:
     raise ValueError(f"Unsupported remote workflow: {task.value}")
 
 
-def workflow_config_from_json(task: WorkflowTask, payload: str) -> ResolvedWorkflowConfig:
-    return hydrate_workflow_config_snapshot_json(task, payload)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -53,7 +49,7 @@ def main() -> None:
     parser.add_argument("config_json")
     args = parser.parse_args()
     task = WorkflowTask(args.task)
-    run_remote_workflow(task, workflow_config_from_json(task, args.config_json))
+    run_remote_workflow(task, hydrate_workflow_config_snapshot_json(task, args.config_json))
 
 
 if __name__ == "__main__":
