@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
-from spice.config import TrainConfig, TuneConfig, WorkflowTask
+from spice.config import AcquireConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.storage.workflow_roots import CorpusRootHandle
 from spice.workflows import preparation
 from tests.root_handle_helpers import (
@@ -13,6 +13,47 @@ from tests.root_handle_helpers import (
     tune_roots,
     tuned_train_roots,
 )
+
+
+def test_acquire_preparation_materializes_roots_and_corpus_assembly_request(
+    tmp_path,
+    monkeypatch,
+    load_workflow_config,
+    acquire_override,
+) -> None:
+    config = cast(
+        AcquireConfig,
+        load_workflow_config(
+            WorkflowTask.ACQUIRE,
+            workspace=tmp_path,
+            surface="current_row_fee_dynamics",
+            override=acquire_override(),
+        ),
+    )
+    roots = preparation.materialize_acquire_roots(config)
+    captured: dict[str, object] = {}
+    assembly_request = object()
+
+    def fake_prepare_corpus_assembly_request(*, config, roots):
+        captured["dataset"] = config.dataset.name
+        captured["corpus"] = roots.corpus.dataset_id
+        return assembly_request
+
+    monkeypatch.setattr(preparation, "materialize_acquire_roots", lambda _config: roots)
+    monkeypatch.setattr(
+        preparation,
+        "prepare_corpus_assembly_request",
+        fake_prepare_corpus_assembly_request,
+    )
+
+    prepared = preparation.prepare_acquire(config)
+
+    assert prepared.roots is roots
+    assert prepared.assembly_request is cast(Any, assembly_request)
+    assert captured == {
+        "dataset": config.dataset.name,
+        "corpus": roots.corpus.dataset_id,
+    }
 
 
 def test_train_preparation_uses_resolved_corpus_manifest(
@@ -35,7 +76,7 @@ def test_train_preparation_uses_resolved_corpus_manifest(
         corpus=corpus_handle(
             tmp_path / "outputs",
             chain_name="polygon",
-            dataset_id=config.dataset_id,
+            dataset_id=cast(str, config.dataset_id),
             dataset_name="polygon_dataset",
         ),
     )
@@ -193,7 +234,7 @@ def test_tune_preparation_uses_resolved_corpus_manifest(
     corpus = corpus_handle(
         tmp_path / "outputs",
         chain_name="polygon",
-        dataset_id=config.dataset_id,
+        dataset_id=cast(str, config.dataset_id),
         dataset_name="polygon_dataset",
     )
     roots = tune_roots(

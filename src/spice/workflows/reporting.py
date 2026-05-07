@@ -32,7 +32,6 @@ def acquire_workflow_facts(config: AcquireConfig) -> list[tuple[str, str]]:
 def report_acquire_result(
     reporter: Reporter,
     *,
-    config: AcquireConfig,
     result: CorpusAssemblyResult,
 ) -> None:
     if result.mode == "dry_run":

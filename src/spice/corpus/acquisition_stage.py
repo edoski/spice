@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from ..acquisition import AcquisitionPullController, BlockPullPlan, BlockSource
 from ..config.models import AcquireConfig
@@ -47,6 +48,7 @@ class CorpusAcquisitionStageFulfillment:
 
 @dataclass(frozen=True, slots=True)
 class CorpusAcquisitionPublication:
+    mode: Literal["committed"]
     history_plan: BlockPullPlan
     evaluation_plan: BlockPullPlan
     requested_history_window_seconds: int
@@ -194,6 +196,7 @@ class CorpusAcquisitionStage:
         ).root_kind
         remove_path(self.temp_root)
         return CorpusAcquisitionPublication(
+            mode="committed",
             history_plan=fulfillment.history_plan,
             evaluation_plan=fulfillment.evaluation_plan,
             requested_history_window_seconds=fulfillment.requested_history_window_seconds,

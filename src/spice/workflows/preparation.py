@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from ..config.models import (
+    AcquireConfig,
     ArtifactVariant,
     EvaluateConfig,
     TrainConfig,
@@ -13,6 +14,7 @@ from ..config.models import (
     TunedParameterSet,
     TunedProblemParams,
 )
+from ..corpus.assembly import CorpusAssemblyRequest, prepare_corpus_assembly_request
 from ..corpus.coverage import training_coverage_requirement, validate_corpus_coverage
 from ..corpus.metadata import DatasetManifest
 from ..modeling.artifact_inference import (
@@ -26,16 +28,25 @@ from ..modeling.pipeline import (
 )
 from ..modeling.tuning import apply_study_best_params, apply_tuned_parameters
 from ..storage.workflow_root_materialization import (
+    materialize_acquire_roots,
     materialize_evaluate_roots,
     materialize_train_roots,
     materialize_tune_roots,
 )
 from ..storage.workflow_roots import (
+    AcquireWorkflowRoots,
     EvaluateWorkflowRoots,
     TrainWorkflowRoots,
     TunedTrainWorkflowRoots,
     TuneWorkflowRoots,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedAcquireWorkflow:
+    config: AcquireConfig
+    roots: AcquireWorkflowRoots
+    assembly_request: CorpusAssemblyRequest
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +70,15 @@ class PreparedEvaluateWorkflow:
     config: EvaluateConfig
     roots: EvaluateWorkflowRoots
     inference_context: ArtifactInferenceContext
+
+
+def prepare_acquire(config: AcquireConfig) -> PreparedAcquireWorkflow:
+    roots = materialize_acquire_roots(config)
+    return PreparedAcquireWorkflow(
+        config=config,
+        roots=roots,
+        assembly_request=prepare_corpus_assembly_request(config=config, roots=roots),
+    )
 
 
 def prepare_train(config: TrainConfig) -> PreparedTrainWorkflow:

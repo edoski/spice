@@ -8,7 +8,7 @@ import pytest
 
 from spice.acquisition import BlockPullPlan, BlockRange, TimestampRange
 from spice.config import AcquireConfig, WorkflowTask
-from spice.corpus.assembly import CorpusAssemblyRequest, assemble_corpus
+from spice.corpus.assembly import assemble_corpus, prepare_corpus_assembly_request
 from spice.corpus.contract import CanonicalBlockRow
 from spice.storage.workflow_root_materialization import materialize_acquire_roots
 from tests.dataset_helpers import make_block_rows
@@ -94,7 +94,7 @@ def test_assemble_corpus_dry_run_returns_plan_without_writes(
 
     result = asyncio.run(
         assemble_corpus(
-            CorpusAssemblyRequest(config=config, roots=roots),
+            prepare_corpus_assembly_request(config=config, roots=roots),
             source,
         )
     )
@@ -133,7 +133,7 @@ def test_assemble_corpus_preserves_staging_on_failure(
     with pytest.raises(AssertionError, match="dry run must not fetch rows"):
         asyncio.run(
             assemble_corpus(
-                CorpusAssemblyRequest(config=config, roots=roots),
+                prepare_corpus_assembly_request(config=config, roots=roots),
                 source,
                 status=messages.append,
             )
@@ -253,7 +253,7 @@ def _exercise_short_history_refill(
         lambda self, history_dir: next(resolved_capability_samples),
     )
 
-    request = CorpusAssemblyRequest(config=config, roots=roots)
+    request = prepare_corpus_assembly_request(config=config, roots=roots)
     asyncio.run(assemble_corpus(request, Source()))
     return requested_ranges
 

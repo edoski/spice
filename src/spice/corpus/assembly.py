@@ -12,15 +12,11 @@ from ..acquisition import (
     BlockSource,
 )
 from ..config.models import AcquireConfig
-from ..storage.engine import RootKind
 from ..storage.workflow_roots import AcquireWorkflowRoots
-from .acquisition_stage import CorpusAcquisitionStage
-from .metadata import (
-    AcquireRunRecord,
-    DatasetManifest,
-)
+from .acquisition_stage import CorpusAcquisitionPublication, CorpusAcquisitionStage
 from .planning import (
     CorpusAcquisitionSourceRequirements,
+    CorpusCapabilityPlanningContext,
     CorpusCapabilityPlanningSpec,
     build_corpus_capability_planning_context,
 )
@@ -33,6 +29,12 @@ StatusCallback = Callable[[str], None]
 class CorpusAssemblyRequest:
     config: AcquireConfig
     roots: AcquireWorkflowRoots
+    planning_context: CorpusCapabilityPlanningContext
+    materialization: CorpusSplitMaterializationSpec
+
+    @property
+    def source_requirements(self) -> CorpusAcquisitionSourceRequirements:
+        return self.planning_context.source_requirements
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,19 +45,7 @@ class CorpusAssemblyDryRunResult:
     requested_history_window_seconds: int
 
 
-@dataclass(frozen=True, slots=True)
-class CorpusAssemblyCommittedResult:
-    mode: Literal["committed"]
-    history_plan: BlockPullPlan
-    evaluation_plan: BlockPullPlan
-    requested_history_window_seconds: int
-    resolved_capability_samples: int
-    manifest: DatasetManifest
-    acquire_run: AcquireRunRecord
-    committed_root_kind: RootKind
-
-
-CorpusAssemblyResult = CorpusAssemblyDryRunResult | CorpusAssemblyCommittedResult
+CorpusAssemblyResult = CorpusAssemblyDryRunResult | CorpusAcquisitionPublication
 
 
 def _noop_status(message: str) -> None:
@@ -86,10 +76,21 @@ def _split_materialization_spec(
     )
 
 
-def acquisition_source_requirements(
+def prepare_corpus_assembly_request(
+    *,
     config: AcquireConfig,
-) -> CorpusAcquisitionSourceRequirements:
-    return build_corpus_capability_planning_context(_planning_spec(config)).source_requirements
+    roots: AcquireWorkflowRoots,
+) -> CorpusAssemblyRequest:
+    planning_context = build_corpus_capability_planning_context(_planning_spec(config))
+    return CorpusAssemblyRequest(
+        config=config,
+        roots=roots,
+        planning_context=planning_context,
+        materialization=_split_materialization_spec(
+            config,
+            required_columns=planning_context.source_requirements.required_columns,
+        ),
+    )
 
 
 async def assemble_corpus(
@@ -101,11 +102,7 @@ async def assemble_corpus(
     config = request.config
     roots = request.roots
     emit = status or _noop_status
-    planning_context = build_corpus_capability_planning_context(_planning_spec(config))
-    materialization = _split_materialization_spec(
-        config,
-        required_columns=planning_context.source_requirements.required_columns,
-    )
+    planning_context = request.planning_context
     initial_plan = await planning_context.initial_plan(block_source)
     history_plan = initial_plan.history_plan
     evaluation_plan = initial_plan.evaluation_plan
@@ -124,7 +121,7 @@ async def assemble_corpus(
         config=config,
         roots=roots,
         planning_context=planning_context,
-        materialization=materialization,
+        materialization=request.materialization,
         controller=controller,
     )
     fulfillment = await stage.fulfill(
@@ -134,14 +131,4 @@ async def assemble_corpus(
         requested_history_window_seconds=requested_history_window_seconds,
         status=emit,
     )
-    publication = stage.publish(fulfillment=fulfillment)
-    return CorpusAssemblyCommittedResult(
-        mode="committed",
-        history_plan=publication.history_plan,
-        evaluation_plan=publication.evaluation_plan,
-        requested_history_window_seconds=publication.requested_history_window_seconds,
-        resolved_capability_samples=publication.resolved_capability_samples,
-        manifest=publication.manifest,
-        acquire_run=publication.acquire_run,
-        committed_root_kind=publication.committed_root_kind,
-    )
+    return stage.publish(fulfillment=fulfillment)
