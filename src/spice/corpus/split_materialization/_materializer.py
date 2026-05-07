@@ -55,30 +55,20 @@ class CorpusSplitMaterializationSession:
         self,
         intent: CorpusSplitIntent,
     ) -> CorpusSplitMaterializationResult:
-        if intent.kind is CorpusSplitKind.HISTORY:
-            return await _ensure_history_split(
-                intent,
-                materialization=self.materialization,
-                block_source=self.block_source,
-                controller=self.controller,
-                status=self.status,
-            )
-        if intent.kind is CorpusSplitKind.EVALUATION:
-            return await _ensure_evaluation_split(
-                intent,
-                materialization=self.materialization,
-                block_source=self.block_source,
-                controller=self.controller,
-                status=self.status,
-            )
-        raise ValueError(f"Unsupported corpus split kind: {intent.kind}")
+        return await _ensure_split(
+            intent,
+            materialization=self.materialization,
+            block_source=self.block_source,
+            controller=self.controller,
+            status=self.status,
+        )
 
 
 def noop_status(message: str) -> None:
     del message
 
 
-async def _ensure_history_split(
+async def _ensure_split(
     intent: CorpusSplitIntent,
     *,
     materialization: CorpusSplitMaterializationSpec,
@@ -86,7 +76,8 @@ async def _ensure_history_split(
     controller: AcquisitionPullController,
     status: StatusCallback | None,
 ) -> CorpusSplitMaterializationResult:
-    history_plan = intent.plan
+    if intent.kind not in (CorpusSplitKind.HISTORY, CorpusSplitKind.EVALUATION):
+        raise ValueError(f"Unsupported corpus split kind: {intent.kind}")
     emit = status or noop_status
     existing = load_split_candidate(
         intent.output_dir,
@@ -94,73 +85,51 @@ async def _ensure_history_split(
         required_columns=materialization.required_columns,
     )
     staged = load_split_candidate(
-        intent.working_dir / "history",
+        intent.working_dir / intent.kind.value,
         expected_chain_id=materialization.expected_chain_id,
         required_columns=materialization.required_columns,
     )
-
-    def validate_result(validation: BlockDatasetValidationReport, _: Path) -> None:
-        validate_history_result(validation, history_plan=history_plan)
-
-    return await _materialize_history_split(
+    return await _materialize_split(
         existing=existing,
         staged=staged,
-        plan=history_plan,
         kind=intent.kind,
+        plan=intent.plan,
         working_dir=intent.working_dir,
         materialization=materialization,
         block_source=block_source,
         controller=controller,
         emit=emit,
-        validate_result=validate_result,
+        validate_result=_split_validator(
+            intent.kind,
+            plan=intent.plan,
+            materialization=materialization,
+        ),
     )
 
 
-async def _ensure_evaluation_split(
-    intent: CorpusSplitIntent,
+def _split_validator(
+    kind: CorpusSplitKind,
     *,
+    plan: BlockPullPlan,
     materialization: CorpusSplitMaterializationSpec,
-    block_source: BlockSource,
-    controller: AcquisitionPullController,
-    status: StatusCallback | None,
-) -> CorpusSplitMaterializationResult:
-    evaluation_plan = intent.plan
-    emit = status or noop_status
-    existing = load_split_candidate(
-        intent.output_dir,
-        expected_chain_id=materialization.expected_chain_id,
-        required_columns=materialization.required_columns,
-    )
-    staged = load_split_candidate(
-        intent.working_dir / "evaluation",
-        expected_chain_id=materialization.expected_chain_id,
-        required_columns=materialization.required_columns,
-    )
-
-    def validate_result(validation: BlockDatasetValidationReport, dataset_dir: Path) -> None:
-        validate_evaluation_result(
+) -> ValidationCallback:
+    if kind is CorpusSplitKind.HISTORY:
+        return lambda validation, _dataset_dir: validate_history_result(
+            validation,
+            history_plan=plan,
+        )
+    if kind is CorpusSplitKind.EVALUATION:
+        return lambda validation, dataset_dir: validate_evaluation_result(
             validation,
             evaluation_dir=dataset_dir,
-            evaluation_plan=evaluation_plan,
+            evaluation_plan=plan,
             expected_chain_id=materialization.expected_chain_id,
             required_columns=materialization.required_columns,
         )
-
-    return await _materialize_evaluation_split(
-        existing=existing,
-        staged=staged,
-        plan=evaluation_plan,
-        kind=intent.kind,
-        working_dir=intent.working_dir,
-        materialization=materialization,
-        block_source=block_source,
-        controller=controller,
-        emit=emit,
-        validate_result=validate_result,
-    )
+    raise ValueError(f"Unsupported corpus split kind: {kind}")
 
 
-async def _materialize_history_split(
+async def _materialize_split(
     *,
     existing: _SplitDatasetCandidate | None,
     staged: _SplitDatasetCandidate | None,
@@ -174,15 +143,68 @@ async def _materialize_history_split(
     validate_result: ValidationCallback,
 ) -> CorpusSplitMaterializationResult:
     staged_reuse = _staged_reuse_result(
-        "history",
+        kind.value,
         staged=staged,
         existing=existing,
         validate_result=validate_result,
     )
     if staged_reuse is not None:
-        emit("history reused staged dataset")
+        emit(f"{kind.value} reused staged dataset")
         return staged_reuse
 
+    if kind is CorpusSplitKind.HISTORY:
+        committed = await _reuse_or_extend_history_split(
+            existing=existing,
+            plan=plan,
+            kind=kind,
+            working_dir=working_dir,
+            materialization=materialization,
+            block_source=block_source,
+            controller=controller,
+            emit=emit,
+            validate_result=validate_result,
+        )
+    else:
+        committed = await _reuse_or_extend_evaluation_split(
+            existing=existing,
+            plan=plan,
+            kind=kind,
+            working_dir=working_dir,
+            materialization=materialization,
+            block_source=block_source,
+            controller=controller,
+            emit=emit,
+            validate_result=validate_result,
+        )
+    if committed is not None:
+        return committed
+
+    return await _materialize_full_split(
+        kind.value,
+        existing=existing,
+        kind=kind,
+        plan=plan,
+        working_dir=working_dir,
+        materialization=materialization,
+        block_source=block_source,
+        controller=controller,
+        emit=emit,
+        validate_result=validate_result,
+    )
+
+
+async def _reuse_or_extend_history_split(
+    *,
+    existing: _SplitDatasetCandidate | None,
+    plan: BlockPullPlan,
+    kind: CorpusSplitKind,
+    working_dir: Path,
+    materialization: CorpusSplitMaterializationSpec,
+    block_source: BlockSource,
+    controller: AcquisitionPullController,
+    emit: StatusCallback,
+    validate_result: ValidationCallback,
+) -> CorpusSplitMaterializationResult | None:
     if existing is not None and existing.facts.status == "clean":
         existing_start = _required_first_block(existing.facts)
         existing_end = _required_end_block(existing.facts)
@@ -216,25 +238,12 @@ async def _materialize_history_split(
                 source_dirs=(prefix_dir, existing.path),
                 outcome=CorpusSplitOutcome.EXTENDED,
             )
-
-    return await _materialize_full_split(
-        "history",
-        existing=existing,
-        kind=kind,
-        plan=plan,
-        working_dir=working_dir,
-        materialization=materialization,
-        block_source=block_source,
-        controller=controller,
-        emit=emit,
-        validate_result=validate_result,
-    )
+    return None
 
 
-async def _materialize_evaluation_split(
+async def _reuse_or_extend_evaluation_split(
     *,
     existing: _SplitDatasetCandidate | None,
-    staged: _SplitDatasetCandidate | None,
     plan: BlockPullPlan,
     kind: CorpusSplitKind,
     working_dir: Path,
@@ -243,17 +252,7 @@ async def _materialize_evaluation_split(
     controller: AcquisitionPullController,
     emit: StatusCallback,
     validate_result: ValidationCallback,
-) -> CorpusSplitMaterializationResult:
-    staged_reuse = _staged_reuse_result(
-        "evaluation",
-        staged=staged,
-        existing=existing,
-        validate_result=validate_result,
-    )
-    if staged_reuse is not None:
-        emit("evaluation reused staged dataset")
-        return staged_reuse
-
+) -> CorpusSplitMaterializationResult | None:
     if existing is not None and existing.facts.status == "clean":
         existing_start = _required_first_block(existing.facts)
         existing_end = _required_end_block(existing.facts)
@@ -303,19 +302,7 @@ async def _materialize_evaluation_split(
                     emit=emit,
                     validate_result=validate_result,
                 )
-
-    return await _materialize_full_split(
-        "evaluation",
-        existing=existing,
-        kind=kind,
-        plan=plan,
-        working_dir=working_dir,
-        materialization=materialization,
-        block_source=block_source,
-        controller=controller,
-        emit=emit,
-        validate_result=validate_result,
-    )
+    return None
 
 
 async def _extend_evaluation_committed_split(
