@@ -4,7 +4,7 @@ import pytest
 import yaml
 
 from spice.benchmarks.plan_materialization import materialize_benchmark_plan
-from spice.config.models import EvaluateConfig, TuneConfig, WorkflowTask
+from spice.config.models import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.core.errors import ConfigResolutionError
 
 ETH_DATASET_ID = "cor_9a73b1e88edb488afb1e"
@@ -108,6 +108,7 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
         and "problems-current_row_nominal__lookback_seconds-600__sample_count-1000000"
         in entry.run_id
     )
+    assert isinstance(train.config, TrainConfig)
     assert train.config.study_id is not None
     assert isinstance(grid_tune.config, TuneConfig)
     assert grid_tune.config.problem.id == (

@@ -28,11 +28,9 @@ from .result_records import (
 from .result_store import BENCHMARK_RESULT_INDEX_PATH
 from .runs import (
     format_datetime,
-    load_plan_jsonl,
-    load_run_metadata,
-    load_submission_jsonl,
+    load_benchmark_run,
     utc_now,
-    write_collection_snapshot,
+    write_benchmark_collection_snapshot,
 )
 
 
@@ -41,9 +39,10 @@ def collect_benchmark_run(
     *,
     index_path: Path = BENCHMARK_RESULT_INDEX_PATH,
 ) -> BenchmarkCollectionSnapshot:
-    metadata = load_run_metadata(run_dir)
-    plan = load_plan_jsonl(run_dir)
-    submissions = load_submission_jsonl(run_dir)
+    run = load_benchmark_run(run_dir)
+    metadata = run.metadata
+    plan = list(run.plan)
+    submissions = run.submissions
     evaluate_entries = [entry for entry in plan if entry.workflow is WorkflowTask.EVALUATE]
     collector_time = utc_now()
     transfer_transactions: dict[Path, StorageTransferTransaction] = {}
@@ -93,7 +92,7 @@ def collect_benchmark_run(
         expected_evaluate_count=len(evaluate_entries),
         records=tuple(records),
     )
-    write_collection_snapshot(run_dir, snapshot)
+    write_benchmark_collection_snapshot(run_dir, snapshot)
     upsert_benchmark_collection_snapshot(snapshot, index_path=index_path)
     return snapshot
 

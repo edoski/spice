@@ -12,12 +12,9 @@ from ..execution.session import ExecutionSession, open_execution_session
 from .plan_materialization import BenchmarkPlanEntry, materialize_benchmark_plan
 from .runs import (
     BenchmarkSubmissionRecord,
-    append_submission_jsonl,
-    create_benchmark_run_dir,
-    load_plan_jsonl,
-    load_run_metadata,
-    load_submission_jsonl,
-    write_plan_jsonl,
+    create_benchmark_run,
+    load_benchmark_run,
+    record_benchmark_submission,
 )
 
 
@@ -40,20 +37,18 @@ def materialize_benchmark_plan_run(
     runs_root: Path,
 ) -> PlannedBenchmarkRun:
     entries = materialize_benchmark_plan(name)
-    run_dir = create_benchmark_run_dir(name, target=target, runs_root=runs_root)
-    write_plan_jsonl(run_dir, entries)
-    return PlannedBenchmarkRun(run_dir=run_dir, entry_count=len(entries))
+    run = create_benchmark_run(name, target=target, runs_root=runs_root, plan=entries)
+    return PlannedBenchmarkRun(run_dir=run.run_dir, entry_count=len(run.plan))
 
 
 def submit_benchmark_run(run_dir: Path) -> list[SubmittedBenchmarkWorkflow]:
-    metadata = load_run_metadata(run_dir)
-    entries = load_plan_jsonl(run_dir)
-    if load_submission_jsonl(run_dir):
+    run = load_benchmark_run(run_dir)
+    if run.submissions:
         raise SpiceOperatorError(f"Benchmark run already has submissions: {run_dir}")
-    session = open_execution_session(metadata.target)
+    session = open_execution_session(run.metadata.target)
     git_commit = session.remote_git_commit()
     return _submit_benchmark_entries(
-        entries,
+        list(run.plan),
         run_dir=run_dir,
         session=session,
         git_commit=git_commit,
@@ -90,7 +85,7 @@ def _submit_benchmark_entries(
             dependency=dependency,
             log_path=str(provenance.log_path),
         )
-        append_submission_jsonl(run_dir, record)
+        record_benchmark_submission(run_dir, record)
         records.append(SubmittedBenchmarkWorkflow(record=record, run_dir=run_dir))
     return records
 

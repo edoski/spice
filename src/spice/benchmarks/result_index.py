@@ -18,7 +18,7 @@ from .result_store import (
     list_indexed_results,
     upsert_collection_snapshot,
 )
-from .runs import BENCHMARK_RUNS_ROOT, collection_snapshot_path, load_collection_snapshot
+from .runs import BENCHMARK_RUNS_ROOT, load_benchmark_collection_snapshots
 
 
 def upsert_benchmark_collection_snapshot(
@@ -38,10 +38,8 @@ def rebuild_benchmark_result_index(
     remove_path(temp_path)
     try:
         ensure_result_index(temp_path)
-        for run_dir in _benchmark_run_dirs(runs_root):
-            if not collection_snapshot_path(run_dir).is_file():
-                continue
-            upsert_collection_snapshot(temp_path, load_collection_snapshot(run_dir))
+        for snapshot in load_benchmark_collection_snapshots(runs_root=runs_root):
+            upsert_collection_snapshot(temp_path, snapshot)
         index_path.parent.mkdir(parents=True, exist_ok=True)
         os.replace(temp_path, index_path)
         return index_counts(index_path)
@@ -73,16 +71,4 @@ def list_benchmark_results(
         model=model,
         evaluation=evaluation,
         limit=limit,
-    )
-
-
-def _benchmark_run_dirs(runs_root: Path) -> list[Path]:
-    if not runs_root.exists():
-        return []
-    return sorted(
-        candidate
-        for benchmark_dir in runs_root.iterdir()
-        if benchmark_dir.is_dir()
-        for candidate in benchmark_dir.iterdir()
-        if candidate.is_dir()
     )

@@ -19,12 +19,13 @@ from spice.benchmarks.result_records import (
     MetricValueRecord,
 )
 from spice.benchmarks.runs import (
-    create_benchmark_run_dir,
+    create_benchmark_run,
+    load_benchmark_collection_snapshot,
     load_benchmark_run,
-    write_collection_snapshot,
+    write_benchmark_collection_snapshot,
 )
 from spice.cli.app import app
-from spice.config import WorkflowTask
+from spice.config import TrainConfig, WorkflowTask
 from spice.core.errors import SpiceOperatorError
 from spice.execution.provenance import ExecutionJobProvenance
 from spice.execution.session import ExecutionJobSubmission
@@ -93,16 +94,17 @@ def _benchmark_record() -> BenchmarkResultRecord:
 
 
 def _write_collection_run(tmp_path: Path) -> Path:
-    run_dir = create_benchmark_run_dir(
+    run = create_benchmark_run(
         "cli_collection",
         target="disi_l40",
         runs_root=tmp_path / "runs",
+        plan=[],
     )
-    write_collection_snapshot(
-        run_dir,
+    write_benchmark_collection_snapshot(
+        run.run_dir,
         BenchmarkCollectionSnapshot(
             benchmark="cli_collection",
-            run_dir=str(run_dir),
+            run_dir=str(run.run_dir),
             target="disi_l40",
             run_created_at_utc="2026-05-01T10:00:00Z",
             collected_at_utc="2026-05-01T11:00:00Z",
@@ -110,7 +112,7 @@ def _write_collection_run(tmp_path: Path) -> Path:
             records=(_benchmark_record(),),
         ),
     )
-    return run_dir
+    return run.run_dir
 
 
 def test_benchmark_plan_creates_run_dir(isolate_conf_root, tmp_path: Path) -> None:
@@ -160,6 +162,7 @@ def test_benchmark_plan_creates_run_dir(isolate_conf_root, tmp_path: Path) -> No
     assert run.metadata.benchmark == "plan_case"
     assert run.plan[0].run_id == "single.train"
     assert run.plan[0].workflow is WorkflowTask.TRAIN
+    assert isinstance(run.plan[0].config, TrainConfig)
     assert run.plan[0].config.artifact.variant.value == "baseline"
 
 
@@ -301,10 +304,9 @@ def test_benchmark_index_export_uses_selected_index(tmp_path: Path) -> None:
     run_dir = _write_collection_run(tmp_path)
     index_path = tmp_path / "custom.sqlite"
     output_path = tmp_path / "results.csv"
-    from spice.benchmarks.runs import load_collection_snapshot
 
     upsert_benchmark_collection_snapshot(
-        load_collection_snapshot(run_dir),
+        load_benchmark_collection_snapshot(run_dir),
         index_path=index_path,
     )
 

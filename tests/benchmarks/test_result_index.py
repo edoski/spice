@@ -23,7 +23,7 @@ from spice.benchmarks.result_records import (
     MetricValueRecord,
 )
 from spice.benchmarks.result_store import index_counts
-from spice.benchmarks.runs import create_benchmark_run_dir, write_collection_snapshot
+from spice.benchmarks.runs import create_benchmark_run, write_benchmark_collection_snapshot
 from spice.config import WorkflowTask
 from spice.core.errors import SpiceOperatorError
 
@@ -135,8 +135,11 @@ def test_result_index_keeps_observations_per_benchmark_run(tmp_path: Path) -> No
 
 def test_result_index_rebuild_is_idempotent_from_run_dirs(tmp_path: Path) -> None:
     runs_root = tmp_path / "runs"
-    run_dir = create_benchmark_run_dir("bench", target="disi_l40", runs_root=runs_root)
-    write_collection_snapshot(run_dir, _snapshot(run_dir, run_id="case.evaluate"))
+    run = create_benchmark_run("bench", target="disi_l40", runs_root=runs_root, plan=[])
+    write_benchmark_collection_snapshot(
+        run.run_dir,
+        _snapshot(run.run_dir, run_id="case.evaluate"),
+    )
     index_path = tmp_path / "results.sqlite"
 
     first = rebuild_benchmark_result_index(runs_root=runs_root, index_path=index_path)

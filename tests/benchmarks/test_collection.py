@@ -16,15 +16,14 @@ from spice.benchmarks.plan_materialization import (
     BenchmarkRootLedgerEntry,
     BenchmarkSelectionLedger,
 )
-from spice.benchmarks.result_store import index_counts
+from spice.benchmarks.result_index import benchmark_result_index_counts
 from spice.benchmarks.runs import (
     BenchmarkSubmissionRecord,
-    append_submission_jsonl,
-    collection_snapshot_path,
-    create_benchmark_run_dir,
-    load_collection_snapshot,
-    load_plan_jsonl,
-    write_plan_jsonl,
+    create_benchmark_run,
+    has_benchmark_collection_snapshot,
+    load_benchmark_collection_snapshot,
+    load_benchmark_run,
+    record_benchmark_submission,
 )
 from spice.config import EvaluateConfig, StorageSpec, WorkflowTask
 from spice.config.groups import load_named_group_payload
@@ -49,8 +48,8 @@ def _evaluate_config(tmp_path: Path) -> EvaluateConfig:
     )
 
 
-def _write_evaluate_run(run_dir: Path, config) -> None:
-    entry = BenchmarkPlanEntry(
+def _evaluate_entry(config) -> BenchmarkPlanEntry:
+    return BenchmarkPlanEntry(
         run_id="case.evaluate",
         case_id="case",
         step_id="evaluate",
@@ -76,9 +75,18 @@ def _write_evaluate_run(run_dir: Path, config) -> None:
         ),
         config=config,
     )
-    write_plan_jsonl(run_dir, [entry])
-    append_submission_jsonl(
-        run_dir,
+
+
+def _write_evaluate_run(name: str, tmp_path: Path, config) -> Path:
+    entry = _evaluate_entry(config)
+    run = create_benchmark_run(
+        name,
+        target="disi_l40",
+        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
+        plan=[entry],
+    )
+    record_benchmark_submission(
+        run.run_dir,
         BenchmarkSubmissionRecord(
             run_id=entry.run_id,
             workflow=entry.workflow,
@@ -89,6 +97,7 @@ def _write_evaluate_run(run_dir: Path, config) -> None:
             log_path="/tmp/spice-evaluate-57549.out",
         ),
     )
+    return run.run_dir
 
 
 def _artifact_record(root_path: Path, artifact_id: str = "artifact-1") -> CatalogArtifactRecord:
@@ -199,13 +208,8 @@ def _match_facts(config, selection) -> BenchmarkCollectionMatchFacts:
     )
 
 
-def test_benchmark_plan_jsonl_round_trips_plan_entry(tmp_path: Path) -> None:
+def test_benchmark_run_round_trips_plan_entry(tmp_path: Path) -> None:
     config = _evaluate_config(tmp_path)
-    run_dir = create_benchmark_run_dir(
-        "round_trip",
-        target="disi_l40",
-        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
-    )
     entry = BenchmarkPlanEntry(
         run_id="case.evaluate",
         case_id="case",
@@ -233,11 +237,16 @@ def test_benchmark_plan_jsonl_round_trips_plan_entry(tmp_path: Path) -> None:
         config=config,
     )
 
-    write_plan_jsonl(run_dir, [entry])
-    loaded = load_plan_jsonl(run_dir)
+    run = create_benchmark_run(
+        "round_trip",
+        target="disi_l40",
+        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
+        plan=[entry],
+    )
 
-    assert len(loaded) == 1
-    restored = loaded[0]
+    loaded = load_benchmark_run(run.run_dir)
+    assert len(loaded.plan) == 1
+    restored = loaded.plan[0]
     assert restored.run_id == entry.run_id
     assert restored.dependencies.local_run_ids == ("case.train",)
     assert restored.dependencies.external_slurm_dependencies == ("afterok:42",)
@@ -254,12 +263,7 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
     monkeypatch,
 ) -> None:
     config = _evaluate_config(tmp_path)
-    run_dir = create_benchmark_run_dir(
-        "collect_case",
-        target="disi_l40",
-        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
-    )
-    _write_evaluate_run(run_dir, config)
+    run_dir = _write_evaluate_run("collect_case", tmp_path, config)
     resolve_calls: list[object] = []
     pull_calls: list[object] = []
     pulled = TransferredRoot(
@@ -308,8 +312,8 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
 
     assert snapshot.records[0].git_commit == "abc123"
     assert duplicate_snapshot.records[0].execution_ref == "slurm:57549"
-    assert load_collection_snapshot(run_dir).records[0].artifact_id == "artifact-1"
-    assert index_counts(index_path) == {
+    assert load_benchmark_collection_snapshot(run_dir).records[0].artifact_id == "artifact-1"
+    assert benchmark_result_index_counts(index_path=index_path) == {
         "runs": 1,
         "observations": 1,
         "metrics": 6,
@@ -324,12 +328,7 @@ def test_benchmark_collect_refuses_partial_snapshot_and_index_write(
     monkeypatch,
 ) -> None:
     config = _evaluate_config(tmp_path)
-    run_dir = create_benchmark_run_dir(
-        "missing_case",
-        target="disi_l40",
-        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
-    )
-    _write_evaluate_run(run_dir, config)
+    run_dir = _write_evaluate_run("missing_case", tmp_path, config)
 
     class FakeTransferTransaction:
         def pull_root(self, root_kind: RootKind, root_id: str):
@@ -345,7 +344,7 @@ def test_benchmark_collect_refuses_partial_snapshot_and_index_write(
     with pytest.raises(SpiceOperatorError, match="No artifact matches found"):
         collect_benchmark_run(run_dir=run_dir, index_path=index_path)
 
-    assert not collection_snapshot_path(run_dir).exists()
+    assert not has_benchmark_collection_snapshot(run_dir)
     assert not index_path.exists()
 
 
@@ -354,12 +353,7 @@ def test_benchmark_collect_refuses_partial_write_when_summary_missing(
     monkeypatch,
 ) -> None:
     config = _evaluate_config(tmp_path)
-    run_dir = create_benchmark_run_dir(
-        "missing_summary_case",
-        target="disi_l40",
-        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
-    )
-    _write_evaluate_run(run_dir, config)
+    run_dir = _write_evaluate_run("missing_summary_case", tmp_path, config)
     pulled = TransferredRoot(
         root_kind=RootKind.ARTIFACT,
         source_record=_artifact_record(tmp_path / "remote" / "artifact-1"),
@@ -386,7 +380,7 @@ def test_benchmark_collect_refuses_partial_write_when_summary_missing(
     with pytest.raises(SpiceOperatorError, match="Evaluation summary not found"):
         collect_benchmark_run(run_dir=run_dir, index_path=index_path)
 
-    assert not collection_snapshot_path(run_dir).exists()
+    assert not has_benchmark_collection_snapshot(run_dir)
     assert not index_path.exists()
 
 
@@ -395,11 +389,6 @@ def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
     monkeypatch,
 ) -> None:
     config = _evaluate_config(tmp_path)
-    run_dir = create_benchmark_run_dir(
-        "cached_pull_case",
-        target="disi_l40",
-        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
-    )
     first = BenchmarkPlanEntry(
         run_id="case.evaluate_a",
         case_id="case",
@@ -433,9 +422,15 @@ def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
             dataset_id=config.dataset_id,
         ),
     )
-    write_plan_jsonl(run_dir, [first, second])
+    run = create_benchmark_run(
+        "cached_pull_case",
+        target="disi_l40",
+        runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
+        plan=[first, second],
+    )
+    run_dir = run.run_dir
     for entry in (first, second):
-        append_submission_jsonl(
+        record_benchmark_submission(
             run_dir,
             BenchmarkSubmissionRecord(
                 run_id=entry.run_id,
