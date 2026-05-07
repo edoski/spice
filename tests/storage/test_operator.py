@@ -6,6 +6,7 @@ from spice.storage.catalog.index import upsert_catalog_record
 from spice.storage.catalog.materialization import materialize_catalog_root
 from spice.storage.operator import (
     StorageDeleteCommand,
+    StorageDeleteCompleted,
     StorageDeleteFailure,
     StorageShowFailure,
     StorageShowQuery,
@@ -152,3 +153,34 @@ def test_delete_dataset_blocked_returns_dependent_sections(tmp_path: Path) -> No
         "artifact matches",
         "study matches",
     ]
+
+
+def test_delete_artifact_unique_match_uses_typed_delete_dispatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    storage_root = tmp_path / "outputs"
+    record = _artifact_record(storage_root, "art_1")
+    _write_catalog_records(storage_root, record)
+    seen: dict[str, object] = {}
+
+    def fake_delete_artifact_record(root: Path, *, record):
+        seen.update({"root": root, "record": record})
+        return record
+
+    monkeypatch.setattr(
+        "spice.storage.operator.delete_artifact_record",
+        fake_delete_artifact_record,
+    )
+
+    outcome = delete_storage(
+        StorageDeleteCommand(
+            storage_root=storage_root,
+            kind="artifact",
+            selector=ArtifactSelector(artifact_id="art_1"),
+        )
+    )
+
+    assert isinstance(outcome, StorageDeleteCompleted)
+    assert outcome.record == record
+    assert seen == {"root": storage_root, "record": record}

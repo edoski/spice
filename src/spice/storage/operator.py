@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, fields
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, TypeAlias, cast
+from typing import Any, Generic, Literal, TypeAlias, TypeVar
 
 from ..core.errors import SpiceOperatorError
 from .catalog.index import (
@@ -36,6 +36,8 @@ StorageSelector: TypeAlias = DatasetSelector | StudySelector | ArtifactSelector
 StorageShowOutcome: TypeAlias = "StorageShowRendered | StorageShowFailure"
 StorageDeleteOutcome: TypeAlias = "StorageDeleteCompleted | StorageDeleteFailure"
 SectionRows: TypeAlias = list[tuple[str, list[tuple[str, str]]]]
+SelectorT = TypeVar("SelectorT", bound=StorageSelector)
+RecordT = TypeVar("RecordT", bound=CatalogRecord)
 
 
 class DatasetInspectionDetail(StrEnum):
@@ -100,22 +102,68 @@ class StorageDeleteFailure:
 
 
 @dataclass(frozen=True, slots=True)
-class _OperatorSpec:
+class _OperatorSpec(Generic[SelectorT, RecordT]):
     kind: StorageRootKind
+    selector_type: type[SelectorT]
+    record_type: type[RecordT]
     valid_details: frozenset[str]
     narrowing_attributes: tuple[str, ...]
-    list_sections: Callable[[list], SectionRows]
+    list_catalog_records: Callable[[Path, SelectorT], list[RecordT]]
+    delete_catalog_record: Callable[[Path, RecordT, bool], RecordT]
+    render_list_sections: Callable[[list[RecordT]], SectionRows]
+
+    def list_records(
+        self,
+        storage_root: Path,
+        selector: StorageSelector,
+    ) -> list[CatalogRecord]:
+        return list(self.list_catalog_records(storage_root, self._selector(selector)))
+
+    def delete_record(
+        self,
+        storage_root: Path,
+        record: CatalogRecord,
+        *,
+        cascade: bool,
+    ) -> CatalogRecord:
+        return self.delete_catalog_record(storage_root, self._record(record), cascade)
+
+    def list_sections(self, records: Sequence[CatalogRecord]) -> SectionRows:
+        return self.render_list_sections([self._record(record) for record in records])
+
+    def _selector(self, selector: StorageSelector) -> SelectorT:
+        if isinstance(selector, self.selector_type):
+            return selector
+        raise SpiceOperatorError(f"{self.kind.title()} command requires a {self.kind} selector")
+
+    def _record(self, record: CatalogRecord) -> RecordT:
+        if isinstance(record, self.record_type):
+            return record
+        raise SpiceOperatorError(f"{self.kind.title()} delete requires a {self.kind} record")
 
 
-_SPECS: dict[StorageRootKind, _OperatorSpec] = {
+_SPECS: dict[StorageRootKind, _OperatorSpec[Any, Any]] = {
     "dataset": _OperatorSpec(
         kind="dataset",
+        selector_type=DatasetSelector,
+        record_type=CatalogDatasetRecord,
         valid_details=frozenset(detail.value for detail in DatasetInspectionDetail),
         narrowing_attributes=("chain_name", "dataset_name"),
-        list_sections=dataset_list_sections,
+        list_catalog_records=lambda root, selector: list_dataset_records(
+            root,
+            selector=selector,
+        ),
+        delete_catalog_record=lambda root, record, cascade: delete_dataset_record(
+            root,
+            record=record,
+            cascade=cascade,
+        ),
+        render_list_sections=dataset_list_sections,
     ),
     "study": _OperatorSpec(
         kind="study",
+        selector_type=StudySelector,
+        record_type=CatalogStudyRecord,
         valid_details=frozenset(detail.value for detail in StudyInspectionDetail),
         narrowing_attributes=(
             "chain_name",
@@ -126,10 +174,21 @@ _SPECS: dict[StorageRootKind, _OperatorSpec] = {
             "problem_id",
             "study_name",
         ),
-        list_sections=study_list_sections,
+        list_catalog_records=lambda root, selector: list_study_records(
+            root,
+            selector=selector,
+        ),
+        delete_catalog_record=lambda root, record, cascade: delete_study_record(
+            root,
+            record=record,
+            cascade=cascade,
+        ),
+        render_list_sections=study_list_sections,
     ),
     "artifact": _OperatorSpec(
         kind="artifact",
+        selector_type=ArtifactSelector,
+        record_type=CatalogArtifactRecord,
         valid_details=frozenset(detail.value for detail in ArtifactInspectionDetail),
         narrowing_attributes=(
             "chain_name",
@@ -141,7 +200,15 @@ _SPECS: dict[StorageRootKind, _OperatorSpec] = {
             "variant",
             "study_name",
         ),
-        list_sections=artifact_list_sections,
+        list_catalog_records=lambda root, selector: list_artifact_records(
+            root,
+            selector=selector,
+        ),
+        delete_catalog_record=lambda root, record, _cascade: delete_artifact_record(
+            root,
+            record=record,
+        ),
+        render_list_sections=artifact_list_sections,
     ),
 }
 
@@ -152,11 +219,7 @@ def show_storage(query: StorageShowQuery) -> StorageShowOutcome:
         return StorageShowFailure(
             message=f"Unsupported {query.kind} detail: {query.detail}",
         )
-    records = _list_records(
-        query.storage_root,
-        kind=query.kind,
-        selector=query.selector,
-    )
+    records = spec.list_records(query.storage_root, query.selector)
     if not records:
         return StorageShowFailure(message=f"No {query.kind} matches found")
     if query.detail is not None and len(records) != 1:
@@ -174,11 +237,7 @@ def show_storage(query: StorageShowQuery) -> StorageShowOutcome:
 
 def delete_storage(command: StorageDeleteCommand) -> StorageDeleteOutcome:
     spec = _SPECS[command.kind]
-    records = _list_records(
-        command.storage_root,
-        kind=command.kind,
-        selector=command.selector,
-    )
+    records = spec.list_records(command.storage_root, command.selector)
     if len(records) != 1:
         return StorageDeleteFailure(
             message=(
@@ -191,23 +250,11 @@ def delete_storage(command: StorageDeleteCommand) -> StorageDeleteOutcome:
         )
     record = records[0]
     try:
-        if command.kind == "dataset":
-            deleted = delete_dataset_record(
-                command.storage_root,
-                record=_dataset_record(record),
-                cascade=command.cascade,
-            )
-        elif command.kind == "study":
-            deleted = delete_study_record(
-                command.storage_root,
-                record=_study_record(record),
-                cascade=command.cascade,
-            )
-        else:
-            deleted = delete_artifact_record(
-                command.storage_root,
-                record=_artifact_record(record),
-            )
+        deleted = spec.delete_record(
+            command.storage_root,
+            record,
+            cascade=command.cascade,
+        )
     except DeleteBlockedError as error:
         return StorageDeleteFailure(
             message=str(error),
@@ -232,28 +279,6 @@ def render_catalog_refresh(summary: CatalogRefreshSummary) -> str:
     )
 
 
-def _list_records(
-    storage_root: Path,
-    *,
-    kind: StorageRootKind,
-    selector: StorageSelector,
-) -> list[CatalogRecord]:
-    if kind == "dataset":
-        return cast(
-            list[CatalogRecord],
-            list_dataset_records(storage_root, selector=_dataset_selector(selector)),
-        )
-    if kind == "study":
-        return cast(
-            list[CatalogRecord],
-            list_study_records(storage_root, selector=_study_selector(selector)),
-        )
-    return cast(
-        list[CatalogRecord],
-        list_artifact_records(storage_root, selector=_artifact_selector(selector)),
-    )
-
-
 def _selector_has_filters(selector: StorageSelector) -> bool:
     return any(getattr(selector, field.name) is not None for field in fields(selector))
 
@@ -273,46 +298,36 @@ def _describe_record(
 
 
 def _list_renderable(
-    spec: _OperatorSpec,
+    spec: _OperatorSpec[Any, Any],
     records: Sequence[CatalogRecord],
 ) -> RenderableSections:
     return RenderableSections(
         title=f"{spec.kind} list",
-        sections=spec.list_sections(list(records)),
+        sections=spec.list_sections(records),
     )
 
 
 def _matches_renderable(
-    spec: _OperatorSpec,
+    spec: _OperatorSpec[Any, Any],
     records: Sequence[CatalogRecord],
 ) -> RenderableSections:
     return RenderableSections(
         title=f"{spec.kind} matches",
-        sections=spec.list_sections(list(records)),
+        sections=spec.list_sections(records),
     )
 
 
 def _delete_blocked_diagnostics(error: DeleteBlockedError) -> tuple[RenderableSections, ...]:
     diagnostics: list[RenderableSections] = []
     if error.artifact_records:
-        diagnostics.append(
-            RenderableSections(
-                title="artifact matches",
-                sections=artifact_list_sections(list(error.artifact_records)),
-            )
-        )
+        diagnostics.append(_matches_renderable(_SPECS["artifact"], error.artifact_records))
     if error.study_records:
-        diagnostics.append(
-            RenderableSections(
-                title="study matches",
-                sections=study_list_sections(list(error.study_records)),
-            )
-        )
+        diagnostics.append(_matches_renderable(_SPECS["study"], error.study_records))
     return tuple(diagnostics)
 
 
 def _narrowing_attributes(
-    spec: _OperatorSpec,
+    spec: _OperatorSpec[Any, Any],
     records: Sequence[CatalogRecord],
     selector: StorageSelector,
 ) -> tuple[str, ...]:
@@ -324,39 +339,3 @@ def _narrowing_attributes(
         if getattr(selector, attribute, None) is None
         and len({getattr(record, attribute, None) for record in records}) > 1
     )
-
-
-def _dataset_selector(selector: StorageSelector) -> DatasetSelector:
-    if isinstance(selector, DatasetSelector):
-        return selector
-    raise SpiceOperatorError("Dataset command requires a dataset selector")
-
-
-def _study_selector(selector: StorageSelector) -> StudySelector:
-    if isinstance(selector, StudySelector):
-        return selector
-    raise SpiceOperatorError("Study command requires a study selector")
-
-
-def _artifact_selector(selector: StorageSelector) -> ArtifactSelector:
-    if isinstance(selector, ArtifactSelector):
-        return selector
-    raise SpiceOperatorError("Artifact command requires an artifact selector")
-
-
-def _dataset_record(record: CatalogRecord) -> CatalogDatasetRecord:
-    if isinstance(record, CatalogDatasetRecord):
-        return record
-    raise SpiceOperatorError("Dataset delete requires a dataset record")
-
-
-def _study_record(record: CatalogRecord) -> CatalogStudyRecord:
-    if isinstance(record, CatalogStudyRecord):
-        return record
-    raise SpiceOperatorError("Study delete requires a study record")
-
-
-def _artifact_record(record: CatalogRecord) -> CatalogArtifactRecord:
-    if isinstance(record, CatalogArtifactRecord):
-        return record
-    raise SpiceOperatorError("Artifact delete requires an artifact record")
