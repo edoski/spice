@@ -16,7 +16,7 @@ Prediction configs compile into contracts. Contracts prepare targets, define out
 
 ## Invariants
 
-Prediction code may import prepared temporal facts because target batches are built from policy-owned Action Spaces and Temporal Outcome Facts. Core rendering must not import prediction. Shared masking logic lives in `masking.py` so families apply action masks consistently.
+Prediction code may import prepared temporal facts because target batches are built from policy-owned Action Spaces and Temporal Outcome Facts. Core rendering must not import prediction. Candidate masking stays family-owned until multiple families need the same operation.
 
 Prediction target preparation receives prepared temporal facts rather than an independent sample selection. Those facts pair the policy-owned Action Space with Temporal Outcome Facts for exactly one sample set. Training target batches use the policy-owned mask from the Action Space, while family-specific labels and auxiliary targets stay prediction-owned.
 
@@ -34,7 +34,6 @@ prediction/
   contracts.py  compiled prediction contract
   decoding.py   generic decoded-result ABI and decode context
   decoded_offsets.py candidate-offset decoded result and offset decode helper
-  masking.py    shared candidate-logit masking helper
   registry.py   prediction family dispatch
   families/     concrete target/loss/decode implementations
 ```

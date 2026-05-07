@@ -10,15 +10,10 @@ import torch
 from ....temporal.execution_policy import PreparedTemporalFacts
 
 
-@dataclass(frozen=True, slots=True)
-class MinBlockFeeObjectiveFacts:
-    min_block_offsets: np.ndarray
-    min_block_log_fees: np.ndarray
-
-
-def materialize_min_block_fee_objective_facts(
+def materialize_min_block_fee_targets(
     temporal_facts: PreparedTemporalFacts,
-) -> MinBlockFeeObjectiveFacts:
+) -> PreparedMinBlockFeeTargets:
+    action_space = temporal_facts.action_space
     outcome_facts = temporal_facts.outcome_facts
     reachable_mask = outcome_facts.reachable_action_mask
     if reachable_mask.shape[0] > 0 and not bool(np.all(reachable_mask.any(axis=1))):
@@ -33,21 +28,10 @@ def materialize_min_block_fee_objective_facts(
         np.arange(masked_log_fees.shape[0]),
         min_block_offsets,
     ].astype(np.float32, copy=False)
-    return MinBlockFeeObjectiveFacts(
-        min_block_offsets=min_block_offsets,
-        min_block_log_fees=min_block_log_fees,
-    )
-
-
-def materialize_min_block_fee_targets(
-    temporal_facts: PreparedTemporalFacts,
-) -> PreparedMinBlockFeeTargets:
-    action_space = temporal_facts.action_space
-    objective_facts = materialize_min_block_fee_objective_facts(temporal_facts)
     return PreparedMinBlockFeeTargets(
         action_mask=torch.from_numpy(action_space.action_mask),
-        min_block_offsets=torch.from_numpy(objective_facts.min_block_offsets),
-        min_block_log_fees=torch.from_numpy(objective_facts.min_block_log_fees),
+        min_block_offsets=torch.from_numpy(min_block_offsets),
+        min_block_log_fees=torch.from_numpy(min_block_log_fees),
     )
 
 

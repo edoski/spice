@@ -10,7 +10,7 @@ Multitask learning can improve representations by asking the model to learn rela
 
 ## Invariants
 
-The family decodes to `DecodedOffsets`. Auxiliary heads and losses stay family-owned. Candidate masks use the shared masking helper.
+The family decodes to `DecodedOffsets`. Auxiliary heads, losses, candidate masking, and offset metrics stay family-owned.
 
 ## Extension Points
 

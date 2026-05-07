@@ -31,7 +31,7 @@ buffer[5]=0, buffer[9]=3, buffer[12]=1
 
 ## Action Masking
 
-Prediction code uses masking helpers before softmax or argmax. The helpers validate shape and require at least one valid action per row.
+Prediction families mask invalid actions before softmax or argmax. Family masking code validates shape and requires at least one valid action per row. Shared helpers should wait until a second family needs the same operation.
 
 Execution policies own action availability. `strict_deadline_miss` currently prepares a full action mask for every compiled candidate slot; short candidate windows still expose overflow slots, and the policy resolves those offsets to the post-window row.
 

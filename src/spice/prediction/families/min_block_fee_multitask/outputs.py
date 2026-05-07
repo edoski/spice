@@ -5,7 +5,6 @@ from __future__ import annotations
 import torch
 
 from ...base import PredictionHeadSpec, PredictionOutputSpec
-from ...masking import masked_distribution_logits
 
 OFFSET_LOGITS_HEAD_ID = "min_block_offset_logits"
 MIN_LOG_FEE_HEAD_ID = "min_block_log_fee"
@@ -23,4 +22,12 @@ def build_output_spec(max_candidate_slots: int) -> PredictionOutputSpec:
 
 
 def masked_offset_logits(logits: torch.Tensor, action_mask: torch.Tensor) -> torch.Tensor:
-    return masked_distribution_logits(logits, action_mask)
+    if logits.shape != action_mask.shape:
+        raise ValueError(
+            f"logits and action_mask shapes must match: {logits.shape} != {action_mask.shape}"
+        )
+    if action_mask.ndim == 0:
+        raise ValueError("action_mask must have at least one dimension")
+    if not torch.all(action_mask.any(dim=-1)):
+        raise ValueError("action_mask must allow at least one candidate per row")
+    return logits.masked_fill(~action_mask, torch.finfo(logits.dtype).min)
