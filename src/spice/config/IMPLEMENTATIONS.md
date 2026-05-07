@@ -73,6 +73,8 @@ Workflow Command Selection lives at the CLI edge. Workflow commands construct ty
 
 Resolved snapshot hydration is the raw-payload path for already materialized train, tune, and evaluate configs. It validates the snapshot workflow marker, then uses owner coercers to rebuild concrete nested configs.
 
+`resolved_workflows.py` owns final resolved workflow field sets, evaluate defaults, and assembly into train, tune, and evaluate configs. Fresh resolution and snapshot hydration both call that module after they have produced typed resolved fields.
+
 Acquire is excluded from snapshot hydration. Acquire configs contain provider/acquisition concerns and are produced through surface resolution.
 
 Tuned-parameter application is not snapshot hydration. It is a typed train/tune config transform that applies tuned params through owner-family validators and rebuilds the workflow config directly.

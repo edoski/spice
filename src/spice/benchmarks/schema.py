@@ -10,12 +10,12 @@ from typing import TypeAlias, cast
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..config.models import WorkflowTask
-from ..config.selections import (
+from ..config.selections import workflow_selection_field_set
+from .selection_taxonomy import (
     benchmark_base_fields,
     benchmark_dimension_field_names,
     benchmark_dimension_fields,
     benchmark_workflows,
-    workflow_selection_field_set,
 )
 
 _MODEL_WORKFLOWS = benchmark_workflows()

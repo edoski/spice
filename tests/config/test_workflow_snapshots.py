@@ -139,6 +139,25 @@ def test_workflow_snapshot_reports_malformed_payloads() -> None:
         hydrate_workflow_config_snapshot_json(WorkflowTask.TRAIN, "{")
 
 
+@pytest.mark.parametrize(
+    "mutator",
+    [
+        lambda payload: payload.update({"unexpected": 1}),
+        lambda payload: payload.update({"study_id": "wrong-workflow-field"}),
+        lambda payload: payload.update({"batch_size": 0}),
+        lambda payload: payload.update({"batch_size": False}),
+        lambda payload: payload.update({"delay_seconds": True}),
+    ],
+)
+def test_workflow_snapshot_rejects_strict_evaluate_payload_errors(mutator) -> None:
+    evaluate = _resolved_config(WorkflowTask.EVALUATE)
+    payload = workflow_config_snapshot_payload(evaluate)
+    mutator(payload)
+
+    with pytest.raises(ConfigResolutionError):
+        hydrate_workflow_config_snapshot(WorkflowTask.EVALUATE, payload)
+
+
 def test_workflow_snapshot_excludes_none_and_supports_storage_root_override() -> None:
     evaluate = cast(EvaluateConfig, _resolved_config(WorkflowTask.EVALUATE))
 
@@ -149,6 +168,7 @@ def test_workflow_snapshot_excludes_none_and_supports_storage_root_override() ->
 
     storage_payload = cast(dict[str, object], payload["storage"])
     assert "delay_seconds" not in payload
+    assert payload["batch_size"] == 256
     assert storage_payload["root"] == "/remote/storage"
     restored = cast(
         EvaluateConfig,

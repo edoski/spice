@@ -32,6 +32,8 @@ results.sqlite projection -> CSV export/query
 
 **Benchmark Plan Materialization** expands dimensions, matches dependencies, normalizes dependency-derived root selection, calls normal workflow resolution, asks Storage Root Materialization for consumed/produced/source root facts, and produces durable plan entries with resolved workflow snapshots. Inline problem grids split workflow values from benchmark coordinates: the resolved workflow config stores the full executable `ProblemSpec`, while the selection ledger stores the selected problem id.
 
+`selection_taxonomy.py` owns benchmark-supported workflows, benchmark dimension names, and root-vs-coordinate selection policy. Config owns only generic workflow selection models and field introspection.
+
 The public plan materialization seam is `benchmarks.plan_materialization`. Its private internals own case expansion, dependency matching, dependency-derived root selection, root finalization, and selection ledger materialization. Storage owns scalar root-fact derivation; benchmark owns the durable ledger/run-state shape. Callers use `materialize_benchmark_plan()` and the durable models exported from that package; they do not import materialization internals.
 
 ## Root Facts And Ledger

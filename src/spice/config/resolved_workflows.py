@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypeAlias, cast
+from typing import TypeAlias, cast, overload
 
 from ..evaluation import EvaluatorConfig
 from ..modeling.dataset_builders import DatasetBuilderConfig
@@ -34,6 +34,7 @@ SUPPORTED_RESOLVED_WORKFLOWS = (
     WorkflowTask.TUNE,
     WorkflowTask.EVALUATE,
 )
+DEFAULT_EVALUATE_BATCH_SIZE = 256
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,11 @@ class ResolvedEvaluateWorkflowFields:
     batch_size: int
 
 
+ResolvedWorkflowFields: TypeAlias = (
+    ResolvedTrainWorkflowFields
+    | ResolvedTuneWorkflowFields
+    | ResolvedEvaluateWorkflowFields
+)
 _MODEL_WORKFLOW_FIELD_NAMES = frozenset(ResolvedModelWorkflowFields.__dataclass_fields__)
 _TRAIN_FIELD_NAMES = _MODEL_WORKFLOW_FIELD_NAMES | {"workflow", "dataset_id", "study_id"}
 _TUNE_FIELD_NAMES = _MODEL_WORKFLOW_FIELD_NAMES | {"workflow", "dataset_id"}
@@ -87,7 +93,35 @@ _EVALUATE_FIELD_NAMES = frozenset(ResolvedEvaluateWorkflowFields.__dataclass_fie
 }
 
 
-def build_train_config(fields: ResolvedTrainWorkflowFields) -> TrainConfig:
+def final_evaluate_batch_size(value: int | None) -> int:
+    return DEFAULT_EVALUATE_BATCH_SIZE if value is None else value
+
+
+@overload
+def assemble_resolved_workflow_config(fields: ResolvedTrainWorkflowFields) -> TrainConfig: ...
+
+
+@overload
+def assemble_resolved_workflow_config(fields: ResolvedTuneWorkflowFields) -> TuneConfig: ...
+
+
+@overload
+def assemble_resolved_workflow_config(
+    fields: ResolvedEvaluateWorkflowFields,
+) -> EvaluateConfig: ...
+
+
+def assemble_resolved_workflow_config(
+    fields: ResolvedWorkflowFields,
+) -> ResolvedWorkflowConfig:
+    if isinstance(fields, ResolvedTrainWorkflowFields):
+        return _assemble_train_config(fields)
+    if isinstance(fields, ResolvedTuneWorkflowFields):
+        return _assemble_tune_config(fields)
+    return _assemble_evaluate_config(fields)
+
+
+def _assemble_train_config(fields: ResolvedTrainWorkflowFields) -> TrainConfig:
     model_fields = fields.model_fields
     return TrainConfig(
         chain=model_fields.chain,
@@ -111,7 +145,7 @@ def build_train_config(fields: ResolvedTrainWorkflowFields) -> TrainConfig:
     )
 
 
-def build_tune_config(fields: ResolvedTuneWorkflowFields) -> TuneConfig:
+def _assemble_tune_config(fields: ResolvedTuneWorkflowFields) -> TuneConfig:
     model_fields = fields.model_fields
     if model_fields.tuning is None or model_fields.tuning_space is None:
         raise ValueError("tune workflow requires tuning and tuning_space")
@@ -136,7 +170,7 @@ def build_tune_config(fields: ResolvedTuneWorkflowFields) -> TuneConfig:
     )
 
 
-def build_evaluate_config(fields: ResolvedEvaluateWorkflowFields) -> EvaluateConfig:
+def _assemble_evaluate_config(fields: ResolvedEvaluateWorkflowFields) -> EvaluateConfig:
     return EvaluateConfig(
         storage=fields.storage,
         artifact_id=fields.artifact_id,

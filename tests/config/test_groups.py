@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -19,9 +19,10 @@ def test_typed_group_loaders_return_owner_concrete_types() -> None:
     builder = typed.load(typed.DATASET_BUILDER, "fixed_sequence_temporal")
     evaluator = typed.load(typed.EVALUATION, "poisson_replay")
     training = typed.load(typed.TRAINING, "default")
+    compiler = cast(Any, problem.compiler)
 
     assert type(problem.compiler).__name__ == "ObservedTimeWindowCompilerConfig"
-    assert type(problem.compiler.slot_spacing).__name__ == (
+    assert type(compiler.slot_spacing).__name__ == (
         "ObservedTimeWindowNominalSlotSpacingConfig"
     )
     assert type(problem.execution_policy).__name__ == "StrictDeadlineMissConfig"

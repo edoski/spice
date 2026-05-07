@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from ...config.selections import (
-    WorkflowSelection,
+from ...config.selections import WorkflowSelection
+from ..selection_taxonomy import (
     benchmark_selection_coordinate_fields,
     benchmark_selection_root_fields,
 )

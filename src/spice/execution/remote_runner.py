@@ -10,12 +10,11 @@ from ..config.models import (
     TuneConfig,
     WorkflowTask,
 )
-from ..config.resolution import WorkflowConfig
-from ..config.resolved_workflows import SUPPORTED_RESOLVED_WORKFLOWS
+from ..config.resolved_workflows import SUPPORTED_RESOLVED_WORKFLOWS, ResolvedWorkflowConfig
 from ..config.workflow_snapshots import hydrate_workflow_config_snapshot_json
 
 
-def run_remote_workflow(task: WorkflowTask, config: WorkflowConfig) -> None:
+def run_remote_workflow(task: WorkflowTask, config: ResolvedWorkflowConfig) -> None:
     if task is WorkflowTask.TRAIN:
         from ..workflows import train
 

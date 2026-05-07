@@ -42,9 +42,9 @@ from .resolved_workflows import (
     ResolvedTrainWorkflowFields,
     ResolvedTuneWorkflowFields,
     ResolvedWorkflowConfig,
-    build_evaluate_config,
-    build_train_config,
-    build_tune_config,
+    assemble_resolved_workflow_config,
+    final_evaluate_batch_size,
+    resolved_workflow_field_names,
     resolved_workflow_snapshot_payload,
 )
 
@@ -99,13 +99,14 @@ def hydrate_workflow_config_snapshot(
     payload: Mapping[str, object],
 ) -> ResolvedWorkflowConfig:
     _validate_snapshot_workflow(workflow, payload)
+    _validate_snapshot_fields(workflow, payload)
     try:
         if workflow is WorkflowTask.TRAIN:
-            return build_train_config(_hydrate_train_fields(payload))
+            return assemble_resolved_workflow_config(_hydrate_train_fields(payload))
         if workflow is WorkflowTask.TUNE:
-            return build_tune_config(_hydrate_tune_fields(payload))
+            return assemble_resolved_workflow_config(_hydrate_tune_fields(payload))
         if workflow is WorkflowTask.EVALUATE:
-            return build_evaluate_config(_hydrate_evaluate_fields(payload))
+            return assemble_resolved_workflow_config(_hydrate_evaluate_fields(payload))
     except ConfigResolutionError:
         raise
     except (ValidationError, ValueError, TypeError) as exc:
@@ -135,6 +136,18 @@ def _validate_snapshot_workflow(
         )
 
 
+def _validate_snapshot_fields(
+    workflow: WorkflowTask,
+    payload: Mapping[str, object],
+) -> None:
+    allowed = resolved_workflow_field_names(workflow)
+    extra = sorted(set(payload) - allowed)
+    if extra:
+        raise ConfigResolutionError(
+            "resolved workflow snapshot has unsupported fields: " + ", ".join(extra)
+        )
+
+
 def _hydrate_evaluate_fields(payload: Mapping[str, object]) -> ResolvedEvaluateWorkflowFields:
     raw = dict(payload)
     return ResolvedEvaluateWorkflowFields(
@@ -145,7 +158,9 @@ def _hydrate_evaluate_fields(payload: Mapping[str, object]) -> ResolvedEvaluateW
             _owner_field(raw, "evaluation", EvaluatorConfig)
         ),
         delay_seconds=_optional_int(raw.get("delay_seconds"), label="delay_seconds"),
-        batch_size=_optional_int(raw.get("batch_size"), label="batch_size") or 256,
+        batch_size=final_evaluate_batch_size(
+            _optional_int(raw.get("batch_size"), label="batch_size")
+        ),
     )
 
 
@@ -243,6 +258,10 @@ def _required_str(payload: Mapping[str, object], key: str) -> str:
 def _optional_int(payload: object, *, label: str) -> int | None:
     if payload is None:
         return None
+    if isinstance(payload, bool):
+        raise ConfigResolutionError(
+            f"resolved workflow config field {label} must be an integer"
+        )
     if not isinstance(payload, int):
         raise ConfigResolutionError(
             f"resolved workflow config field {label} must be an integer"

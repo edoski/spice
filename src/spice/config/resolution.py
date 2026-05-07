@@ -35,9 +35,8 @@ from .resolved_workflows import (
     ResolvedModelWorkflowFields,
     ResolvedTrainWorkflowFields,
     ResolvedTuneWorkflowFields,
-    build_evaluate_config,
-    build_train_config,
-    build_tune_config,
+    assemble_resolved_workflow_config,
+    final_evaluate_batch_size,
 )
 from .selections import (
     AcquireWorkflowSelection,
@@ -52,7 +51,7 @@ from .surfaces import SurfaceFrame
 ConfigModelT = TypeVar("ConfigModelT", bound=ConfigModel)
 SelectionValueT = TypeVar("SelectionValueT")
 
-WorkflowConfig = AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig
+ResolvedSelectionConfig = AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig
 
 
 def load_named_tuning_space(
@@ -126,7 +125,7 @@ def resolve_workflow_config(
 ) -> EvaluateConfig: ...
 
 
-def resolve_workflow_config(selection: WorkflowSelection) -> WorkflowConfig:
+def resolve_workflow_config(selection: WorkflowSelection) -> ResolvedSelectionConfig:
     """Resolve one workflow selection into one validated workflow config."""
 
     try:
@@ -321,7 +320,7 @@ def _resolve_train_config(selection: TrainWorkflowSelection) -> TrainConfig:
         require_tuning=False,
         allow_tuned_variant=True,
     )
-    return build_train_config(
+    return assemble_resolved_workflow_config(
         ResolvedTrainWorkflowFields(
             model_fields=model_fields,
             dataset_id=selection.dataset_id,
@@ -343,7 +342,7 @@ def _resolve_tune_config(selection: TuneWorkflowSelection) -> TuneConfig:
     tuning = model_fields.tuning
     if selection.trial_count is not None:
         tuning = _validated_config_update(tuning, trial_count=selection.trial_count)
-    return build_tune_config(
+    return assemble_resolved_workflow_config(
         ResolvedTuneWorkflowFields(
             model_fields=replace(model_fields, tuning=tuning),
             dataset_id=_required(selection.dataset_id, "dataset_id"),
@@ -355,7 +354,7 @@ def _resolve_evaluate_config(selection: EvaluateWorkflowSelection) -> EvaluateCo
     evaluation = _resolve_evaluation(_required(selection.evaluation, "evaluation"))
     if evaluation is None:
         raise ConfigResolutionError("evaluation is required")
-    return build_evaluate_config(
+    return assemble_resolved_workflow_config(
         ResolvedEvaluateWorkflowFields(
             storage=_resolve_storage(
                 None
@@ -366,7 +365,7 @@ def _resolve_evaluate_config(selection: EvaluateWorkflowSelection) -> EvaluateCo
             dataset_id=_required(selection.dataset_id, "dataset_id"),
             evaluation=evaluation,
             delay_seconds=selection.delay_seconds,
-            batch_size=selection.batch_size or 256,
+            batch_size=final_evaluate_batch_size(selection.batch_size),
         ),
     )
 
