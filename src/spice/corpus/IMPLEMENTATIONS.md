@@ -55,7 +55,7 @@ Loads scan recursively, skip hidden paths, combine chunks, and sort by `block_nu
 
 ## Corpus Assembly
 
-Corpus acquisition has two public Interfaces: `acquisition_source_requirements()` for configuring the acquisition Adapter, and `assemble_corpus()` for dry-run planning or committed corpus publication. Corpus Capability Planning owns history sizing and the bounded refill lifecycle. Corpus Acquisition Stage owns staging roots, split sequencing, planning-step-to-split-intent adaptation, dataset provenance publication, state DB staging, selected-path commit, cleanup, and preserve-on-failure behavior. Corpus Split Materialization owns history/evaluation dataset reuse, extension, rebuild, validation, and parquet IO. Its internal policy assesses staged and committed split candidates against the active Split Intent and active required source columns, then returns an executable plan for staged reuse, committed reuse, extension, full materialization, or invalid staged rejection. Private implementation modules keep effects local: candidate state loading, parquet chunk IO, source reuse/copying, acquisition pulls, target invariants, and executable plan execution. When extending a split, plan execution computes missing pull ranges and reusable overlap, copies whole reusable parquet chunks, and rewrites only edge or newly pulled ranges.
+Corpus acquisition has two public Interfaces: `acquisition_source_requirements()` for configuring the acquisition Adapter, and `assemble_corpus()` for dry-run planning or committed corpus publication. Corpus Capability Planning owns history sizing and the bounded refill lifecycle. Corpus Acquisition Stage owns staging roots, split sequencing, planning-step-to-split-intent adaptation, dataset provenance publication, state DB staging, selected-path commit, cleanup, and preserve-on-failure behavior. Corpus Split Materialization owns history/evaluation dataset reuse, extension, rebuild, validation, and parquet IO. Its private materializer assesses staged and committed split candidates against the active Split Intent and active required source columns, then directly executes staged reuse, committed reuse, extension, full materialization, or invalid staged rejection. Private implementation modules keep effects local: candidate loading, parquet chunk IO, source reuse/copying, acquisition pulls, and target invariants. When extending a split, the materializer computes missing pull ranges and reusable overlap, copies whole reusable parquet chunks, and rewrites only edge or newly pulled ranges.
 
 | Materialization outcome | Behavior |
 | --- | --- |
@@ -105,7 +105,7 @@ DatasetManifest
     materialization
 ```
 
-Request records the intended timestamp and block ranges. Coverage records the observed first/last timestamp, first/last block, and row count. Validation records compact validation status and issues. Materialization records whether the split was created, reused, rebuilt, or extended and how many files back it.
+Request records the intended timestamp and block ranges. Coverage records the observed first/last timestamp, first/last block, and row count. Validation records compact validation status and issues only. Materialization records whether the split was created, reused, rebuilt, or extended and how many files back it.
 
 ## Validation
 

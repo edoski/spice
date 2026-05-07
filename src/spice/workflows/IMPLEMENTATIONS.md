@@ -27,7 +27,7 @@ resolve config
   -> close block source
 ```
 
-Corpus Assembly builds Corpus Capability Planning, materializes history/evaluation splits through Corpus Acquisition Stage, lets planning run bounded refill attempts when compiled valid sample count is short, writes corpus state, and commits the root.
+Corpus Assembly builds Corpus Capability Planning, materializes history/evaluation splits through Corpus Acquisition Stage, lets planning run bounded refill attempts when compiled valid sample count is short, writes corpus state, and commits the root. Committed acquire reporting reads materialization outcomes and row counts from the dataset manifest; dry-run reporting reads the planned block ranges directly.
 
 Dry run reports the plan without materializing data.
 
