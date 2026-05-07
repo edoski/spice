@@ -6,12 +6,12 @@ import math
 import os
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, Literal, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, Protocol, TypeVar, cast
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from torch.utils.data import DataLoader, Dataset, Sampler
+from torch.utils.data import DataLoader, Sampler
 
 from ..prediction import CompiledPredictionContract
 from ..prediction.contracts import ModelInputBatch, PredictionBatch, PreparedPredictionTargets
@@ -137,17 +137,6 @@ class PreparedBatchPayload(Protocol[BatchT]):
     ) -> PreparedBatchPayload[BatchT]: ...
 
 
-class _SamplePositionDataset(Dataset[int]):
-    def __init__(self, sample_count: int) -> None:
-        self._sample_count = sample_count
-
-    def __len__(self) -> int:
-        return self._sample_count
-
-    def __getitem__(self, index: int) -> int:
-        return int(index)
-
-
 class _PositionBatchSampler(Sampler[list[int]]):
     def __init__(
         self,
@@ -211,18 +200,6 @@ class _HostBatchCollator(Generic[BatchT]):
     def __call__(self, sample_positions: Sequence[int]) -> BatchT:
         index = torch.as_tensor(sample_positions, dtype=torch.int64)
         return self.prepared.build_batch(index)
-
-
-class _HostDataLoaderBatchSource(Generic[BatchT]):
-    def __init__(self, loader: DataLoader[BatchT], batch_sampler: _PositionBatchSampler) -> None:
-        self._loader = loader
-        self._batch_sampler = batch_sampler
-
-    def __len__(self) -> int:
-        return len(self._batch_sampler)
-
-    def __iter__(self) -> Iterator[BatchT]:
-        return iter(self._loader)
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,7 +270,6 @@ def _build_plan(
 ) -> BatchPlan[BatchT]:
     source, storage_mode = _build_batch_source(
         prepared,
-        required_bytes=prepared.estimated_storage_bytes,
         runtime_plan=runtime_plan,
         shuffle=shuffle,
     )
@@ -374,11 +350,10 @@ def build_model_input_batch_plan(
 def _build_batch_source(
     prepared: PreparedBatchPayload[BatchT],
     *,
-    required_bytes: int,
     runtime_plan: ModelingRuntimePlan,
     shuffle: bool,
 ) -> tuple[
-    _HostDataLoaderBatchSource[BatchT] | _DeviceResidentBatchSource[BatchT],
+    DataLoader[BatchT] | _DeviceResidentBatchSource[BatchT],
     StorageMode,
 ]:
     batch_sampler = _PositionBatchSampler(
@@ -388,7 +363,7 @@ def _build_batch_source(
         shuffle=shuffle,
     )
     if _should_use_device_resident(
-        required_bytes=required_bytes,
+        required_bytes=prepared.estimated_storage_bytes,
         runtime_context=runtime_plan.batch_runtime_context,
         resolved_device=runtime_plan.resolved_device,
     ):
@@ -419,10 +394,10 @@ def _build_host_dataloader_source(
     batch_sampler: _PositionBatchSampler,
     runtime_context: BatchRuntimeContext,
     resolved_device: torch.device,
-) -> _HostDataLoaderBatchSource[BatchT]:
+) -> DataLoader[BatchT]:
     worker_settings = _resolve_host_loader_worker_settings(runtime_context)
     loader = DataLoader(
-        _SamplePositionDataset(prepared.sample_count),
+        cast(Any, range(prepared.sample_count)),
         batch_sampler=batch_sampler,
         collate_fn=_HostBatchCollator(prepared),
         num_workers=worker_settings.num_workers,
@@ -430,10 +405,7 @@ def _build_host_dataloader_source(
         prefetch_factor=worker_settings.prefetch_factor,
         pin_memory=_should_pin_host_memory(runtime_context, resolved_device),
     )
-    return _HostDataLoaderBatchSource(
-        loader=cast(DataLoader[BatchT], loader),
-        batch_sampler=batch_sampler,
-    )
+    return cast(DataLoader[BatchT], loader)
 
 
 def _resolve_host_loader_worker_settings(

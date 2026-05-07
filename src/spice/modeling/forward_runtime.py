@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypeVar
-
-import torch
+from typing import TypeVar, cast
 
 from ..prediction import CompiledPredictionContract
 from ..prediction.contracts import ModelInputBatch, PredictionBatch
@@ -15,7 +13,7 @@ from ..temporal.execution_policy import (
     PreparedTemporalFacts,
 )
 from ..temporal.problem_store import CompiledProblemStore, IntVector
-from ._runtime import ForwardBatch, precision_context, run_model_forward_pass
+from ._runtime import ForwardBatch, run_model_forward_pass
 from ._runtime_probe import build_measured_modeling_runtime_plan, measure_device_resident_budget
 from .batch_plan import (
     BatchPlan,
@@ -69,12 +67,13 @@ def _measure_forward_batch_budget(
     runtime_plan: ModelingRuntimePlan,
 ) -> int:
     def _run_forward_probe() -> None:
-        model.eval()
-        with torch.no_grad():
-            batch = next(iter(loader))
-            device_batch = batch.to_device(runtime_plan.resolved_device)
-            with precision_context(precision=runtime_plan.precision):
-                _ = model(**device_batch.model_kwargs())
+        batch = next(iter(loader))
+        run_model_forward_pass(
+            model,
+            loader=cast(BatchSource[ForwardBatch], (batch,)),
+            runtime_plan=runtime_plan,
+            on_outputs=lambda _batch, _outputs: None,
+        )
 
     return measure_device_resident_budget(
         resolved_device=runtime_plan.resolved_device,

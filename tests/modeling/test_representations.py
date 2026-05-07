@@ -5,19 +5,10 @@ from dataclasses import replace
 import numpy as np
 import torch
 
-from spice.config import PredictionConfig
-from spice.modeling.batch_plan import (
-    BatchRuntimeContext,
-    DeviceStorageBudget,
-    build_prediction_batch_plan,
-)
-from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.representations import (
     RepresentationRuntimeContext,
     compile_representation_contract,
 )
-from spice.modeling.runtime_planning import ModelingRuntimePlan
-from spice.prediction import compile_prediction_contract
 from spice.temporal import (
     CompiledExecutionPolicyContract,
     PreparedActionSpace,
@@ -58,29 +49,6 @@ def _test_store() -> CompiledProblemStore:
     )
 
 
-def _prediction_contract():
-    prediction = PredictionConfig.model_validate(
-        {
-            "id": "icdcs_2026",
-            "family_id": "min_block_fee_multitask",
-        }
-    )
-    return compile_prediction_contract(
-        prediction_id=prediction.id,
-        family_id=prediction.family_id,
-    )
-
-
-def _model_config() -> LstmModelConfig:
-    return LstmModelConfig(
-        input_projection_dim=8,
-        hidden_size=16,
-        num_layers=2,
-        dropout=0.1,
-        head_hidden_dim=8,
-    )
-
-
 def _execution_policy():
     return compile_execution_policy_contract(
         coerce_execution_policy_config({"id": "strict_deadline_miss"})
@@ -106,20 +74,6 @@ def _action_space(
     sample_indices: np.ndarray,
 ) -> PreparedActionSpace:
     return policy.prepare_action_space(store, sample_indices)
-
-
-def _runtime_plan() -> ModelingRuntimePlan:
-    return ModelingRuntimePlan(
-        resolved_device=torch.device("cuda"),
-        precision="32-true",
-        batch_runtime_context=BatchRuntimeContext(
-            batch_size=2,
-            available_host_memory_bytes=10**12,
-            device_storage_budget=DeviceStorageBudget.disabled(),
-        ),
-        deterministic=None,
-        seed=2026,
-    )
 
 
 def test_sequence_input_storage_modes_yield_identical_batches() -> None:
@@ -159,31 +113,6 @@ def test_sequence_input_storage_modes_yield_identical_batches() -> None:
         assert torch.equal(left.inputs, right.inputs)
         assert torch.equal(left.input_mask, right.input_mask)
         assert torch.equal(left.action_mask, right.action_mask)
-
-
-def test_prediction_batch_source_binds_current_family_targets() -> None:
-    store = _test_store()
-    sample_indices = np.array([0, 1, 2, 3], dtype=np.int64)
-    representation_contract = compile_representation_contract()
-    execution_policy = _execution_policy()
-    batch_plan = build_prediction_batch_plan(
-        store,
-        temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
-        representation_contract=representation_contract,
-        prediction_contract=_prediction_contract(),
-        execution_policy=execution_policy,
-        runtime_plan=_runtime_plan(),
-    )
-    first_batch = next(iter(batch_plan.source))
-
-    assert first_batch.inputs.sample_positions.tolist() == [0, 1]
-    assert tuple(first_batch.targets.min_block_offsets.shape) == (2,)
-    assert tuple(first_batch.targets.min_block_log_fees.shape) == (2,)
-    assert tuple(first_batch.targets.action_mask.shape) == (2, 3)
-    assert first_batch.targets.action_mask.tolist() == [
-        [True, True, True],
-        [True, True, True],
-    ]
 
 
 def test_sequence_input_batches_use_execution_policy_action_mask() -> None:

@@ -202,6 +202,9 @@ def test_single_process_unpinned_loader_policy_disables_workers_and_pin_memory(
             for sample_positions in self._batch_sampler:
                 yield self._collate_fn(sample_positions)
 
+        def __len__(self) -> int:
+            return len(self._batch_sampler)
+
     monkeypatch.setenv("SPICE_DATALOADER_WORKERS", "8")
     monkeypatch.setattr("spice.modeling.batch_plan.DataLoader", FakeDataLoader)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
@@ -321,41 +324,6 @@ def test_cuda_batch_plan_consumes_device_storage_budget_phase(
 
     assert plan.storage_mode == expected_storage_mode
     assert prepared.device_storage_calls == expected_device_storage_calls
-    assert next(iter(plan.source)).sample_positions.tolist() == [1, 3]
-
-
-def test_device_resident_plan_exposes_storage_mode() -> None:
-    plan = build_model_input_batch_plan(
-        _Store(),
-        action_space=_action_space(np.arange(4, dtype=np.int64)),
-        representation_contract=_RepresentationContract(_Prepared()),
-        execution_policy=_ExecutionPolicy(),
-        runtime_plan=_runtime_plan(
-            resolved_device=torch.device("cuda"),
-            device_storage_budget=DeviceStorageBudget.measured(2048),
-        ),
-    )
-
-    assert plan.storage_mode == "cuda_materialized"
-    assert next(iter(plan.source)).sample_positions.tolist() == [1, 3]
-
-
-def test_zero_device_budget_uses_host_loader_without_device_materialization() -> None:
-    prepared = _Prepared()
-
-    plan = build_model_input_batch_plan(
-        _Store(),
-        action_space=_action_space(np.arange(4, dtype=np.int64)),
-        representation_contract=_RepresentationContract(prepared),
-        execution_policy=_ExecutionPolicy(),
-        runtime_plan=_runtime_plan(
-            resolved_device=torch.device("cuda"),
-            device_storage_budget=DeviceStorageBudget.measured(0),
-        ),
-    )
-
-    assert plan.storage_mode == "host_materialized"
-    assert prepared.device_storage_calls == 0
     assert next(iter(plan.source)).sample_positions.tolist() == [1, 3]
 
 

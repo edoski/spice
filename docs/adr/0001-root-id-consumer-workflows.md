@@ -20,7 +20,7 @@ Producer workflows keep Workflow Selection and config-derived destination identi
 - Tuned `train` consumes `study_id` and produces `artifact_id`.
 - `evaluate` consumes `artifact_id` and `dataset_id`.
 
-Evaluation is manifest-first. The artifact manifest supplies trained semantics. The selected corpus manifest supplies chain runtime and evaluation window. The active evaluation config supplies only evaluator, delay, batch size, storage root, and root ids.
+Evaluation is manifest-first. The artifact manifest supplies trained semantics. The selected corpus supplies the corpus manifest plus history, evaluation frames, and coverage facts. Artifact inference validates those facts, builds the Artifact Inference Context, and then builds the EvaluationScoringRuntimePlan. The active evaluation config supplies only evaluator, delay, batch size, storage root, and root ids.
 
 Cross-corpus evaluation is allowed only within the same chain. Different-chain evaluation is rejected.
 

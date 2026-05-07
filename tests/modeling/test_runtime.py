@@ -6,6 +6,7 @@ import torch
 from spice.core.errors import SpiceOperatorError
 from spice.modeling._runtime import (
     CudaModelingRuntime,
+    _available_system_memory_bytes,
     build_batch_runtime_context,
     compute_device_resident_budget,
     default_device_resident_safety_margin,
@@ -90,6 +91,18 @@ def test_batch_runtime_context_wraps_coarse_device_storage_budget(
     assert context.batch_size == 8
     assert context.available_host_memory_bytes == 4096
     assert context.device_storage_budget == DeviceStorageBudget.coarse(123)
+
+
+def test_available_system_memory_uses_psutil_available(monkeypatch) -> None:
+    class VirtualMemory:
+        available = 4096
+
+    monkeypatch.setattr(
+        "spice.modeling._runtime.psutil.virtual_memory",
+        lambda: VirtualMemory(),
+    )
+
+    assert _available_system_memory_bytes() == 4096
 
 
 def test_cuda_modeling_runtime_plan_owns_precision_and_backend_facts(monkeypatch) -> None:

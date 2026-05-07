@@ -9,7 +9,12 @@ from ..config.models import TrainingConfig
 from ..metrics import MetricSet
 from ..prediction import CompiledPredictionContract
 from ._epoch_execution import run_epoch
-from ._fit_policy import CompletedEpoch, TrainingEpochProgress, TrainingFitPolicy
+from ._fit_policy import (
+    CompletedEpoch,
+    FitPolicyDecision,
+    TrainingEpochProgress,
+    TrainingFitPolicy,
+)
 from .dataset_builders import PreparedTrainingDataset
 from .models import TemporalModel
 from .objective_runtime import CompiledObjectiveRuntime
@@ -49,6 +54,14 @@ class TrainingFitSpec:
     representation_contract: CompiledRepresentationContract
     prepared: PreparedTrainingDataset
     training_config: TrainingConfig
+
+
+def _emit_early_stop(
+    callbacks: TrainingCallbacks,
+    decision: FitPolicyDecision,
+) -> None:
+    if decision.early_stop is not None and callbacks.on_early_stop is not None:
+        callbacks.on_early_stop(*decision.early_stop)
 
 
 def run_training_fit(
@@ -112,11 +125,7 @@ def run_training_fit(
                 metrics=train_metrics,
             )
             if train_decision is not None:
-                if (
-                    train_decision.early_stop is not None
-                    and active_callbacks.on_early_stop is not None
-                ):
-                    active_callbacks.on_early_stop(*train_decision.early_stop)
+                _emit_early_stop(active_callbacks, train_decision)
                 break
             validation_metrics = run_epoch(
                 fit_model,
@@ -134,11 +143,7 @@ def run_training_fit(
                 metrics=validation_metrics,
             )
             if validation_decision is not None:
-                if (
-                    validation_decision.early_stop is not None
-                    and active_callbacks.on_early_stop is not None
-                ):
-                    active_callbacks.on_early_stop(*validation_decision.early_stop)
+                _emit_early_stop(active_callbacks, validation_decision)
                 break
             objective_metrics = spec.objective_runtime.evaluate_metrics(
                 validation_metrics,
@@ -150,11 +155,7 @@ def run_training_fit(
                 metrics=objective_metrics,
             )
             if objective_decision is not None:
-                if (
-                    objective_decision.early_stop is not None
-                    and active_callbacks.on_early_stop is not None
-                ):
-                    active_callbacks.on_early_stop(*objective_decision.early_stop)
+                _emit_early_stop(active_callbacks, objective_decision)
                 break
             fit_decision = policy.record_completed_epoch(
                 CompletedEpoch(
@@ -169,11 +170,7 @@ def run_training_fit(
                 active_callbacks.on_epoch_end(fit_decision.progress)
 
             if fit_decision.should_stop:
-                if (
-                    fit_decision.early_stop is not None
-                    and active_callbacks.on_early_stop is not None
-                ):
-                    active_callbacks.on_early_stop(*fit_decision.early_stop)
+                _emit_early_stop(active_callbacks, fit_decision)
                 break
 
     best_epoch, best_state, best_value = policy.finalized_best(model=fit_model)

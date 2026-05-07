@@ -221,7 +221,7 @@ Fit execution module that owns epoch execution, objective tracking, best-state s
 _Avoid_: training loop helper
 
 **Modeling Runtime Plan**:
-Modeling-owned executable runtime fact set for model-bound training, inference, and evaluator scoring. It carries device, precision, representation runtime context, backend determinism, seed, and compile policy; runtime modules use it for host warmup, CUDA memory measurement, final batch planning, model preparation, forward execution, and destructive training-probe restoration.
+Modeling-owned executable runtime fact set for model-bound training, inference, and evaluator scoring. It carries device, precision, Batch Runtime Context, backend determinism, seed, and compile policy; runtime modules use it for host warmup, CUDA memory measurement, final batch planning, model preparation, forward execution, and destructive training-probe restoration. Batch Plan adapts the Batch Runtime Context into a Representation Runtime Context only when calling the Representation Seam.
 _Avoid_: ad hoc inference probe, scoring batch size, warmup side effect
 
 **Training Runtime Plan**:
@@ -237,7 +237,7 @@ Typed prediction output contract consumed by evaluators after model inference.
 _Avoid_: logits, prediction tensor
 
 **Objective Runtime**:
-Modeling-owned module that pairs a policy-only objective contract and, for evaluation objectives, the compiled evaluator contract with objective metric production used by the Training Runner. It selects and validates objective metric facts; it does not own prediction targets or temporal outcome facts.
+Modeling-owned module that pairs a policy-only objective contract and, for evaluation objectives, the compiled evaluator contract with objective metric production used by the Training Runner. It validates metric availability and direction, then returns validation or evaluator metric sets; Training Fit Policy applies the objective metric id and direction. It does not own prediction targets or temporal outcome facts.
 _Avoid_: objective evaluator, objective callback
 
 **Temporal Replay Runner**:
@@ -306,9 +306,9 @@ _Avoid_: execution backend
 - **Temporal Outcome Facts** are derived by an execution policy from a problem store and **Action Space** for a selected training, validation, or test sample set.
 - A **Prediction Target Batch** is derived by a prediction family from **Temporal Outcome Facts** and **Action Space**.
 - A **Training Runner** consumes prepared training data and produces fitted model state plus runtime training metrics.
-- A **Batch Plan** is built by the **Training Runner** and inference paths after runtime memory budget is known, consuming prepared temporal facts for training or Action Space for inference/decode. It does not derive Action Space, Temporal Outcome Facts, or Prediction Target Batches.
+- A **Batch Plan** is built by **Training Runtime** for train/validation and by `forward_runtime` for inference/scoring after runtime memory budget is known, consuming prepared temporal facts for training or Action Space for inference/decode. It does not derive Action Space, Temporal Outcome Facts, or Prediction Target Batches.
 - A **Modeling Runtime Plan** drives training, inference, split-metric forward passes, and model-bound evaluator scoring without callers passing device, precision, seed, or runtime context fragments.
-- A **Training Runtime Plan** gives the **Training Runner** final train/validation **Batch Plans**, a measured runtime context, one reusable prediction training state, and a **Modeling Runtime Plan** for objective evaluator scoring.
+- A **Training Runtime Plan** gives the **Training Runner** a measured **Modeling Runtime Plan**, final train/validation **Batch Plans**, and one reusable prediction training state. The **Training Runner** builds `EvaluationScoringRuntimePlan` from validation samples and that measured plan when an objective needs evaluator scoring.
 - A **Training Fit Policy** is internal to the **Training Runner** and does not change model math or callback ownership.
 - A **Decoded Result ABI** is produced by a prediction contract and accepted by evaluator contracts by decoded-result id.
 - An **Objective Runtime** turns validation metrics or model-bound evaluator scoring into objective metrics for the **Training Runner**.

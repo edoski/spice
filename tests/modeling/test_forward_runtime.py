@@ -162,8 +162,12 @@ def test_model_input_forward_builds_host_warmup_then_measured_final_plan(
     assert plan_calls[1]["budget"] == DeviceStorageBudget.measured(456)
     assert plan_calls[1]["host_loader_policy"] == "automatic"
     assert measure_calls == [torch.device("cpu")]
-    assert model.grad_enabled == [False]
     assert final_calls == [
+        {
+            "loader": ["batch-1"],
+            "resolved_device": torch.device("cpu"),
+            "precision": "32-true",
+        },
         {
             "loader": ["batch-2"],
             "resolved_device": torch.device("cpu"),

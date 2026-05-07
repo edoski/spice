@@ -25,7 +25,7 @@ build_artifact_training_spec() / build_trial_training_spec()
 Temporal Dataset Preparation Interface
   |
   v
-build model family
+build model via model-family registry
   |
   v
 run_training_fit()
@@ -75,7 +75,7 @@ Persisted training writes model files and artifact state into the directory supp
 
 Tuning Execution is centralized in `modeling.tuning_execution`. It opens compatible study state, validates resume counts, runs Optuna trials, records trial metadata, and returns storage-owned study summaries. Workflows resolve roots, validate coverage, attach reporter callbacks, and delegate study reindex effects to storage.
 
-During training, `Objective Runtime` owns objective metric production. Validation objectives return validation metrics directly. Evaluation objectives receive the `EvaluationScoringRuntimePlan` built by the Training Runner and call the generic model-to-evaluator scoring bridge; the training loop still does not know evaluator internals.
+During training, `Objective Runtime` produces objective metric sets. Validation objectives return validation metrics directly. Evaluation objectives receive the `EvaluationScoringRuntimePlan` built by the Training Runner and call the generic model-to-evaluator scoring bridge. `TrainingFitPolicy` owns best-state comparison using the objective contract; the training loop still does not know evaluator internals.
 
 ## Dataset Builders
 

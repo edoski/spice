@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import os
 import random
-import subprocess
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 import numpy as np
+import psutil
 import torch
 from numpy.typing import NDArray
 
@@ -219,39 +218,12 @@ def run_model_forward_pass(
 
 
 def _available_system_memory_bytes() -> int:
-    page_size = _sysconf_int("SC_PAGE_SIZE")
-    available_pages = _sysconf_int("SC_AVPHYS_PAGES")
-    if page_size is not None and available_pages is not None:
-        return page_size * available_pages
-
-    physical_pages = _sysconf_int("SC_PHYS_PAGES")
-    if page_size is not None and physical_pages is not None:
-        return page_size * physical_pages
-
-    if os.name == "posix":
-        try:
-            output = subprocess.check_output(
-                ["sysctl", "-n", "hw.memsize"],
-                text=True,
-                stderr=subprocess.DEVNULL,
-            ).strip()
-            return int(output)
-        except (OSError, ValueError, subprocess.CalledProcessError):
-            pass
-
-    return 8 * 1024**3
+    return int(psutil.virtual_memory().available)
 
 
 def _cuda_device_index(device: torch.device) -> int:
     require_cuda_device(device)
     return torch.cuda.current_device() if device.index is None else device.index
-
-
-def _sysconf_int(name: str) -> int | None:
-    try:
-        return int(os.sysconf(name))
-    except (AttributeError, OSError, ValueError):
-        return None
 
 
 def _ensure_cuda_runtime_ready(device: torch.device) -> None:
