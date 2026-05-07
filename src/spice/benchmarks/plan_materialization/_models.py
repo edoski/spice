@@ -4,14 +4,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
-from pydantic import Field
+from pydantic import Field, field_serializer, field_validator, model_validator
 
 from ...config.models import ArtifactVariant, WorkflowTask
 from ...config.resolved_workflows import ResolvedWorkflowConfig
+from ...config.workflow_snapshots import (
+    hydrate_workflow_config_snapshot,
+    workflow_config_snapshot_payload,
+)
 from ...core.config_model import ConfigModel
 
 BenchmarkRootRole = Literal["consumed", "produced", "source"]
@@ -22,6 +26,13 @@ class BenchmarkDependencyLedger(ConfigModel):
     local_run_ids: tuple[str, ...]
     external_slurm_dependencies: tuple[str, ...]
     artifact_from_run_id: str | None
+
+    @field_validator("local_run_ids", "external_slurm_dependencies", mode="before")
+    @classmethod
+    def coerce_json_arrays(cls, value: object) -> object:
+        if isinstance(value, list):
+            return tuple(cast("list[object]", value))
+        return value
 
 
 class BenchmarkSelectionLedger(ConfigModel):
@@ -59,6 +70,13 @@ class BenchmarkRootLedgerEntry(ConfigModel):
 class BenchmarkRootLedger(ConfigModel):
     entries: tuple[BenchmarkRootLedgerEntry, ...] = ()
 
+    @field_validator("entries", mode="before")
+    @classmethod
+    def coerce_json_arrays(cls, value: object) -> object:
+        if isinstance(value, list):
+            return tuple(cast("list[object]", value))
+        return value
+
 
 class BenchmarkRootFacts(ConfigModel):
     consumed_dataset_id: str | None = None
@@ -73,8 +91,7 @@ class BenchmarkRootFacts(ConfigModel):
     artifact_source_dataset_id: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class BenchmarkPlanEntry:
+class BenchmarkPlanEntry(ConfigModel):
     run_id: str
     case_id: str
     step_id: str
@@ -85,3 +102,23 @@ class BenchmarkPlanEntry:
     root_facts: BenchmarkRootFacts
     root_ledger: BenchmarkRootLedger
     config: ResolvedWorkflowConfig
+
+    @model_validator(mode="before")
+    @classmethod
+    def hydrate_snapshot_config(cls, payload: object) -> object:
+        if not isinstance(payload, Mapping):
+            return payload
+        raw = dict(cast("Mapping[str, object]", payload))
+        config = raw.get("config")
+        if not isinstance(config, Mapping):
+            return raw
+        workflow = raw.get("workflow")
+        raw["config"] = hydrate_workflow_config_snapshot(
+            workflow if isinstance(workflow, WorkflowTask) else WorkflowTask(str(workflow)),
+            cast("Mapping[str, object]", config),
+        )
+        return raw
+
+    @field_serializer("config")
+    def serialize_config(self, config: ResolvedWorkflowConfig) -> dict[str, object]:
+        return workflow_config_snapshot_payload(config)

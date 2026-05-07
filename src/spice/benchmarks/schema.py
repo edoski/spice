@@ -10,18 +10,38 @@ from typing import TypeAlias, cast
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..config.models import WorkflowTask
+from ..config.resolved_workflows import SUPPORTED_RESOLVED_WORKFLOWS
 from ..config.selections import workflow_selection_field_set
-from .selection_taxonomy import (
-    benchmark_base_fields,
-    benchmark_dimension_field_names,
-    benchmark_dimension_fields,
-    benchmark_workflows,
-)
 
-_MODEL_WORKFLOWS = benchmark_workflows()
-_STANDARD_DIMENSIONS = benchmark_dimension_field_names() | {"problems"}
+_MODEL_WORKFLOWS = frozenset(SUPPORTED_RESOLVED_WORKFLOWS)
+_BENCHMARK_DIMENSION_FIELDS = {
+    "data": frozenset({"surface", "chain", "dataset_id"}),
+    "features": frozenset({"features", "surface"}),
+    "models": frozenset({"model", "tuning_space"}),
+    "scoring": frozenset({"objective", "evaluation"}),
+    "runtime": frozenset(
+        {
+            "dataset_id",
+            "training",
+            "split",
+            "tuning",
+            "study",
+            "study_id",
+            "artifact_id",
+            "trial_count",
+            "variant",
+            "delay_seconds",
+            "batch_size",
+        }
+    ),
+}
+_STANDARD_DIMENSIONS = frozenset(_BENCHMARK_DIMENSION_FIELDS) | {"problems"}
 _PROBLEM_GRID_FIELDS = frozenset({"lookback_seconds", "sample_count", "max_delay_seconds"})
-_BASE_FIELDS = benchmark_base_fields()
+_BASE_FIELDS = frozenset(
+    field
+    for workflow in _MODEL_WORKFLOWS
+    for field in workflow_selection_field_set(workflow)
+)
 
 
 class SlurmAfterDependency(BaseModel):
@@ -166,7 +186,7 @@ class BenchmarkSpec(BaseModel):
 
 
 def _validate_dimension_set_fields(name: str, patches: Sequence[Mapping[str, object]]) -> None:
-    allowed = benchmark_dimension_fields(name)
+    allowed = _BENCHMARK_DIMENSION_FIELDS.get(name)
     if allowed is None:
         return
     for patch in patches:

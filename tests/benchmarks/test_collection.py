@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -412,15 +411,16 @@ def test_benchmark_collect_reuses_transfer_transaction_for_same_storage_root(
         ),
         config=config,
     )
-    second = replace(
-        first,
-        run_id="case.evaluate_b",
-        step_id="evaluate_b",
-        root_ledger=_evaluate_root_ledger(
-            "case.evaluate_b",
-            artifact_id=config.artifact_id,
-            dataset_id=config.dataset_id,
-        ),
+    second = first.model_copy(
+        update={
+            "run_id": "case.evaluate_b",
+            "step_id": "evaluate_b",
+            "root_ledger": _evaluate_root_ledger(
+                "case.evaluate_b",
+                artifact_id=config.artifact_id,
+                dataset_id=config.dataset_id,
+            ),
+        }
     )
     run = create_benchmark_run(
         "cached_pull_case",

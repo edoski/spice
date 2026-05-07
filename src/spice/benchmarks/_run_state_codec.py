@@ -12,18 +12,8 @@ from typing import TypeVar, cast
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
 from ..config.models import WorkflowTask
-from ..config.workflow_snapshots import (
-    hydrate_workflow_config_snapshot,
-    workflow_config_snapshot_payload,
-)
 from ..core.errors import SpiceOperatorError
-from .plan_materialization import (
-    BenchmarkDependencyLedger,
-    BenchmarkPlanEntry,
-    BenchmarkRootFacts,
-    BenchmarkRootLedger,
-    BenchmarkSelectionLedger,
-)
+from .plan_materialization import BenchmarkPlanEntry
 
 PLAN_FILENAME = "plan.jsonl"
 SUBMISSION_FILENAME = "submission.jsonl"
@@ -53,52 +43,8 @@ class BenchmarkSubmissionRecord(BaseModel):
     log_path: str
 
 
-class BenchmarkPlanRecord(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    run_id: str
-    case_id: str
-    step_id: str
-    workflow: WorkflowTask
-    dependencies: BenchmarkDependencyLedger
-    dimension_labels: dict[str, str]
-    selection: BenchmarkSelectionLedger
-    root_facts: BenchmarkRootFacts
-    root_ledger: BenchmarkRootLedger
-    config: dict[str, object]
-
-    @classmethod
-    def from_entry(cls, entry: BenchmarkPlanEntry) -> BenchmarkPlanRecord:
-        return cls(
-            run_id=entry.run_id,
-            case_id=entry.case_id,
-            step_id=entry.step_id,
-            workflow=entry.workflow,
-            dependencies=entry.dependencies,
-            dimension_labels=dict(entry.dimension_labels),
-            selection=entry.selection,
-            root_facts=entry.root_facts,
-            root_ledger=entry.root_ledger,
-            config=workflow_config_snapshot_payload(entry.config),
-        )
-
-    def to_entry(self) -> BenchmarkPlanEntry:
-        return BenchmarkPlanEntry(
-            run_id=self.run_id,
-            case_id=self.case_id,
-            step_id=self.step_id,
-            workflow=self.workflow,
-            dependencies=self.dependencies,
-            dimension_labels=dict(self.dimension_labels),
-            selection=self.selection,
-            root_facts=self.root_facts,
-            root_ledger=self.root_ledger,
-            config=hydrate_workflow_config_snapshot(self.workflow, self.config),
-        )
-
-
 _METADATA_ADAPTER = TypeAdapter(BenchmarkRunMetadata)
-_PLAN_RECORD_ADAPTER = TypeAdapter(BenchmarkPlanRecord)
+_PLAN_RECORD_ADAPTER = TypeAdapter(BenchmarkPlanEntry)
 _SUBMISSION_RECORD_ADAPTER = TypeAdapter(BenchmarkSubmissionRecord)
 
 
@@ -113,15 +59,12 @@ def load_run_metadata(run_dir: Path) -> BenchmarkRunMetadata:
 def write_plan_jsonl(run_dir: Path, entries: list[BenchmarkPlanEntry]) -> None:
     write_jsonl(
         run_dir / PLAN_FILENAME,
-        [_model_json_payload(BenchmarkPlanRecord.from_entry(entry)) for entry in entries],
+        [_model_json_payload(entry) for entry in entries],
     )
 
 
 def load_plan_jsonl(run_dir: Path) -> list[BenchmarkPlanEntry]:
-    return [
-        record.to_entry()
-        for record in _read_jsonl_model(run_dir / PLAN_FILENAME, _PLAN_RECORD_ADAPTER)
-    ]
+    return _read_jsonl_model(run_dir / PLAN_FILENAME, _PLAN_RECORD_ADAPTER)
 
 
 def append_submission_jsonl(run_dir: Path, record: BenchmarkSubmissionRecord) -> None:

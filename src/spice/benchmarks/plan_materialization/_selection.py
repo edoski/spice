@@ -6,12 +6,19 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from ...config.selections import WorkflowSelection
-from ..selection_taxonomy import (
-    benchmark_selection_coordinate_fields,
-    benchmark_selection_root_fields,
-)
+from ...config.resolved_workflows import SUPPORTED_RESOLVED_WORKFLOWS
+from ...config.selections import WorkflowSelection, workflow_selection_field_set
 from ._models import BenchmarkSelectionLedger
+
+_BENCHMARK_SELECTION_ROOT_FIELDS = frozenset({"dataset_id", "study_id", "artifact_id"})
+_BENCHMARK_SELECTION_COORDINATE_FIELDS = (
+    frozenset(
+        field
+        for workflow in SUPPORTED_RESOLVED_WORKFLOWS
+        for field in workflow_selection_field_set(workflow)
+    )
+    - _BENCHMARK_SELECTION_ROOT_FIELDS
+)
 
 
 def materialize_selection_ledger(
@@ -19,11 +26,10 @@ def materialize_selection_ledger(
     selection_row: Mapping[str, object],
     workflow_selection: WorkflowSelection,
 ) -> BenchmarkSelectionLedger:
-    fields = benchmark_selection_coordinate_fields() & set(BenchmarkSelectionLedger.model_fields)
-    root_fields = benchmark_selection_root_fields()
+    fields = _BENCHMARK_SELECTION_COORDINATE_FIELDS & set(BenchmarkSelectionLedger.model_fields)
     payload: dict[str, object] = {}
     for key, value in selection_row.items():
-        if key in root_fields or key not in fields:
+        if key in _BENCHMARK_SELECTION_ROOT_FIELDS or key not in fields:
             continue
         if value is not None:
             payload[key] = value
