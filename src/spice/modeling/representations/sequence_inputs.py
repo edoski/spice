@@ -1,26 +1,22 @@
-"""Internal model-input representation execution helpers."""
+"""sequence_inputs Representation Adapter."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, NamedTuple, Protocol, TypeVar
+from typing import Literal, NamedTuple
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
 
-from ..prediction import ModelInputBatch
-from ..semantics import RepresentationSemantics
-from ..temporal.execution_policy import CompiledExecutionPolicyContract, PreparedActionSpace
-from ..temporal.problem_store import CompiledProblemStore
+from ...prediction import ModelInputBatch
+from ...temporal.execution_policy import CompiledExecutionPolicyContract, PreparedActionSpace
+from ...temporal.problem_store import CompiledProblemStore
+from .base import IntVector, PreparedRepresentation, RepresentationRuntimeContext
 
-IntVector = NDArray[np.int64]
 _MAX_AUTOMATIC_MATERIALIZATION_BYTES = 8 * 1024**3
 _CUDA_DEVICE_MATERIALIZATION_STAGING_BYTES = 256 * 1024**2
 SEQUENCE_INPUT_REPRESENTATION_ID = "sequence_inputs"
-BatchT = TypeVar("BatchT", bound=ModelInputBatch, covariant=True)
-HostStorageMode = Literal["host_streaming", "host_materialized"]
 
 
 class SequenceInputBatch(NamedTuple):
@@ -59,71 +55,6 @@ class SequenceInputBatch(NamedTuple):
             input_mask=self.input_mask.pin_memory(),
             action_mask=self.action_mask.pin_memory(),
         )
-
-
-@dataclass(frozen=True, slots=True)
-class RepresentationRuntimeContext:
-    batch_size: int
-    available_host_memory_bytes: int
-
-
-class PreparedRepresentation(Protocol[BatchT]):
-    @property
-    def sample_count(self) -> int: ...
-
-    @property
-    def batch_signatures(self) -> IntVector: ...
-
-    @property
-    def estimated_storage_bytes(self) -> int: ...
-
-    @property
-    def host_storage_mode(self) -> HostStorageMode: ...
-
-    def build_batch(self, sample_positions: torch.Tensor) -> BatchT: ...
-
-    def to_device_storage(
-        self,
-        device: torch.device,
-    ) -> PreparedRepresentation[BatchT]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class CompiledRepresentationContract:
-    """Compiled model-input representation seam used by training and inference only."""
-
-    prepare_impl: Callable[..., PreparedRepresentation[ModelInputBatch]]
-
-    @property
-    def semantics(self) -> RepresentationSemantics:
-        return RepresentationSemantics(representation_id=SEQUENCE_INPUT_REPRESENTATION_ID)
-
-    @property
-    def representation_id(self) -> str:
-        return SEQUENCE_INPUT_REPRESENTATION_ID
-
-    def prepare(
-        self,
-        store: CompiledProblemStore,
-        *,
-        execution_policy: CompiledExecutionPolicyContract,
-        action_space: PreparedActionSpace,
-        runtime_context: RepresentationRuntimeContext,
-    ) -> PreparedRepresentation[ModelInputBatch]:
-        return self.prepare_impl(
-            store,
-            execution_policy=execution_policy,
-            action_space=action_space,
-            runtime_context=runtime_context,
-        )
-
-
-def compile_representation_contract(
-    representation_id: str = SEQUENCE_INPUT_REPRESENTATION_ID,
-) -> CompiledRepresentationContract:
-    if representation_id != SEQUENCE_INPUT_REPRESENTATION_ID:
-        raise ValueError("representation_id must be sequence_inputs")
-    return _SEQUENCE_INPUT_CONTRACT
 
 
 def build_sequence_input_batch(
@@ -290,7 +221,7 @@ class _MaterializedSequenceInputRepresentation:
         )
 
 
-def _prepare_sequence_input(
+def prepare_sequence_input(
     store: CompiledProblemStore,
     *,
     execution_policy: CompiledExecutionPolicyContract,
@@ -321,12 +252,6 @@ def _prepare_sequence_input(
         action_space=action_space,
         layout=layout,
     )
-
-
-_SEQUENCE_INPUT_CONTRACT = CompiledRepresentationContract(
-    prepare_impl=_prepare_sequence_input,
-)
-
 
 def _sequence_input_layout(
     store: CompiledProblemStore,

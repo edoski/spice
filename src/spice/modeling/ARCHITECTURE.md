@@ -108,7 +108,7 @@ modeling/
   dataset_builders/       temporal dataset preparation and tensorization strategies
   families/               neural network family configs/builders/tuning hooks
   models.py               model protocols and model-output envelope
-  representations.py      representation contracts and model-input preparation
+  representations/        generic Representation Seam plus sequence_inputs Adapter
   results.py              runtime training/evaluation result records
   summary.py              rendered model/training/evaluation summaries
   tuned_config.py         tuned artifact config alignment

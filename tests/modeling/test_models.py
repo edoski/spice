@@ -13,7 +13,7 @@ from spice.modeling.families.transformer_lstm import (
     TransformerLSTMBaseline,
     TransformerLstmModelConfig,
 )
-from spice.modeling.representations import build_sequence_input_batch
+from spice.modeling.representations.sequence_inputs import build_sequence_input_batch
 from spice.prediction.families.min_block_fee_multitask.outputs import (
     OFFSET_LOGITS_HEAD_ID,
     build_output_spec,
