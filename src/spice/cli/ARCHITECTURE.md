@@ -26,7 +26,7 @@ workflow/service result rendered to stdout
 
 Workflow commands run acquisition locally and submit CUDA workflows to remote execution. Transfer commands call execution transfer services. Config commands call config group APIs.
 
-`cli.workflow_command_selection` constructs `AcquireWorkflowSelection`, `TrainWorkflowSelection`, `TuneWorkflowSelection`, or `EvaluateWorkflowSelection` from explicit CLI values before commands run local acquire or hand a resolved workflow config to execution submission. Config owns fresh resolution from typed Workflow Selection to Workflow Config; execution serializes resolved snapshots for remote runs.
+Workflow commands construct `AcquireWorkflowSelection`, `TrainWorkflowSelection`, `TuneWorkflowSelection`, or `EvaluateWorkflowSelection` directly from explicit CLI values before commands run local acquire or hand a resolved workflow config to execution submission. Config owns fresh resolution from typed Workflow Selection to Workflow Config; execution serializes resolved snapshots for remote runs.
 
 CLI command registration adapts `SpiceOperatorError` into Typer/Click operator errors at the command seam. Core errors stay plain project exceptions; parse errors remain Typer-owned.
 

@@ -4,11 +4,16 @@
 
 from __future__ import annotations
 
-from ...config import TrainWorkflowSelection, TuneWorkflowSelection
+from ...config import (
+    AcquireWorkflowSelection,
+    EvaluateWorkflowSelection,
+    TrainWorkflowSelection,
+    TuneWorkflowSelection,
+)
 from ...config.resolution import resolve_workflow_config
 from ...config.resolved_workflows import ResolvedWorkflowConfig
 from ...core.reporting import Reporter
-from ...execution.submission import submit_resolved_workflow
+from ...execution.submission import WorkflowSubmissionEvent, submit_resolved_workflow
 from ..options import (
     DEFAULT_REMOTE_TARGET,
     RemoteTargetOption,
@@ -39,13 +44,6 @@ from ..options import (
     WorkflowTuningSpaceOption,
     WorkflowVariantOption,
 )
-from ..workflow_command_selection import (
-    acquire_workflow_selection,
-    evaluate_workflow_selection,
-    train_workflow_selection,
-    tune_workflow_selection,
-)
-from ._workflow_reporting import report_workflow_submission_event
 
 
 def _submit_selected_workflow(
@@ -61,7 +59,7 @@ def _submit_selected_workflow(
         target=target,
         dependency=dependency,
         detach=detach,
-        on_event=lambda event: report_workflow_submission_event(reporter, event),
+        on_event=lambda event: _report_workflow_submission_event(reporter, event),
     )
 
 
@@ -94,7 +92,7 @@ def acquire_command(
 
     acquire.run(
         resolve_workflow_config(
-            acquire_workflow_selection(
+            AcquireWorkflowSelection(
                 surface=surface,
                 chain=chain,
                 problem=problem,
@@ -128,7 +126,7 @@ def train_command(
     detach: WorkflowDetachOption = False,
 ) -> None:
     _submit_model_workflow(
-        selection=train_workflow_selection(
+        selection=TrainWorkflowSelection(
             surface=surface,
             chain=chain,
             problem=problem,
@@ -171,7 +169,7 @@ def tune_command(
     detach: WorkflowDetachOption = False,
 ) -> None:
     _submit_model_workflow(
-        selection=tune_workflow_selection(
+        selection=TuneWorkflowSelection(
             surface=surface,
             chain=chain,
             problem=problem,
@@ -204,7 +202,7 @@ def evaluate_command(
     detach: WorkflowDetachOption = False,
 ) -> None:
     config = resolve_workflow_config(
-        evaluate_workflow_selection(
+        EvaluateWorkflowSelection(
             artifact_id=artifact_id,
             dataset_id=dataset_id,
             evaluation=evaluation,
@@ -217,4 +215,39 @@ def evaluate_command(
         target=target,
         dependency=dependency,
         detach=detach,
+    )
+
+
+def _report_workflow_submission_event(
+    reporter: Reporter,
+    event: WorkflowSubmissionEvent,
+) -> None:
+    provenance = event.submission.provenance
+    if event.kind == "submitted":
+        reporter.header(
+            "submit",
+            [
+                ("workflow", provenance.task.value),
+                ("job_id", provenance.job_id),
+                ("log", provenance.log_path),
+            ],
+        )
+        return
+    if event.kind == "detached":
+        reporter.header(
+            "submit detached",
+            [
+                ("job_id", provenance.job_id),
+                ("state", event.state or "running"),
+            ],
+        )
+        return
+    if event.state is None:
+        return
+    reporter.header(
+        "submit finished",
+        [
+            ("job_id", provenance.job_id),
+            ("state", event.state),
+        ],
     )
