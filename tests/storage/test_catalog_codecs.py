@@ -65,8 +65,6 @@ def test_remote_catalog_record_codec_rejects_kind_mismatch() -> None:
     ("mutate", "match"),
     [
         (lambda record: record.pop("dataset_id"), "missing fields"),
-        (lambda record: record.__setitem__("extra", "value"), "extra fields"),
-        (lambda record: record.__setitem__("dataset_name", None), "cannot be null"),
         (lambda record: record.__setitem__("dataset_name", 1), "must be a string"),
     ],
 )

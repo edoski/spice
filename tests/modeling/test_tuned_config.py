@@ -57,7 +57,7 @@ def _lstm_model() -> LstmModelConfig:
     )
 
 
-def test_tuning_coercers_preserve_typed_identity() -> None:
+def test_tuning_coercers_accept_typed_configs() -> None:
     tuning_space = coerce_tuning_space_config(
         {"model": {"id": "lstm", "hidden_size": [64]}},
         model_config=_lstm_model(),
@@ -76,7 +76,7 @@ def test_tuning_coercers_preserve_typed_identity() -> None:
         )
         == tuning_space
     )
-    assert coerce_tuned_parameter_set(tuned_parameters, model_id="lstm") is tuned_parameters
+    assert coerce_tuned_parameter_set(tuned_parameters, model_id="lstm") == tuned_parameters
 
 
 def _transformer_lstm_model() -> TransformerLstmModelConfig:

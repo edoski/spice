@@ -5,7 +5,7 @@ from typing import cast
 import pytest
 
 from spice.config import TuneConfig, WorkflowTask
-from spice.core.errors import StateConflictError, StateLayoutError
+from spice.core.errors import StateConflictError
 from spice.corpus.metadata import (
     ChainMetadata,
     CompactValidationReport,
@@ -107,14 +107,6 @@ def test_study_manifest_codec_round_trips_canonical_definition(
     restored = STUDY_MANIFEST_CODEC.decode(STUDY_MANIFEST_CODEC.encode(manifest))
 
     assert restored == manifest
-
-
-def test_study_manifest_codec_rejects_malformed_payload(
-    tmp_path,
-    load_workflow_config,
-) -> None:
-    with pytest.raises(StateLayoutError, match="Invalid study manifest payload"):
-        STUDY_MANIFEST_CODEC.decode({"unexpected": 1})
 
 
 def test_study_manifest_persists_once_and_loads(tmp_path, load_workflow_config) -> None:

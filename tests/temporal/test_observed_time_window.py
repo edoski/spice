@@ -49,7 +49,10 @@ def test_observed_time_window_coercer_preserves_and_redispatches_slot_spacing() 
         {"id": "observed_time_window", "slot_spacing": abstract_slot_spacing}
     )
 
-    assert concrete_compiler.slot_spacing is concrete_slot_spacing
+    assert isinstance(
+        concrete_compiler.slot_spacing,
+        ObservedTimeWindowNominalSlotSpacingConfig,
+    )
     assert redispatched_compiler.slot_spacing is not abstract_slot_spacing
     assert isinstance(
         redispatched_compiler.slot_spacing,

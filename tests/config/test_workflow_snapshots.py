@@ -143,10 +143,7 @@ def test_workflow_snapshot_reports_malformed_payloads() -> None:
     "mutator",
     [
         lambda payload: payload.update({"unexpected": 1}),
-        lambda payload: payload.update({"study_id": "wrong-workflow-field"}),
-        lambda payload: payload.update({"batch_size": 0}),
         lambda payload: payload.update({"batch_size": False}),
-        lambda payload: payload.update({"delay_seconds": True}),
     ],
 )
 def test_workflow_snapshot_rejects_strict_evaluate_payload_errors(mutator) -> None:

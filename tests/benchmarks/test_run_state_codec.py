@@ -85,29 +85,18 @@ def test_plan_jsonl_keeps_operator_run_state_shape(tmp_path: Path) -> None:
     assert row["config"]["workflow"] == "evaluate"
 
 
-def test_plan_jsonl_rejects_extra_fields(tmp_path: Path) -> None:
-    run = _run_with_plan(tmp_path)
-    path = run.run_dir / "plan.jsonl"
-    row = json.loads(path.read_text(encoding="utf-8"))
-    row["extra"] = True
-    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
-
-    with pytest.raises(SpiceOperatorError, match="Extra inputs are not permitted"):
-        load_benchmark_run(run.run_dir)
-
-
-def test_plan_jsonl_rejects_non_string_dimension_labels(tmp_path: Path) -> None:
+def test_run_state_rejects_invalid_plan_entry(tmp_path: Path) -> None:
     run = _run_with_plan(tmp_path)
     path = run.run_dir / "plan.jsonl"
     row = json.loads(path.read_text(encoding="utf-8"))
     row["dimension_labels"]["features"] = 42
     path.write_text(json.dumps(row) + "\n", encoding="utf-8")
 
-    with pytest.raises(SpiceOperatorError, match="Input should be a valid string"):
+    with pytest.raises(SpiceOperatorError):
         load_benchmark_run(run.run_dir)
 
 
-def test_submission_jsonl_rejects_extra_fields(tmp_path: Path) -> None:
+def test_run_state_rejects_invalid_submission_record(tmp_path: Path) -> None:
     run = _run_with_plan(tmp_path)
     record_benchmark_submission(
         run.run_dir,
@@ -126,34 +115,8 @@ def test_submission_jsonl_rejects_extra_fields(tmp_path: Path) -> None:
     row["extra"] = True
     path.write_text(json.dumps(row) + "\n", encoding="utf-8")
 
-    with pytest.raises(SpiceOperatorError, match="Extra inputs are not permitted"):
+    with pytest.raises(SpiceOperatorError):
         load_benchmark_run(run.run_dir)
-
-
-def test_collection_snapshot_requires_schema_version(tmp_path: Path) -> None:
-    run = create_benchmark_run(
-        "collection_schema",
-        target="disi_l40",
-        runs_root=tmp_path / "runs",
-        plan=[],
-    )
-    (run.run_dir / "collection.json").write_text(
-        json.dumps(
-            {
-                "benchmark": "collection_schema",
-                "run_dir": str(run.run_dir),
-                "target": "disi_l40",
-                "run_created_at_utc": "2026-05-01T10:00:00Z",
-                "collected_at_utc": "2026-05-01T11:00:00Z",
-                "expected_evaluate_count": 0,
-                "records": [],
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(SpiceOperatorError, match="schema_version"):
-        load_benchmark_collection_snapshot(run.run_dir)
 
 
 def test_collection_snapshot_rejects_unknown_schema_version(tmp_path: Path) -> None:

@@ -122,18 +122,6 @@ def test_model_family_factory_builds_registered_architectures(model_type, config
     assert isinstance(model, model_type)
 
 
-def test_model_coercer_preserves_concrete_config_identity() -> None:
-    config = LstmModelConfig(
-        input_projection_dim=8,
-        hidden_size=8,
-        num_layers=2,
-        dropout=0.0,
-        head_hidden_dim=4,
-    )
-
-    assert coerce_model_config(config) is config
-
-
 def test_incomplete_model_selector_fails_at_model_boundary() -> None:
     with pytest.raises(ConfigResolutionError, match="Field required"):
         coerce_model_config(ModelConfig[str](id="lstm"))

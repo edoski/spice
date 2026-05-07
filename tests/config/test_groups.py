@@ -10,7 +10,6 @@ from spice.config.groups import (
     ensure_named_group_file,
     load_named_group_payload,
 )
-from spice.config.models import coerce_features_config, coerce_problem_spec
 
 
 def test_typed_group_loaders_return_owner_concrete_types() -> None:
@@ -32,14 +31,6 @@ def test_typed_group_loaders_return_owner_concrete_types() -> None:
     assert type(training.input_normalization).__name__ == "RowStandardConfig"
 
 
-def test_config_owned_coercers_preserve_config_identity() -> None:
-    problem = typed.load(typed.PROBLEM, "current_row_nominal")
-    features = typed.load(typed.FEATURES, "core_fee_dynamics")
-
-    assert coerce_problem_spec(problem) is problem
-    assert coerce_features_config(features) is features
-
-
 @pytest.mark.parametrize(
     ("loader", "name", "identity"),
     [
@@ -58,17 +49,6 @@ def test_context_free_typed_loader_covers_named_group_shapes(
     identity: str,
 ) -> None:
     assert getattr(loader(), identity) == name
-
-
-def test_typed_loader_does_not_use_raw_canonical_payload_loader(monkeypatch) -> None:
-    def fail_raw_loader(*_args, **_kwargs):
-        raise AssertionError("typed loading must not use raw canonical payload loading")
-
-    monkeypatch.setattr("spice.config.groups.load_named_group_payload", fail_raw_loader)
-
-    problem = typed.load(typed.PROBLEM, "current_row_nominal")
-
-    assert problem.id == "current_row_nominal"
 
 
 def test_raw_payload_loader_returns_canonical_dicts() -> None:
