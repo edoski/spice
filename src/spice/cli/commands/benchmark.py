@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated
@@ -17,6 +15,7 @@ from ..options import (
     DEFAULT_REMOTE_TARGET,
     RemoteTargetOption,
 )
+from ..output import echo_json
 
 app = OperatorTyper(help="Plan, submit, collect, and export benchmark runs.", no_args_is_help=True)
 index_app = OperatorTyper(
@@ -24,11 +23,6 @@ index_app = OperatorTyper(
     no_args_is_help=True,
 )
 app.add_typer(index_app, name="index")
-
-
-def _echo_json(payload: Mapping[str, object]) -> None:
-    typer.echo(json.dumps(payload, sort_keys=True))
-
 
 @app.command("plan", short_help="Create a durable benchmark run plan.")
 def benchmark_plan_command(
@@ -42,7 +36,7 @@ def benchmark_plan_command(
     from ...benchmarks.submission import materialize_benchmark_plan_run
 
     planned = materialize_benchmark_plan_run(name, target=target, runs_root=runs_root)
-    _echo_json({"run_dir": str(planned.run_dir), "entries": planned.entry_count})
+    echo_json({"run_dir": str(planned.run_dir), "entries": planned.entry_count})
 
 
 @app.command("submit", short_help="Submit an existing benchmark run plan remotely.")
@@ -55,7 +49,7 @@ def benchmark_submit_command(
     from ...benchmarks.submission import submit_benchmark_run
 
     for submitted in submit_benchmark_run(run_dir):
-        _echo_json({"run_dir": str(submitted.run_dir), **submitted.record.model_dump(mode="json")})
+        echo_json({"run_dir": str(submitted.run_dir), **submitted.record.model_dump(mode="json")})
 
 
 @app.command("collect", short_help="Collect a completed benchmark run.")
@@ -68,7 +62,7 @@ def benchmark_collect_command(
     from ...benchmarks.collection import collect_benchmark_run
 
     snapshot = collect_benchmark_run(run_dir)
-    _echo_json(
+    echo_json(
         {
             "run_dir": str(run_dir),
             "records": len(snapshot.records),
@@ -88,7 +82,7 @@ def benchmark_show_command(
 
     run = load_benchmark_run(run_dir)
     evaluate_count = sum(1 for entry in run.plan if entry.workflow.value == "evaluate")
-    _echo_json(
+    echo_json(
         {
             "run_dir": str(run.run_dir),
             "benchmark": run.metadata.benchmark,
@@ -114,7 +108,7 @@ def benchmark_index_rebuild_command(
 ) -> None:
     from ...benchmarks.result_index import rebuild_benchmark_result_index
 
-    _echo_json(rebuild_benchmark_result_index(runs_root=runs_root, index_path=index_path))
+    echo_json(rebuild_benchmark_result_index(runs_root=runs_root, index_path=index_path))
 
 
 @index_app.command("show", short_help="Show benchmark result index counts.")
@@ -126,7 +120,7 @@ def benchmark_index_show_command(
 ) -> None:
     from ...benchmarks.result_index import benchmark_result_index_counts
 
-    _echo_json(benchmark_result_index_counts(index_path=index_path))
+    echo_json(benchmark_result_index_counts(index_path=index_path))
 
 
 @index_app.command("list", short_help="List indexed benchmark results.")
@@ -151,7 +145,7 @@ def benchmark_index_list_command(
         evaluation=evaluation,
         limit=limit,
     ):
-        _echo_json(asdict(row))
+        echo_json(asdict(row))
 
 
 @index_app.command("export", short_help="Export indexed benchmark results to CSV.")
@@ -179,4 +173,4 @@ def benchmark_index_export_command(
         model=model,
         evaluation=evaluation,
     )
-    _echo_json({"output": str(output), "rows": len(rows)})
+    echo_json({"output": str(output), "rows": len(rows)})

@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, NoReturn
 
 import typer
 
 from ...core.errors import SpiceOperatorError
-from ...core.reporting import Reporter
 from ...storage.operator import (
     ArtifactInspectionDetail,
     DatasetInspectionDetail,
     StorageDeleteCommand,
     StorageDeleteCompleted,
     StorageDeleteFailure,
+    StorageRootKind,
     StorageShowFailure,
     StorageShowQuery,
     StorageShowRendered,
@@ -38,6 +40,7 @@ from ..options import (
     VariantFilterOption,
     resolve_storage_root,
 )
+from ..output import echo_sections
 
 show_app = OperatorTyper(
     help="Query stored datasets, studies, and artifacts.",
@@ -79,31 +82,47 @@ ArtifactDetailOption = Annotated[
 ]
 
 
-_SELECTOR_FLAGS: dict[str, dict[str, str]] = {
-    "dataset": {
-        "chain_name": "--chain",
-        "dataset_name": "--dataset",
-    },
-    "study": {
-        "chain_name": "--chain",
-        "dataset_name": "--dataset",
-        "features_id": "--features",
-        "prediction_id": "--prediction",
-        "model_id": "--model",
-        "problem_id": "--problem",
-        "study_name": "--study",
-    },
-    "artifact": {
-        "chain_name": "--chain",
-        "dataset_name": "--dataset",
-        "features_id": "--features",
-        "prediction_id": "--prediction",
-        "model_id": "--model",
-        "problem_id": "--problem",
-        "variant": "--variant",
-        "study_name": "--study",
-    },
-}
+@dataclass(frozen=True, slots=True)
+class _StorageCliSpec:
+    kind: StorageRootKind
+    selector_flags: dict[str, str]
+
+
+_CLI_SPECS: tuple[_StorageCliSpec, ...] = (
+    _StorageCliSpec(
+        kind="dataset",
+        selector_flags={
+            "chain_name": "--chain",
+            "dataset_name": "--dataset",
+        },
+    ),
+    _StorageCliSpec(
+        kind="study",
+        selector_flags={
+            "chain_name": "--chain",
+            "dataset_name": "--dataset",
+            "features_id": "--features",
+            "prediction_id": "--prediction",
+            "model_id": "--model",
+            "problem_id": "--problem",
+            "study_name": "--study",
+        },
+    ),
+    _StorageCliSpec(
+        kind="artifact",
+        selector_flags={
+            "chain_name": "--chain",
+            "dataset_name": "--dataset",
+            "features_id": "--features",
+            "prediction_id": "--prediction",
+            "model_id": "--model",
+            "problem_id": "--problem",
+            "variant": "--variant",
+            "study_name": "--study",
+        },
+    ),
+)
+_SELECTOR_FLAGS = tuple(spec.selector_flags for spec in _CLI_SPECS)
 
 
 def _dataset_selector(
@@ -135,7 +154,7 @@ def _raise_delete_failure(outcome: StorageDeleteFailure) -> NoReturn:
 
 def _narrowing_guidance(attributes: tuple[str, ...]) -> str:
     flags = [
-        flag for kind_flags in _SELECTOR_FLAGS.values() for attribute in attributes
+        flag for kind_flags in _SELECTOR_FLAGS for attribute in attributes
         if (flag := kind_flags.get(attribute)) is not None
     ]
     if not flags:
@@ -159,16 +178,50 @@ def _print_sections(
     *,
     err: bool = False,
 ) -> None:
-    reporter = Reporter()
-    if err:
-        reporter.diagnostic_sections(title, sections)
-        return
-    reporter.sections(title, sections)
+    echo_sections(title, sections, err=err)
 
 
 def _handle_delete(outcome: StorageDeleteCompleted | StorageDeleteFailure) -> None:
     if isinstance(outcome, StorageDeleteFailure):
         _raise_delete_failure(outcome)
+
+
+def _run_show(
+    *,
+    storage_root: Path | None,
+    kind: StorageRootKind,
+    selector: DatasetSelector | StudySelector | ArtifactSelector,
+    detail: str | None,
+) -> None:
+    _render_show(
+        show_storage(
+            StorageShowQuery(
+                storage_root=resolve_storage_root(storage_root),
+                kind=kind,
+                selector=selector,
+                detail=detail,
+            )
+        )
+    )
+
+
+def _run_delete(
+    *,
+    storage_root: Path | None,
+    kind: StorageRootKind,
+    selector: DatasetSelector | StudySelector | ArtifactSelector,
+    cascade: bool = False,
+) -> None:
+    _handle_delete(
+        delete_storage(
+            StorageDeleteCommand(
+                storage_root=resolve_storage_root(storage_root),
+                kind=kind,
+                selector=selector,
+                cascade=cascade,
+            )
+        )
+    )
 
 
 @show_app.command(
@@ -186,17 +239,12 @@ def show_dataset_command(
     storage_root: StorageRootReadOption = None,
     detail: DatasetDetailOption = None,
 ) -> None:
-    root = resolve_storage_root(storage_root)
     selector = _dataset_selector(dataset_id=dataset_id, chain=chain, dataset=dataset)
-    _render_show(
-        show_storage(
-            StorageShowQuery(
-                storage_root=root,
-                kind="dataset",
-                selector=selector,
-                detail=None if detail is None else detail.value,
-            )
-        )
+    _run_show(
+        storage_root=storage_root,
+        kind="dataset",
+        selector=selector,
+        detail=None if detail is None else detail.value,
     )
 
 
@@ -220,7 +268,6 @@ def show_study_command(
     storage_root: StorageRootReadOption = None,
     detail: StudyDetailOption = None,
 ) -> None:
-    root = resolve_storage_root(storage_root)
     selector = StudySelector(
         study_id=study_id,
         chain_name=chain,
@@ -231,15 +278,11 @@ def show_study_command(
         problem_id=problem,
         study_name=study,
     )
-    _render_show(
-        show_storage(
-            StorageShowQuery(
-                storage_root=root,
-                kind="study",
-                selector=selector,
-                detail=None if detail is None else detail.value,
-            )
-        )
+    _run_show(
+        storage_root=storage_root,
+        kind="study",
+        selector=selector,
+        detail=None if detail is None else detail.value,
     )
 
 
@@ -272,7 +315,6 @@ def show_artifact_command(
     storage_root: StorageRootReadOption = None,
     detail: ArtifactDetailOption = None,
 ) -> None:
-    root = resolve_storage_root(storage_root)
     selector = ArtifactSelector(
         artifact_id=artifact_id,
         dataset_id=dataset_id,
@@ -286,15 +328,11 @@ def show_artifact_command(
         variant=variant,
         study_name=study,
     )
-    _render_show(
-        show_storage(
-            StorageShowQuery(
-                storage_root=root,
-                kind="artifact",
-                selector=selector,
-                detail=None if detail is None else detail.value,
-            )
-        )
+    _run_show(
+        storage_root=storage_root,
+        kind="artifact",
+        selector=selector,
+        detail=None if detail is None else detail.value,
     )
 
 
@@ -310,15 +348,10 @@ def delete_artifact_command(
     ],
     storage_root: StorageRootDeleteOption = None,
 ) -> None:
-    root = resolve_storage_root(storage_root)
-    _handle_delete(
-        delete_storage(
-            StorageDeleteCommand(
-                storage_root=root,
-                kind="artifact",
-                selector=ArtifactSelector(artifact_id=artifact_id),
-            )
-        )
+    _run_delete(
+        storage_root=storage_root,
+        kind="artifact",
+        selector=ArtifactSelector(artifact_id=artifact_id),
     )
 
 
@@ -338,16 +371,11 @@ def delete_study_command(
         typer.Option("--cascade", help="Also delete dependent tuned artifacts."),
     ] = False,
 ) -> None:
-    root = resolve_storage_root(storage_root)
-    _handle_delete(
-        delete_storage(
-            StorageDeleteCommand(
-                storage_root=root,
-                kind="study",
-                selector=StudySelector(study_id=study_id),
-                cascade=cascade,
-            )
-        )
+    _run_delete(
+        storage_root=storage_root,
+        kind="study",
+        selector=StudySelector(study_id=study_id),
+        cascade=cascade,
     )
 
 
@@ -377,14 +405,9 @@ def delete_dataset_command(
         typer.Option("--cascade", help="Also delete dependent studies and artifacts."),
     ] = False,
 ) -> None:
-    root = resolve_storage_root(storage_root)
-    _handle_delete(
-        delete_storage(
-            StorageDeleteCommand(
-                storage_root=root,
-                kind="dataset",
-                selector=DatasetSelector(dataset_id=dataset_id),
-                cascade=cascade,
-            )
-        )
+    _run_delete(
+        storage_root=storage_root,
+        kind="dataset",
+        selector=DatasetSelector(dataset_id=dataset_id),
+        cascade=cascade,
     )

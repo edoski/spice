@@ -25,6 +25,7 @@ class CatalogRootKindSpec(Generic[RecordT]):
     key_field: str
     parent_name: str
     default_order: tuple[str, ...]
+    count_field: str
     nullable_fields: frozenset[str] = frozenset()
 
     @property
@@ -38,6 +39,15 @@ class CatalogRootKindSpec(Generic[RecordT]):
             )
         return record
 
+    def root_path_for_record(self, storage_root: Path, record: CatalogRecord) -> Path:
+        typed_record = self.require_record(record)
+        return (
+            storage_root
+            / self.parent_name
+            / typed_record.chain_name
+            / str(getattr(typed_record, self.key_field))
+        )
+
 
 DATASET_ROOT_SPEC: CatalogRootKindSpec[CatalogDatasetRecord] = CatalogRootKindSpec(
     root_kind=RootKind.CORPUS,
@@ -47,6 +57,7 @@ DATASET_ROOT_SPEC: CatalogRootKindSpec[CatalogDatasetRecord] = CatalogRootKindSp
     key_field="dataset_id",
     parent_name=CORPORA_ROOT_NAME,
     default_order=("chain_name", "dataset_name"),
+    count_field="dataset_roots",
 )
 STUDY_ROOT_SPEC: CatalogRootKindSpec[CatalogStudyRecord] = CatalogRootKindSpec(
     root_kind=RootKind.STUDY,
@@ -64,6 +75,7 @@ STUDY_ROOT_SPEC: CatalogRootKindSpec[CatalogStudyRecord] = CatalogRootKindSpec(
         "problem_id",
         "study_name",
     ),
+    count_field="study_roots",
 )
 ARTIFACT_ROOT_SPEC: CatalogRootKindSpec[CatalogArtifactRecord] = CatalogRootKindSpec(
     root_kind=RootKind.ARTIFACT,
@@ -81,6 +93,7 @@ ARTIFACT_ROOT_SPEC: CatalogRootKindSpec[CatalogArtifactRecord] = CatalogRootKind
         "problem_id",
         "variant",
     ),
+    count_field="artifact_roots",
     nullable_fields=frozenset({"study_id", "study_name"}),
 )
 

@@ -9,9 +9,9 @@ from ...core.errors import StateLayoutError
 from ..artifact import load_artifact_manifest
 from ..corpus import load_dataset_manifest
 from ..engine import RootKind, state_db_path
-from ..layout import artifact_root_path, corpus_root_path, study_root_path
 from ..study_manifest import load_study_manifest
 from .records import CatalogArtifactRecord, CatalogDatasetRecord, CatalogRecord, CatalogStudyRecord
+from .registry import spec_for_record
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,28 +35,8 @@ def catalog_record_from_root(
 
 
 def materialize_catalog_root(storage_root: Path, record: CatalogRecord) -> CatalogRootLocation:
-    if isinstance(record, CatalogDatasetRecord):
-        root_path = corpus_root_path(
-            storage_root,
-            chain_name=record.chain_name,
-            corpus_id=record.dataset_id,
-        )
-        return CatalogRootLocation(root_path=root_path, state_db_path=state_db_path(root_path))
-    if isinstance(record, CatalogStudyRecord):
-        root_path = study_root_path(
-            storage_root,
-            chain_name=record.chain_name,
-            study_id=record.study_id,
-        )
-        return CatalogRootLocation(root_path=root_path, state_db_path=state_db_path(root_path))
-    if isinstance(record, CatalogArtifactRecord):
-        root_path = artifact_root_path(
-            storage_root,
-            chain_name=record.chain_name,
-            artifact_id=record.artifact_id,
-        )
-        return CatalogRootLocation(root_path=root_path, state_db_path=state_db_path(root_path))
-    raise TypeError(f"Unsupported catalog record: {type(record).__name__}")
+    root_path = spec_for_record(record).root_path_for_record(storage_root, record)
+    return CatalogRootLocation(root_path=root_path, state_db_path=state_db_path(root_path))
 
 
 def validate_catalog_root_location(

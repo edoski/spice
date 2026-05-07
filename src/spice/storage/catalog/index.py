@@ -20,6 +20,7 @@ from .registry import (
     DATASET_ROOT_SPEC,
     STUDY_ROOT_SPEC,
     CatalogRootKindSpec,
+    all_root_kind_specs,
     spec_for_root_kind,
 )
 
@@ -197,14 +198,10 @@ def refresh_catalog(storage_root: Path) -> CatalogRefreshSummary:
     try:
         catalog_store.ensure_catalog_db(temp_catalog_path)
         counts = {"dataset_roots": 0, "study_roots": 0, "artifact_roots": 0}
-        for spec, count_key in (
-            (DATASET_ROOT_SPEC, "dataset_roots"),
-            (STUDY_ROOT_SPEC, "study_roots"),
-            (ARTIFACT_ROOT_SPEC, "artifact_roots"),
-        ):
+        for spec in all_root_kind_specs():
             for root_path in _roots_under(storage_root / spec.parent_name):
                 _reindex_catalog_root(temp_catalog_path, root_path=root_path)
-                counts[count_key] += 1
+                counts[spec.count_field] += 1
         os.replace(temp_catalog_path, catalog_path)
         return CatalogRefreshSummary(**counts)
     except Exception:
