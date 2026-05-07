@@ -84,6 +84,10 @@ _Avoid_: task
 One durable executable benchmark row with run id, dependencies, selection ledger, and a Resolved Workflow Snapshot.
 _Avoid_: benchmark workflow selection, expanded row
 
+**Benchmark Selection Ledger**:
+Benchmark-owned durable coordinate intent for a Benchmark Plan Entry: surface, chain, model, problem, objective, evaluation, runtime knobs, variant, and other non-root workflow-selection values. It excludes consumed root ids; root-vs-coordinate policy lives in Benchmark Plan Materialization.
+_Avoid_: workflow selection echo, root selection map
+
 **Benchmark Dependency Ledger**:
 Benchmark-owned durable scheduling facts for a Benchmark Plan Entry: matched local run ids, external Slurm dependencies, and the `artifact_from` source run when present.
 _Avoid_: depends-on tuple, submission helper state
@@ -97,7 +101,7 @@ Benchmark-owned scalar root facts on a Benchmark Plan Entry for caller-facing co
 _Avoid_: root ledger helper methods, config echo
 
 **Benchmark Plan Materialization**:
-Benchmark-owned module that turns Benchmark Specs, Cases, and Steps into Benchmark Plan Entries by expanding dimensions, matching dependencies, applying dependency-derived root selections, resolving Workflow Configs, serializing Resolved Workflow Snapshots, asking Storage Root Materialization for root facts, and emitting Benchmark Root Facts plus the Benchmark Root Ledger. This is not temporal compilation.
+Benchmark-owned module that turns Benchmark Specs, Cases, and Steps into Benchmark Plan Entries by expanding dimensions, matching dependencies, applying dependency-derived root selections, resolving Workflow Configs, serializing Resolved Workflow Snapshots, asking Storage Root Materialization for scalar root facts, and emitting Benchmark Dependency Ledger, Benchmark Selection Ledger, Benchmark Root Facts, and Benchmark Root Ledger. This is not temporal compilation.
 _Avoid_: benchmark compilation helper, id patching, generic materialization
 
 **Benchmark Run**:
@@ -141,7 +145,7 @@ Root Handle for a not-yet-existing or staged workflow output, derived from Produ
 _Avoid_: workflow paths
 
 **Storage Root Materialization**:
-Storage-owned module and seam that turns resolved workflow root identity into workflow-facing root handles and scalar root facts. It resolves consumed roots through Storage Selectors, derives produced root ids and Produced Root Handles from Producer Root Identity, materializes consumed/produced/source Benchmark Root Facts, and returns Root Handles before Workflow Preparation performs domain preflight.
+Storage-owned module and seam that turns resolved workflow root identity into workflow-facing root handles and scalar root facts. It resolves consumed roots through Storage Selectors, derives produced root ids and Produced Root Handles from Producer Root Identity, returns Root Handles before Workflow Preparation performs domain preflight, and returns scalar facts that Benchmark Plan Materialization maps into Benchmark Root Facts and Benchmark Root Ledger entries.
 _Avoid_: workflow root resolution, path derivation helper, generic materialization
 
 **Root Lifecycle**:
@@ -249,7 +253,7 @@ Evaluation-owned module that computes realized, baseline, optimum, and economic 
 _Avoid_: fee accounting, replay accounting
 
 **Temporal Replay Metric Catalog**:
-Evaluation-private catalog of Temporal Replay metric ids, descriptors, event-mean/window aggregation facts, metric assembly, and generic result extraction.
+Evaluation-private catalog of Temporal Replay metric ids, descriptors, event-mean membership, fee-sum membership, window-summary membership, metric validation, metric assembly, and generic result extraction.
 _Avoid_: benchmark metric schema, objective metric registry
 
 **Workflow Command Selection**:

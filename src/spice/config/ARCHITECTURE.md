@@ -47,7 +47,7 @@ A workflow selection is unresolved workflow intent. CLI commands build selection
 
 Selections usually refer to problem specs by name. Benchmark problem grids may supply an inline `ProblemSpec`; this still uses the same resolution path, and the resolved workflow config stores the full executable problem.
 
-`config.selections` owns workflow selection types and generic workflow field metadata. CLI parsing, fresh resolution, and benchmark materialization consume that metadata instead of each restating allowed workflow-selection fields. Benchmark-specific dimension names and root-vs-coordinate policy live in `benchmarks.selection_taxonomy`.
+`config.selections` owns workflow selection types and generic workflow field metadata. CLI parsing, fresh resolution, and benchmark materialization consume that metadata instead of each restating allowed workflow-selection fields. Benchmark-specific dimension names stay with benchmark schema; root-vs-coordinate selection policy stays with benchmark plan materialization.
 
 ## Config Group Loading
 
