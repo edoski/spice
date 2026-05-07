@@ -7,11 +7,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from ..core.errors import SpiceOperatorError
 from ..storage.catalog.codecs import decode_remote_catalog_record
-from ..storage.catalog.index import ReindexedCatalogRoot, resolve_dataset_record
+from ..storage.catalog.index import ReindexedCatalogRoot, resolve_catalog_record_by_id
 from ..storage.catalog.materialization import materialize_catalog_root
-from ..storage.catalog.records import CatalogArtifactRecord, CatalogDatasetRecord, CatalogRecord
+from ..storage.catalog.records import CatalogRecord
 from ..storage.engine import RootKind
 from ..storage.lifecycle import (
     cleanup_root_stage,
@@ -19,16 +18,16 @@ from ..storage.lifecycle import (
     promote_root_stage,
     staged_root_path,
 )
-from ..storage.selectors import DatasetSelector
 from .session import ExecutionSession, open_execution_session
 
 
 @dataclass(frozen=True, slots=True)
-class TransferredArtifactRoot:
-    source_record: CatalogArtifactRecord
-    local_record: CatalogArtifactRecord
+class TransferredRoot:
+    root_kind: RootKind
+    source_record: CatalogRecord
+    destination_record: CatalogRecord
+    source_root: Path
     destination_root: Path
-    dataset_present: bool
 
 
 class TransferAdapter(Protocol):
@@ -46,7 +45,7 @@ class TransferAdapter(Protocol):
         staged_root: Path,
         root_kind: RootKind,
         replace: bool,
-    ) -> ReindexedCatalogRoot | None: ...
+    ) -> ReindexedCatalogRoot: ...
 
     def cleanup_stage(self, staged_root: Path) -> None: ...
 
@@ -123,8 +122,8 @@ class RemoteStorageTransferAdapter:
         staged_root: Path,
         root_kind: RootKind,
         replace: bool,
-    ) -> None:
-        self.session.run_module(
+    ) -> ReindexedCatalogRoot:
+        result = self.session.run_module(
             "spice.storage.sync_cli",
             [
                 "finalize-stage",
@@ -140,6 +139,13 @@ class RemoteStorageTransferAdapter:
             ],
             check_action=f"finalize transfer {destination_root}",
         )
+        return ReindexedCatalogRoot(
+            root_kind=root_kind,
+            record=decode_remote_catalog_record(
+                result.stdout,
+                expected_root_kind=root_kind,
+            ),
+        )
 
     def cleanup_stage(self, staged_root: Path) -> None:
         self.session.run_module(
@@ -148,21 +154,10 @@ class RemoteStorageTransferAdapter:
             check_action=f"cleanup stage {staged_root}",
         )
 
-    def resolve_artifact_record(self, artifact_id: str) -> CatalogArtifactRecord:
-        record = self._resolve_record(
-            root_kind=RootKind.ARTIFACT,
-            action_label=f"artifact {artifact_id}",
-            root_id=artifact_id,
-        )
-        if not isinstance(record, CatalogArtifactRecord):
-            raise SpiceOperatorError("resolved remote record is not an artifact")
-        return record
-
-    def _resolve_record(
+    def resolve_record(
         self,
         *,
         root_kind: RootKind,
-        action_label: str,
         root_id: str,
     ) -> CatalogRecord:
         result = self.session.run_module(
@@ -176,7 +171,7 @@ class RemoteStorageTransferAdapter:
                 "--root-id",
                 root_id,
             ],
-            check_action=f"resolve {action_label}",
+            check_action=f"resolve {root_kind.value} {root_id}",
         )
         return decode_remote_catalog_record(
             result.stdout,
@@ -190,7 +185,7 @@ class StorageTransferTransaction:
     session: ExecutionSession
     _remote_adapter: RemoteStorageTransferAdapter = field(init=False)
     _local_adapter: LocalStorageTransferAdapter = field(init=False)
-    _artifact_cache: dict[str, TransferredArtifactRoot] = field(
+    _pull_cache: dict[tuple[RootKind, str], TransferredRoot] = field(
         default_factory=dict,
         init=False,
     )
@@ -199,71 +194,76 @@ class StorageTransferTransaction:
         self._remote_adapter = RemoteStorageTransferAdapter(self.session)
         self._local_adapter = LocalStorageTransferAdapter(self.local_storage_root)
 
-    def push_dataset(
+    def push_root(
         self,
-        dataset_id: str,
+        root_kind: RootKind,
+        root_id: str,
         *,
         replace: bool = False,
-    ) -> CatalogDatasetRecord:
-        record = resolve_dataset_record(
+    ) -> TransferredRoot:
+        record = resolve_catalog_record_by_id(
             self.local_storage_root,
-            selector=DatasetSelector(dataset_id=dataset_id),
+            root_kind=root_kind,
+            root_id=root_id,
         )
         source = materialize_catalog_root(self.local_storage_root, record)
         destination = materialize_catalog_root(
             self._remote_adapter.storage_root,
             record,
         )
-        _execute_transfer(
+        promoted = _execute_transfer(
             adapter=self._remote_adapter,
             destination_root=destination.root_path,
-            root_kind=RootKind.CORPUS,
+            root_kind=root_kind,
             replace=replace,
             rsync=lambda staged_root: self.session.rsync_to(
                 source_root=source.root_path,
                 destination_root=staged_root,
             ),
         )
-        return record
+        return TransferredRoot(
+            root_kind=root_kind,
+            source_record=record,
+            destination_record=promoted.record,
+            source_root=source.root_path,
+            destination_root=destination.root_path,
+        )
 
-    def pull_artifact(
+    def pull_root(
         self,
-        artifact_id: str,
+        root_kind: RootKind,
+        root_id: str,
         *,
         replace: bool = True,
-    ) -> TransferredArtifactRoot:
-        cached = self._artifact_cache.get(artifact_id)
+    ) -> TransferredRoot:
+        cache_key = (root_kind, root_id)
+        cached = self._pull_cache.get(cache_key)
         if cached is not None:
             return cached
-        source_record = self._remote_adapter.resolve_artifact_record(artifact_id)
+        source_record = self._remote_adapter.resolve_record(
+            root_kind=root_kind,
+            root_id=root_id,
+        )
         source = materialize_catalog_root(self._remote_adapter.storage_root, source_record)
         destination = materialize_catalog_root(self.local_storage_root, source_record)
         promoted = _execute_transfer(
             adapter=self._local_adapter,
             destination_root=destination.root_path,
-            root_kind=RootKind.ARTIFACT,
+            root_kind=root_kind,
             replace=replace,
             rsync=lambda staged_root: self.session.rsync_from(
                 source_root=source.root_path,
                 destination_root=staged_root,
             ),
         )
-        if promoted is None or not isinstance(promoted.record, CatalogArtifactRecord):
-            raise SpiceOperatorError("promoted local record is not an artifact")
-        transferred = TransferredArtifactRoot(
+        transferred = TransferredRoot(
+            root_kind=root_kind,
             source_record=source_record,
-            local_record=promoted.record,
+            destination_record=promoted.record,
+            source_root=source.root_path,
             destination_root=destination.root_path,
-            dataset_present=materialize_catalog_root(
-                self.local_storage_root,
-                CatalogDatasetRecord(
-                    dataset_id=source_record.dataset_id,
-                    dataset_name=source_record.dataset_name,
-                    chain_name=source_record.chain_name,
-                ),
-            ).root_path.exists(),
         )
-        self._artifact_cache[artifact_id] = transferred
+        self._pull_cache[cache_key] = transferred
         return transferred
 
 
@@ -285,7 +285,7 @@ def _execute_transfer(
     root_kind: RootKind,
     replace: bool,
     rsync: Callable[[Path], None],
-) -> ReindexedCatalogRoot | None:
+) -> ReindexedCatalogRoot:
     staged_root = adapter.prepare_stage(
         destination_root=destination_root,
         replace=replace,

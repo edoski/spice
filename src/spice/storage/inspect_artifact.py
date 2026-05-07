@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..core.errors import MissingStateError, StateLayoutError
 from ..core.rendering import metric_bundle_string, window_metric_fields
 from ..features import FeaturePrerequisites
 from ..modeling.artifacts import TrainingArtifactManifest
@@ -15,7 +16,15 @@ from .artifact import (
     load_artifact_manifest,
     load_training_summary,
 )
+from .catalog.index import list_dataset_records
+from .catalog.materialization import materialize_catalog_root
 from .catalog.records import CatalogArtifactRecord
+from .engine import RootKind, require_root_kind, state_db_path
+from .selectors import DatasetSelector
+
+_MISSING_ARTIFACT_DATASET_WARNING = (
+    "matching local dataset root is missing; local inspection still needs that dataset"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +34,24 @@ class ArtifactRootDescription:
     evaluations: list[LoadedEvaluationSummary] | None = None
     epochs: list[TrainingEpochRecord] | None = None
     show_runs: bool = False
+
+
+def artifact_local_dependency_warnings(
+    storage_root: Path,
+    record: CatalogArtifactRecord,
+) -> tuple[str, ...]:
+    matches = list_dataset_records(
+        storage_root,
+        selector=DatasetSelector(dataset_id=record.dataset_id),
+    )
+    for dataset_record in matches:
+        location = materialize_catalog_root(storage_root, dataset_record)
+        try:
+            require_root_kind(state_db_path(location.root_path), RootKind.CORPUS)
+        except (MissingStateError, StateLayoutError):
+            continue
+        return ()
+    return (_MISSING_ARTIFACT_DATASET_WARNING,)
 
 
 def artifact_list_sections(

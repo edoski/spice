@@ -11,7 +11,7 @@ from ..config.models import (
     WorkflowTask,
 )
 from ..config.resolution import WorkflowConfig
-from ..config.resolved_workflows import ResolvedWorkflowConfig
+from ..config.resolved_workflows import SUPPORTED_RESOLVED_WORKFLOWS, ResolvedWorkflowConfig
 from ..config.workflow_snapshots import hydrate_workflow_config_snapshot_json
 
 
@@ -48,11 +48,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "task",
-        choices=[
-            task.value
-            for task in WorkflowTask
-            if task is not WorkflowTask.ACQUIRE
-        ],
+        choices=[task.value for task in SUPPORTED_RESOLVED_WORKFLOWS],
     )
     parser.add_argument("config_json")
     args = parser.parse_args()

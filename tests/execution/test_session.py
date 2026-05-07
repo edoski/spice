@@ -8,6 +8,7 @@ from typing import cast
 
 from spice.config import TrainWorkflowSelection, WorkflowTask, resolve_workflow_config
 from spice.execution.models import ExecutionWorkflowSpec
+from spice.execution.provenance import ExecutionJobProvenance
 from spice.execution.session import ExecutionJobSubmission, ExecutionSession, ExecutionTarget
 
 
@@ -147,12 +148,21 @@ def test_execution_session_submit_workflow_forwards_sbatch_dependency(
         dependency="afterok:99999",
     )
 
-    assert submission.job_id == "12345"
+    assert submission.provenance == ExecutionJobProvenance.slurm(
+        task=WorkflowTask.TRAIN,
+        target="disi_l40",
+        job_id="12345",
+        log_path=tmp_path / "spice-train-12345.out",
+    )
     assert captured["command"] == (
         f"mkdir -p {tmp_path} && mkdir -p /storage && cat | sbatch --dependency=afterok:99999"
     )
     assert captured["check_action"] == "submit train"
     assert isinstance(captured["input_text"], str)
+    script = cast(str, captured["input_text"])
+    assert "export SPICE_EXECUTION_TARGET=disi_l40" in script
+    assert "export SPICE_WORKFLOW_TASK=train" in script
+    assert 'export SPICE_EXECUTION_REF="slurm:${SLURM_JOB_ID:-}"' in script
 
 
 def test_execution_session_follow_job_uses_quoted_tail_command(
@@ -185,9 +195,12 @@ def test_execution_session_follow_job_uses_quoted_tail_command(
         lambda _self, _submission: "COMPLETED",
     )
     submission = ExecutionJobSubmission(
-        task=WorkflowTask.TRAIN,
-        job_id="12345",
-        log_path=tmp_path / "spice-train-12345.out",
+        provenance=ExecutionJobProvenance.slurm(
+            task=WorkflowTask.TRAIN,
+            target="disi_l40",
+            job_id="12345",
+            log_path=tmp_path / "spice-train-12345.out",
+        ),
     )
 
     state = session.follow_job(submission)
@@ -195,7 +208,7 @@ def test_execution_session_follow_job_uses_quoted_tail_command(
     assert state == "COMPLETED"
     argv = cast(list[str], captured["args"])
     assert argv[:3] == ["ssh", "edoardo.galli3@giano.cs.unibo.it", "bash"]
-    assert str(submission.log_path) in argv[-1]
+    assert str(submission.provenance.log_path) in argv[-1]
     assert "tail -n +1 -F" in argv[-1]
     assert captured["text"] is True
     assert captured["stdout"] is sys.stderr

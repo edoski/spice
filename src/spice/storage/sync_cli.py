@@ -55,13 +55,14 @@ def _finalize_stage_command(args: argparse.Namespace) -> None:
     storage_root = Path(args.storage_root)
     destination_root = Path(args.destination_root)
     staged_root = Path(args.staged_root)
-    promote_root_stage(
+    reindexed = promote_root_stage(
         storage_root=storage_root,
         destination_root=destination_root,
         staged_root=staged_root,
         expected_root_kind=RootKind(args.root_kind),
         replace=args.replace,
     )
+    print(encode_remote_catalog_record(reindexed.record))
 
 
 def _cleanup_stage_command(args: argparse.Namespace) -> None:

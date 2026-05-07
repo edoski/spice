@@ -34,7 +34,7 @@ An execution target defines:
 
 ## Execution Session
 
-`spice.execution.session` is the target-bound Interface for remote operations. It owns shell quoting, command execution, module execution, rsync, SLURM submission, target follow policy, job following, final-state reads, and remote git commit lookup. `spice.execution.submission` owns the higher-level direct workflow submit/follow lifecycle. A job submission is only the submitted job receipt: workflow task, job id, and log path.
+`spice.execution.session` is the target-bound Interface for remote operations. It owns shell quoting, command execution, module execution, rsync, SLURM submission, target follow policy, job following, final-state reads, and remote git commit lookup. `spice.execution.provenance` owns submitted job identity: workflow task, target, job id, execution ref, and log path. `spice.execution.submission` owns the higher-level direct workflow submit/follow lifecycle.
 
 There is no additional remote-execution session protocol while SSH/SLURM is the only Adapter.
 
@@ -68,7 +68,7 @@ Before submission, the workflow config storage root is rewritten to the target's
 
 ## Transfer
 
-`StorageTransferTransaction` pushes local dataset roots to a target and pulls remote artifact roots back locally through an **Execution Session**. The transaction owns prepare, rsync, promote, and cleanup for both directions; local and remote transfer adapters provide the storage-lifecycle operations on the side that receives the root. Cleanup is best-effort and preserves the primary rsync or promote failure as the raised error.
+`StorageTransferTransaction` pushes or pulls catalog roots through an **Execution Session**. The transaction owns record resolution, canonical source/destination materialization, prepare, rsync, promote, and cleanup for both directions; local and remote transfer adapters provide the storage-lifecycle operations on the side that receives the root. Remote finalize emits a strict catalog record envelope, so both local and remote promotion return the promoted root record. Cleanup is best-effort and preserves the primary rsync or promote failure as the raised error.
 
 ## Failure Modes
 

@@ -6,6 +6,7 @@ import pytest
 
 from spice.config import TrainConfig, WorkflowTask
 from spice.core.errors import SpiceOperatorError
+from spice.execution.provenance import ExecutionJobProvenance
 from spice.execution.session import ExecutionJobSubmission
 from spice.execution.submission import (
     WorkflowSubmissionEvent,
@@ -37,9 +38,12 @@ class _FakeSession:
         del config
         self.submitted_dependency = dependency
         return ExecutionJobSubmission(
-            task=task,
-            job_id="12345",
-            log_path=Path("/logs/spice-train-12345.out"),
+            provenance=ExecutionJobProvenance.slurm(
+                task=task,
+                target="target",
+                job_id="12345",
+                log_path=Path("/logs/spice-train-12345.out"),
+            ),
         )
 
     def follow_job(self, _submission: ExecutionJobSubmission) -> str | None:

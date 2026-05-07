@@ -17,6 +17,7 @@ from spice.config import (
     TuneConfig,
     WorkflowTask,
 )
+from spice.execution.provenance import ExecutionJobProvenance
 from spice.execution.session import ExecutionJobSubmission
 
 runner = CliRunner()
@@ -108,9 +109,12 @@ def test_model_workflow_cli_resolves_and_submits_selection_surface(
             captured["task"] = task
             captured["config"] = config
             return ExecutionJobSubmission(
-                task=task,
-                job_id="12345",
-                log_path=Path("/tmp/spice-job.out"),
+                provenance=ExecutionJobProvenance.slurm(
+                    task=task,
+                    target="disi_l40",
+                    job_id="12345",
+                    log_path=Path("/tmp/spice-job.out"),
+                ),
             )
 
     monkeypatch.setattr(
@@ -212,9 +216,12 @@ def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
             del config, dependency
             captured["task"] = task
             return ExecutionJobSubmission(
-                task=task,
-                job_id="12345",
-                log_path=Path("/tmp/spice-train-12345.out"),
+                provenance=ExecutionJobProvenance.slurm(
+                    task=task,
+                    target="disi_l40",
+                    job_id="12345",
+                    log_path=Path("/tmp/spice-train-12345.out"),
+                ),
             )
 
     def fake_open_session(target_name: str) -> FakeSession:
@@ -275,9 +282,12 @@ def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:
         ) -> ExecutionJobSubmission:
             del config, dependency
             return ExecutionJobSubmission(
-                task=task,
-                job_id="12345",
-                log_path=Path("/remote/logs/spice-train-12345.out"),
+                provenance=ExecutionJobProvenance.slurm(
+                    task=task,
+                    target="disi_l40",
+                    job_id="12345",
+                    log_path=Path("/remote/logs/spice-train-12345.out"),
+                ),
             )
 
         def follow_job(self, _submission: ExecutionJobSubmission) -> str:

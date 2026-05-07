@@ -12,6 +12,8 @@ from ..execution.transfer_transaction import (
     StorageTransferTransaction,
     open_storage_transfer_transaction,
 )
+from ..storage.catalog.records import CatalogArtifactRecord
+from ..storage.engine import RootKind
 from .collection_resolver import (
     BenchmarkCollectionSelection,
     benchmark_collection_selection,
@@ -61,9 +63,12 @@ def collect_benchmark_run(
                 target_name=metadata.target,
                 transactions=transfer_transactions,
             )
+            pulled = transaction.pull_root(RootKind.ARTIFACT, selection.artifact_id)
+            if not isinstance(pulled.destination_record, CatalogArtifactRecord):
+                raise SpiceOperatorError("pulled benchmark root is not an artifact")
             state = resolve_benchmark_evaluation(
                 selection,
-                artifact_record=transaction.pull_artifact(selection.artifact_id).local_record,
+                artifact_record=pulled.destination_record,
             )
         except SelectorResolutionError as exc:
             raise SpiceOperatorError(str(exc)) from exc

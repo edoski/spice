@@ -116,7 +116,7 @@ Supported transfer directions:
 | `transfer push dataset` | local corpus root to cluster. |
 | `transfer pull artifact` | cluster artifact root to local. |
 
-`execution.transfer_transaction` prepares a remote or local stage, uses `rsync`, validates root kind through lifecycle operations, finalizes the stage, and reindexes. `storage.sync_cli` is the remote-side helper for path and root-kind commands. Transfer destination paths are derived by catalog materialization, and remote records cross the SSH seam through the strict catalog codec. Dataset is the operator identity; corpus is the storage root kind.
+`execution.transfer_transaction` prepares a remote or local stage, uses `rsync`, validates root kind through lifecycle operations, finalizes the stage, and reindexes. `storage.sync_cli` is the remote-side helper for path and root-kind commands; finalize emits the promoted catalog record through the strict catalog codec. Transfer destination paths are derived by catalog materialization, and remote records cross the SSH seam through the strict catalog codec. Dataset is the operator identity; corpus is the storage root kind. Storage inspection owns local artifact dependency warnings, and CLI transfer commands render them.
 
 ## Invariants
 

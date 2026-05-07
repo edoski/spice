@@ -31,8 +31,9 @@ from spice.config.groups import load_named_group_payload
 from spice.config.models import ArtifactVariant
 from spice.core.errors import SelectorResolutionError, SpiceOperatorError
 from spice.evaluation.registry import coerce_evaluator_config
-from spice.execution.transfer_transaction import TransferredArtifactRoot
+from spice.execution.transfer_transaction import TransferredRoot
 from spice.storage.catalog.records import CatalogArtifactRecord
+from spice.storage.engine import RootKind
 from tests.catalog_helpers import artifact_record
 
 
@@ -261,11 +262,12 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
     _write_evaluate_run(run_dir, config)
     resolve_calls: list[object] = []
     pull_calls: list[object] = []
-    pulled = TransferredArtifactRoot(
+    pulled = TransferredRoot(
+        root_kind=RootKind.ARTIFACT,
         source_record=_artifact_record(tmp_path / "remote" / "artifact-1"),
-        local_record=_artifact_record(tmp_path / "local" / "artifact-1"),
+        destination_record=_artifact_record(tmp_path / "local" / "artifact-1"),
+        source_root=tmp_path / "remote" / "artifact-1",
         destination_root=tmp_path / "local" / "artifact-1",
-        dataset_present=True,
     )
 
     def fake_resolve(selection, *, artifact_record):
@@ -289,8 +291,9 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
         )
 
     class FakeTransferTransaction:
-        def pull_artifact(self, artifact_id: str):
-            pull_calls.append(artifact_id)
+        def pull_root(self, root_kind: RootKind, root_id: str):
+            assert root_kind is RootKind.ARTIFACT
+            pull_calls.append(root_id)
             return pulled
 
     monkeypatch.setattr(
@@ -329,8 +332,8 @@ def test_benchmark_collect_refuses_partial_snapshot_and_index_write(
     _write_evaluate_run(run_dir, config)
 
     class FakeTransferTransaction:
-        def pull_artifact(self, artifact_id: str):
-            del artifact_id
+        def pull_root(self, root_kind: RootKind, root_id: str):
+            del root_kind, root_id
             raise SelectorResolutionError(kind="artifact", records=[])
 
     monkeypatch.setattr(
@@ -357,16 +360,17 @@ def test_benchmark_collect_refuses_partial_write_when_summary_missing(
         runs_root=tmp_path / "outputs" / "benchmarks" / "runs",
     )
     _write_evaluate_run(run_dir, config)
-    pulled = TransferredArtifactRoot(
+    pulled = TransferredRoot(
+        root_kind=RootKind.ARTIFACT,
         source_record=_artifact_record(tmp_path / "remote" / "artifact-1"),
-        local_record=_artifact_record(tmp_path / "local" / "artifact-1"),
+        destination_record=_artifact_record(tmp_path / "local" / "artifact-1"),
+        source_root=tmp_path / "remote" / "artifact-1",
         destination_root=tmp_path / "local" / "artifact-1",
-        dataset_present=True,
     )
 
     class FakeTransferTransaction:
-        def pull_artifact(self, artifact_id: str):
-            del artifact_id
+        def pull_root(self, root_kind: RootKind, root_id: str):
+            del root_kind, root_id
             return pulled
 
     monkeypatch.setattr(
@@ -443,17 +447,18 @@ def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
                 log_path="/tmp/spice-evaluate.out",
             ),
         )
-    pulled = TransferredArtifactRoot(
+    pulled = TransferredRoot(
+        root_kind=RootKind.ARTIFACT,
         source_record=_artifact_record(tmp_path / "remote" / "artifact-1"),
-        local_record=_artifact_record(tmp_path / "local" / "artifact-1"),
+        destination_record=_artifact_record(tmp_path / "local" / "artifact-1"),
+        source_root=tmp_path / "remote" / "artifact-1",
         destination_root=tmp_path / "local" / "artifact-1",
-        dataset_present=True,
     )
     pull_calls: list[str] = []
     submissions: list[str] = []
 
     def fake_resolve(selection, *, artifact_record: CatalogArtifactRecord):
-        assert artifact_record is pulled.local_record
+        assert artifact_record is pulled.destination_record
         submissions.append(selection.execution_ref)
         return SimpleNamespace(
             evaluation=_loaded_summary(config),
@@ -465,9 +470,10 @@ def test_benchmark_collect_pulls_same_artifact_once_for_multiple_evaluations(
         def __init__(self) -> None:
             self._pulled = False
 
-        def pull_artifact(self, artifact_id: str):
+        def pull_root(self, root_kind: RootKind, root_id: str):
+            assert root_kind is RootKind.ARTIFACT
             if not self._pulled:
-                pull_calls.append(artifact_id)
+                pull_calls.append(root_id)
                 self._pulled = True
             return pulled
 

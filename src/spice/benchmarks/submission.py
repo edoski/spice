@@ -79,15 +79,16 @@ def _submit_benchmark_entries(
             config=entry.config,
             dependency=dependency,
         )
-        submitted[entry.run_id] = submission.job_id
+        provenance = submission.provenance
+        submitted[entry.run_id] = provenance.job_id
         record = BenchmarkSubmissionRecord(
             run_id=entry.run_id,
             workflow=entry.workflow,
-            job_id=submission.job_id,
-            execution_ref=f"slurm:{submission.job_id}",
+            job_id=provenance.job_id,
+            execution_ref=provenance.execution_ref,
             git_commit=git_commit,
             dependency=dependency,
-            log_path=str(submission.log_path),
+            log_path=str(provenance.log_path),
         )
         append_submission_jsonl(run_dir, record)
         records.append(SubmittedBenchmarkWorkflow(record=record, run_dir=run_dir))

@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import os
-
 from ..config.models import EvaluateConfig
 from ..core.reporting import Reporter
+from ..execution.provenance import current_execution_job_provenance
 from ..modeling.results import (
     EvaluationExecutionProvenance,
     build_evaluation_runtime_summary,
@@ -54,13 +53,13 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
 
 
 def _current_execution_provenance() -> EvaluationExecutionProvenance | None:
-    execution_ref = os.environ.get("SPICE_EXECUTION_REF")
-    if not execution_ref or execution_ref.endswith(":"):
+    provenance = current_execution_job_provenance()
+    if provenance is None:
         return None
     return EvaluationExecutionProvenance(
-        execution_ref=execution_ref,
-        job_id=os.environ.get("SPICE_EXECUTION_JOB_ID") or None,
-        log_path=os.environ.get("SPICE_EXECUTION_LOG_PATH") or None,
-        workflow_task=os.environ.get("SPICE_WORKFLOW_TASK") or None,
-        target=os.environ.get("SPICE_EXECUTION_TARGET") or None,
+        execution_ref=provenance.execution_ref,
+        job_id=provenance.job_id,
+        log_path=str(provenance.log_path),
+        workflow_task=provenance.task.value,
+        target=provenance.target,
     )

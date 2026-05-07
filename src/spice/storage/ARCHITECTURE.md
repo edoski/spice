@@ -108,6 +108,6 @@ Producer identity and consumer selection stay separate inside `storage.workflow_
 
 ## Remote Transfer Boundary
 
-Remote SSH and rsync orchestration lives in `execution.transfer_transaction`. Storage exposes local lifecycle/catalog operations and `storage.sync_cli`, the helper module executed on the remote machine for path and root-kind operations.
+Remote SSH and rsync orchestration lives in `execution.transfer_transaction`. Storage exposes local lifecycle/catalog operations, artifact dependency inspection warnings, and `storage.sync_cli`, the helper module executed on the remote machine for path and root-kind operations. `storage.sync_cli finalize-stage` emits the promoted catalog record through the strict remote catalog envelope.
 
 Catalog kind `dataset` maps intentionally to storage `RootKind.CORPUS`: dataset is the operator/config identity, while corpus is the physical storage root kind. `storage.catalog.index` owns typed catalog list/resolve/upsert/reindex operations, private catalog dispatch owns root-kind metadata, `storage.catalog.materialization` owns canonical destination paths and record construction, and `storage.catalog.codecs` owns the strict remote JSON envelope used by transfer helpers.

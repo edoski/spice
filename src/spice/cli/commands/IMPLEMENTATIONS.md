@@ -70,7 +70,7 @@ Supported commands:
 | `transfer push dataset` | Local acquired dataset/corpus root to cluster. |
 | `transfer pull artifact` | Cluster artifact root to local. |
 
-Study transfer is not operator-facing because train and tune run remotely. `pull artifact` exists for inspection, archive, and benchmark collection. `--replace` controls destination replacement.
+Study transfer is not operator-facing because train and tune run remotely. `pull artifact` exists for inspection, archive, and benchmark collection. `--replace` controls destination replacement. Storage inspection owns local artifact dependency warnings; transfer commands render those warnings after a successful pull.
 
 ## Config And Benchmark Commands
 

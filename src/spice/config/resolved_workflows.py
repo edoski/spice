@@ -29,6 +29,11 @@ from .models import (
 )
 
 ResolvedWorkflowConfig: TypeAlias = TrainConfig | TuneConfig | EvaluateConfig
+SUPPORTED_RESOLVED_WORKFLOWS = (
+    WorkflowTask.TRAIN,
+    WorkflowTask.TUNE,
+    WorkflowTask.EVALUATE,
+)
 
 
 @dataclass(frozen=True, slots=True)

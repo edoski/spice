@@ -57,7 +57,9 @@ def submit_resolved_workflow(
         return WorkflowSubmissionResult(submission=submission, state=None, detached=False)
     _emit(on_event, WorkflowSubmissionEvent("finished", submission, state=state))
     if state != "COMPLETED":
-        raise SpiceOperatorError(f"Job {submission.job_id} ended with state {state}")
+        raise SpiceOperatorError(
+            f"Job {submission.provenance.job_id} ended with state {state}"
+        )
     return WorkflowSubmissionResult(submission=submission, state=state, detached=False)
 
 

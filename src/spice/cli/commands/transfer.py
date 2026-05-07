@@ -7,6 +7,9 @@ from typing import Annotated
 import typer
 
 from ...execution.transfer_transaction import open_storage_transfer_transaction
+from ...storage.catalog.records import CatalogArtifactRecord, CatalogDatasetRecord
+from ...storage.engine import RootKind
+from ...storage.inspect_artifact import artifact_local_dependency_warnings
 from ..errors import OperatorTyper
 from ..options import (
     DEFAULT_REMOTE_TARGET,
@@ -47,7 +50,10 @@ def push_dataset_command(
 ) -> None:
     root = resolve_storage_root(storage_root)
     transaction = open_storage_transfer_transaction(target, local_storage_root=root)
-    record = transaction.push_dataset(dataset_id, replace=replace)
+    transferred = transaction.push_root(RootKind.CORPUS, dataset_id, replace=replace)
+    record = transferred.destination_record
+    if not isinstance(record, CatalogDatasetRecord):
+        raise TypeError("transfer push dataset returned non-dataset record")
     typer.echo(f"push dataset={record.dataset_name} dataset_id={record.dataset_id}")
 
 
@@ -63,14 +69,10 @@ def pull_artifact_command(
 ) -> None:
     root = resolve_storage_root(storage_root)
     transaction = open_storage_transfer_transaction(target, local_storage_root=root)
-    pulled = transaction.pull_artifact(artifact_id, replace=replace)
-    record = pulled.local_record
+    pulled = transaction.pull_root(RootKind.ARTIFACT, artifact_id, replace=replace)
+    record = pulled.destination_record
+    if not isinstance(record, CatalogArtifactRecord):
+        raise TypeError("transfer pull artifact returned non-artifact record")
     typer.echo(f"pull artifact={record.artifact_id}")
-    if not pulled.dataset_present:
-        typer.echo(
-            (
-                "warning: matching local dataset root is missing; "
-                "local inspection still needs that dataset"
-            ),
-            err=True,
-        )
+    for warning in artifact_local_dependency_warnings(root, record):
+        typer.echo(f"warning: {warning}", err=True)

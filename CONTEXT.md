@@ -153,7 +153,7 @@ Storage-owned workflow commit boundary for full-root staging, selected-path corp
 _Avoid_: root handle operation, workflow staging helper
 
 **Storage Transfer Transaction**:
-Execution-owned push/pull behavior that resolves a catalog root, stages it, rsyncs it, promotes it with root-kind validation, and cleans up failed stages without hiding the primary failure.
+Execution-owned root-shaped push/pull behavior that resolves a catalog root, stages it, rsyncs it, promotes it with root-kind validation, returns promoted catalog records, and cleans up failed stages without hiding the primary failure.
 _Avoid_: sync helper, rsync wrapper
 
 **Remote Catalog Record Codec**:
@@ -257,7 +257,7 @@ Benchmark-owned facts returned by the Benchmark Collection Resolver after valida
 _Avoid_: resolved summary tuple, copied submission fields
 
 **Execution Session**:
-Target-bound SSH/SLURM session for remote commands, module execution, rsync transfer, workflow submission, job following, and remote metadata lookup.
+Target-bound SSH/SLURM session for remote commands, module execution, rsync transfer, workflow submission with submitted job identity, job following, and remote metadata lookup.
 _Avoid_: execution backend
 
 ## Relationships

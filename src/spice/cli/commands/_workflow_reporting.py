@@ -10,14 +10,14 @@ def report_workflow_submission_event(
     reporter: Reporter,
     event: WorkflowSubmissionEvent,
 ) -> None:
-    submission = event.submission
+    provenance = event.submission.provenance
     if event.kind == "submitted":
         reporter.header(
             "submit",
             [
-                ("workflow", submission.task.value),
-                ("job_id", submission.job_id),
-                ("log", submission.log_path),
+                ("workflow", provenance.task.value),
+                ("job_id", provenance.job_id),
+                ("log", provenance.log_path),
             ],
         )
         return
@@ -25,7 +25,7 @@ def report_workflow_submission_event(
         reporter.header(
             "submit detached",
             [
-                ("job_id", submission.job_id),
+                ("job_id", provenance.job_id),
                 ("state", event.state or "running"),
             ],
         )
@@ -35,7 +35,7 @@ def report_workflow_submission_event(
     reporter.header(
         "submit finished",
         [
-            ("job_id", submission.job_id),
+            ("job_id", provenance.job_id),
             ("state", event.state),
         ],
     )

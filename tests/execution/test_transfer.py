@@ -102,19 +102,21 @@ def test_storage_transfer_transaction_pushes_dataset_to_canonical_corpus_destina
     record = _dataset_record(local_storage_root / "corpora" / "ethereum" / "dataset-1")
     materialize_catalog_root(local_storage_root, record).root_path.mkdir(parents=True)
     remote_storage_root = tmp_path / "remote-storage"
-    session = _FakeSession(remote_storage_root)
+    session = _FakeSession(remote_storage_root, record_json=encode_remote_catalog_record(record))
     monkeypatch.setattr(
-        "spice.execution.transfer_transaction.resolve_dataset_record",
-        lambda _root, *, selector: record,
+        "spice.execution.transfer_transaction.resolve_catalog_record_by_id",
+        lambda _root, *, root_kind, root_id: record,
     )
     transaction = StorageTransferTransaction(
         local_storage_root=local_storage_root,
         session=cast(ExecutionSession, session),
     )
 
-    pushed = transaction.push_dataset(record.dataset_id, replace=False)
+    pushed = transaction.push_root(RootKind.CORPUS, record.dataset_id, replace=False)
 
-    assert pushed == record
+    assert pushed.source_record == record
+    assert pushed.destination_record == record
+    assert pushed.root_kind is RootKind.CORPUS
     assert session.captured["destination_root"] == (
         remote_storage_root / "corpora" / record.chain_name / record.dataset_id
     )
@@ -127,7 +129,7 @@ def test_storage_transfer_transaction_pushes_dataset_to_canonical_corpus_destina
     assert session.execution_calls == ["prepare-stage", "rsync-to", "finalize-stage"]
 
 
-def test_storage_transfer_transaction_pulls_artifact_and_returns_local_record(
+def test_storage_transfer_transaction_pulls_artifact_and_returns_destination_record(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -173,13 +175,12 @@ def test_storage_transfer_transaction_pulls_artifact_and_returns_local_record(
         session=cast(ExecutionSession, session),
     )
 
-    pulled = transaction.pull_artifact(record.artifact_id, replace=False)
+    pulled = transaction.pull_root(RootKind.ARTIFACT, record.artifact_id, replace=False)
 
     destination_root = local_storage_root / "artifacts" / record.chain_name / record.artifact_id
     assert pulled.source_record == record
-    assert pulled.local_record == _artifact_record(destination_root)
+    assert pulled.destination_record == _artifact_record(destination_root)
     assert pulled.destination_root == destination_root
-    assert pulled.dataset_present is False
     assert (destination_root / "payload.txt").read_text(encoding="utf-8") == "artifact payload"
     assert captured == {
         "storage_root": local_storage_root,
@@ -203,16 +204,17 @@ def test_storage_transfer_transaction_uses_promoted_catalog_record(tmp_path) -> 
         local_storage_root=local_storage_root,
         session=cast(ExecutionSession, session),
     )
-    pulled = transaction.pull_artifact(record.artifact_id, replace=False)
+    pulled = transaction.pull_root(RootKind.ARTIFACT, record.artifact_id, replace=False)
 
     destination_root = local_storage_root / "artifacts" / record.chain_name / record.artifact_id
-    assert materialize_catalog_root(local_storage_root, pulled.local_record).root_path == (
+    assert materialize_catalog_root(local_storage_root, pulled.destination_record).root_path == (
         destination_root
     )
-    assert materialize_catalog_root(local_storage_root, pulled.local_record).state_db_path == (
-        destination_root / ".spice" / "state.sqlite"
+    assert (
+        materialize_catalog_root(local_storage_root, pulled.destination_record).state_db_path
+        == destination_root / ".spice" / "state.sqlite"
     )
-    assert pulled.local_record.artifact_id == manifest().artifact_id
+    assert pulled.destination_record.artifact_id == manifest().artifact_id
 
 
 def test_storage_transfer_transaction_rejects_existing_destination(tmp_path) -> None:
@@ -228,7 +230,8 @@ def test_storage_transfer_transaction_rejects_existing_destination(tmp_path) -> 
         StorageTransferTransaction(
             local_storage_root=tmp_path / "outputs",
             session=cast(ExecutionSession, session),
-        ).pull_artifact(
+        ).pull_root(
+            RootKind.ARTIFACT,
             record.artifact_id,
             replace=False,
         )
@@ -246,8 +249,8 @@ def test_storage_transfer_transaction_cleanup_failure_preserves_primary_exceptio
         fail_cleanup=True,
     )
     monkeypatch.setattr(
-        "spice.execution.transfer_transaction.resolve_dataset_record",
-        lambda _root, *, selector: record,
+        "spice.execution.transfer_transaction.resolve_catalog_record_by_id",
+        lambda _root, *, root_kind, root_id: record,
     )
     transaction = StorageTransferTransaction(
         local_storage_root=tmp_path / "outputs",
@@ -255,7 +258,7 @@ def test_storage_transfer_transaction_cleanup_failure_preserves_primary_exceptio
     )
 
     with pytest.raises(RuntimeError, match="finalize-stage failed") as exc_info:
-        transaction.push_dataset(record.dataset_id, replace=True)
+        transaction.push_root(RootKind.CORPUS, record.dataset_id, replace=True)
 
     assert "cleanup failed" in "\n".join(exc_info.value.__notes__)
 
@@ -287,6 +290,6 @@ def test_storage_transfer_transaction_pull_cleanup_failure_preserves_primary_exc
     )
 
     with pytest.raises(RuntimeError, match="promote failed") as exc_info:
-        transaction.pull_artifact(record.artifact_id, replace=True)
+        transaction.pull_root(RootKind.ARTIFACT, record.artifact_id, replace=True)
 
     assert "cleanup failed" in "\n".join(exc_info.value.__notes__)

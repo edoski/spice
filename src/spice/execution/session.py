@@ -12,10 +12,18 @@ from pathlib import Path
 
 from ..config import typed_groups as typed
 from ..config.models import WorkflowTask
-from ..config.resolved_workflows import ResolvedWorkflowConfig
+from ..config.resolved_workflows import SUPPORTED_RESOLVED_WORKFLOWS, ResolvedWorkflowConfig
 from ..config.workflow_snapshots import workflow_config_snapshot_json
 from ..core.errors import SpiceOperatorError
 from .models import ExecutionSpec, ExecutionWorkflowSpec
+from .provenance import (
+    EXECUTION_JOB_ID_ENV,
+    EXECUTION_LOG_PATH_ENV,
+    EXECUTION_REF_ENV,
+    EXECUTION_TARGET_ENV,
+    WORKFLOW_TASK_ENV,
+    ExecutionJobProvenance,
+)
 
 _SBATCH_JOB_ID_PATTERN = re.compile(r"Submitted batch job (?P<job_id>\d+)")
 _FINAL_JOB_STATES = frozenset(
@@ -36,6 +44,8 @@ _WORKFLOW_SPEC_ATTRS = {
     WorkflowTask.TUNE: "tune",
     WorkflowTask.EVALUATE: "evaluate",
 }
+if set(_WORKFLOW_SPEC_ATTRS) != set(SUPPORTED_RESOLVED_WORKFLOWS):
+    raise RuntimeError("execution workflow specs must match supported resolved workflows")
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,9 +60,7 @@ class ExecutionTarget:
 
 @dataclass(frozen=True, slots=True)
 class ExecutionJobSubmission:
-    task: WorkflowTask
-    job_id: str
-    log_path: Path
+    provenance: ExecutionJobProvenance
 
 
 def open_execution_session(target_name: str) -> ExecutionSession:
@@ -194,10 +202,14 @@ class ExecutionSession:
                 f"submit {task.value} failed: could not parse job id from sbatch output"
             )
         job_id = match.group("job_id")
+        log_path = Path(str(log_path_template).replace("%j", job_id))
         return ExecutionJobSubmission(
-            task=task,
-            job_id=job_id,
-            log_path=Path(str(log_path_template).replace("%j", job_id)),
+            provenance=ExecutionJobProvenance.slurm(
+                task=task,
+                target=self.target.name,
+                job_id=job_id,
+                log_path=log_path,
+            ),
         )
 
     def follow_job(self, submission: ExecutionJobSubmission) -> str | None:
@@ -205,9 +217,9 @@ class ExecutionSession:
             self.build_shell_argv(
                 (
                     "while [ ! -f "
-                    f"{shlex.quote(str(submission.log_path))}"
+                    f"{shlex.quote(str(submission.provenance.log_path))}"
                     " ]; do sleep 2; done; "
-                    f"tail -n +1 -F {shlex.quote(str(submission.log_path))}"
+                    f"tail -n +1 -F {shlex.quote(str(submission.provenance.log_path))}"
                 ),
             ),
             text=True,
@@ -233,8 +245,8 @@ class ExecutionSession:
 
     def read_job_state(self, submission: ExecutionJobSubmission) -> str | None:
         squeue_result = self.run_command(
-            f"squeue -h -j {shlex.quote(submission.job_id)} -o %T",
-            check_action=f"query job {submission.job_id}",
+            f"squeue -h -j {shlex.quote(submission.provenance.job_id)} -o %T",
+            check_action=f"query job {submission.provenance.job_id}",
         )
         state = _first_output_line(squeue_result.stdout)
         if state:
@@ -248,7 +260,7 @@ class ExecutionSession:
                     "sacct",
                     "-n",
                     "-X",
-                    f"-j {shlex.quote(submission.job_id)}",
+                    f"-j {shlex.quote(submission.provenance.job_id)}",
                     "--format=State",
                 ]
             ),
@@ -327,11 +339,11 @@ def _render_sbatch_script(
         f"cd {repo_root}",
         f"source {venv_activate_path}",
         "export PYTHONUNBUFFERED=1",
-        f"export SPICE_EXECUTION_TARGET={shlex.quote(target.name)}",
-        f"export SPICE_WORKFLOW_TASK={shlex.quote(task.value)}",
-        'export SPICE_EXECUTION_JOB_ID="${SLURM_JOB_ID:-}"',
-        'export SPICE_EXECUTION_REF="slurm:${SLURM_JOB_ID:-}"',
-        f'export SPICE_EXECUTION_LOG_PATH="{log_path_expression}"',
+        f"export {EXECUTION_TARGET_ENV}={shlex.quote(target.name)}",
+        f"export {WORKFLOW_TASK_ENV}={shlex.quote(task.value)}",
+        f'export {EXECUTION_JOB_ID_ENV}="${{SLURM_JOB_ID:-}}"',
+        f'export {EXECUTION_REF_ENV}="slurm:${{SLURM_JOB_ID:-}}"',
+        f'export {EXECUTION_LOG_PATH_ENV}="{log_path_expression}"',
         f"exec {remote_command}",
     ]
     return "\n".join(lines) + "\n"

@@ -36,6 +36,7 @@ from .models import (
     coerce_problem_spec,
 )
 from .resolved_workflows import (
+    SUPPORTED_RESOLVED_WORKFLOWS,
     ResolvedEvaluateWorkflowFields,
     ResolvedModelWorkflowFields,
     ResolvedTrainWorkflowFields,
@@ -50,9 +51,7 @@ from .resolved_workflows import (
 ConfigModelT = TypeVar("ConfigModelT", bound=ConfigModel)
 OwnerConfigT = TypeVar("OwnerConfigT")
 
-_SNAPSHOT_WORKFLOWS = frozenset(
-    {WorkflowTask.TRAIN, WorkflowTask.TUNE, WorkflowTask.EVALUATE}
-)
+_SNAPSHOT_WORKFLOWS = frozenset(SUPPORTED_RESOLVED_WORKFLOWS)
 
 
 def workflow_config_snapshot_payload(

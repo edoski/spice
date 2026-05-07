@@ -4,17 +4,14 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from pydantic import ValidationError
 
 from ...config.groups import load_named_group_payload
-from ...config.models import (
-    EvaluateConfig,
-    TrainConfig,
-    TuneConfig,
-    WorkflowTask,
-)
+from ...config.models import WorkflowTask
 from ...config.resolution import resolve_workflow_config
-from ...config.resolved_workflows import ResolvedWorkflowConfig
+from ...config.resolved_workflows import SUPPORTED_RESOLVED_WORKFLOWS, ResolvedWorkflowConfig
 from ...config.selections import (
     WorkflowSelection,
     workflow_selection_field_set,
@@ -119,8 +116,8 @@ def _resolve_benchmark_config(
     selection: WorkflowSelection,
 ) -> ResolvedWorkflowConfig:
     config = resolve_workflow_config(selection)
-    if isinstance(config, (TrainConfig, TuneConfig, EvaluateConfig)):
-        return config
+    if config.workflow in SUPPORTED_RESOLVED_WORKFLOWS:
+        return cast(ResolvedWorkflowConfig, config)
     raise ConfigResolutionError("benchmark plans support train, tune, and evaluate workflows")
 
 
