@@ -73,9 +73,9 @@ Builder runtime metadata is builder-local. Compiler runtime metadata is not hidd
 
 ## Preparation Types
 
-`preparation.py` contains the public facts/context records, selected-sample role records, and prepared dataset results. `base.py` contains registry/config dispatch and `CompiledDatasetBuilderContract`. Concrete builders depend on the preparation Interface instead of importing orchestration types from `pipeline.py`.
+`preparation.py` contains the public facts/context records, split-bound selected-sample records, and prepared dataset results. `base.py` contains registry/config dispatch and `CompiledDatasetBuilderContract`. Concrete builders depend on the preparation Interface instead of importing orchestration types from `pipeline.py`.
 
-Prepared training datasets own role-bound selected samples: train, validation, and test each carry prepared temporal facts from the execution policy. Prepared inference datasets own one inference sample selection carrying the prepared Action Space. Runtime paths consume those facts; they do not rebuild split alignment from raw arrays.
+Prepared training datasets own split-bound selected samples: train, validation, and test each carry prepared temporal facts from the execution policy. Prepared inference datasets own one inference sample selection carrying the prepared Action Space. Runtime paths consume those facts; they do not rebuild split alignment from raw arrays.
 
 ## Invariants
 

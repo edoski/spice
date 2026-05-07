@@ -188,7 +188,6 @@ class _StreamingSequenceInputRepresentation:
     store: CompiledProblemStore
     action_space: PreparedActionSpace
     layout: _SequenceInputLayout
-    batch_size: int
 
     @property
     def sample_count(self) -> int:
@@ -230,7 +229,6 @@ class _StreamingSequenceInputRepresentation:
             self.store,
             self.action_space,
             self.layout,
-            batch_size=self.batch_size,
             device=device,
         )
 
@@ -241,7 +239,6 @@ class _MaterializedSequenceInputRepresentation:
     input_mask: torch.Tensor
     action_mask: torch.Tensor
     layout: _SequenceInputLayout
-    batch_size: int
 
     @property
     def sample_count(self) -> int:
@@ -289,7 +286,6 @@ class _MaterializedSequenceInputRepresentation:
             input_mask=self.input_mask.to(device, non_blocking=True),
             action_mask=self.action_mask.to(device, non_blocking=True),
             layout=self.layout,
-            batch_size=self.batch_size,
         )
 
 
@@ -318,13 +314,11 @@ def _prepare_sequence_input(
             store,
             action_space,
             layout,
-            batch_size=runtime_context.batch_size,
         )
     return _StreamingSequenceInputRepresentation(
         store=store,
         action_space=action_space,
         layout=layout,
-        batch_size=runtime_context.batch_size,
     )
 
 
@@ -368,8 +362,6 @@ def _materialize_sequence_input(
     store: CompiledProblemStore,
     action_space: PreparedActionSpace,
     layout: _SequenceInputLayout,
-    *,
-    batch_size: int,
 ) -> _MaterializedSequenceInputRepresentation:
     sample_count = int(layout.sample_indices.shape[0])
     inputs = np.zeros(
@@ -394,7 +386,6 @@ def _materialize_sequence_input(
         input_mask=torch.from_numpy(input_mask),
         action_mask=torch.from_numpy(action_mask),
         layout=layout,
-        batch_size=batch_size,
     )
 
 
@@ -403,7 +394,6 @@ def _materialize_sequence_input_to_device(
     action_space: PreparedActionSpace,
     layout: _SequenceInputLayout,
     *,
-    batch_size: int,
     device: torch.device,
 ) -> _MaterializedSequenceInputRepresentation:
     _require_cuda_storage_device(device)
@@ -470,7 +460,6 @@ def _materialize_sequence_input_to_device(
         input_mask=input_mask,
         action_mask=action_mask,
         layout=layout,
-        batch_size=batch_size,
     )
 
 

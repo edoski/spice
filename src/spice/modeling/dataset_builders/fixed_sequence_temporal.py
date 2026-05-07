@@ -333,7 +333,6 @@ def prepare_inference_dataset(
         execution_policy=spec.problem_contract.execution_policy,
         store=scaled_store,
         samples=PreparedInferenceSampleSelection(
-            role="inference",
             action_space=spec.problem_contract.execution_policy.prepare_action_space(
                 scaled_store,
                 sample_indices,

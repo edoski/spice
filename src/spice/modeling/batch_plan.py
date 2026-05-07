@@ -116,7 +116,7 @@ class BatchRuntimeContext:
         )
 
 
-class PreparedBatchRepresentation(Protocol[BatchT]):
+class PreparedBatchPayload(Protocol[BatchT]):
     @property
     def sample_count(self) -> int: ...
 
@@ -134,7 +134,7 @@ class PreparedBatchRepresentation(Protocol[BatchT]):
     def to_device_storage(
         self,
         device: torch.device,
-    ) -> PreparedBatchRepresentation[BatchT]: ...
+    ) -> PreparedBatchPayload[BatchT]: ...
 
 
 class _SamplePositionDataset(Dataset[int]):
@@ -206,7 +206,7 @@ def _ordered_sample_positions(
 
 @dataclass(frozen=True, slots=True)
 class _HostBatchCollator(Generic[BatchT]):
-    prepared: PreparedBatchRepresentation[BatchT]
+    prepared: PreparedBatchPayload[BatchT]
 
     def __call__(self, sample_positions: Sequence[int]) -> BatchT:
         index = torch.as_tensor(sample_positions, dtype=torch.int64)
@@ -236,7 +236,7 @@ class _DeviceResidentBatchSource(Generic[BatchT]):
     def __init__(
         self,
         *,
-        prepared: PreparedBatchRepresentation[BatchT],
+        prepared: PreparedBatchPayload[BatchT],
         batch_sampler: _PositionBatchSampler,
     ) -> None:
         self.prepared = prepared
@@ -286,7 +286,7 @@ class _PreparedPredictionBatches:
 
 
 def _build_plan(
-    prepared: PreparedBatchRepresentation[BatchT],
+    prepared: PreparedBatchPayload[BatchT],
     *,
     runtime_plan: ModelingRuntimePlan,
     shuffle: bool,
@@ -372,7 +372,7 @@ def build_model_input_batch_plan(
 
 
 def _build_batch_source(
-    prepared: PreparedBatchRepresentation[BatchT],
+    prepared: PreparedBatchPayload[BatchT],
     *,
     required_bytes: int,
     runtime_plan: ModelingRuntimePlan,
@@ -414,7 +414,7 @@ def _build_batch_source(
 
 
 def _build_host_dataloader_source(
-    prepared: PreparedBatchRepresentation[BatchT],
+    prepared: PreparedBatchPayload[BatchT],
     *,
     batch_sampler: _PositionBatchSampler,
     runtime_context: BatchRuntimeContext,

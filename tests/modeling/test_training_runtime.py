@@ -120,11 +120,8 @@ def test_plan_training_runtime_uses_unshuffled_host_warmup_and_reuses_state(
         execution_policy=cast(Any, execution_policy),
         representation_contract=cast(Any, SimpleNamespace()),
         store=cast(Any, SimpleNamespace()),
-        train_samples=PreparedTrainingSampleSelection("train", cast(Any, train_facts)),
-        validation_samples=PreparedTrainingSampleSelection(
-            "validation",
-            cast(Any, validation_facts),
-        ),
+        train_samples=PreparedTrainingSampleSelection(cast(Any, train_facts)),
+        validation_samples=PreparedTrainingSampleSelection(cast(Any, validation_facts)),
         runtime_plan=_runtime_plan(runtime_context),
         training_config=_training_config(),
     )
@@ -220,11 +217,9 @@ def test_plan_training_runtime_restores_model_and_clears_cache_after_probe_failu
             representation_contract=cast(Any, SimpleNamespace()),
             store=cast(Any, SimpleNamespace()),
             train_samples=PreparedTrainingSampleSelection(
-                "train",
                 cast(Any, object()),
             ),
             validation_samples=PreparedTrainingSampleSelection(
-                "validation",
                 cast(Any, object()),
             ),
             runtime_plan=_runtime_plan(runtime_context),

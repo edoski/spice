@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ...config.models import SplitConfig
@@ -42,12 +42,8 @@ class DatasetSplitIndices:
     test: IntVector
 
 
-TrainingSampleRole = Literal["train", "validation", "test"]
-
-
 @dataclass(frozen=True, slots=True)
 class PreparedTrainingSampleSelection:
-    role: TrainingSampleRole
     temporal_facts: PreparedTemporalFacts
 
     @property
@@ -65,23 +61,12 @@ class PreparedTrainingSampleRoles:
     validation: PreparedTrainingSampleSelection
     test: PreparedTrainingSampleSelection
 
-    def __post_init__(self) -> None:
-        if self.train.role != "train":
-            raise ValueError("training sample roles train role mismatch")
-        if self.validation.role != "validation":
-            raise ValueError("training sample roles validation role mismatch")
-        if self.test.role != "test":
-            raise ValueError("training sample roles test role mismatch")
-
 
 @dataclass(frozen=True, slots=True)
 class PreparedInferenceSampleSelection:
-    role: Literal["inference"]
     action_space: PreparedActionSpace
 
     def __post_init__(self) -> None:
-        if self.role != "inference":
-            raise ValueError("inference sample role mismatch")
         if self.action_space.sample_indices.size == 0:
             raise ValueError("inference sample selection must be non-empty")
 
@@ -103,11 +88,11 @@ def validate_temporal_facts_alignment(
 
 
 def training_sample_selection(
-    role: TrainingSampleRole,
+    role: str,
     temporal_facts: PreparedTemporalFacts,
 ) -> PreparedTrainingSampleSelection:
     validate_temporal_facts_alignment(role, temporal_facts)
-    return PreparedTrainingSampleSelection(role=role, temporal_facts=temporal_facts)
+    return PreparedTrainingSampleSelection(temporal_facts=temporal_facts)
 
 
 @dataclass(frozen=True, slots=True)
