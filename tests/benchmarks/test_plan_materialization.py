@@ -98,6 +98,44 @@ def test_plan_materialization_rejects_tuned_train_without_study_source(
         )
 
 
+def test_plan_materialization_rejects_ambiguous_tuned_train_dependency(
+    isolate_conf_root,
+) -> None:
+    with pytest.raises(ConfigResolutionError, match="multiple tune dependencies"):
+        _materialize(
+            isolate_conf_root,
+            {
+                "cases": [
+                    {
+                        "id": "case",
+                        "base": {
+                            "surface": "current_row_fee_dynamics",
+                            "dataset_id": ETH_DATASET_ID,
+                        },
+                        "steps": [
+                            {
+                                "id": "tune_a",
+                                "workflow": "tune",
+                                "set": {"study": "study_a"},
+                            },
+                            {
+                                "id": "tune_b",
+                                "workflow": "tune",
+                                "set": {"study": "study_b"},
+                            },
+                            {
+                                "id": "train",
+                                "workflow": "train",
+                                "after": ["tune_a", "tune_b"],
+                                "set": {"variant": "tuned"},
+                            },
+                        ],
+                    }
+                ]
+            },
+        )
+
+
 def test_plan_materialization_injects_artifact_and_dataset_for_artifact_from(
     isolate_conf_root,
 ) -> None:

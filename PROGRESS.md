@@ -146,7 +146,7 @@ Target cells:
 
 Trial budget:
 
-- `40` trials per chain/model cell.
+- `32` trials per chain/model cell.
 - Do not expand trial count until the 3x3 calibration results are collected and compared against the untuned baseline grid.
 - Do not rerun HPO inside `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, or `delay_degradation_sweep`.
 
@@ -154,35 +154,35 @@ Training search:
 
 - `learning_rate: [0.00003, 0.0001, 0.0003]`.
 - `weight_decay: [0.0, 0.0001, 0.001, 0.01]`.
-- `batch_size: [64, 128, 256, 512]`.
+- `batch_size: [64, 128]` for Transformer/Transformer-LSTM and `[64, 128, 256]` for LSTM.
 - Keep high Slurm `ulimit -n`; do not force `SPICE_DATALOADER_WORKERS=0` unless open-file failures recur.
 
 Transformer search:
 
-- `d_model: [384, 512, 768, 1024, 1536]`.
-- `transformer_layers: [4, 6, 8, 12]`.
-- `nhead: [4, 8, 16]`, subject to `d_model % nhead == 0`.
+- `d_model: [384, 512, 768, 1024]`.
+- `transformer_layers: [4, 6]`.
+- `nhead: [4, 8]`, subject to `d_model % nhead == 0`.
 - `feedforward_multiplier: [2, 4]`, resolved to concrete `feedforward_dim`.
-- `head_hidden_dim: [256, 512, 1024]`.
+- `head_hidden_dim: [256, 512]`.
 - `dropout: [0.0, 0.1, 0.2, 0.3]`.
 
 Transformer-LSTM search:
 
-- `d_model: [384, 512, 768, 1024]`.
-- `hidden_size: [384, 512, 768, 1024, 1536]`.
-- `transformer_layers: [4, 6, 8]`.
-- LSTM `num_layers: [1, 2, 3]`.
-- `nhead: [4, 8, 16]`, subject to `d_model % nhead == 0`.
+- `d_model: [384, 512, 768]`.
+- `hidden_size: [256, 384, 512, 768]`.
+- `transformer_layers: [2, 4]`.
+- LSTM `num_layers: [1, 2]`.
+- `nhead: [4, 8]`, subject to `d_model % nhead == 0`.
 - `feedforward_multiplier: [2, 4]`, resolved to concrete `feedforward_dim`.
-- `head_hidden_dim: [256, 512, 1024]`.
+- `head_hidden_dim: [256, 512]`.
 - `dropout: [0.0, 0.1, 0.2, 0.3]`.
 
 LSTM search:
 
-- `hidden_size: [256, 384, 512, 768, 1024]`.
-- `num_layers: [1, 2, 3, 4]`.
+- `hidden_size: [256, 384, 512, 768]`.
+- `num_layers: [1, 2, 3]`.
 - `input_projection_dim: [128, 256, 512]`.
-- `head_hidden_dim: [256, 512, 1024]`.
+- `head_hidden_dim: [256, 512]`.
 - `dropout: [0.0, 0.1, 0.2, 0.3]`.
 
 Launch decisions are now governed by the feature-set stabilization sequence below. Feature-set changes define the benchmark surface, so broad structural sweeps should wait until the input feature set is stable.
@@ -218,7 +218,7 @@ Deferred architecture roadmap after the current cleanup sweep:
 Configured sweep specs awaiting launch decisions:
 
 - `safe_baseline_grid`: untuned ETH/POL/AVAX by LSTM/Transformer/Transformer-LSTM on `current_row_fee_dynamics`, `core_fee_dynamics`, default 1M `current_row_nominal`, and `poisson_replay`.
-- `large_capacity_hpo`: bounded calibration HPO over the same 3x3 chain/model grid, large-capacity tuning spaces, 40 trials per cell, tuned train, and tuned `poisson_replay` evaluation.
+- `large_capacity_hpo`: bounded calibration HPO over the same 3x3 chain/model grid, large-capacity tuning spaces, 32 trials per cell, tuned train, and tuned `poisson_replay` evaluation.
 - `priority_fee_ablation`: fixed train/evaluate comparison of canonical `core_fee_dynamics` against `core_fee_dynamics_with_priority_fee` across the same 3x3 safe grid. No per-cell HPO.
 - `unsafe_core_fee_dynamics_ablation`: fixed train/evaluate comparison of canonical `core_fee_dynamics` against `core_fee_dynamics_unsafe` across the same 3x3 safe grid. No per-cell HPO.
 - `lookback_window_sweep`: fixed train/evaluate grid over ETH/POL/AVAX, LSTM/Transformer/Transformer-LSTM, and `600s`/`900s`/`1200s` lookbacks. No per-cell HPO.
@@ -235,7 +235,7 @@ GPU-hour policy:
 Metrics plan:
 
 - Domain replay metrics stay in evaluators and benchmark collection. `poisson_replay` is the default domain result; `full_temporal_replay` is the deterministic sibling result.
-- Pre-benchmark v1 ML metrics: add `macro_f1` for both offset-output prediction families and `log_fee_mae` / `log_fee_mse` for `min_block_fee_multitask`, then expose them through named CSV exports. Do not do a broader metric redesign before this benchmark wave.
+- Pre-benchmark v1 ML metrics are present for the active prediction family: `macro_f1`, `log_fee_mae`, and `log_fee_mse` are emitted by `min_block_fee_multitask` and included in benchmark result-index exports. Future work is named CSV projection for table/figure slices, not another metric redesign before this benchmark wave.
 
 ### Benchmarking Rules
 

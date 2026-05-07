@@ -60,11 +60,20 @@ class BenchmarkProducedRootIndex:
         self.records.append(ProducedRootFactRecord(run_id=run_id, facts=facts))
 
     def dependency_study_id(self, depends_on: tuple[str, ...]) -> str:
+        study_ids: list[str] = []
         for run_id in depends_on:
             facts = self._produced_facts_for_run(run_id)
             if facts is not None and facts.produced_study_id is not None:
-                return facts.produced_study_id
-        raise ConfigResolutionError("tuned train requires a tune dependency or explicit study_id")
+                study_ids.append(facts.produced_study_id)
+        if not study_ids:
+            raise ConfigResolutionError(
+                "tuned train requires a tune dependency or explicit study_id"
+            )
+        if len(study_ids) > 1:
+            raise ConfigResolutionError(
+                "tuned train has multiple tune dependencies; set study_id explicitly"
+            )
+        return study_ids[0]
 
     def dependency_artifact_source(self, artifact_from_run_id: str) -> BenchmarkArtifactSource:
         facts = self._produced_facts_for_run(artifact_from_run_id)
