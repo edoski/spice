@@ -6,6 +6,7 @@ from typing import Annotated
 
 import typer
 
+from ...core.rendering import key_value_line
 from ...execution.transfer_transaction import open_storage_transfer_transaction
 from ...storage.catalog.records import CatalogArtifactRecord, CatalogDatasetRecord
 from ...storage.engine import RootKind
@@ -54,7 +55,12 @@ def push_dataset_command(
     record = transferred.destination_record
     if not isinstance(record, CatalogDatasetRecord):
         raise TypeError("transfer push dataset returned non-dataset record")
-    typer.echo(f"push dataset={record.dataset_name} dataset_id={record.dataset_id}")
+    typer.echo(
+        key_value_line(
+            "push",
+            [("dataset", record.dataset_name), ("dataset_id", record.dataset_id)],
+        )
+    )
 
 
 @pull_app.command("artifact", short_help="Pull one artifact root from cluster storage.")
@@ -73,6 +79,6 @@ def pull_artifact_command(
     record = pulled.destination_record
     if not isinstance(record, CatalogArtifactRecord):
         raise TypeError("transfer pull artifact returned non-artifact record")
-    typer.echo(f"pull artifact={record.artifact_id}")
+    typer.echo(key_value_line("pull", [("artifact", record.artifact_id)]))
     for warning in artifact_local_dependency_warnings(root, record):
         typer.echo(f"warning: {warning}", err=True)

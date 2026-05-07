@@ -68,6 +68,8 @@ prune_empty_directories(path, stop_at=...)
 
 Callers choose the explicit replacement policy at the call site or through storage staging primitives. The low-level helpers stay policy-neutral.
 
+This is intentionally more than single-file atomic writes, so file-only packages do not replace it cleanly. `core.reporting` stays plain text because CLI, SSH logs, and CI output need stable line-oriented rendering. `core.async_runtime` stays local until the async architecture grows beyond the narrow sync-to-async bridge.
+
 ## Dependency Rule
 
 ```text

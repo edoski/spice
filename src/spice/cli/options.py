@@ -2,27 +2,36 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from ..core.reporting import Reporter
-
 DEFAULT_REMOTE_TARGET = "disi_l40"
+DEFAULT_STORAGE_ROOT = Path("outputs")
+DEFAULT_BENCHMARK_RUNS_ROOT = DEFAULT_STORAGE_ROOT / "benchmarks" / "runs"
+DEFAULT_BENCHMARK_INDEX_PATH = Path("benchmarks") / "results.sqlite"
+
+
+def _workflow_option(
+    *param_decls: str,
+    metavar: str,
+    help: str,
+    panel: str,
+) -> object:
+    return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel=panel)
 
 
 def workflow_selection_option(*param_decls: str, metavar: str, help: str) -> object:
-    return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Selection")
+    return _workflow_option(*param_decls, metavar=metavar, help=help, panel="Selection")
 
 
 def workflow_execution_option(*param_decls: str, metavar: str, help: str) -> object:
-    return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Execution")
+    return _workflow_option(*param_decls, metavar=metavar, help=help, panel="Execution")
 
 
 def workflow_output_option(*param_decls: str, metavar: str, help: str) -> object:
-    return typer.Option(*param_decls, metavar=metavar, help=help, rich_help_panel="Outputs")
+    return _workflow_option(*param_decls, metavar=metavar, help=help, panel="Outputs")
 
 
 ChainFilterOption = Annotated[
@@ -257,17 +266,4 @@ WorkflowBatchSizeOption = Annotated[
 
 
 def resolve_storage_root(storage_root: Path | None) -> Path:
-    return storage_root or Path("outputs")
-
-
-def print_sections(
-    title: str,
-    sections: list[tuple[str, list[tuple[str, str]]]],
-    *,
-    err: bool = False,
-) -> None:
-    reporter = Reporter(stream=sys.stdout, error_stream=sys.stderr)
-    if err:
-        reporter.diagnostic_sections(title, sections)
-    else:
-        reporter.sections(title, sections)
+    return storage_root or DEFAULT_STORAGE_ROOT

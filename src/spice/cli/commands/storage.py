@@ -7,6 +7,7 @@ from typing import Annotated, NoReturn
 import typer
 
 from ...core.errors import SpiceOperatorError
+from ...core.reporting import Reporter
 from ...storage.operator import (
     ArtifactInspectionDetail,
     DatasetInspectionDetail,
@@ -35,7 +36,6 @@ from ..options import (
     StorageRootReadOption,
     StudyFilterOption,
     VariantFilterOption,
-    print_sections,
     resolve_storage_root,
 )
 
@@ -117,7 +117,7 @@ def _dataset_selector(
 
 def _raise_show_failure(outcome: StorageShowFailure) -> NoReturn:
     for diagnostic in outcome.diagnostics:
-        print_sections(diagnostic.title, diagnostic.sections, err=True)
+        _print_sections(diagnostic.title, diagnostic.sections, err=True)
     raise SpiceOperatorError(
         f"{outcome.message}{_narrowing_guidance(outcome.narrowing_attributes)}"
     )
@@ -125,7 +125,7 @@ def _raise_show_failure(outcome: StorageShowFailure) -> NoReturn:
 
 def _raise_delete_failure(outcome: StorageDeleteFailure) -> NoReturn:
     for diagnostic in outcome.diagnostics:
-        print_sections(diagnostic.title, diagnostic.sections, err=True)
+        _print_sections(diagnostic.title, diagnostic.sections, err=True)
     raise SpiceOperatorError(
         f"{outcome.message}"
         f"{_cascade_guidance(outcome)}"
@@ -150,7 +150,20 @@ def _cascade_guidance(outcome: StorageDeleteFailure) -> str:
 def _render_show(outcome: StorageShowRendered | StorageShowFailure) -> None:
     if isinstance(outcome, StorageShowFailure):
         _raise_show_failure(outcome)
-    print_sections(outcome.renderable.title, outcome.renderable.sections)
+    _print_sections(outcome.renderable.title, outcome.renderable.sections)
+
+
+def _print_sections(
+    title: str,
+    sections: list[tuple[str, list[tuple[str, str]]]],
+    *,
+    err: bool = False,
+) -> None:
+    reporter = Reporter()
+    if err:
+        reporter.diagnostic_sections(title, sections)
+        return
+    reporter.sections(title, sections)
 
 
 def _handle_delete(outcome: StorageDeleteCompleted | StorageDeleteFailure) -> None:

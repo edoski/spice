@@ -17,6 +17,8 @@ Workflow commands keep explicit Typer signatures, construct typed Workflow Selec
 
 Command apps use the operator-error adapter at registration time. Domain functions raise `SpiceOperatorError`; CLI converts it to Click/Typer rendering without leaking Click into core.
 
+Typer remains the CLI package. Rich output is not a default because remote log following and CI need stable plain text without ANSI or progress rendering.
+
 ## Workflow Commands
 
 Commands:

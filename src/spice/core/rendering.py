@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
@@ -22,14 +23,31 @@ class _WindowMetricSummaryLike(Protocol):
     def std(self) -> float: ...
 
 
-def value_string(value: object) -> str:
+def _value_string(value: object) -> str:
     if isinstance(value, list):
         return ", ".join(str(item) for item in value)
     return str(value)
 
 
 def mapping_fields(payload: Mapping[str, object]) -> list[tuple[str, str]]:
-    return [(str(key).replace("_", " "), value_string(value)) for key, value in payload.items()]
+    return [(str(key).replace("_", " "), _value_string(value)) for key, value in payload.items()]
+
+
+def render_value(value: object) -> str:
+    return str(value).replace("\n", " ").strip()
+
+
+def key_value_field(key: str, value: object) -> str:
+    rendered = render_value(value)
+    if not rendered:
+        return f"{key}=''"
+    if any(char.isspace() for char in rendered):
+        rendered = shlex.quote(rendered)
+    return f"{key}={rendered}"
+
+
+def key_value_line(name: str, fields: Sequence[tuple[str, object]]) -> str:
+    return " ".join([name, *(key_value_field(key, value) for key, value in fields)])
 
 
 def metric_string(value: float) -> str:

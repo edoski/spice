@@ -11,7 +11,12 @@ from typing import Annotated
 import typer
 
 from ..errors import OperatorTyper
-from ..options import DEFAULT_REMOTE_TARGET, RemoteTargetOption
+from ..options import (
+    DEFAULT_BENCHMARK_INDEX_PATH,
+    DEFAULT_BENCHMARK_RUNS_ROOT,
+    DEFAULT_REMOTE_TARGET,
+    RemoteTargetOption,
+)
 
 app = OperatorTyper(help="Plan, submit, collect, and export benchmark runs.", no_args_is_help=True)
 index_app = OperatorTyper(
@@ -32,7 +37,7 @@ def benchmark_plan_command(
     runs_root: Annotated[
         Path,
         typer.Option("--runs-root", help="Benchmark run root directory."),
-    ] = Path("outputs") / "benchmarks" / "runs",
+    ] = DEFAULT_BENCHMARK_RUNS_ROOT,
 ) -> None:
     from ...benchmarks.submission import materialize_benchmark_plan_run
 
@@ -101,11 +106,11 @@ def benchmark_index_rebuild_command(
     runs_root: Annotated[
         Path,
         typer.Option("--runs-root", help="Benchmark run root directory."),
-    ] = Path("outputs") / "benchmarks" / "runs",
+    ] = DEFAULT_BENCHMARK_RUNS_ROOT,
     index_path: Annotated[
         Path,
         typer.Option("--index", help="Benchmark result index path."),
-    ] = Path("benchmarks") / "results.sqlite",
+    ] = DEFAULT_BENCHMARK_INDEX_PATH,
 ) -> None:
     from ...benchmarks.result_index import rebuild_benchmark_result_index
 
@@ -117,7 +122,7 @@ def benchmark_index_show_command(
     index_path: Annotated[
         Path,
         typer.Option("--index", help="Benchmark result index path."),
-    ] = Path("benchmarks") / "results.sqlite",
+    ] = DEFAULT_BENCHMARK_INDEX_PATH,
 ) -> None:
     from ...benchmarks.result_index import benchmark_result_index_counts
 
@@ -134,7 +139,7 @@ def benchmark_index_list_command(
     index_path: Annotated[
         Path,
         typer.Option("--index", help="Benchmark result index path."),
-    ] = Path("benchmarks") / "results.sqlite",
+    ] = DEFAULT_BENCHMARK_INDEX_PATH,
 ) -> None:
     from ...benchmarks.result_index import list_benchmark_results
 
@@ -162,7 +167,7 @@ def benchmark_index_export_command(
     index_path: Annotated[
         Path,
         typer.Option("--index", help="Benchmark result index path."),
-    ] = Path("benchmarks") / "results.sqlite",
+    ] = DEFAULT_BENCHMARK_INDEX_PATH,
 ) -> None:
     from ...benchmarks.result_index import export_benchmark_results_csv
 

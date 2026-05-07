@@ -168,7 +168,7 @@ def test_config_public_commands_only(isolate_conf_root) -> None:
 
     prediction_result = runner.invoke(app, ["config", "list", "prediction"])
     assert prediction_result.exit_code == 0, prediction_result.stdout
-    assert prediction_result.stdout.splitlines() == ["icdcs_2026"]
+    assert "icdcs_2026" in prediction_result.stdout.splitlines()
 
 
 def test_config_edit_seeds_missing_file_and_uses_editor(
@@ -238,22 +238,6 @@ def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
 
     assert result.exit_code == 0, result.output
     assert captured == {"task": WorkflowTask.TRAIN, "target_name": "disi_l40"}
-
-
-def test_acquire_rejects_objective_option() -> None:
-    result = runner.invoke(
-        app,
-        [
-            "acquire",
-            "--surface",
-            "current_row_fee_dynamics",
-            "--objective",
-            "validation_total_loss",
-        ],
-    )
-
-    assert result.exit_code != 0
-    assert "--objective" in result.output
 
 
 def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:

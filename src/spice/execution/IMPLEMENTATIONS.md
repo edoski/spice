@@ -38,6 +38,8 @@ An execution target defines:
 
 There is no additional remote-execution session protocol while SSH/SLURM is the only Adapter.
 
+Submitit, Fabric, and Paramiko are intentionally not used here. Submitit would only replace part of Slurm submission while leaving SSH target selection, rsync storage transfer, provenance environment, log following, and remote catalog exchange in custom code. Fabric and Paramiko would replace OpenSSH subprocess calls without removing the Slurm or rsync lifecycle, and they would stop relying directly on the user's SSH config.
+
 ## SLURM Submission
 
 The session builds an SSH command that runs `bash -lc` remotely. It renders an `sbatch` script, sources the remote environment, sets `PYTHONUNBUFFERED=1`, and runs:
