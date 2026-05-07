@@ -32,10 +32,10 @@ Every row uses the same columns:
 | `block_size_bytes` | Block size when the RPC payload includes it. |
 | `blob_gas_used` | Blob gas used when available. |
 | `excess_blob_gas` | Excess blob gas when available. |
-| `priority_fee_p10` | Optional priority-fee percentile enrichment. |
-| `priority_fee_p50` | Optional priority-fee percentile enrichment. |
-| `priority_fee_p90` | Optional priority-fee percentile enrichment. |
-| `priority_fee_spread` | Optional p90 minus p10 priority-fee enrichment. |
+| `priority_fee_p10` | Priority-fee percentile enrichment; nullable unless source requirements require priority-fee facts. |
+| `priority_fee_p50` | Priority-fee percentile enrichment; nullable unless source requirements require priority-fee facts. |
+| `priority_fee_p90` | Priority-fee percentile enrichment; nullable unless source requirements require priority-fee facts. |
+| `priority_fee_spread` | p90 minus p10 priority-fee enrichment; nullable unless source requirements require priority-fee facts. |
 
 RPC payload conversion builds this schema. Missing required block fields fail during conversion. Missing `base_fee_per_gas` is stored as `None`, which keeps canonical rows rectangular for chains or blocks where the field is absent.
 
@@ -55,7 +55,7 @@ Loads scan recursively, skip hidden paths, combine chunks, and sort by `block_nu
 
 ## Corpus Assembly
 
-Corpus acquisition has two public Interfaces: `prepare_corpus_assembly_request()` prepares acquisition source requirements, planning context, and split materialization policy; `assemble_corpus()` consumes that request for dry-run planning or committed corpus publication. Corpus Capability Planning owns history sizing and the bounded refill lifecycle. Corpus Acquisition Stage owns staging roots, split sequencing, planning-step-to-split-intent adaptation, dataset provenance publication, state DB staging, selected-path commit, cleanup, and preserve-on-failure behavior. Corpus Split Materialization owns history/evaluation dataset reuse, extension, rebuild, validation, and parquet IO. Its private materializer assesses staged and committed split candidates against the active Split Intent and active required source columns, then directly executes staged reuse, committed reuse, extension, full materialization, or invalid staged rejection. Private implementation modules keep effects local: candidate loading, parquet chunk IO, source reuse/copying, acquisition pulls, and target invariants. When extending a split, the materializer computes missing pull ranges and reusable overlap, copies whole reusable parquet chunks, and rewrites only edge or newly pulled ranges.
+Corpus acquisition has two public Interfaces: `prepare_corpus_assembly_request()` prepares acquisition source requirements, planning context, and split materialization policy; `assemble_corpus()` consumes that request for dry-run planning or committed corpus publication. Corpus Capability Planning owns history sizing and the bounded refill lifecycle. Corpus Acquisition Stage owns staging roots, split sequencing, planning-step-to-split-intent adaptation, dataset provenance publication, state DB staging, selected-path commit, cleanup, and preserve-on-failure behavior. Corpus Split Materialization owns history/evaluation dataset reuse, extension, rebuild, validation, and parquet IO. Its private materializer assesses staged and committed split candidates against the active Split Intent and active required source columns, then directly executes staged reuse, committed reuse, extension, full materialization, or invalid staged rejection. Private parquet IO keeps candidate loading, chunk IO, source reuse/copying, and acquisition pulls local to the materializer. History extension pulls a missing prefix before a committed history split. Evaluation extension reuses overlapping clean chunks and pulls missing prefix and/or suffix ranges.
 
 | Materialization outcome | Behavior |
 | --- | --- |

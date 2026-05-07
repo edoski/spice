@@ -35,7 +35,7 @@ Binary search is needed because block timestamps are monotonic enough for range 
 
 ## Transport
 
-`ManagedAsyncHTTPProvider` owns the async HTTP session. It retries allowed transport failures, force-closes TCP sessions during shutdown, sorts batch responses by JSON-RPC id, and injects proof-of-authority middleware for chains that need it.
+`RetryingBatchAsyncHTTPProvider` uses Web3's async HTTP provider for session lifecycle, request encoding/decoding, response sorting, and shutdown. The local adapter only adds configured retry/backoff to batch requests, because Web3 retries single requests but not batch posts. Provider construction sets a stable User-Agent and injects proof-of-authority middleware for chains that need it.
 
 ```text
 web3 batch request

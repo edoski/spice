@@ -2,11 +2,11 @@
 
 ## Purpose
 
-`acquisition` owns data collection mechanics. It turns block-window intent into canonical block rows that Corpus Assembly can materialize as raw corpus data.
+`acquisition` owns data collection mechanics. It turns block-window intent into ordered canonical block rows for caller-provided sinks. Corpus Split Materialization writes parquet; Corpus Assembly orchestrates and publishes corpus roots.
 
 ## Theory
 
-Training quality begins with data provenance. Raw acquisition must keep enough metadata to answer: which chain, which provider, which time windows, which blocks, and which validation status produced this corpus.
+Training quality begins with data provenance. Acquisition records provider and runtime mechanics; corpus state records which chain, time windows, blocks, split outcomes, and validation status produced the corpus.
 
 ## Boundaries
 
@@ -41,6 +41,12 @@ block source fetch
     |
     v
 canonical block rows
+    |
+    v
+Corpus Split Materialization
+    |
+    v
+Corpus Acquisition Stage
     |
     v
 Corpus Assembly

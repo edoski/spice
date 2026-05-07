@@ -4,17 +4,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from hashlib import sha256
-from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 
 from ..acquisition import AcquisitionRuntimeSnapshot, BlockPullPlan
 from ..config.models import AcquireConfig, ChainRuntimeSpec
-from ..corpus.io import iter_block_files
-from ..corpus.validation import BlockDatasetValidationReport
+from ..corpus.validation import BlockDatasetValidationReport, ValidationStatus
+
+SplitKindValue = Literal["history", "evaluation"]
+SplitMaterializationOutcomeValue = Literal["created", "reused", "extended", "rebuilt"]
+
+
+def _coerce_int_tuple(value: object) -> object:
+    if isinstance(value, list):
+        return tuple(cast(list[object], value))
+    return value
 
 
 class CorpusMetadataRecord(BaseModel):
@@ -29,6 +36,18 @@ class DatasetIdentity(CorpusMetadataRecord):
 class ChainMetadata(CorpusMetadataRecord):
     name: str
     runtime: ChainRuntimeSpec
+
+    @field_validator("runtime", mode="before")
+    @classmethod
+    def _coerce_runtime(_cls, value: object) -> object:
+        if isinstance(value, ChainRuntimeSpec):
+            return value
+        if isinstance(value, Mapping):
+            return ChainRuntimeSpec.model_validate(
+                dict(cast(Mapping[str, object], value)),
+                strict=True,
+            )
+        return value
 
     @property
     def chain_id(self) -> int:
@@ -49,7 +68,7 @@ class SplitRequestMetadata(CorpusMetadataRecord):
 
 
 class CompactValidationReport(CorpusMetadataRecord):
-    status: str
+    status: ValidationStatus
     issues: dict[str, object] | None = None
 
 
@@ -62,12 +81,12 @@ class SplitCoverageMetadata(CorpusMetadataRecord):
 
 
 class SplitMaterializationMetadata(CorpusMetadataRecord):
-    outcome: str
+    outcome: SplitMaterializationOutcomeValue
     file_count: int
 
 
 class CorpusSplitManifest(CorpusMetadataRecord):
-    kind: str
+    kind: SplitKindValue
     request: SplitRequestMetadata
     coverage: SplitCoverageMetadata
     validation: CompactValidationReport
@@ -88,17 +107,15 @@ class CorpusAcquisitionSourceRequirements(CorpusMetadataRecord):
 
     @field_validator("required_columns", "optional_enrichments", mode="before")
     @classmethod
-    def _coerce_string_set(cls, value: object) -> object:
-        raw_items: object
+    def _coerce_string_set(_cls, value: object) -> object:
         if isinstance(value, frozenset):
-            raw_items = cast(object, value)
+            raw_items = cast(Iterable[object], value)
         elif isinstance(value, (list, set, tuple)):
-            raw_items = cast(object, value)
+            raw_items = cast(Iterable[object], value)
         else:
             return value
-        iterable = cast(Iterable[object], raw_items)
         items: list[str] = []
-        for item in iterable:
+        for item in raw_items:
             if not isinstance(item, str):
                 return cast(object, value)
             items.append(item)
@@ -121,7 +138,12 @@ class AcquisitionConfigSnapshot(CorpusMetadataRecord):
     rpc_batch_size: int
     rpc_concurrency: int
     rpc_min_batch_size: int
-    rpc_concurrency_rungs: list[int]
+    rpc_concurrency_rungs: tuple[int, ...]
+
+    @field_validator("rpc_concurrency_rungs", mode="before")
+    @classmethod
+    def _coerce_rpc_concurrency_rungs(_cls, value: object) -> object:
+        return _coerce_int_tuple(value)
 
 
 class AcquireRunFacts(CorpusMetadataRecord):
@@ -135,12 +157,17 @@ class DatasetAcquisitionRuntimeMetadata(CorpusMetadataRecord):
     min_batch_size: int
     configured_concurrency: int
     final_concurrency: int
-    concurrency_rungs: list[int]
+    concurrency_rungs: tuple[int, ...]
     oversize_error_count: int
     transient_error_count: int
     oversize_backoffs: int
     transient_backoffs: int
     concurrency_recoveries: int
+
+    @field_validator("concurrency_rungs", mode="before")
+    @classmethod
+    def _coerce_concurrency_rungs(_cls, value: object) -> object:
+        return _coerce_int_tuple(value)
 
 
 class AcquireRunRecord(CorpusMetadataRecord):
@@ -148,13 +175,6 @@ class AcquireRunRecord(CorpusMetadataRecord):
     settings: AcquisitionConfigSnapshot
     runtime: DatasetAcquisitionRuntimeMetadata
     facts: AcquireRunFacts
-
-
-def has_block_files(path: Path) -> bool:
-    try:
-        return bool(iter_block_files(path))
-    except ValueError:
-        return False
 
 
 def provider_metadata(config: AcquireConfig) -> ProviderMetadata:
@@ -191,10 +211,10 @@ def compact_validation_report(report: BlockDatasetValidationReport) -> CompactVa
 
 def split_manifest(
     *,
-    kind: str,
+    kind: SplitKindValue,
     plan: BlockPullPlan,
     validation: BlockDatasetValidationReport,
-    outcome: str,
+    outcome: SplitMaterializationOutcomeValue,
     file_count: int,
 ) -> CorpusSplitManifest:
     return CorpusSplitManifest(
@@ -226,7 +246,7 @@ def acquisition_settings(config: AcquireConfig) -> AcquisitionConfigSnapshot:
         rpc_batch_size=config.acquisition.rpc.batch_size,
         rpc_concurrency=config.acquisition.rpc.concurrency,
         rpc_min_batch_size=config.acquisition.rpc.min_batch_size,
-        rpc_concurrency_rungs=list(config.acquisition.rpc.concurrency_rungs),
+        rpc_concurrency_rungs=tuple(config.acquisition.rpc.concurrency_rungs),
     )
 
 
@@ -239,7 +259,7 @@ def acquisition_runtime_metadata(
         min_batch_size=runtime.min_batch_size,
         configured_concurrency=runtime.configured_concurrency,
         final_concurrency=runtime.final_concurrency,
-        concurrency_rungs=list(runtime.concurrency_rungs),
+        concurrency_rungs=tuple(runtime.concurrency_rungs),
         oversize_error_count=runtime.oversize_error_count,
         transient_error_count=runtime.transient_error_count,
         oversize_backoffs=runtime.oversize_backoffs,
@@ -256,8 +276,8 @@ def build_dataset_manifest(
     evaluation_plan: BlockPullPlan,
     history_validation: BlockDatasetValidationReport,
     evaluation_validation: BlockDatasetValidationReport,
-    history_outcome: str,
-    evaluation_outcome: str,
+    history_outcome: SplitMaterializationOutcomeValue,
+    evaluation_outcome: SplitMaterializationOutcomeValue,
     history_file_count: int,
     evaluation_file_count: int,
     source_requirements: CorpusAcquisitionSourceRequirements,

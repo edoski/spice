@@ -250,7 +250,7 @@ def _exercise_short_history_refill(
 
     monkeypatch.setattr(
         "spice.corpus.planning.CorpusCapabilityPlanningContext.count_valid_history_samples",
-        lambda self, history_dir: next(resolved_capability_samples),
+        lambda _self, _history_dir: next(resolved_capability_samples),
     )
 
     request = prepare_corpus_assembly_request(config=config, roots=roots)

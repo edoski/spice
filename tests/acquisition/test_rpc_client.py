@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import asyncio
 
+import aiohttp
 import pytest
 from web3.exceptions import Web3RPCError
+from web3.providers.rpc.utils import ExceptionRetryConfiguration
 
 from spice.acquisition.errors import UnsupportedAcquisitionSourceError
 from spice.acquisition.rpc.client import BlockRpcClient
+from spice.acquisition.rpc.transport import (
+    RPC_USER_AGENT,
+    RetryingBatchAsyncHTTPProvider,
+    build_async_web3,
+)
 from spice.config.models import ChainRuntimeSpec, ChainSpec, ResolvedRpcEndpointConfig
 from spice.corpus.metadata import CorpusAcquisitionSourceRequirements
 
@@ -151,3 +158,55 @@ def test_rpc_client_parses_fee_history_rows(monkeypatch) -> None:
     rows = asyncio.run(client._fee_history_rows(100, 102))
 
     assert [row.priority_fee_p50 for row in rows] == [2, 3]
+
+
+def test_rpc_transport_preserves_headers_and_timeout() -> None:
+    provider = build_async_web3(_endpoint(), _chain()).provider
+    kwargs = provider.get_request_kwargs()
+
+    assert kwargs["headers"]["Content-Type"] == "application/json"
+    assert kwargs["headers"]["User-Agent"] == RPC_USER_AGENT
+    assert isinstance(kwargs["timeout"], aiohttp.ClientTimeout)
+    assert kwargs["timeout"].total == 5.0
+
+
+def test_rpc_batch_transport_retries_and_keeps_response_order(monkeypatch) -> None:
+    provider = RetryingBatchAsyncHTTPProvider(
+        "https://rpc.example",
+        exception_retry_configuration=ExceptionRetryConfiguration(
+            errors=[aiohttp.ClientError],
+            retries=2,
+            backoff_factor=0.0,
+        ),
+    )
+    calls = 0
+
+    async def fake_post(endpoint_uri, request_data, **kwargs):
+        nonlocal calls
+        del endpoint_uri, request_data, kwargs
+        calls += 1
+        if calls == 1:
+            raise aiohttp.ClientError("temporary")
+        return (
+            b'[{"jsonrpc":"2.0","id":1,"result":"one"},'
+            b'{"jsonrpc":"2.0","id":0,"result":"zero"}]'
+        )
+
+    monkeypatch.setattr(
+        provider._request_session_manager,
+        "async_make_post_request",
+        fake_post,
+    )
+
+    result = asyncio.run(
+        provider.make_batch_request(
+            [
+                ("eth_getBlockByNumber", [100, False]),
+                ("eth_getBlockByNumber", [101, False]),
+            ]
+        )
+    )
+
+    assert calls == 2
+    assert isinstance(result, list)
+    assert [row["id"] for row in result] == [0, 1]
