@@ -30,7 +30,7 @@ collect all expected evaluate results -> collection.json
 results.sqlite projection -> CSV export/query
 ```
 
-**Benchmark Plan Materialization** expands dimensions, matches dependencies, normalizes dependency-derived root selection, calls normal workflow resolution, asks Storage Root Materialization for consumed/produced/source root facts, and produces durable plan entries with resolved workflow snapshots. Inline problem grids produce inline `ProblemSpec` values during materialization; the selection ledger stores the selected problem id, while the resolved workflow config stores the full executable problem.
+**Benchmark Plan Materialization** expands dimensions, matches dependencies, normalizes dependency-derived root selection, calls normal workflow resolution, asks Storage Root Materialization for consumed/produced/source root facts, and produces durable plan entries with resolved workflow snapshots. Inline problem grids split workflow values from benchmark coordinates: the resolved workflow config stores the full executable `ProblemSpec`, while the selection ledger stores the selected problem id.
 
 The public plan materialization seam is `benchmarks.plan_materialization`. Its private internals own case expansion, dependency matching, dependency-derived root selection, root finalization, and selection ledger materialization. Storage owns scalar root-fact derivation; benchmark owns the durable ledger/run-state shape. Callers use `materialize_benchmark_plan()` and the durable models exported from that package; they do not import materialization internals.
 
@@ -49,23 +49,21 @@ benchmarks/
   schema.py      benchmark YAML schema
   plan_materialization/  public plan materialization interface plus private internals
   result_records.py  collection snapshot and result records
-  result_schema.py   SQLite result projection schema
-  result_store.py    low-level SQLite result projection
-  result_index.py    index upsert/rebuild/count/query operations
+  _result_schema.py  private SQLite result projection schema
+  result_index.py    result-index upsert/rebuild/count/query/export Interface
   __init__.py    benchmark API
-  run_state_codec.py  benchmark-local metadata/plan/submission/collection codecs
-  runs.py        run-dir lifecycle and public run-state facade
+  _run_state_codec.py  private metadata/plan/submission/collection codecs
+  runs.py        public run-state Interface and run-dir lifecycle
   submission.py  remote workflow submission service
   collection_resolver.py  remote evaluate-result resolver
   collection.py  remote result collection service
-  ledger.py      CSV export adapter
 ```
 
 ## Boundaries
 
 Run dirs are canonical benchmark audit state. `results.sqlite` is a rebuildable projection over `collection.json`; list and export consume the Benchmark Result Index row as the single read model, backed by normalized observation and metric tables. CSV files are named export artifacts for concrete table, figure, appendix, or analysis inputs and are overwritten from the index.
 
-`runs.py` is the public run-state facade. Benchmark run-state JSON/JSONL encoding stays benchmark-local and must not move into config or shared storage codecs.
+`runs.py` is the public run-state Interface. Benchmark run-state JSON/JSONL encoding stays benchmark-local and private to `_run_state_codec.py`; callers create, load, record submissions, and read/write collection snapshots through `runs.py`.
 
 The CLI creates run dirs, submits existing run dirs, collects existing run dirs, exports CSV, and reads the result index. It does not re-plan during submit or collect.
 

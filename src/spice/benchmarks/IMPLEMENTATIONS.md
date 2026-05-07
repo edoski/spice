@@ -13,11 +13,13 @@ Materialization keeps three durable ledgers distinct:
 
 Benchmark Plan Materialization owns the dependency/root sequence before the plan entry is assembled. It resolves dependency ledgers, prepares dependency-derived selections, finalizes root facts and the root ledger from the resolved workflow config, and records produced root facts for later dependent steps. Tuned train steps without an explicit `study_id` consume the produced study id from a prior tune dependency. Evaluate steps with `artifact_from` consume the produced artifact id from the referenced train step. Evaluate dataset selection stays explicit when provided; otherwise it inherits the artifact source dataset. Explicit tuned train studies resolve their dataset through Storage Root Materialization. The persisted plan fields are `root_facts` for caller reads and `root_ledger` for audit entries.
 
-`plan.jsonl` stores the typed ledgers plus a Resolved Workflow Snapshot. Raw JSON validation stays in `run_state_codec.py`; materialization works with typed benchmark and workflow objects.
+Problem-grid expansion keeps two rows per seed: the workflow row can carry an inline executable `ProblemSpec`, while the selection row carries the stable problem id used by the benchmark selection ledger. Normal dimensions write the same value to both rows.
+
+`plan.jsonl` stores the typed ledgers plus a Resolved Workflow Snapshot. Raw JSON validation stays private to `_run_state_codec.py`; materialization works with typed benchmark and workflow objects through the `runs.py` run-state Interface.
 
 ## Result Index
 
-Benchmark run dirs remain the audit source of truth. `results.sqlite` is a rebuildable projection over `collection.json`.
+Benchmark run dirs remain the audit source of truth. `results.sqlite` is a rebuildable projection over `collection.json`. `benchmarks.result_index` owns the public Result Index Interface: collection upsert, rebuild, counts, filtered list rows, and CSV export.
 
 Collection snapshots copy the typed dependency, selection, and root facts from the plan entry. Result records consume Benchmark Collection Match Facts for artifact, artifact dataset, evaluation dataset, evaluation storage, evaluator, delay, and execution provenance identity. The Benchmark Result Index row is the list/export read model and reads normalized coordinates from typed fields. Artifact dataset identity and evaluation dataset identity are stored separately so cross-corpus evaluation remains inspectable. Root audit state stays in plan run-state; collection snapshots and the result index store scalar root facts needed for reads.
 
