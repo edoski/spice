@@ -47,6 +47,7 @@ Artifact Inference Context
   +--> validate artifact semantics
   +--> validate corpus coverage
   +--> call Temporal Dataset Preparation Interface
+  +--> retain evaluation runtime summary facts
   |
   v
 EvaluationScoringRuntimePlan
@@ -66,6 +67,7 @@ EvaluationSummary
 ```
 
 Artifact inference validation is centralized in `modeling.artifact_inference`. It turns an active evaluate workflow config plus a trained artifact into trusted scoring inputs, then delegates tensorization state reconstruction to the Temporal Dataset Preparation Interface. Evaluator execution stays in `modeling.scoring` when model inference is involved.
+The Artifact Inference Context also owns the resolved delay, prepared row counts, evaluator identity, and metric descriptors needed to build persisted evaluation runtime summaries after scoring.
 
 Artifact training and tuning trials use separate training-spec entrypoints so artifact identity and study identity stay explicit at the workflow seam.
 

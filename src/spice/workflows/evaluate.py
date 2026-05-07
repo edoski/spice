@@ -5,10 +5,7 @@ from __future__ import annotations
 from ..config.models import EvaluateConfig
 from ..core.reporting import Reporter
 from ..execution.provenance import current_execution_job_provenance
-from ..modeling.results import (
-    EvaluationExecutionProvenance,
-    build_evaluation_runtime_summary,
-)
+from ..modeling.results import EvaluationExecutionProvenance
 from ..modeling.scoring import score_evaluation
 from ..storage.transactions import record_artifact_evaluation_state
 from .preparation import prepare_evaluate
@@ -36,13 +33,8 @@ def run(config: EvaluateConfig, *, reporter: Reporter | None = None) -> None:
         scoring_plan=inference_context.scoring_plan,
         evaluator_contract=inference_context.evaluator_contract,
     )
-    runtime_summary = build_evaluation_runtime_summary(
-        prepared=prepared,
+    runtime_summary = inference_context.runtime_summary(
         evaluation=evaluation,
-        delay_seconds=inference_context.delay_seconds,
-        evaluator_id=inference_context.evaluator_contract.evaluator_id,
-        evaluation_config=inference_context.evaluator_contract.config,
-        metric_descriptors=inference_context.evaluator_contract.metric_descriptors,
         execution_provenance=_current_execution_provenance(),
     )
     summary = record_artifact_evaluation_state(

@@ -222,7 +222,6 @@ def test_artifact_inference_context_prepares_scoring_inputs(
         artifact=roots.artifact,
     )
 
-    assert context.loaded_artifact is loaded_artifact
     assert context.prepared is prepared
     assert context.evaluator_contract is evaluator_contract
     assert context.scoring_plan.model is loaded_artifact.model

@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..core.rendering import metric_string
-from .results import LoadedEvaluationSummary, LoadedTrainingSummary
+from .results import LoadedTrainingSummary
 
 
 def training_result_fields(
@@ -51,22 +51,3 @@ def training_result_fields(
         )
     return fields
 
-
-def evaluation_result_fields(summary: LoadedEvaluationSummary) -> list[tuple[str, str]]:
-    runtime = summary.runtime
-    fields = [
-        ("evaluation_storage_id", summary.evaluation_storage_id),
-        ("events", str(runtime.total_events)),
-    ]
-    primary_descriptor = next(
-        (descriptor for descriptor in runtime.metric_descriptors if descriptor.role == "primary"),
-        None,
-    )
-    if primary_descriptor is not None and primary_descriptor.id in runtime.metrics.values:
-        fields.append(
-            (
-                primary_descriptor.id,
-                metric_string(runtime.metrics.values[primary_descriptor.id]),
-            )
-        )
-    return fields

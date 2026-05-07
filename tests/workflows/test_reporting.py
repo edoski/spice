@@ -109,13 +109,22 @@ def test_evaluate_workflow_uses_prepared_artifact_inference_context(
             ),
         ),
     )
-    context = SimpleNamespace(
-        loaded_artifact=SimpleNamespace(manifest=object()),
-        prepared=prepared,
-        evaluator_contract=evaluator_contract,
-        scoring_plan=object(),
-        delay_seconds=36,
-    )
+    class FakeInferenceContext:
+        def __init__(self) -> None:
+            self.prepared = prepared
+            self.evaluator_contract = evaluator_contract
+            self.scoring_plan = object()
+            self.delay_seconds = 36
+
+        def runtime_summary(self, evaluation, *, execution_provenance):
+            calls.append(f"summary:{execution_provenance is None}")
+            return SimpleNamespace(
+                total_events=evaluation.total_events,
+                metric_descriptors=evaluator_contract.metric_descriptors,
+                metrics=evaluation.metrics,
+            )
+
+    context = FakeInferenceContext()
     evaluation = EvaluationSummary(
         metrics=MetricSet(values={"profit_over_baseline": 0.25}),
         window_metrics={},
@@ -125,7 +134,7 @@ def test_evaluate_workflow_uses_prepared_artifact_inference_context(
 
     corpus = corpus_handle(
         tmp_path / "outputs",
-        dataset_id=config.dataset_id,
+        dataset_id=cast(str, config.dataset_id),
         dataset_name="test_dataset",
     )
     artifact = artifact_handle(
@@ -152,21 +161,19 @@ def test_evaluate_workflow_uses_prepared_artifact_inference_context(
     monkeypatch.setattr(
         evaluate_workflow,
         "record_artifact_evaluation_state",
-        lambda _artifact, *, summary: SimpleNamespace(runtime=summary),
-    )
-    monkeypatch.setattr(
-        workflow_reporting,
-        "evaluation_result_fields",
-        lambda _summary: [("evaluation", "poisson_replay"), ("events", "2")],
+        lambda _artifact, *, summary: SimpleNamespace(
+            evaluation_storage_id="eval_test",
+            runtime=summary,
+        ),
     )
     evaluate_workflow.run(config, reporter=reporter)
 
     assert calls[0].startswith(f"prepare:{config.delay_seconds}:")
-    assert calls[1:] == ["score:True:True"]
+    assert calls[1:] == ["score:True:True", "summary:True"]
     rendered = output.getvalue()
     assert "evaluate dataset=test_dataset dataset_id=" in rendered
     assert "prepare history_rows=10 evaluation_rows=5 samples=2" in rendered
-    assert "evaluate complete evaluation=poisson_replay events=2" in rendered
+    assert "evaluate complete evaluation_storage_id=eval_test events=2" in rendered
 
 
 def test_train_workflow_emits_compact_epoch_output(
@@ -194,7 +201,7 @@ def test_train_workflow_emits_compact_epoch_output(
         corpus=corpus_handle(
             tmp_path / "outputs",
             chain_name=config.chain.name,
-            dataset_id=config.dataset_id,
+            dataset_id=cast(str, config.dataset_id),
             dataset_name=config.dataset.name,
         ),
     )
@@ -271,7 +278,7 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
     corpus = corpus_handle(
         tmp_path / "outputs",
         chain_name=config.chain.name,
-        dataset_id=config.dataset_id,
+        dataset_id=cast(str, config.dataset_id),
         dataset_name=config.dataset.name,
     )
     study = study_handle(

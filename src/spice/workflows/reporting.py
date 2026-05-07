@@ -7,7 +7,7 @@ from ..core.rendering import metric_string
 from ..core.reporting import Reporter
 from ..corpus.assembly import CorpusAssemblyResult
 from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary
-from ..modeling.summary import evaluation_result_fields, training_result_fields
+from ..modeling.summary import training_result_fields
 from ..modeling.training_runner import TrainingEpochProgress
 from ..modeling.tuning_execution import TuningBestProgress, TuningTrialProgress
 from ..storage.study_models import StudySummary
@@ -204,7 +204,27 @@ def report_evaluate_result(
     *,
     summary: LoadedEvaluationSummary,
 ) -> None:
-    reporter.result("evaluate", evaluation_result_fields(summary))
+    reporter.result("evaluate", _evaluation_result_fields(summary))
+
+
+def _evaluation_result_fields(summary: LoadedEvaluationSummary) -> list[tuple[str, str]]:
+    runtime = summary.runtime
+    fields = [
+        ("evaluation_storage_id", summary.evaluation_storage_id),
+        ("events", str(runtime.total_events)),
+    ]
+    primary_descriptor = next(
+        (descriptor for descriptor in runtime.metric_descriptors if descriptor.role == "primary"),
+        None,
+    )
+    if primary_descriptor is not None and primary_descriptor.id in runtime.metrics.values:
+        fields.append(
+            (
+                primary_descriptor.id,
+                metric_string(runtime.metrics.values[primary_descriptor.id]),
+            )
+        )
+    return fields
 
 
 def _fit_epoch_message(

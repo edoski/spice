@@ -9,16 +9,22 @@ from ..core.errors import ConfigResolutionError
 from ..corpus.coverage import evaluation_coverage_requirement, validate_corpus_coverage
 from ..corpus.io import load_block_frame
 from ..evaluation import CompiledEvaluatorContract, compile_evaluator_contract
+from ..evaluation.contracts import EvaluationSummary
 from ..features import compile_feature_contract
 from ..prediction import compile_prediction_contract
 from ..storage.workflow_roots import ArtifactRootHandle, CorpusRootHandle
 from ..temporal.contracts import compile_problem_contract
-from .artifacts import LoadedTrainingArtifact, load_training_artifact
+from .artifacts import load_training_artifact
 from .dataset_builders import (
     ArtifactInferenceDatasetPreparationContext,
     ArtifactInferenceDatasetPreparationFacts,
     EvaluationCoverageWindow,
     PreparedInferenceDataset,
+)
+from .results import (
+    EvaluationExecutionProvenance,
+    EvaluationRuntimeSummary,
+    build_evaluation_runtime_summary,
 )
 from .runtime_planning import build_cuda_modeling_runtime_plan
 from .scoring import EvaluationScoringRuntimePlan
@@ -26,11 +32,26 @@ from .scoring import EvaluationScoringRuntimePlan
 
 @dataclass(slots=True)
 class ArtifactInferenceContext:
-    loaded_artifact: LoadedTrainingArtifact
     prepared: PreparedInferenceDataset
     delay_seconds: int
     evaluator_contract: CompiledEvaluatorContract
     scoring_plan: EvaluationScoringRuntimePlan
+
+    def runtime_summary(
+        self,
+        evaluation: EvaluationSummary,
+        *,
+        execution_provenance: EvaluationExecutionProvenance | None = None,
+    ) -> EvaluationRuntimeSummary:
+        return build_evaluation_runtime_summary(
+            prepared=self.prepared,
+            evaluation=evaluation,
+            delay_seconds=self.delay_seconds,
+            evaluator_id=self.evaluator_contract.evaluator_id,
+            evaluation_config=self.evaluator_contract.config,
+            metric_descriptors=self.evaluator_contract.metric_descriptors,
+            execution_provenance=execution_provenance,
+        )
 
 
 def prepare_artifact_inference_context(
@@ -122,7 +143,6 @@ def prepare_artifact_inference_context(
         runtime_plan=runtime_plan,
     )
     return ArtifactInferenceContext(
-        loaded_artifact=loaded_artifact,
         prepared=prepared,
         delay_seconds=delay_seconds,
         evaluator_contract=evaluator_contract,
