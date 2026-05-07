@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..config.models import (
     ArtifactVariant,
+    ChainRuntimeSpec,
     ChainSpec,
     FeaturesConfig,
     PredictionConfig,
@@ -20,25 +22,27 @@ from ..config.models import (
 )
 from ..corpus.io import load_block_frame
 from ..corpus.metadata import DatasetManifest
-from ..evaluation import EvaluatorConfig
-from ..features import CompiledFeatureContract
+from ..evaluation import CompiledEvaluatorContract, EvaluatorConfig, compile_evaluator_contract
+from ..features import CompiledFeatureContract, compile_feature_contract
 from ..objectives import ObjectiveConfig
-from ..prediction import CompiledPredictionContract
-from ..storage.workflow_roots import ArtifactRootHandle, CorpusRootHandle, StudyRootHandle
-from ..temporal.contracts import CompiledProblemContract
-from ..temporal.input_normalization import CompiledInputNormalizationContract
-from ._training_context import compile_training_context
+from ..prediction import CompiledPredictionContract, compile_prediction_contract
+from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
+from ..temporal.input_normalization import (
+    CompiledInputNormalizationContract,
+    compile_input_normalization_contract,
+)
 from .dataset_builders import (
     CompiledDatasetBuilderContract,
     DatasetBuilderConfig,
     PreparedTrainingDataset,
     TrainingDatasetPreparationContext,
     TrainingDatasetPreparationFacts,
+    compile_dataset_builder_contract,
 )
 from .families.base import ModelConfig
 from .families.registry import build_model
-from .objective_runtime import CompiledObjectiveRuntime
-from .representations import CompiledRepresentationContract
+from .objective_runtime import CompiledObjectiveRuntime, compile_objective_runtime
+from .representations import CompiledRepresentationContract, compile_representation_contract
 from .training_run import TrainingRunResult
 from .training_runner import (
     EarlyStopCallback,
@@ -47,6 +51,9 @@ from .training_runner import (
     TrainingFitSpec,
     run_training_fit,
 )
+
+if TYPE_CHECKING:
+    from ..storage.workflow_roots import ArtifactRootHandle, CorpusRootHandle, StudyRootHandle
 
 
 @dataclass(slots=True)
@@ -74,6 +81,18 @@ class TrainingSpec:
     variant: ArtifactVariant = ArtifactVariant.BASELINE
     study: StudyConfig | None = None
     study_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledTrainingContext:
+    feature_contract: CompiledFeatureContract
+    problem_contract: CompiledProblemContract
+    prediction_contract: CompiledPredictionContract
+    objective_runtime: CompiledObjectiveRuntime
+    evaluator_contract: CompiledEvaluatorContract | None
+    dataset_builder_contract: CompiledDatasetBuilderContract
+    input_normalization_contract: CompiledInputNormalizationContract
+    representation_contract: CompiledRepresentationContract
 
 
 def build_artifact_training_spec(
@@ -157,6 +176,42 @@ def _build_training_spec(
         study_id=study_id if variant is ArtifactVariant.TUNED else None,
         split=config.split,
         training=config.training,
+    )
+
+
+def compile_training_context(
+    config: TrainConfig | TuneConfig,
+    *,
+    chain_runtime: ChainRuntimeSpec | None = None,
+) -> CompiledTrainingContext:
+    feature_contract = compile_feature_contract(features=config.features)
+    prediction_contract = compile_prediction_contract(
+        prediction_id=config.prediction.id,
+        family_id=config.prediction.family_id,
+    )
+    evaluator_contract = (
+        None if config.evaluation is None else compile_evaluator_contract(config.evaluation)
+    )
+    objective_runtime = compile_objective_runtime(
+        config.objective,
+        evaluator_contract=evaluator_contract,
+        prediction_metric_descriptors=prediction_contract.training_metric_descriptors,
+    )
+    return CompiledTrainingContext(
+        feature_contract=feature_contract,
+        problem_contract=compile_problem_contract(
+            problem=config.problem,
+            feature_contract=feature_contract,
+            chain_runtime=chain_runtime or config.chain.runtime,
+        ),
+        prediction_contract=prediction_contract,
+        objective_runtime=objective_runtime,
+        evaluator_contract=evaluator_contract,
+        dataset_builder_contract=compile_dataset_builder_contract(config.dataset_builder),
+        input_normalization_contract=compile_input_normalization_contract(
+            config.training.input_normalization
+        ),
+        representation_contract=compile_representation_contract(),
     )
 
 

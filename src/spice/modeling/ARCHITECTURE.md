@@ -114,7 +114,6 @@ modeling/
   batch_plan.py           training/inference batch planning and loader/storage policy
   _runtime.py             shared PyTorch/CUDA runtime helpers
   _runtime_probe.py       private host-warmup and measured-budget helpers
-  _training_context.py    training dataset/runtime/spec context helpers
   forward_runtime.py      forward-only warmup, memory measurement, and execution
   runtime_planning.py     device, backend, seed, precision, and model preparation plans
   training_runtime.py     training warmup, budget planning, and prediction state fitting

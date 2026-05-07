@@ -13,7 +13,7 @@ from ..config.models import (
 )
 from ..core.errors import MissingStateError, StateConflictError
 from ..corpus.metadata import DatasetManifest
-from ..modeling._training_context import compile_training_context
+from ..modeling.pipeline import compile_training_context
 from ..semantics import StudySemantics
 from .engine import STUDY_ROOT_KIND, create_state_engine, ensure_state_db, require_root_kind
 from .identity import (
