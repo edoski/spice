@@ -14,7 +14,6 @@ IntVector = NDArray[np.int64]
 
 @dataclass(frozen=True, slots=True)
 class ContextWindowSummary:
-    sample_indices: IntVector
     context_start_rows: IntVector
     anchor_rows: IntVector
     context_lengths: IntVector
@@ -22,7 +21,6 @@ class ContextWindowSummary:
 
 @dataclass(frozen=True, slots=True)
 class CandidateWindowSummary:
-    sample_indices: IntVector
     anchor_rows: IntVector
     candidate_start_rows: IntVector
     candidate_end_rows: IntVector
@@ -128,7 +126,6 @@ class CompiledProblemStore:
         )
         anchor_rows = self.anchor_rows[resolved_indices].astype(np.int64, copy=False)
         return ContextWindowSummary(
-            sample_indices=resolved_indices,
             context_start_rows=context_start_rows,
             anchor_rows=anchor_rows,
             context_lengths=(anchor_rows - context_start_rows + 1).astype(
@@ -157,7 +154,6 @@ class CompiledProblemStore:
             candidate_start_rows + int(self.max_candidate_slots),
         ).astype(np.int64, copy=False)
         return CandidateWindowSummary(
-            sample_indices=resolved_indices,
             anchor_rows=anchor_rows,
             candidate_start_rows=candidate_start_rows,
             candidate_end_rows=candidate_end_rows,

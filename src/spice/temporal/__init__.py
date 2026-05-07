@@ -2,7 +2,6 @@
 
 from .capability import (
     TemporalCapability,
-    TemporalCapabilitySemantics,
 )
 from .execution_policy import (
     CompiledExecutionPolicyContract,
@@ -18,7 +17,6 @@ from .execution_policy import (
 __all__ = [
     "CompiledExecutionPolicyContract",
     "TemporalCapability",
-    "TemporalCapabilitySemantics",
     "PreparedActionSpace",
     "PreparedTemporalOutcomeFacts",
     "PreparedTemporalFacts",

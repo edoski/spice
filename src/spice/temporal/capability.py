@@ -5,15 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..core.validation import validate_path_segment
-
-
-@dataclass(frozen=True, slots=True)
-class TemporalCapabilitySemantics:
-    """Stable semantic projection of the trained artifact's temporal capability."""
-
-    compiler_id: str
-    max_delay_seconds: int
-    action_width: int
+from ..semantics import TemporalCapabilitySemantics
 
 
 @dataclass(frozen=True, slots=True)

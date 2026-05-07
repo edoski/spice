@@ -29,9 +29,9 @@ The compiler returns a Temporal Capability with `compiler_id`, `max_delay_second
 
 This compiler is online-safe because context rows end at the anchor row, candidate-window rows feed execution-policy outcome facts only, and feature prerequisites/warmup filtering happens before train/validation/test splitting. It does not reveal a future row count from evaluation timestamps to the model; `slot_spacing` only fixes artifact action width.
 
-## Shared Builder
+## Timestamp Window Store
 
-The shared timestamp builder keeps rows aligned and filters invalid sample anchors:
+`observed_time_window` builds the timestamp-window store locally. It keeps rows aligned and filters invalid sample anchors:
 
 | Rule | Why |
 | --- | --- |

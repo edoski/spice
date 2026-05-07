@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from .features import FeaturePrerequisites
     from .metrics import MetricDescriptor
-    from .temporal.capability import TemporalCapabilitySemantics
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +81,15 @@ class DatasetBuilderSemantics:
     """Resolved dataset-builder identity for persisted provenance."""
 
     dataset_builder_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class TemporalCapabilitySemantics:
+    """Stable semantic projection of a trained artifact's temporal capability."""
+
+    compiler_id: str
+    max_delay_seconds: int
+    action_width: int
 
 
 @dataclass(frozen=True, slots=True)
