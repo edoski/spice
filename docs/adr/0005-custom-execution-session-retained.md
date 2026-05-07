@@ -12,12 +12,12 @@ Packages such as Submitit, Fabric, and Paramiko cover narrower pieces of that su
 
 ## Decision
 
-Keep the custom SSH/rsync/Slurm Execution Session. Do not replace it with Submitit, Fabric, Paramiko, or another remote-execution framework during cleanup.
+Keep the custom SSH/rsync/Slurm Execution Session. Do not replace it with Submitit, Fabric, Paramiko, or another remote-execution framework.
 
 Reconsider Submitit only if the control architecture changes so job submission code runs on the cluster host or SPICE adopts a Python-function job model. Reconsider SSH packages only if the project needs programmatic SSH features that OpenSSH subprocesses cannot provide.
 
 ## Consequences
 
-Execution cleanup should stay inside the current Session, submission, and transfer modules. Package substitution is not the main lever for this area.
+Execution changes should stay inside the current Session, submission, and transfer modules. Package substitution is not the main lever for this area.
 
 The remote runner contract remains typed workflow config in, workflow function out. Storage transfer continues to use rsync plus catalog materialization and strict remote catalog record envelopes.

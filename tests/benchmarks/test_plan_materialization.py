@@ -25,7 +25,7 @@ def _materialize(isolate_conf_root, payload: dict[str, object]):
     return materialize_benchmark_plan("materialization_case")
 
 
-def test_plan_materialization_injects_study_id_for_tuned_train_dependency(
+def test_plan_materialization_derives_study_id_for_tuned_train_dependency(
     isolate_conf_root,
 ) -> None:
     entries = _materialize(
@@ -136,7 +136,7 @@ def test_plan_materialization_rejects_ambiguous_tuned_train_dependency(
         )
 
 
-def test_plan_materialization_injects_artifact_and_dataset_for_artifact_from(
+def test_plan_materialization_derives_artifact_and_dataset_for_artifact_from(
     isolate_conf_root,
 ) -> None:
     entries = _materialize(

@@ -73,4 +73,4 @@ The CLI creates run dirs, submits existing run dirs, collects existing run dirs,
 
 Remote transfer during collection uses an execution-owned `StorageTransferTransaction`; matching uses a **Benchmark Collection Resolver**. Collection builds a `BenchmarkCollectionSelection` from the plan entry, submission, and benchmark target, asks the transaction for the selected local artifact record, then passes that record to the resolver. The resolver materializes the local artifact state path from storage root plus artifact identity, validates artifact and artifact dataset identity, matches evaluator id, resolved delay, and full execution provenance, returns Benchmark Collection Match Facts for result records, and does not re-resolve the local catalog.
 
-Benchmark JSON shapes are operator-facing. Keep them stable unless a field name is part of a deliberate terminology cleanup.
+Benchmark JSON shapes are operator-facing. Keep them stable unless a field name is part of a deliberate terminology change.

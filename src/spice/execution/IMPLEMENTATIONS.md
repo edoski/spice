@@ -36,10 +36,6 @@ An execution target defines:
 
 `spice.execution.session` is the target-bound Interface for remote operations. It owns shell quoting, command execution, module execution, rsync, SLURM submission, target follow policy, job following, final-state reads, and remote git commit lookup. `spice.execution.provenance` owns submitted job identity: workflow task, target, job id, execution ref, and log path. `spice.execution.submission` owns the higher-level direct workflow submit/follow lifecycle.
 
-There is no additional remote-execution session protocol while SSH/SLURM is the only Adapter.
-
-Submitit, Fabric, and Paramiko are intentionally not used here. Submitit would only replace part of Slurm submission while leaving SSH target selection, rsync storage transfer, provenance environment, log following, and remote catalog exchange in custom code. Fabric and Paramiko would replace OpenSSH subprocess calls without removing the Slurm or rsync lifecycle, and they would stop relying directly on the user's SSH config.
-
 ## SLURM Submission
 
 The session builds an SSH command that runs `bash -lc` remotely. It renders an `sbatch` script, sources the remote environment, sets `PYTHONUNBUFFERED=1`, and runs:
@@ -81,7 +77,3 @@ Before submission, the workflow config storage root is rewritten to the target's
 | Final state not `COMPLETED` | Job failed, timed out, or was cancelled. |
 | Unsupported task | The remote runner only handles train, tune, evaluate. |
 | Missing target config | CLI target name does not resolve. |
-
-## Extension Pattern
-
-A second remote execution Adapter should keep the remote runner contract: typed workflow config in, workflow function out. Do not introduce a backend protocol until that second Adapter exists.

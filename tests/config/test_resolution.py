@@ -592,31 +592,6 @@ def test_selection_overrides_allow_objective_selection(
     assert tune_config.objective.metric_id == "total_loss"
 
 
-def test_selection_overrides_allow_model_and_tuning_space_selection(
-    tmp_path: Path,
-    isolate_conf_root,
-) -> None:
-    isolate_conf_root()
-
-    config = cast(
-        TuneConfig,
-        resolve_workflow_config(
-            TuneWorkflowSelection(
-                surface="current_row_fee_dynamics",
-                dataset_id=TEST_DATASET_ID,
-                model="transformer",
-                tuning_space="transformer_default",
-                storage_root=tmp_path / "outputs",
-            ),
-        ),
-    )
-
-    assert config.model.id == "transformer"
-    assert config.tuning_space.model.id == "transformer"
-    assert type(config.model).__name__ == "TransformerModelConfig"
-    assert type(config.tuning_space.model).__name__ == "TransformerTuningSpaceModelConfig"
-
-
 @pytest.mark.parametrize(
     ("model", "tuning_space"),
     [
