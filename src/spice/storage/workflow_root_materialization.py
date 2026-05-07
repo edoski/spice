@@ -17,8 +17,11 @@ from .ids import artifact_storage_id, corpus_storage_id, study_storage_id
 from .selectors import ArtifactSelector, DatasetSelector, StudySelector
 from .workflow_roots import (
     AcquireWorkflowRoots,
+    ArtifactRootHandle,
     BaselineTrainWorkflowRoots,
+    CorpusRootHandle,
     EvaluateWorkflowRoots,
+    StudyRootHandle,
     TrainWorkflowRoots,
     TunedTrainWorkflowRoots,
     TuneWorkflowRoots,
@@ -61,6 +64,14 @@ class MaterializedWorkflowRootFacts:
     produced_artifact_dataset_id: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _WorkflowRootMaterialization:
+    facts: MaterializedWorkflowRootFacts
+    corpus: CorpusRootHandle | None = None
+    study: StudyRootHandle | None = None
+    artifact: ArtifactRootHandle | None = None
+
+
 def produced_corpus_id(config: AcquireConfig) -> str:
     return corpus_storage_id(
         chain_name=config.chain.name,
@@ -85,35 +96,6 @@ def produced_artifact_id(config: TrainConfig, *, dataset_id: str) -> str:
     )
 
 
-def consumed_root_facts(
-    config: TrainConfig | TuneConfig | EvaluateConfig,
-) -> ConsumedRootFacts:
-    if isinstance(config, TuneConfig):
-        return ConsumedRootFacts(dataset_id=config.dataset_id)
-    if isinstance(config, TrainConfig):
-        return ConsumedRootFacts(dataset_id=config.dataset_id, study_id=config.study_id)
-    return ConsumedRootFacts(dataset_id=config.dataset_id, artifact_id=config.artifact_id)
-
-
-def produced_root_facts(
-    config: AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig,
-    *,
-    dataset_id: str | None = None,
-) -> ProducedRootFacts:
-    if isinstance(config, AcquireConfig):
-        return ProducedRootFacts(dataset_id=produced_corpus_id(config))
-    if isinstance(config, TuneConfig):
-        return ProducedRootFacts(study_id=produced_study_id(config))
-    if isinstance(config, EvaluateConfig):
-        return ProducedRootFacts()
-    resolved_dataset_id = dataset_id or config.dataset_id
-    if resolved_dataset_id is None:
-        raise ConfigResolutionError("train produced artifact identity requires dataset_id")
-    return ProducedRootFacts(
-        artifact_id=produced_artifact_id(config, dataset_id=resolved_dataset_id)
-    )
-
-
 def materialize_workflow_root_facts(
     config: AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig,
     *,
@@ -121,65 +103,246 @@ def materialize_workflow_root_facts(
     known_artifact_dataset_ids: Mapping[str, str] | None = None,
     artifact_source_dataset_id: str | None = None,
 ) -> MaterializedWorkflowRootFacts:
+    return _materialize_workflow_roots(
+        config,
+        include_handles=False,
+        known_study_dataset_ids=known_study_dataset_ids,
+        known_artifact_dataset_ids=known_artifact_dataset_ids,
+        artifact_source_dataset_id=artifact_source_dataset_id,
+    ).facts
+
+
+def _materialize_workflow_roots(
+    config: AcquireConfig | TrainConfig | TuneConfig | EvaluateConfig,
+    *,
+    include_handles: bool,
+    known_study_dataset_ids: Mapping[str, str] | None = None,
+    known_artifact_dataset_ids: Mapping[str, str] | None = None,
+    artifact_source_dataset_id: str | None = None,
+) -> _WorkflowRootMaterialization:
     if isinstance(config, AcquireConfig):
-        return MaterializedWorkflowRootFacts(
-            consumed=ConsumedRootFacts(),
-            produced=produced_root_facts(config),
+        produced = ProducedRootFacts(dataset_id=produced_corpus_id(config))
+        corpus = (
+            produced_corpus_root_handle(
+                config.storage.root,
+                chain_name=config.chain.name,
+                dataset_id=_required(
+                    produced.dataset_id,
+                    "acquire root identity did not produce dataset_id",
+                ),
+                dataset_name=config.dataset.name,
+            )
+            if include_handles
+            else None
+        )
+        return _WorkflowRootMaterialization(
+            facts=MaterializedWorkflowRootFacts(
+                consumed=ConsumedRootFacts(),
+                produced=produced,
+            ),
+            corpus=corpus,
         )
 
-    consumed = consumed_root_facts(config)
+    if isinstance(config, TuneConfig):
+        produced = ProducedRootFacts(study_id=produced_study_id(config))
+        corpus = None
+        study = None
+        if include_handles:
+            dataset = resolve_dataset_record(
+                config.storage.root,
+                selector=DatasetSelector(dataset_id=config.dataset_id),
+            )
+            corpus = corpus_root_handle_from_record(config.storage.root, dataset)
+            study = produced_study_root_handle(
+                config.storage.root,
+                corpus=corpus,
+                study_id=_required(
+                    produced.study_id,
+                    "tune root identity did not produce study_id",
+                ),
+                study_name=config.study.name,
+            )
+        return _WorkflowRootMaterialization(
+            facts=MaterializedWorkflowRootFacts(
+                consumed=ConsumedRootFacts(dataset_id=config.dataset_id),
+                produced=produced,
+                produced_study_dataset_id=config.dataset_id,
+            ),
+            corpus=corpus,
+            study=study,
+        )
+
+    if isinstance(config, TrainConfig):
+        if config.artifact.variant is ArtifactVariant.TUNED:
+            return _materialize_tuned_train_roots(
+                config,
+                include_handles=include_handles,
+                known_study_dataset_ids=known_study_dataset_ids,
+            )
+        return _materialize_baseline_train_roots(config, include_handles=include_handles)
+
+    return _materialize_evaluate_roots(
+        config,
+        include_handles=include_handles,
+        known_artifact_dataset_ids=known_artifact_dataset_ids,
+        artifact_source_dataset_id=artifact_source_dataset_id,
+    )
+
+
+def _materialize_baseline_train_roots(
+    config: TrainConfig,
+    *,
+    include_handles: bool,
+) -> _WorkflowRootMaterialization:
+    if config.dataset_id is None:
+        raise ValueError("baseline training requires dataset_id")
+    produced = ProducedRootFacts(
+        artifact_id=produced_artifact_id(config, dataset_id=config.dataset_id)
+    )
+    corpus = None
+    artifact = None
+    if include_handles:
+        dataset = resolve_dataset_record(
+            config.storage.root,
+            selector=DatasetSelector(dataset_id=config.dataset_id),
+        )
+        corpus = corpus_root_handle_from_record(config.storage.root, dataset)
+        artifact = produced_artifact_root_handle(
+            config.storage.root,
+            corpus=corpus,
+            artifact_id=_required(
+                produced.artifact_id,
+                "train root identity did not produce artifact_id",
+            ),
+            variant=config.artifact.variant,
+        )
+    return _WorkflowRootMaterialization(
+        facts=MaterializedWorkflowRootFacts(
+            consumed=ConsumedRootFacts(dataset_id=config.dataset_id),
+            produced=produced,
+            produced_artifact_dataset_id=config.dataset_id,
+        ),
+        corpus=corpus,
+        artifact=artifact,
+    )
+
+
+def _materialize_tuned_train_roots(
+    config: TrainConfig,
+    *,
+    include_handles: bool,
+    known_study_dataset_ids: Mapping[str, str] | None,
+) -> _WorkflowRootMaterialization:
+    if config.study_id is None:
+        raise ValueError("tuned training requires study_id")
+    study_record = (
+        resolve_study_record(
+            config.storage.root,
+            selector=StudySelector(study_id=config.study_id),
+        )
+        if include_handles
+        else None
+    )
     study_dataset_id = (
-        _study_dataset_id(
+        study_record.dataset_id
+        if study_record is not None
+        else _known_or_catalog_study_dataset_id(
             config,
-            consumed.study_id,
+            config.study_id,
             known_study_dataset_ids=known_study_dataset_ids,
         )
-        if consumed.study_id is not None
+    )
+    produced = ProducedRootFacts(
+        artifact_id=produced_artifact_id(config, dataset_id=study_dataset_id)
+    )
+    corpus = None
+    study = None
+    artifact = None
+    if include_handles:
+        if study_record is None:
+            raise ValueError("tuned train study record was not resolved")
+        dataset = resolve_dataset_record(
+            config.storage.root,
+            selector=DatasetSelector(dataset_id=study_dataset_id),
+        )
+        corpus = corpus_root_handle_from_record(config.storage.root, dataset)
+        study = study_root_handle_from_record(config.storage.root, study_record)
+        artifact = produced_artifact_root_handle(
+            config.storage.root,
+            corpus=corpus,
+            artifact_id=_required(
+                produced.artifact_id,
+                "train root identity did not produce artifact_id",
+            ),
+            variant=config.artifact.variant,
+            study=study,
+        )
+    return _WorkflowRootMaterialization(
+        facts=MaterializedWorkflowRootFacts(
+            consumed=ConsumedRootFacts(study_id=config.study_id),
+            produced=produced,
+            consumed_study_dataset_id=study_dataset_id,
+            produced_artifact_dataset_id=study_dataset_id,
+        ),
+        corpus=corpus,
+        study=study,
+        artifact=artifact,
+    )
+
+
+def _materialize_evaluate_roots(
+    config: EvaluateConfig,
+    *,
+    include_handles: bool,
+    known_artifact_dataset_ids: Mapping[str, str] | None,
+    artifact_source_dataset_id: str | None,
+) -> _WorkflowRootMaterialization:
+    artifact_record = (
+        resolve_artifact_record(
+            config.storage.root,
+            selector=ArtifactSelector(artifact_id=config.artifact_id),
+        )
+        if include_handles
         else None
     )
     artifact_dataset_id = (
-        _artifact_dataset_id(
+        artifact_record.dataset_id
+        if artifact_record is not None
+        else _known_or_catalog_artifact_dataset_id(
             config,
-            consumed.artifact_id,
+            config.artifact_id,
             known_artifact_dataset_ids=known_artifact_dataset_ids,
             artifact_source_dataset_id=artifact_source_dataset_id,
         )
-        if consumed.artifact_id is not None
-        else None
     )
-    train_dataset_id = _train_dataset_id(config, study_dataset_id=study_dataset_id)
-    produced = produced_root_facts(config, dataset_id=train_dataset_id)
-    produced_study_dataset_id = consumed.dataset_id if produced.study_id is not None else None
-    produced_artifact_dataset_id = (
-        train_dataset_id if produced.artifact_id is not None else None
+    corpus = None
+    artifact = None
+    if include_handles:
+        dataset = resolve_dataset_record(
+            config.storage.root,
+            selector=DatasetSelector(dataset_id=config.dataset_id),
+        )
+        if artifact_record is None:
+            raise ValueError("evaluate artifact record was not resolved")
+        corpus = corpus_root_handle_from_record(config.storage.root, dataset)
+        artifact = artifact_root_handle_from_record(config.storage.root, artifact_record)
+    return _WorkflowRootMaterialization(
+        facts=MaterializedWorkflowRootFacts(
+            consumed=ConsumedRootFacts(
+                dataset_id=config.dataset_id,
+                artifact_id=config.artifact_id,
+            ),
+            produced=ProducedRootFacts(),
+            source=SourceRootFacts(artifact_dataset_id=artifact_source_dataset_id),
+            consumed_artifact_dataset_id=artifact_dataset_id,
+        ),
+        corpus=corpus,
+        artifact=artifact,
     )
-    return MaterializedWorkflowRootFacts(
-        consumed=consumed,
-        produced=produced,
-        source=SourceRootFacts(artifact_dataset_id=artifact_source_dataset_id),
-        consumed_study_dataset_id=study_dataset_id,
-        consumed_artifact_dataset_id=artifact_dataset_id,
-        produced_study_dataset_id=produced_study_dataset_id,
-        produced_artifact_dataset_id=produced_artifact_dataset_id,
-    )
 
 
-def _train_dataset_id(
-    config: TrainConfig | TuneConfig | EvaluateConfig,
-    *,
-    study_dataset_id: str | None,
-) -> str | None:
-    if not isinstance(config, TrainConfig):
-        return None
-    if config.dataset_id is not None:
-        return config.dataset_id
-    if study_dataset_id is not None:
-        return study_dataset_id
-    raise ConfigResolutionError("train artifact source did not declare dataset_id or study_id")
-
-
-def _study_dataset_id(
-    config: TrainConfig | TuneConfig | EvaluateConfig,
+def _known_or_catalog_study_dataset_id(
+    config: TrainConfig,
     study_id: str,
     *,
     known_study_dataset_ids: Mapping[str, str] | None,
@@ -196,8 +359,8 @@ def _study_dataset_id(
     return study.dataset_id
 
 
-def _artifact_dataset_id(
-    config: TrainConfig | TuneConfig | EvaluateConfig,
+def _known_or_catalog_artifact_dataset_id(
+    config: EvaluateConfig,
     artifact_id: str,
     *,
     known_artifact_dataset_ids: Mapping[str, str] | None,
@@ -217,100 +380,62 @@ def _artifact_dataset_id(
     return artifact.dataset_id
 
 
+def _required(value: str | None, message: str) -> str:
+    if value is None:
+        raise ValueError(message)
+    return value
+
+
 def materialize_acquire_roots(config: AcquireConfig) -> AcquireWorkflowRoots:
-    produced = produced_root_facts(config)
-    if produced.dataset_id is None:
-        raise ValueError("acquire root identity did not produce dataset_id")
+    materialized = _materialize_workflow_roots(config, include_handles=True)
+    corpus = materialized.corpus
+    if corpus is None:
+        raise ValueError("acquire root identity did not produce corpus root")
     return AcquireWorkflowRoots(
-        corpus=produced_corpus_root_handle(
-            config.storage.root,
-            chain_name=config.chain.name,
-            dataset_id=produced.dataset_id,
-            dataset_name=config.dataset.name,
-        ),
+        corpus=corpus,
     )
 
 
 def materialize_tune_roots(config: TuneConfig) -> TuneWorkflowRoots:
-    dataset = resolve_dataset_record(
-        config.storage.root,
-        selector=DatasetSelector(dataset_id=config.dataset_id),
-    )
-    corpus = corpus_root_handle_from_record(config.storage.root, dataset)
-    produced = produced_root_facts(config)
-    if produced.study_id is None:
-        raise ValueError("tune root identity did not produce study_id")
+    materialized = _materialize_workflow_roots(config, include_handles=True)
+    corpus = materialized.corpus
+    study = materialized.study
+    if corpus is None or study is None:
+        raise ValueError("tune root identity did not produce workflow roots")
     return TuneWorkflowRoots(
         corpus=corpus,
-        study=produced_study_root_handle(
-            config.storage.root,
-            corpus=corpus,
-            study_id=produced.study_id,
-            study_name=config.study.name,
-        ),
+        study=study,
     )
 
 
 def materialize_train_roots(config: TrainConfig) -> TrainWorkflowRoots:
+    materialized = _materialize_workflow_roots(config, include_handles=True)
+    corpus = materialized.corpus
+    artifact = materialized.artifact
+    if corpus is None or artifact is None:
+        raise ValueError("train root identity did not produce workflow roots")
     if config.artifact.variant is ArtifactVariant.TUNED:
-        if config.study_id is None:
-            raise ValueError("tuned training requires study_id")
-        study = resolve_study_record(
-            config.storage.root,
-            selector=StudySelector(study_id=config.study_id),
-        )
-        dataset = resolve_dataset_record(
-            config.storage.root,
-            selector=DatasetSelector(dataset_id=study.dataset_id),
-        )
-        corpus = corpus_root_handle_from_record(config.storage.root, dataset)
-        study_root = study_root_handle_from_record(config.storage.root, study)
-        produced = produced_root_facts(config, dataset_id=study.dataset_id)
-        if produced.artifact_id is None:
-            raise ValueError("train root identity did not produce artifact_id")
+        study = materialized.study
+        if study is None:
+            raise ValueError("tuned train root identity did not produce study root")
         return TunedTrainWorkflowRoots(
             corpus=corpus,
-            study=study_root,
-            artifact=produced_artifact_root_handle(
-                config.storage.root,
-                corpus=corpus,
-                artifact_id=produced.artifact_id,
-                variant=config.artifact.variant,
-                study=study_root,
-            ),
+            study=study,
+            artifact=artifact,
         )
-
-    if config.dataset_id is None:
-        raise ValueError("baseline training requires dataset_id")
-    dataset = resolve_dataset_record(
-        config.storage.root,
-        selector=DatasetSelector(dataset_id=config.dataset_id),
-    )
-    corpus = corpus_root_handle_from_record(config.storage.root, dataset)
-    produced = produced_root_facts(config, dataset_id=dataset.dataset_id)
-    if produced.artifact_id is None:
-        raise ValueError("train root identity did not produce artifact_id")
     return BaselineTrainWorkflowRoots(
         corpus=corpus,
-        artifact=produced_artifact_root_handle(
-            config.storage.root,
-            corpus=corpus,
-            artifact_id=produced.artifact_id,
-            variant=config.artifact.variant,
-        ),
+        artifact=artifact,
     )
 
 
 def materialize_evaluate_roots(config: EvaluateConfig) -> EvaluateWorkflowRoots:
-    dataset = resolve_dataset_record(
-        config.storage.root,
-        selector=DatasetSelector(dataset_id=config.dataset_id),
-    )
-    artifact = resolve_artifact_record(
-        config.storage.root,
-        selector=ArtifactSelector(artifact_id=config.artifact_id),
-    )
+    materialized = _materialize_workflow_roots(config, include_handles=True)
+    corpus = materialized.corpus
+    artifact = materialized.artifact
+    if corpus is None or artifact is None:
+        raise ValueError("evaluate root identity did not produce workflow roots")
     return EvaluateWorkflowRoots(
-        corpus=corpus_root_handle_from_record(config.storage.root, dataset),
-        artifact=artifact_root_handle_from_record(config.storage.root, artifact),
+        corpus=corpus,
+        artifact=artifact,
     )

@@ -317,6 +317,30 @@ def test_workflow_root_facts_use_known_benchmark_sources_before_catalog(
     assert facts.produced_artifact_dataset_id == "cor_from_benchmark"
 
 
+def test_workflow_root_facts_do_not_resolve_baseline_train_dataset_catalog(
+    tmp_path,
+    monkeypatch,
+    load_workflow_config,
+) -> None:
+    config = cast(
+        TrainConfig,
+        load_workflow_config(WorkflowTask.TRAIN, workspace=tmp_path),
+    )
+
+    def fail_resolve_dataset(*_args, **_kwargs):
+        raise AssertionError("scalar baseline train facts must not resolve dataset catalog")
+
+    monkeypatch.setattr(
+        "spice.storage.workflow_root_materialization.resolve_dataset_record",
+        fail_resolve_dataset,
+    )
+
+    facts = materialize_workflow_root_facts(config)
+
+    assert facts.consumed.dataset_id == config.dataset_id
+    assert facts.produced_artifact_dataset_id == config.dataset_id
+
+
 def test_workflow_root_facts_preserve_evaluate_dataset_and_artifact_source(
     tmp_path,
     load_workflow_config,
@@ -334,3 +358,32 @@ def test_workflow_root_facts_preserve_evaluate_dataset_and_artifact_source(
     assert facts.consumed.dataset_id == config.dataset_id
     assert facts.consumed.artifact_id == config.artifact_id
     assert facts.consumed_artifact_dataset_id == "cor_artifact_source"
+
+
+def test_workflow_root_facts_use_artifact_source_dataset_before_catalog(
+    tmp_path,
+    monkeypatch,
+    load_workflow_config,
+) -> None:
+    config = cast(
+        EvaluateConfig,
+        load_workflow_config(WorkflowTask.EVALUATE, workspace=tmp_path),
+    )
+
+    def fail_resolve_artifact(*_args, **_kwargs):
+        raise AssertionError("artifact_from source facts must not resolve artifact catalog")
+
+    monkeypatch.setattr(
+        "spice.storage.workflow_root_materialization.resolve_artifact_record",
+        fail_resolve_artifact,
+    )
+
+    facts = materialize_workflow_root_facts(
+        config,
+        artifact_source_dataset_id="cor_artifact_from_train",
+    )
+
+    assert facts.consumed.dataset_id == config.dataset_id
+    assert facts.consumed.artifact_id == config.artifact_id
+    assert facts.source.artifact_dataset_id == "cor_artifact_from_train"
+    assert facts.consumed_artifact_dataset_id == "cor_artifact_from_train"
