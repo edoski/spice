@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import csv
-import sqlite3
 from pathlib import Path
 
 import pytest
 
-from spice.benchmarks.ledger import export_results_csv
 from spice.benchmarks.plan_materialization import (
     BenchmarkDependencyLedger,
     BenchmarkRootFacts,
     BenchmarkSelectionLedger,
 )
 from spice.benchmarks.result_index import (
+    benchmark_result_index_counts,
+    export_benchmark_results_csv,
     list_benchmark_results,
     rebuild_benchmark_result_index,
     upsert_benchmark_collection_snapshot,
@@ -22,7 +22,6 @@ from spice.benchmarks.result_records import (
     BenchmarkResultRecord,
     MetricValueRecord,
 )
-from spice.benchmarks.result_store import index_counts
 from spice.benchmarks.runs import create_benchmark_run, write_benchmark_collection_snapshot
 from spice.config import WorkflowTask
 from spice.core.errors import SpiceOperatorError
@@ -116,7 +115,7 @@ def test_result_index_keeps_observations_per_benchmark_run(tmp_path: Path) -> No
     upsert_benchmark_collection_snapshot(first, index_path=index_path)
     upsert_benchmark_collection_snapshot(second, index_path=index_path)
 
-    assert index_counts(index_path) == {
+    assert benchmark_result_index_counts(index_path=index_path) == {
         "runs": 2,
         "observations": 2,
         "metrics": 4,
@@ -158,7 +157,7 @@ def test_csv_export_overwrites_from_index(tmp_path: Path) -> None:
         index_path=index_path,
     )
 
-    rows = export_results_csv(output_path=output_path, index_path=index_path)
+    rows = export_benchmark_results_csv(output_path=output_path, index_path=index_path)
     exported = list(csv.DictReader(output_path.open("r", encoding="utf-8", newline="")))
 
     assert len(rows) == 1
@@ -177,16 +176,13 @@ def test_index_query_and_export_use_normalized_rows(tmp_path: Path) -> None:
         index_path=index_path,
         benchmark="bench",
     )
-    rows = export_results_csv(output_path=output_path, index_path=index_path)
+    rows = export_benchmark_results_csv(output_path=output_path, index_path=index_path)
 
     assert [row.artifact_id for row in indexed_rows] == ["artifact-1"]
+    assert indexed_rows[0].artifact_dataset_id == "dataset-1"
+    assert indexed_rows[0].evaluation_dataset_id == "evaluation-dataset-1"
     assert rows[0]["artifact_id"] == "artifact-1"
     assert rows[0]["surface"] == "current_row_fee_dynamics"
-    with sqlite3.connect(index_path) as connection:
-        indexed = connection.execute(
-            "select artifact_dataset_id, evaluation_dataset_id from result_observations"
-        ).fetchone()
-    assert indexed == ("dataset-1", "evaluation-dataset-1")
 
 def test_index_query_rejects_metric_id_collision_across_sources(tmp_path: Path) -> None:
     index_path = tmp_path / "results.sqlite"

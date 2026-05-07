@@ -164,9 +164,9 @@ def benchmark_index_export_command(
         typer.Option("--index", help="Benchmark result index path."),
     ] = Path("benchmarks") / "results.sqlite",
 ) -> None:
-    from ...benchmarks.ledger import export_results_csv
+    from ...benchmarks.result_index import export_benchmark_results_csv
 
-    rows = export_results_csv(
+    rows = export_benchmark_results_csv(
         output_path=output,
         index_path=index_path,
         benchmark=benchmark,

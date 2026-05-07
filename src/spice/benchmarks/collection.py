@@ -19,13 +19,12 @@ from .collection_resolver import (
     benchmark_collection_selection,
     resolve_benchmark_evaluation,
 )
-from .result_index import upsert_benchmark_collection_snapshot
+from .result_index import BENCHMARK_RESULT_INDEX_PATH, upsert_benchmark_collection_snapshot
 from .result_records import (
     BenchmarkCollectionSnapshot,
     BenchmarkResultRecord,
     build_benchmark_result_record,
 )
-from .result_store import BENCHMARK_RESULT_INDEX_PATH
 from .runs import (
     format_datetime,
     load_benchmark_run,
