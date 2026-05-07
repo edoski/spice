@@ -11,7 +11,6 @@ from ..corpus.metadata import (
     AcquireRunFacts,
     AcquireRunRecord,
     AcquisitionConfigSnapshot,
-    BlockRangeMetadata,
     ChainMetadata,
     CompactValidationReport,
     CorpusAcquisitionSourceRequirements,
@@ -24,7 +23,6 @@ from ..corpus.metadata import (
     SplitCoverageMetadata,
     SplitMaterializationMetadata,
     SplitRequestMetadata,
-    TimestampRangeMetadata,
 )
 from .payloads import PayloadCodec, PayloadModel, payload_model_codec
 
@@ -110,38 +108,8 @@ class SplitCoveragePayload(PayloadModel):
         )
 
 
-class BlockRangePayload(PayloadModel):
-    first: int | None
-    last: int | None
-
-    @classmethod
-    def from_range(cls, block_range: BlockRangeMetadata) -> BlockRangePayload:
-        return cls(first=block_range.first, last=block_range.last)
-
-    def to_range(self) -> BlockRangeMetadata:
-        return BlockRangeMetadata(first=self.first, last=self.last)
-
-
-class TimestampRangePayload(PayloadModel):
-    first: int | None
-    last: int | None
-
-    @classmethod
-    def from_range(
-        cls,
-        timestamp_range: TimestampRangeMetadata,
-    ) -> TimestampRangePayload:
-        return cls(first=timestamp_range.first, last=timestamp_range.last)
-
-    def to_range(self) -> TimestampRangeMetadata:
-        return TimestampRangeMetadata(first=self.first, last=self.last)
-
-
 class CompactValidationReportPayload(PayloadModel):
     status: str
-    rows: int
-    block_range: BlockRangePayload
-    timestamp_range: TimestampRangePayload
     issues: dict[str, object] | None = None
 
     @classmethod
@@ -151,18 +119,12 @@ class CompactValidationReportPayload(PayloadModel):
     ) -> CompactValidationReportPayload:
         return cls(
             status=report.status,
-            rows=report.rows,
-            block_range=BlockRangePayload.from_range(report.block_range),
-            timestamp_range=TimestampRangePayload.from_range(report.timestamp_range),
             issues=report.issues,
         )
 
     def to_report(self) -> CompactValidationReport:
         return CompactValidationReport(
             status=self.status,
-            rows=self.rows,
-            block_range=self.block_range.to_range(),
-            timestamp_range=self.timestamp_range.to_range(),
             issues=self.issues,
         )
 

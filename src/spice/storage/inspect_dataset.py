@@ -72,8 +72,8 @@ def dataset_sections(
             [
                 ("history", coverage_string(manifest.splits.history.coverage)),
                 ("evaluation", coverage_string(manifest.splits.evaluation.coverage)),
-                ("history rows", str(manifest.splits.history.validation.rows)),
-                ("evaluation rows", str(manifest.splits.evaluation.validation.rows)),
+                ("history rows", str(manifest.splits.history.coverage.rows)),
+                ("evaluation rows", str(manifest.splits.evaluation.coverage.rows)),
                 ("history outcome", manifest.splits.history.materialization.outcome),
                 ("evaluation outcome", manifest.splits.evaluation.materialization.outcome),
             ],

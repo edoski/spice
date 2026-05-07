@@ -15,7 +15,6 @@ from spice.config import (
 )
 from spice.config.groups import load_named_group_payload
 from spice.corpus.metadata import (
-    BlockRangeMetadata,
     ChainMetadata,
     CompactValidationReport,
     CorpusAcquisitionSourceRequirements,
@@ -26,7 +25,6 @@ from spice.corpus.metadata import (
     SplitCoverageMetadata,
     SplitMaterializationMetadata,
     SplitRequestMetadata,
-    TimestampRangeMetadata,
 )
 from spice.storage.identity import (
     study_definition_identity_from_manifest,
@@ -106,9 +104,6 @@ def _corpus_manifest(config: TuneConfig) -> DatasetManifest:
         ),
         validation=CompactValidationReport(
             status="clean",
-            rows=1,
-            block_range=BlockRangeMetadata(first=1, last=1),
-            timestamp_range=TimestampRangeMetadata(first=1, last=2),
         ),
         materialization=SplitMaterializationMetadata(outcome="reused", file_count=1),
     )

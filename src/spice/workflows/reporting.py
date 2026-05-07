@@ -6,7 +6,6 @@ from ..config.models import AcquireConfig, EvaluateConfig, TrainConfig, TuneConf
 from ..core.rendering import metric_string
 from ..core.reporting import Reporter
 from ..corpus.assembly import CorpusAssemblyResult
-from ..corpus.summary import acquire_dry_run_fields, acquisition_result_fields
 from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary
 from ..modeling.summary import evaluation_result_fields, training_result_fields
 from ..modeling.training_runner import TrainingEpochProgress
@@ -39,30 +38,24 @@ def report_acquire_result(
     if result.mode == "dry_run":
         reporter.result(
             "acquire",
-            acquire_dry_run_fields(
-                config,
-                history_window_seconds=result.requested_history_window_seconds,
-                history_plan=result.history_plan,
-                evaluation_plan=result.evaluation_plan,
-            ),
+            [
+                ("history_window", f"{result.requested_history_window_seconds}s"),
+                ("history_blocks", str(result.history_plan.block_range.count)),
+                ("evaluation_blocks", str(result.evaluation_plan.block_range.count)),
+            ],
             status="dry_run",
         )
         return
-    if (
-        result.history_outcome is None
-        or result.history_row_count is None
-        or result.evaluation_outcome is None
-        or result.evaluation_row_count is None
-    ):
-        raise RuntimeError("Committed corpus assembly result is missing split facts")
+    history = result.manifest.splits.history
+    evaluation = result.manifest.splits.evaluation
     reporter.result(
         "acquire",
-        acquisition_result_fields(
-            history_outcome=result.history_outcome,
-            history_row_count=result.history_row_count,
-            evaluation_outcome=result.evaluation_outcome,
-            evaluation_row_count=result.evaluation_row_count,
-        ),
+        [
+            ("history", history.materialization.outcome),
+            ("history_blocks", str(history.coverage.rows)),
+            ("evaluation", evaluation.materialization.outcome),
+            ("evaluation_blocks", str(evaluation.coverage.rows)),
+        ],
     )
 
 

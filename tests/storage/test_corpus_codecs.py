@@ -8,7 +8,6 @@ from spice.corpus.metadata import (
     AcquireRunFacts,
     AcquireRunRecord,
     AcquisitionConfigSnapshot,
-    BlockRangeMetadata,
     ChainMetadata,
     CompactValidationReport,
     CorpusAcquisitionSourceRequirements,
@@ -21,7 +20,6 @@ from spice.corpus.metadata import (
     SplitCoverageMetadata,
     SplitMaterializationMetadata,
     SplitRequestMetadata,
-    TimestampRangeMetadata,
 )
 from spice.storage.corpus_codecs import (
     ACQUIRE_RUN_CODEC,
@@ -32,9 +30,6 @@ from spice.storage.corpus_codecs import (
 def _validation_report() -> CompactValidationReport:
     return CompactValidationReport(
         status="ok",
-        rows=12,
-        block_range=BlockRangeMetadata(first=100, last=111),
-        timestamp_range=TimestampRangeMetadata(first=1_000, last=1_132),
         issues=None,
     )
 

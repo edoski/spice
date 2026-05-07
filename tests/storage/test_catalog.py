@@ -11,7 +11,6 @@ from spice.corpus.metadata import (
     AcquireRunFacts,
     AcquireRunRecord,
     AcquisitionConfigSnapshot,
-    BlockRangeMetadata,
     ChainMetadata,
     CompactValidationReport,
     CorpusAcquisitionSourceRequirements,
@@ -24,7 +23,6 @@ from spice.corpus.metadata import (
     SplitCoverageMetadata,
     SplitMaterializationMetadata,
     SplitRequestMetadata,
-    TimestampRangeMetadata,
 )
 from spice.storage.artifact import load_artifact_manifest
 from spice.storage.catalog.index import (
@@ -69,9 +67,6 @@ def _dataset_manifest(*, dataset_id: str) -> DatasetManifest:
         ),
         validation=CompactValidationReport(
             status="clean",
-            rows=1,
-            block_range=BlockRangeMetadata(first=1, last=1),
-            timestamp_range=TimestampRangeMetadata(first=1, last=2),
         ),
         materialization=SplitMaterializationMetadata(outcome="reused", file_count=1),
     )

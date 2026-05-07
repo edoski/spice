@@ -7,7 +7,6 @@ import pytest
 from spice.config import TuneConfig, WorkflowTask
 from spice.core.errors import StateConflictError, StateLayoutError
 from spice.corpus.metadata import (
-    BlockRangeMetadata,
     ChainMetadata,
     CompactValidationReport,
     CorpusAcquisitionSourceRequirements,
@@ -18,7 +17,6 @@ from spice.corpus.metadata import (
     SplitCoverageMetadata,
     SplitMaterializationMetadata,
     SplitRequestMetadata,
-    TimestampRangeMetadata,
 )
 from spice.storage.study_manifest import (
     insert_study_manifest,
@@ -51,9 +49,6 @@ def _corpus_manifest(config: TuneConfig) -> DatasetManifest:
         ),
         validation=CompactValidationReport(
             status="clean",
-            rows=1,
-            block_range=BlockRangeMetadata(first=1, last=1),
-            timestamp_range=TimestampRangeMetadata(first=1, last=2),
         ),
         materialization=SplitMaterializationMetadata(outcome="reused", file_count=1),
     )

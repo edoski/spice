@@ -75,10 +75,10 @@ def validate_corpus_coverage(
         minimum_seconds=requirement.history_seconds,
         label="history coverage",
     )
-    if manifest.splits.history.validation.rows < requirement.history_rows:
+    if manifest.splits.history.coverage.rows < requirement.history_rows:
         raise StateConflictError(
             "Corpus history rows are insufficient for compiled problem: "
-            f"{manifest.splits.history.validation.rows} < {requirement.history_rows}"
+            f"{manifest.splits.history.coverage.rows} < {requirement.history_rows}"
         )
     if requirement.evaluation_delay_seconds is not None:
         _validate_clean_split(manifest, split="evaluation")
@@ -97,7 +97,12 @@ def _validate_clean_split(manifest: DatasetManifest, *, split: str) -> None:
     )
     if report.status != "clean":
         raise StateConflictError(f"Corpus {split} validation is not clean: {report.status}")
-    if report.rows <= 0:
+    coverage = (
+        manifest.splits.history.coverage
+        if split == "history"
+        else manifest.splits.evaluation.coverage
+    )
+    if coverage.rows <= 0:
         raise StateConflictError(f"Corpus {split} split is empty")
 
 

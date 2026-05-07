@@ -24,10 +24,7 @@ from .planning import (
     CorpusCapabilityPlanningSpec,
     build_corpus_capability_planning_context,
 )
-from .split_materialization import (
-    CorpusSplitMaterializationSpec,
-    CorpusSplitOutcome,
-)
+from .split_materialization import CorpusSplitMaterializationSpec
 
 StatusCallback = Callable[[str], None]
 
@@ -39,19 +36,26 @@ class CorpusAssemblyRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class CorpusAssemblyResult:
-    mode: Literal["dry_run", "committed"]
+class CorpusAssemblyDryRunResult:
+    mode: Literal["dry_run"]
     history_plan: BlockPullPlan
     evaluation_plan: BlockPullPlan
     requested_history_window_seconds: int
-    resolved_capability_samples: int | None
-    history_outcome: CorpusSplitOutcome | None
-    history_row_count: int | None
-    evaluation_outcome: CorpusSplitOutcome | None
-    evaluation_row_count: int | None
-    manifest: DatasetManifest | None
-    acquire_run: AcquireRunRecord | None
-    committed_root_kind: RootKind | None
+
+
+@dataclass(frozen=True, slots=True)
+class CorpusAssemblyCommittedResult:
+    mode: Literal["committed"]
+    history_plan: BlockPullPlan
+    evaluation_plan: BlockPullPlan
+    requested_history_window_seconds: int
+    resolved_capability_samples: int
+    manifest: DatasetManifest
+    acquire_run: AcquireRunRecord
+    committed_root_kind: RootKind
+
+
+CorpusAssemblyResult = CorpusAssemblyDryRunResult | CorpusAssemblyCommittedResult
 
 
 def _noop_status(message: str) -> None:
@@ -108,19 +112,11 @@ async def assemble_corpus(
     requested_history_window_seconds = initial_plan.requested_history_window_seconds
 
     if config.acquisition.dry_run:
-        return CorpusAssemblyResult(
+        return CorpusAssemblyDryRunResult(
             mode="dry_run",
             history_plan=history_plan,
             evaluation_plan=evaluation_plan,
             requested_history_window_seconds=requested_history_window_seconds,
-            resolved_capability_samples=None,
-            history_outcome=None,
-            history_row_count=None,
-            evaluation_outcome=None,
-            evaluation_row_count=None,
-            manifest=None,
-            acquire_run=None,
-            committed_root_kind=None,
         )
 
     controller = AcquisitionPullController.from_config(config.acquisition)
@@ -139,16 +135,12 @@ async def assemble_corpus(
         status=emit,
     )
     publication = stage.publish(fulfillment=fulfillment)
-    return CorpusAssemblyResult(
+    return CorpusAssemblyCommittedResult(
         mode="committed",
         history_plan=publication.history_plan,
         evaluation_plan=publication.evaluation_plan,
         requested_history_window_seconds=publication.requested_history_window_seconds,
         resolved_capability_samples=publication.resolved_capability_samples,
-        history_outcome=publication.history_outcome,
-        history_row_count=publication.history_row_count,
-        evaluation_outcome=publication.evaluation_outcome,
-        evaluation_row_count=publication.evaluation_row_count,
         manifest=publication.manifest,
         acquire_run=publication.acquire_run,
         committed_root_kind=publication.committed_root_kind,

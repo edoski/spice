@@ -144,7 +144,7 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
     summary = load_dataset_manifest(roots.corpus.state_db_path)
     runs = list_acquire_runs(roots.corpus.state_db_path)
     assert roots.corpus.state_db_path.is_file()
-    assert summary.splits.evaluation.validation.rows == evaluation_plan.block_range.count
+    assert summary.splits.evaluation.coverage.rows == evaluation_plan.block_range.count
     assert summary.dataset.id == roots.corpus.dataset_id
     assert summary.dataset.name == config.dataset.name
     assert summary.chain.name == config.chain.name

@@ -113,7 +113,6 @@ def test_assemble_corpus_dry_run_returns_plan_without_writes(
     assert result.mode == "dry_run"
     assert result.history_plan.block_range.count > 0
     assert result.evaluation_plan.block_range.count > 0
-    assert result.manifest is None
     assert roots.corpus.state_db_path.exists() is False
 
 

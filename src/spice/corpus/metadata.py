@@ -46,23 +46,8 @@ class SplitRequestMetadata:
 
 
 @dataclass(frozen=True, slots=True)
-class BlockRangeMetadata:
-    first: int | None
-    last: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class TimestampRangeMetadata:
-    first: int | None
-    last: int | None
-
-
-@dataclass(frozen=True, slots=True)
 class CompactValidationReport:
     status: str
-    rows: int
-    block_range: BlockRangeMetadata
-    timestamp_range: TimestampRangeMetadata
     issues: dict[str, object] | None = None
 
 
@@ -186,15 +171,6 @@ def compact_validation_report(report: BlockDatasetValidationReport) -> CompactVa
         }
     return CompactValidationReport(
         status=report.status,
-        rows=report.row_count,
-        block_range=BlockRangeMetadata(
-            first=report.first_block_number,
-            last=report.last_block_number,
-        ),
-        timestamp_range=TimestampRangeMetadata(
-            first=report.first_timestamp,
-            last=report.last_timestamp,
-        ),
         issues=issues,
     )
 

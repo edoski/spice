@@ -9,7 +9,6 @@ from spice.config.models import ChainRuntimeSpec
 from spice.core.errors import StateConflictError
 from spice.corpus.coverage import training_coverage_requirement, validate_corpus_coverage
 from spice.corpus.metadata import (
-    BlockRangeMetadata,
     ChainMetadata,
     CompactValidationReport,
     CorpusAcquisitionSourceRequirements,
@@ -20,7 +19,6 @@ from spice.corpus.metadata import (
     SplitCoverageMetadata,
     SplitMaterializationMetadata,
     SplitRequestMetadata,
-    TimestampRangeMetadata,
 )
 from spice.features import compile_feature_contract
 from spice.temporal.contracts import compile_problem_contract
@@ -107,12 +105,6 @@ def _split_manifest(
         ),
         validation=CompactValidationReport(
             status="clean",
-            rows=rows,
-            block_range=BlockRangeMetadata(first=first_block, last=last_block),
-            timestamp_range=TimestampRangeMetadata(
-                first=start_timestamp,
-                last=end_timestamp,
-            ),
         ),
         materialization=SplitMaterializationMetadata(outcome="created", file_count=1),
     )
