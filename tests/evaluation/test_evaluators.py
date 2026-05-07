@@ -13,7 +13,7 @@ from spice.evaluation import (
     coerce_evaluator_config,
     compile_evaluator_contract,
 )
-from spice.metrics import MetricDescriptor, MetricSet
+from spice.metrics import MetricDescriptor, MetricSet, WindowMetricSummary
 from spice.prediction.decoded_offsets import OFFSET_DECODED_RESULT_ID, DecodedOffsets
 from spice.temporal import (
     coerce_execution_policy_config,
@@ -127,6 +127,41 @@ def test_metric_descriptors_and_evaluator_contract_validate_primary_metric() -> 
             config=EvaluatorConfig(id="bad"),
             accepted_decoded_result_id="offsets",
             run_fn=unused_run_fn,
+        )
+
+
+def test_evaluator_contract_validates_returned_metric_ids() -> None:
+    def run_fn(
+        _store: object,
+        _execution_policy: object,
+        _decoded_result: object,
+        _action_space: object,
+    ) -> EvaluationSummary:
+        return EvaluationSummary(
+            metrics=MetricSet(values={"profit": 0.0, "undeclared": 1.0}),
+            window_metrics={"undeclared": WindowMetricSummary(mean=0.0, std=0.0)},
+            total_events=1,
+            runs=[EvaluationRun(n_events=1, metrics={"profit": 0.0}, metadata={})],
+        )
+
+    evaluator = CompiledEvaluatorContract(
+        evaluator_id="bad",
+        metric_descriptors=(
+            MetricDescriptor(id="profit", label="Profit", role="primary"),
+            MetricDescriptor(id="cost", label="Cost", role="secondary"),
+        ),
+        config=EvaluatorConfig(id="bad"),
+        accepted_decoded_result_id=OFFSET_DECODED_RESULT_ID,
+        run_fn=run_fn,
+    )
+
+    store = _store()
+    with pytest.raises(ValueError, match=r"summary metrics.*missing: cost.*extra: undeclared"):
+        evaluator.run(
+            store,
+            _execution_policy(),
+            DecodedOffsets(torch.tensor([0], dtype=torch.int64)),
+            _action_space(store, np.array([0], dtype=np.int64)),
         )
 
 

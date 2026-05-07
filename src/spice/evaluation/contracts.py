@@ -90,12 +90,18 @@ class CompiledEvaluatorContract:
                 "Evaluator decoded-result requirement does not match prediction output: "
                 f"{self.accepted_decoded_result_id} != {decoded_result.decoded_result_id}"
             )
-        return self.run_fn(
+        summary = self.run_fn(
             store,
             execution_policy,
             decoded_result,
             action_space,
         )
+        _validate_evaluation_summary_metric_ids(
+            summary,
+            descriptor_ids=frozenset(descriptor.id for descriptor in self.metric_descriptors),
+            evaluator_id=self.evaluator_id,
+        )
+        return summary
 
     def validate_prediction_contract(
         self,
@@ -106,3 +112,52 @@ class CompiledEvaluatorContract:
                 "Evaluator decoded-result requirement does not match prediction contract: "
                 f"{self.accepted_decoded_result_id} != {prediction_contract.decoded_result_id}"
             )
+
+
+def _validate_evaluation_summary_metric_ids(
+    summary: EvaluationSummary,
+    *,
+    descriptor_ids: frozenset[str],
+    evaluator_id: str,
+) -> None:
+    _require_exact_metric_ids(
+        summary.metrics.values,
+        descriptor_ids=descriptor_ids,
+        evaluator_id=evaluator_id,
+        label="summary metrics",
+    )
+    for index, run in enumerate(summary.runs):
+        _require_exact_metric_ids(
+            run.metrics,
+            descriptor_ids=descriptor_ids,
+            evaluator_id=evaluator_id,
+            label=f"run[{index}] metrics",
+        )
+    extra_window_metrics = set(summary.window_metrics) - descriptor_ids
+    if extra_window_metrics:
+        raise ValueError(
+            f"Evaluator {evaluator_id} returned undeclared window metric ids "
+            f"({', '.join(sorted(extra_window_metrics))})"
+        )
+
+
+def _require_exact_metric_ids(
+    metrics: dict[str, float],
+    *,
+    descriptor_ids: frozenset[str],
+    evaluator_id: str,
+    label: str,
+) -> None:
+    metric_ids = set(metrics)
+    missing = descriptor_ids - metric_ids
+    extra = metric_ids - descriptor_ids
+    if missing or extra:
+        parts = []
+        if missing:
+            parts.append(f"missing: {', '.join(sorted(missing))}")
+        if extra:
+            parts.append(f"extra: {', '.join(sorted(extra))}")
+        raise ValueError(
+            f"Evaluator {evaluator_id} returned {label} that do not match "
+            f"metric descriptors ({'; '.join(parts)})"
+        )

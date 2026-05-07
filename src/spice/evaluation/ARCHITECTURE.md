@@ -68,14 +68,14 @@ The evaluator accepts the generic `DecodedPredictionResult` and a prepared Actio
 ```text
 Temporal Replay Runner
   generic decoded result -> require_decoded_offsets()
-  DecodedOffsets -> temporal_accounting.summarize_selected_temporal_decisions()
+  validated selected runs -> temporal_accounting.summarize_selected_temporal_decision_runs()
 ```
 
 `temporal_accounting` is evaluation-private and accepts `DecodedOffsets` directly. That keeps generic decoded-result handling at the evaluator boundary.
 
 ## Temporal Accounting
 
-Temporal replay evaluator Adapters choose event positions from a runner-built replay sample view. The **Temporal Replay Runner** owns decoded-result validation, replay sample positions/timestamps/count derived from the prepared Action Space, selected-position validation, strict scalar metadata validation, and the accounting loop. Temporal Accounting computes realized, baseline, optimum, and event-mean economic metrics for those positions.
+Temporal replay evaluator Adapters choose event positions from a runner-built replay sample view. The **Temporal Replay Runner** owns decoded-result validation, replay sample positions/timestamps/count derived from the prepared Action Space, selected-position validation, strict scalar metadata validation, and no-run failures. Temporal Accounting computes realized, baseline, optimum, event-mean economic metrics, fee sums, and per-run window summaries for validated selected runs.
 
 ```text
 selected sample positions
@@ -87,7 +87,7 @@ selected sample positions
 
 `poisson_replay` owns Poisson windowing, arrival sampling, chronological ordering of the replay sample view, and arrival-to-position selection. `full_temporal_replay` selects every supplied sample position once. Both feed selections to the runner, which validates metadata, handles no-run failures, and uses Temporal Accounting.
 
-Temporal Accounting returns evaluation-private temporal replay result types. A Temporal Replay Metric Catalog owns metric ids, descriptors, event-mean/window aggregation facts, and field mapping. The Temporal Replay Runner attaches those descriptors and converts typed replay results to generic `EvaluationSummary` before the result leaves `evaluation`, so storage, benchmarks, reporting, and modeling keep one public evaluation result ABI.
+Temporal Accounting returns evaluation-private temporal replay result types. A Temporal Replay Metric Catalog owns metric ids, descriptors, event-mean/window aggregation facts, metric assembly, and extraction into generic metric dictionaries. The Temporal Replay Runner attaches those descriptors and converts typed replay results to generic `EvaluationSummary` before the result leaves `evaluation`, so storage, benchmarks, reporting, and modeling keep one public evaluation result ABI.
 
 ## Metric Descriptor Rule
 
@@ -95,7 +95,7 @@ Temporal Accounting returns evaluation-private temporal replay result types. A T
 metric id -> label -> role(primary | secondary | diagnostic)
 ```
 
-Each evaluator contract must declare exactly one primary metric. Descriptor ids must be unique and path-safe. Metric descriptors may also declare optimization direction. Evaluation-backed objectives must use the same direction as the selected evaluator metric, so a cost metric cannot accidentally be maximized and a profit metric cannot accidentally be minimized.
+Each evaluator contract must declare exactly one primary metric. Descriptor ids must be unique and path-safe. Returned summary metrics and per-run metrics must exactly match descriptor ids; window metric ids must be descriptor ids. Metric descriptors may also declare optimization direction. Evaluation-backed objectives must use the same direction as the selected evaluator metric, so a cost metric cannot accidentally be maximized and a profit metric cannot accidentally be minimized.
 
 ## Module Map
 

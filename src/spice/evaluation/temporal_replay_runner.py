@@ -9,7 +9,7 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from ..metrics import MetricSet, WindowMetricSummary
+from ..metrics import MetricSet
 from ..prediction.decoded_offsets import DecodedOffsets, require_decoded_offsets
 from ..prediction.decoding import DecodedPredictionResult
 from ..temporal.execution_policy import CompiledExecutionPolicyContract, PreparedActionSpace
@@ -18,8 +18,8 @@ from ._temporal_replay_metric_catalog import TEMPORAL_REPLAY_METRIC_DESCRIPTORS
 from .config import EvaluatorConfig
 from .contracts import CompiledEvaluatorContract, EvaluationRun, EvaluationSummary
 from .temporal_accounting import (
-    summarize_selected_temporal_decisions,
-    summarize_temporal_accounting_runs,
+    SelectedTemporalDecisionRun,
+    summarize_selected_temporal_decision_runs,
 )
 from .temporal_replay_results import TemporalReplayResult
 
@@ -105,25 +105,29 @@ def run_temporal_replay(
         raise ValueError("decoded_offsets must align with sample_indices")
     samples = temporal_replay_sample_view(store, action_space)
 
-    runs = []
+    selected_runs: list[SelectedTemporalDecisionRun] = []
     for selection in adapter.selections(samples):
         selected_positions = _validated_selected_positions(
             selection.selected_positions,
             sample_count=samples.sample_count,
         )
-        runs.append(
-            summarize_selected_temporal_decisions(
-                store,
-                execution_policy,
-                decoded_offsets,
-                action_space,
+        selected_runs.append(
+            SelectedTemporalDecisionRun(
                 selected_positions,
                 metadata=_validated_metadata(selection.metadata),
             )
         )
-    if not runs:
+    if not selected_runs:
         raise no_runs_error or ValueError("evaluation produced no runs")
-    return _temporal_replay_result_to_summary(summarize_temporal_accounting_runs(runs))
+    return _temporal_replay_result_to_summary(
+        summarize_selected_temporal_decision_runs(
+            store,
+            execution_policy,
+            decoded_offsets,
+            action_space,
+            selected_runs,
+        )
+    )
 
 
 def temporal_replay_sample_view(
@@ -176,16 +180,13 @@ def _validated_metadata(metadata: Mapping[str, object]) -> dict[str, str | int |
 
 def _temporal_replay_result_to_summary(result: TemporalReplayResult) -> EvaluationSummary:
     return EvaluationSummary(
-        metrics=MetricSet(values=result.metrics.values()),
-        window_metrics={
-            metric_id: WindowMetricSummary(mean=metric.mean, std=metric.std)
-            for metric_id, metric in result.window_metrics.items()
-        },
+        metrics=MetricSet(values=dict(result.metrics)),
+        window_metrics=dict(result.window_metrics),
         total_events=result.total_events,
         runs=[
             EvaluationRun(
                 n_events=run.n_events,
-                metrics=run.metrics.values(),
+                metrics=dict(run.metrics),
                 metadata=dict(run.metadata),
             )
             for run in result.runs

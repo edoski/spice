@@ -48,4 +48,6 @@ check decoded-result id -> predict -> evaluate -> return metrics
 
 This keeps Optuna and training loops from knowing evaluator internals.
 
+Evaluator contracts validate returned metric ids before Objective Runtime consumes them, so objective selection can trust descriptor identity and direction.
+
 Config-facing objective coercion normalizes invalid payload envelopes to `ConfigResolutionError` and returns already typed objective configs unchanged.

@@ -27,7 +27,7 @@ Current evaluators accept `DecodedOffsets`. They interpret offsets through tempo
 | `accepted_decoded_result_id` | Decoded ABI the evaluator accepts. |
 | `run_fn` | Concrete evaluation function. |
 
-The contract validates metric descriptor uniqueness, requires exactly one descriptor with `role: primary`, and validates decoded-result id before running. `primary_metric_id` is derived from that primary descriptor; optimization direction belongs to metric descriptors.
+The contract validates metric descriptor uniqueness, requires exactly one descriptor with `role: primary`, validates decoded-result id before running, and validates returned summary/run metric ids against descriptors. `primary_metric_id` is derived from that primary descriptor; optimization direction belongs to metric descriptors.
 
 ## Fee Math
 
@@ -39,7 +39,7 @@ fee = exp(log_base_fee)
 
 Ratios are computed on real fee values, not log values. The Temporal Replay Runner validates decoded replay inputs, builds the replay sample view from supplied sample positions, timestamps, and count, asks evaluator Adapters for selected events, normalizes scalar metadata, handles no-run failures, invokes Temporal Accounting, and converts replay results to `EvaluationSummary`.
 
-Temporal replay has a private typed result ABI between Temporal Accounting and the Temporal Replay Runner. It carries run metrics, event metric sums, window summaries, and metadata as replay concepts. The Temporal Replay Metric Catalog owns metric ids, descriptors, event-mean membership, window-summary membership, and field mapping. Event-mean metrics are event-weighted across all replay events; `window_metrics` summarize per-run means without event weighting. The runner converts the replay result to generic `EvaluationSummary` at the evaluator boundary.
+Temporal replay has a private typed result ABI between Temporal Accounting and the Temporal Replay Runner. It carries run metrics, event metric sums, window summaries, and metadata as replay concepts. The Temporal Replay Metric Catalog owns metric ids, descriptors, event-mean membership, fee-sum membership, window-summary membership, metric assembly, and extraction to generic metric dictionaries. Event-mean metrics are event-weighted across all replay events; `window_metrics` summarize per-run means without event weighting. The runner converts the replay result to generic `EvaluationSummary` at the evaluator boundary.
 
 ## Temporal Accounting
 
@@ -88,6 +88,7 @@ Evaluation objectives call evaluator scoring on validation samples during traini
 | --- | --- |
 | Unknown evaluator id | Evaluator id is not one of the trusted adapters. |
 | Decoded-result id mismatch | Evaluator cannot interpret prediction output. |
+| Evaluator metric id mismatch | Returned summary/run metrics do not match descriptor ids, or a window metric is undeclared. |
 | Empty selected positions | No events to score. |
 | Non-positive fee total | Economic ratio denominator invalid. |
 | Poisson window too long | Not enough timestamp coverage. |
