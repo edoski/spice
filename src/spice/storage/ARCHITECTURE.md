@@ -79,8 +79,8 @@ storage/
   engine.py          SQLite engine and root-kind metadata
   schema.py          root-local state schema
   selectors.py       typed catalog selectors
-  payloads.py        generic payload stores/codecs
-  corpus_codecs.py   corpus-root payload ABI
+  payloads.py        generic payload stores and strict payload-record helpers
+  corpus_codecs.py   corpus-root Pydantic payload ABI
   artifact_codecs.py artifact-root payload ABI
   semantics_codecs.py persisted semantic-contract payload ABI
   corpus.py          corpus-root persistence
@@ -100,7 +100,7 @@ storage/
   catalog/           global searchable index, catalog records, schema, store, and codecs
 ```
 
-Storage owns persisted payload ABI. Modeling and evaluation own runtime result objects; named storage `PayloadCodec` objects translate those objects at the SQLite table boundary. Persistence modules call codec objects directly, keeping encode/decode locality at one seam per persisted record type. Artifact manifests persist Temporal Capability as the artifact-facing compiler capability bundle and persist artifact semantics as its normalized semantic projection; `storage.artifact_codecs` owns the nested capability payload envelope and calls temporal compiler metadata dispatch at that storage seam. Artifact evaluation state stores an **Evaluation Config Snapshot**, not a live evaluator config object, so evaluation storage identity is based on immutable evaluator provenance.
+Storage owns persisted payload ABI. Modeling and evaluation own runtime result objects; named storage `PayloadCodec` objects translate those objects at the SQLite table boundary. Persistence modules call codec objects directly, keeping encode/decode locality at one seam per persisted record type. Corpus manifests and acquire runs are Pydantic-native durable records, while artifact and study codecs keep explicit storage records where the persisted shape differs from the runtime object. Artifact manifests persist Temporal Capability as the artifact-facing compiler capability bundle and persist artifact semantics as its normalized semantic projection; `storage.artifact_codecs` owns the nested capability payload envelope and calls temporal compiler metadata dispatch at that storage seam. Artifact evaluation state stores an **Evaluation Config Snapshot**, not a live evaluator config object, so evaluation storage identity is based on immutable evaluator provenance.
 
 Producer identity and consumer selection stay separate inside `storage.workflow_root_materialization`. That module resolves existing roots through the catalog, derives produced root ids, materializes consumed/produced/source scalar root facts, and assembles workflow root sets. `workflow_roots.py` owns handle models and read behavior; existing-root handle locations come from `storage.catalog.materialization`. Root handles expose root facts and manifest loading. Storage transactions expose handle-shaped staging and mutation helpers to workflows while keeping root-kind, prune, promotion, selected-path commit, existing-root mutation, and reindex policy inside storage; lower-level lifecycle remains path and root-kind infrastructure. Benchmark Plan Materialization asks Storage Root Materialization for scalar facts; benchmark ledger shape stays benchmark-owned.
 

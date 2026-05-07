@@ -17,11 +17,12 @@ from sqlalchemy.schema import Table
 from ..core.errors import ConfigResolutionError, StateLayoutError
 
 T = TypeVar("T")
-PayloadModelT = TypeVar("PayloadModelT", bound="PayloadModel")
+PayloadRecordT = TypeVar("PayloadRecordT", bound="PayloadRecord")
+PydanticModelT = TypeVar("PydanticModelT", bound=BaseModel)
 
 
-class PayloadModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class PayloadRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,21 +94,23 @@ def decode_payload(label: str, decode: Callable[[], T]) -> T:
         raise StateLayoutError(f"Invalid {label} payload: {exc}") from exc
 
 
-def model_payload(model: BaseModel, *, label: str) -> dict[str, object]:
-    return _model_dump_mapping(model.model_dump(mode="json"), label=label)
-
-
-def _model_dump_mapping(payload: object, *, label: str) -> dict[str, object]:
+def mapping_model_payload(
+    model: BaseModel,
+    *,
+    label: str,
+    exclude_none: bool = False,
+) -> dict[str, object]:
+    payload = cast(object, model.model_dump(mode="json", exclude_none=exclude_none))
     if not isinstance(payload, dict):
         raise StateLayoutError(f"{label} must serialize to a mapping payload")
     return cast(dict[str, object], payload)
 
 
-def decode_payload_model(
+def decode_payload_record(
     label: str,
-    model_type: type[PayloadModelT],
+    model_type: type[PayloadRecordT],
     payload: dict[str, object],
-    decode: Callable[[PayloadModelT], T],
+    decode: Callable[[PayloadRecordT], T],
 ) -> T:
     return decode_payload(
         label,
@@ -115,15 +118,40 @@ def decode_payload_model(
     )
 
 
-def payload_model_codec(
+def payload_record_codec(
     label: str,
-    model_type: type[PayloadModelT],
-    from_value: Callable[[T], PayloadModelT],
-    to_value: Callable[[PayloadModelT], T],
+    model_type: type[PayloadRecordT],
+    from_value: Callable[[T], PayloadRecordT],
+    to_value: Callable[[PayloadRecordT], T],
+    *,
+    exclude_none: bool = False,
 ) -> PayloadCodec[T]:
     return PayloadCodec(
-        encode=lambda value: model_payload(from_value(value), label=label),
-        decode=lambda payload: decode_payload_model(label, model_type, payload, to_value),
+        encode=lambda value: mapping_model_payload(
+            from_value(value),
+            label=label,
+            exclude_none=exclude_none,
+        ),
+        decode=lambda payload: decode_payload_record(label, model_type, payload, to_value),
+    )
+
+
+def pydantic_model_codec(
+    label: str,
+    model_type: type[PydanticModelT],
+    *,
+    exclude_none: bool = False,
+) -> PayloadCodec[PydanticModelT]:
+    return PayloadCodec(
+        encode=lambda value: mapping_model_payload(
+            value,
+            label=label,
+            exclude_none=exclude_none,
+        ),
+        decode=lambda payload: decode_payload(
+            label,
+            lambda: model_type.model_validate(payload, strict=True),
+        ),
     )
 
 
@@ -147,33 +175,3 @@ def type_adapter_value(
     strict: bool = False,
 ) -> T:
     return decode_payload(label, lambda: adapter.validate_python(payload, strict=strict))
-
-
-def string_payload(value: object, *, label: str) -> str:
-    if isinstance(value, str):
-        return value
-    raise StateLayoutError(f"{label} must be a string")
-
-
-def int_payload(value: object, *, label: str) -> int:
-    if isinstance(value, bool):
-        raise StateLayoutError(f"{label} must be an integer")
-    if isinstance(value, int):
-        return value
-    raise StateLayoutError(f"{label} must be an integer")
-
-
-def optional_int_payload(value: object, *, label: str) -> int | None:
-    if value is None:
-        return None
-    return int_payload(value, label=label)
-
-
-def sequence_payload(value: object, *, label: str) -> Sequence[object]:
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        raise StateLayoutError(f"{label} must be a sequence")
-    return cast(Sequence[object], value)
-
-
-def int_list_payload(value: object, *, label: str) -> list[int]:
-    return [int_payload(item, label=label) for item in sequence_payload(value, label=label)]

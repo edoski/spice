@@ -29,10 +29,9 @@ from ..temporal.compilers import (
 from ..temporal.input_normalization import ScalerStats
 from .payloads import (
     PayloadCodec,
-    PayloadModel,
+    PayloadRecord,
     mapping_payload,
-    payload_model_codec,
-    string_payload,
+    payload_record_codec,
 )
 from .semantics_codecs import ARTIFACT_SEMANTICS_CODEC
 
@@ -52,10 +51,12 @@ def _metric_values_payload(metrics: MetricSet) -> dict[str, float]:
 def _study_config_from_name(study_name: object) -> StudyConfig | None:
     if study_name is None:
         return None
-    return StudyConfig(name=string_payload(study_name, label="artifact_manifest.study_name"))
+    if not isinstance(study_name, str):
+        raise TypeError("artifact_manifest.study_name must be a string")
+    return StudyConfig(name=study_name)
 
 
-class MetricDescriptorPayload(PayloadModel):
+class MetricDescriptorPayload(PayloadRecord):
     id: str
     label: str
     role: str
@@ -87,7 +88,7 @@ def _metric_descriptor_from_payload(payload: MetricDescriptorPayload) -> MetricD
     return payload.to_descriptor()
 
 
-class TemporalCapabilityPayload(PayloadModel):
+class TemporalCapabilityPayload(PayloadRecord):
     compiler_id: str
     max_delay_seconds: int
     action_width: int
@@ -120,7 +121,7 @@ class TemporalCapabilityPayload(PayloadModel):
         )
 
 
-class ArtifactManifestPayload(PayloadModel):
+class ArtifactManifestPayload(PayloadRecord):
     artifact_id: str
     dataset_builder: dict[str, object]
     prediction: dict[str, object]
@@ -222,7 +223,7 @@ class ArtifactManifestPayload(PayloadModel):
         )
 
 
-class TrainingSummaryPayload(PayloadModel):
+class TrainingSummaryPayload(PayloadRecord):
     n_rows_available: int
     n_rows_used: int
     train_samples: int
@@ -268,7 +269,7 @@ class TrainingSummaryPayload(PayloadModel):
         )
 
 
-class TrainingEpochPayload(PayloadModel):
+class TrainingEpochPayload(PayloadRecord):
     epoch: int
     train_metrics: dict[str, float]
     validation_metrics: dict[str, float]
@@ -294,7 +295,7 @@ class TrainingEpochPayload(PayloadModel):
         )
 
 
-class EvaluationRunPayload(PayloadModel):
+class EvaluationRunPayload(PayloadRecord):
     n_events: int
     metrics: dict[str, float]
     metadata: dict[str, str | int | float]
@@ -315,7 +316,7 @@ class EvaluationRunPayload(PayloadModel):
         )
 
 
-class WindowMetricSummaryPayload(PayloadModel):
+class WindowMetricSummaryPayload(PayloadRecord):
     mean: float
     std: float
 
@@ -330,7 +331,7 @@ class WindowMetricSummaryPayload(PayloadModel):
         return WindowMetricSummary(mean=self.mean, std=self.std)
 
 
-class EvaluationExecutionProvenancePayload(PayloadModel):
+class EvaluationExecutionProvenancePayload(PayloadRecord):
     execution_ref: str
     job_id: str | None = None
     log_path: str | None = None
@@ -338,7 +339,7 @@ class EvaluationExecutionProvenancePayload(PayloadModel):
     target: str | None = None
 
 
-class EvaluationSummaryPayload(PayloadModel):
+class EvaluationSummaryPayload(PayloadRecord):
     delay_seconds: int
     evaluator_id: str
     evaluation_config: dict[str, object]
@@ -404,31 +405,31 @@ class EvaluationSummaryPayload(PayloadModel):
         )
 
 
-ARTIFACT_MANIFEST_CODEC: PayloadCodec[TrainingArtifactManifest] = payload_model_codec(
+ARTIFACT_MANIFEST_CODEC: PayloadCodec[TrainingArtifactManifest] = payload_record_codec(
     "artifact manifest",
     ArtifactManifestPayload,
     ArtifactManifestPayload.from_manifest,
     ArtifactManifestPayload.to_manifest,
 )
-TRAINING_SUMMARY_CODEC: PayloadCodec[TrainingRuntimeSummary] = payload_model_codec(
+TRAINING_SUMMARY_CODEC: PayloadCodec[TrainingRuntimeSummary] = payload_record_codec(
     "training summary",
     TrainingSummaryPayload,
     TrainingSummaryPayload.from_runtime,
     TrainingSummaryPayload.to_runtime,
 )
-TRAINING_EPOCH_CODEC: PayloadCodec[TrainingEpochRecord] = payload_model_codec(
+TRAINING_EPOCH_CODEC: PayloadCodec[TrainingEpochRecord] = payload_record_codec(
     "training epoch",
     TrainingEpochPayload,
     TrainingEpochPayload.from_record,
     TrainingEpochPayload.to_record,
 )
-EVALUATION_SUMMARY_CODEC: PayloadCodec[EvaluationRuntimeSummary] = payload_model_codec(
+EVALUATION_SUMMARY_CODEC: PayloadCodec[EvaluationRuntimeSummary] = payload_record_codec(
     "evaluation summary",
     EvaluationSummaryPayload,
     EvaluationSummaryPayload.from_runtime,
     EvaluationSummaryPayload.to_runtime,
 )
-EVALUATION_RUN_CODEC: PayloadCodec[EvaluationRun] = payload_model_codec(
+EVALUATION_RUN_CODEC: PayloadCodec[EvaluationRun] = payload_record_codec(
     "evaluation run",
     EvaluationRunPayload,
     EvaluationRunPayload.from_run,

@@ -4,9 +4,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterable
 from hashlib import sha256
 from pathlib import Path
+from typing import cast
+
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 
 from ..acquisition import AcquisitionRuntimeSnapshot, BlockPullPlan
 from ..config.models import AcquireConfig, ChainRuntimeSpec
@@ -14,14 +17,16 @@ from ..corpus.io import iter_block_files
 from ..corpus.validation import BlockDatasetValidationReport
 
 
-@dataclass(frozen=True, slots=True)
-class DatasetIdentity:
+class CorpusMetadataRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class DatasetIdentity(CorpusMetadataRecord):
     id: str
     name: str
 
 
-@dataclass(frozen=True, slots=True)
-class ChainMetadata:
+class ChainMetadata(CorpusMetadataRecord):
     name: str
     runtime: ChainRuntimeSpec
 
@@ -30,29 +35,25 @@ class ChainMetadata:
         return self.runtime.chain_id
 
 
-@dataclass(frozen=True, slots=True)
-class ProviderMetadata:
+class ProviderMetadata(CorpusMetadataRecord):
     name: str
     reference: str
     endpoint_fingerprint: str
 
 
-@dataclass(frozen=True, slots=True)
-class SplitRequestMetadata:
+class SplitRequestMetadata(CorpusMetadataRecord):
     start_timestamp: int
     end_timestamp: int
     start_block: int
     end_block: int
 
 
-@dataclass(frozen=True, slots=True)
-class CompactValidationReport:
+class CompactValidationReport(CorpusMetadataRecord):
     status: str
     issues: dict[str, object] | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class SplitCoverageMetadata:
+class SplitCoverageMetadata(CorpusMetadataRecord):
     first_timestamp: int | None
     last_timestamp: int | None
     first_block: int | None
@@ -60,14 +61,12 @@ class SplitCoverageMetadata:
     rows: int
 
 
-@dataclass(frozen=True, slots=True)
-class SplitMaterializationMetadata:
+class SplitMaterializationMetadata(CorpusMetadataRecord):
     outcome: str
     file_count: int
 
 
-@dataclass(frozen=True, slots=True)
-class CorpusSplitManifest:
+class CorpusSplitManifest(CorpusMetadataRecord):
     kind: str
     request: SplitRequestMetadata
     coverage: SplitCoverageMetadata
@@ -75,31 +74,49 @@ class CorpusSplitManifest:
     materialization: SplitMaterializationMetadata
 
 
-@dataclass(frozen=True, slots=True)
-class CorpusSplitManifests:
+class CorpusSplitManifests(CorpusMetadataRecord):
     history: CorpusSplitManifest
     evaluation: CorpusSplitManifest
 
 
-@dataclass(frozen=True, slots=True)
-class CorpusAcquisitionSourceRequirements:
+class CorpusAcquisitionSourceRequirements(CorpusMetadataRecord):
     required_columns: frozenset[str]
     optional_enrichments: frozenset[str]
     temporal_unit: str
     ordering_key: str
     partition_key: str | None
 
+    @field_validator("required_columns", "optional_enrichments", mode="before")
+    @classmethod
+    def _coerce_string_set(cls, value: object) -> object:
+        raw_items: object
+        if isinstance(value, frozenset):
+            raw_items = cast(object, value)
+        elif isinstance(value, (list, set, tuple)):
+            raw_items = cast(object, value)
+        else:
+            return value
+        iterable = cast(Iterable[object], raw_items)
+        items: list[str] = []
+        for item in iterable:
+            if not isinstance(item, str):
+                return cast(object, value)
+            items.append(item)
+        return frozenset(items)
 
-@dataclass(frozen=True, slots=True)
-class DatasetManifest:
+    @field_serializer("required_columns", "optional_enrichments")
+    def _serialize_string_set(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)
+
+
+class DatasetManifest(CorpusMetadataRecord):
     dataset: DatasetIdentity
     chain: ChainMetadata
     splits: CorpusSplitManifests
     source_requirements: CorpusAcquisitionSourceRequirements
 
 
-@dataclass(frozen=True, slots=True)
-class AcquisitionConfigSnapshot:
+class AcquisitionConfigSnapshot(CorpusMetadataRecord):
     chunk_size: int
     rpc_batch_size: int
     rpc_concurrency: int
@@ -107,14 +124,12 @@ class AcquisitionConfigSnapshot:
     rpc_concurrency_rungs: list[int]
 
 
-@dataclass(frozen=True, slots=True)
-class AcquireRunFacts:
+class AcquireRunFacts(CorpusMetadataRecord):
     requested_history_window_seconds: int
     resolved_capability_samples: int
 
 
-@dataclass(frozen=True, slots=True)
-class DatasetAcquisitionRuntimeMetadata:
+class DatasetAcquisitionRuntimeMetadata(CorpusMetadataRecord):
     configured_batch_size: int
     final_batch_size: int
     min_batch_size: int
@@ -128,8 +143,7 @@ class DatasetAcquisitionRuntimeMetadata:
     concurrency_recoveries: int
 
 
-@dataclass(frozen=True, slots=True)
-class AcquireRunRecord:
+class AcquireRunRecord(CorpusMetadataRecord):
     provider: ProviderMetadata
     settings: AcquisitionConfigSnapshot
     runtime: DatasetAcquisitionRuntimeMetadata

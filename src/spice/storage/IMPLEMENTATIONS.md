@@ -46,7 +46,9 @@ SQLite connections enable foreign keys, WAL, and busy timeout.
 
 ## Payload Codecs
 
-`storage.payloads` owns generic SQLite payload stores plus raw persisted-payload validation helpers. Root-local payload codecs are named `PayloadCodec` objects for corpus, study, and artifact state. Persistence modules call those codec objects directly, so the persisted payload ABI has one seam per record type. Semantic payload codecs use TypeAdapter canonical round trips because they persist dataclass contract bundles rather than root table envelopes.
+`storage.payloads` owns generic SQLite payload stores plus strict persisted-payload record helpers. Root-local payload codecs are named `PayloadCodec` objects for corpus, study, and artifact state. Persistence modules call those codec objects directly, so the persisted payload ABI has one seam per record type. Root table payload records use Pydantic validation with forbidden extras and strict scalar handling; malformed persisted payloads raise `StateLayoutError`, but exact Pydantic wording is not storage API. Semantic payload codecs use TypeAdapter canonical round trips because they persist contract bundles rather than root table envelopes.
+
+Corpus manifests and acquire-run records are Pydantic-native durable records, so `storage.corpus_codecs` only binds those records to the SQLite payload store seam. Artifact and study codecs keep explicit storage records where they flatten runtime summaries, rebuild owner configs through registry-aware coercers, or validate semantic projections.
 
 ## Deterministic IDs
 

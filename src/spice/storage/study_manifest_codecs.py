@@ -22,12 +22,12 @@ from ..modeling.families.registry import coerce_model_config
 from ..modeling.tuned_config import coerce_tuning_space_config
 from ..objectives import coerce_objective_config
 from .identity import identity_payload, study_manifest_identity
-from .payloads import PayloadCodec, PayloadModel, decode_payload_model
+from .payloads import PayloadCodec, PayloadRecord, decode_payload_record
 from .semantics_codecs import STUDY_SEMANTICS_CODEC
 from .study_models import StudyManifest
 
 
-class StudyDefinitionPayload(PayloadModel):
+class StudyDefinitionPayload(PayloadRecord):
     study_id: str
     dataset_builder: dict[str, object]
     prediction: dict[str, object]
@@ -46,7 +46,7 @@ class StudyDefinitionPayload(PayloadModel):
     tuning_space: dict[str, object]
 
 
-class StudyManifestPayload(PayloadModel):
+class StudyManifestPayload(PayloadRecord):
     definition: StudyDefinitionPayload
     sampler_name: str
     sampler_seed: int
@@ -109,7 +109,7 @@ def _encode_study_manifest(manifest: StudyManifest) -> dict[str, object]:
 
 
 def _decode_study_manifest(payload: dict[str, object]) -> StudyManifest:
-    return decode_payload_model(
+    return decode_payload_record(
         "study manifest",
         StudyManifestPayload,
         payload,
