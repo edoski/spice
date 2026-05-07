@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -30,6 +31,9 @@ from spice.storage.transactions import (
 from spice.storage.workflow_roots import CorpusRootHandle
 from tests.catalog_helpers import artifact_record, dataset_record
 from tests.root_handle_helpers import artifact_handle, corpus_handle, study_handle
+
+if TYPE_CHECKING:
+    from spice.modeling.results import EvaluationRuntimeSummary
 
 
 def test_commit_corpus_acquisition_replaces_declared_paths_and_reindexes(
@@ -67,41 +71,8 @@ def test_commit_corpus_acquisition_replaces_declared_paths_and_reindexes(
         record=record,
     )
     assert (root_path / "history" / "blocks.parquet").read_text(encoding="utf-8") == "payload"
+    assert state_db_path(root_path).is_file()
     assert captured == {"storage_root": storage_root, "root_path": root_path}
-
-
-def test_commit_artifact_root_delegates_stage_policy(tmp_path: Path, monkeypatch) -> None:
-    storage_root = tmp_path / "outputs"
-    corpus = corpus_handle(storage_root, dataset_id="dataset-1")
-    artifact = artifact_handle(storage_root, corpus=corpus, artifact_id="artifact-1")
-    calls: list[dict[str, object]] = []
-
-    class FakeStage:
-        staged_root = tmp_path / "stage"
-
-        def promote(self):
-            return "reindexed"
-
-    @contextmanager
-    def fake_staged_root(**kwargs):
-        calls.append(kwargs)
-        yield FakeStage()
-
-    monkeypatch.setattr("spice.storage.transactions.staged_root", fake_staged_root)
-
-    committed = commit_artifact_root(artifact, writer=lambda staged_root: staged_root)
-
-    assert committed.result == tmp_path / "stage"
-    assert calls == [
-        {
-            "storage_root": storage_root,
-            "destination_root": artifact.root_path,
-            "expected_root_kind": RootKind.ARTIFACT,
-            "replace": True,
-            "purpose": "staging",
-            "prune_stop_at": storage_root / "artifacts",
-        }
-    ]
 
 
 def test_commit_artifact_root_derives_storage_policy_from_handle(
@@ -134,6 +105,8 @@ def test_commit_artifact_root_derives_storage_policy_from_handle(
     assert seen["storage_root"] == storage_root
     assert seen["destination_root"] == artifact.root_path
     assert seen["expected_root_kind"] is ARTIFACT_ROOT_KIND
+    assert seen["replace"] is True
+    assert seen["purpose"] == "staging"
     assert seen["prune_stop_at"] == storage_root / "artifacts"
     assert seen["promoted"] is True
 
@@ -268,7 +241,7 @@ def test_record_artifact_evaluation_state_validates_root_without_reindex(
         tables=(),
     )
     calls: list[str] = []
-    expected_summary = object()
+    expected_summary = cast("EvaluationRuntimeSummary", object())
 
     monkeypatch.setattr(
         "spice.storage.transactions.record_evaluation_state",

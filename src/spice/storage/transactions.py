@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Generic, TypeVar
 
@@ -19,7 +18,7 @@ from .engine import (
     require_root_kind,
     state_db_path,
 )
-from .lifecycle import RootStage, staged_root, validate_root_destination_path
+from .lifecycle import staged_root, validate_root_destination_path
 from .workflow_roots import ArtifactRootHandle, CorpusRootHandle, StudyRootHandle
 
 EffectT = TypeVar("EffectT")
@@ -40,63 +39,6 @@ class RootMutation(Generic[EffectT]):
     reindexed: ReindexedCatalogRoot
 
 
-@dataclass(frozen=True, slots=True)
-class _FullRootTransaction:
-    storage_root: Path
-    destination_root: Path
-    expected_root_kind: RootKind
-    replace: bool = True
-    purpose: str = "staging"
-    prune_stop_at: Path | None = None
-
-    @contextmanager
-    def open(self) -> Iterator[RootStage]:
-        with staged_root(
-            storage_root=self.storage_root,
-            destination_root=self.destination_root,
-            expected_root_kind=self.expected_root_kind,
-            replace=self.replace,
-            purpose=self.purpose,
-            prune_stop_at=self.prune_stop_at,
-        ) as stage:
-            yield stage
-
-    def commit(self, writer: Callable[[Path], EffectT]) -> FullRootCommit[EffectT]:
-        with self.open() as stage:
-            result = writer(stage.staged_root)
-            reindexed = stage.promote()
-        return FullRootCommit(result=result, reindexed=reindexed)
-
-
-@dataclass(slots=True)
-class _CorpusRootTransaction:
-    corpus: CorpusRootHandle
-    promotions: list[tuple[Path, Path]] = field(default_factory=list)
-
-    def replace_history(self, source: Path | None) -> None:
-        self._add(self.corpus.history_dir, source)
-
-    def replace_evaluation(self, source: Path | None) -> None:
-        self._add(self.corpus.evaluation_dir, source)
-
-    def replace_state_db(self, source: Path | None) -> None:
-        self._add(self.corpus.state_db_path, source)
-
-    def _add(self, target: Path, source: Path | None) -> None:
-        if source is not None:
-            self.promotions.append((target, source))
-
-    def commit(self) -> ReindexedCatalogRoot:
-        validate_root_destination_path(
-            self.corpus.storage_root,
-            destination_root=self.corpus.root_path,
-            expected_root_kind=DATASET_ROOT_KIND,
-        )
-        if self.promotions:
-            replace_paths_atomic(self.promotions, replace=True)
-        return reindex_catalog_root(self.corpus.storage_root, root_path=self.corpus.root_path)
-
-
 def commit_corpus_acquisition(
     corpus: CorpusRootHandle,
     *,
@@ -105,11 +47,24 @@ def commit_corpus_acquisition(
     state_db: Path,
 ) -> ReindexedCatalogRoot:
     require_root_kind(state_db, DATASET_ROOT_KIND)
-    transaction = _CorpusRootTransaction(corpus=corpus)
-    transaction.replace_history(history_dir)
-    transaction.replace_evaluation(evaluation_dir)
-    transaction.replace_state_db(state_db)
-    return transaction.commit()
+    validate_root_destination_path(
+        corpus.storage_root,
+        destination_root=corpus.root_path,
+        expected_root_kind=DATASET_ROOT_KIND,
+    )
+    promotion_candidates: tuple[tuple[Path, Path | None], ...] = (
+        (corpus.history_dir, history_dir),
+        (corpus.evaluation_dir, evaluation_dir),
+        (corpus.state_db_path, state_db),
+    )
+    promotions = [
+        (target, source)
+        for target, source in promotion_candidates
+        if source is not None
+    ]
+    if promotions:
+        replace_paths_atomic(promotions, replace=True)
+    return reindex_catalog_root(corpus.storage_root, root_path=corpus.root_path)
 
 
 def _reindex_root_state(
@@ -148,28 +103,22 @@ def _record_mutated_root(
     return RootMutation(result=result, reindexed=reindexed)
 
 
-def _artifact_full_root_transaction(
-    artifact: ArtifactRootHandle,
-    *,
-    replace: bool = True,
-    purpose: str = "staging",
-) -> _FullRootTransaction:
-    return _FullRootTransaction(
-        storage_root=artifact.storage_root,
-        destination_root=artifact.root_path,
-        expected_root_kind=ARTIFACT_ROOT_KIND,
-        replace=replace,
-        purpose=purpose,
-        prune_stop_at=artifact.root_path.parent.parent,
-    )
-
-
 def commit_artifact_root(
     artifact: ArtifactRootHandle,
     *,
     writer: Callable[[Path], EffectT],
 ) -> FullRootCommit[EffectT]:
-    return _artifact_full_root_transaction(artifact).commit(writer)
+    with staged_root(
+        storage_root=artifact.storage_root,
+        destination_root=artifact.root_path,
+        expected_root_kind=ARTIFACT_ROOT_KIND,
+        replace=True,
+        purpose="staging",
+        prune_stop_at=artifact.root_path.parent.parent,
+    ) as stage:
+        result = writer(stage.staged_root)
+        reindexed = stage.promote()
+    return FullRootCommit(result=result, reindexed=reindexed)
 
 
 def record_study_root_mutation(
