@@ -113,7 +113,6 @@ class _RangeSource:
     def __init__(self, *, timestamp_base: int = 1_000) -> None:
         self.timestamp_base = timestamp_base
         self.requests: list[tuple[int, int]] = []
-        self.partial_ranges: list[tuple[int, int]] = []
 
     async def get_block_rows(self, start: int, end: int):
         self.requests.append((start, end))
@@ -125,18 +124,6 @@ class _RangeSource:
                 start_timestamp=self.timestamp_base + (start - 100) * 12,
                 chain_id=1,
             ),
-        )
-
-    def plan_block_range(
-        self,
-        block_range: BlockRange,
-        *,
-        window: TimestampRange,
-    ) -> BlockPullPlan:
-        self.partial_ranges.append((block_range.start, block_range.end))
-        return BlockPullPlan(
-            window=window,
-            block_range=block_range
         )
 
     async def estimate_recent_block_interval(self, sample_size: int = 128) -> float:
@@ -360,7 +347,6 @@ def test_history_split_materialization_extends_committed_prefix(tmp_path) -> Non
     )
 
     assert result.outcome is CorpusSplitOutcome.EXTENDED
-    assert source.partial_ranges == [(100, 102)]
     assert source.requests == [(100, 102)]
     assert load_block_frame(result.path)["block_number"].to_list() == [100, 101, 102, 103]
 
@@ -419,7 +405,6 @@ def test_evaluation_split_materialization_extends_overlap(tmp_path) -> None:
     )
 
     assert result.outcome is CorpusSplitOutcome.EXTENDED
-    assert source.partial_ranges == [(104, 105)]
     assert source.requests == [(104, 105)]
     assert sorted(path.name for path in result.path.glob("*.parquet")) == [
         "ethereum__blocks__101_to_101.parquet",
@@ -454,7 +439,6 @@ def test_evaluation_split_materialization_extends_prefix_and_suffix(tmp_path) ->
     )
 
     assert result.outcome is CorpusSplitOutcome.EXTENDED
-    assert source.partial_ranges == [(98, 100), (104, 106)]
     assert source.requests == [(98, 100), (104, 106)]
     assert sorted(path.name for path in result.path.glob("*.parquet")) == [
         "ethereum__blocks__100_to_101.parquet",

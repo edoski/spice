@@ -68,17 +68,6 @@ class _PlanningSource:
             start_block=10_000 if window == self.evaluation_window else 100,
         )
 
-    def plan_block_range(
-        self,
-        block_range: BlockRange,
-        *,
-        window: TimestampRange,
-    ) -> BlockPullPlan:
-        return BlockPullPlan(
-            window=window,
-            block_range=block_range
-        )
-
     async def get_block_rows(self, start: int, end: int):
         del start, end
         raise AssertionError("dry run must not fetch rows")
@@ -161,7 +150,7 @@ def _exercise_short_history_refill(
     monkeypatch,
     load_workflow_config,
     acquire_override,
-) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+) -> list[tuple[int, int]]:
     override = acquire_override()
     override["acquisition"] = {
         "chunk_size": 128,
@@ -215,7 +204,6 @@ def _exercise_short_history_refill(
             start_block=850
         ),
     ]
-    partial_ranges: list[tuple[int, int]] = []
     requested_ranges: list[tuple[int, int]] = []
     resolved_capability_samples = iter([1, config.problem.sample_count])
     history_plan_calls = 0
@@ -237,18 +225,6 @@ def _exercise_short_history_refill(
             return BlockPullPlan(
                 window=window,
                 block_range=template.block_range
-            )
-
-        def plan_block_range(
-            self,
-            block_range: BlockRange,
-            *,
-            window: TimestampRange,
-        ) -> BlockPullPlan:
-            partial_ranges.append((block_range.start, block_range.end))
-            return BlockPullPlan(
-                window=window,
-                block_range=block_range
             )
 
         async def get_block_rows(self, start: int, end: int):
@@ -279,7 +255,7 @@ def _exercise_short_history_refill(
 
     request = CorpusAssemblyRequest(config=config, roots=roots)
     asyncio.run(assemble_corpus(request, Source()))
-    return partial_ranges, requested_ranges
+    return requested_ranges
 
 
 def test_assemble_corpus_refills_missing_history_prefix(
@@ -288,14 +264,13 @@ def test_assemble_corpus_refills_missing_history_prefix(
     load_workflow_config,
     acquire_override,
 ) -> None:
-    partial_ranges, requested_ranges = _exercise_short_history_refill(
+    requested_ranges = _exercise_short_history_refill(
         tmp_path,
         monkeypatch,
         load_workflow_config,
         acquire_override,
     )
 
-    assert partial_ranges == [(950, 1_000)]
     assert (1_000, 1_050) in requested_ranges
     assert (950, 1_000) in requested_ranges
     assert (950, 1_050) not in requested_ranges

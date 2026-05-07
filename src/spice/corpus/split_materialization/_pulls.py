@@ -60,15 +60,6 @@ def plan_pull_dir(working_dir: Path, *, label: str, plan: BlockPullPlan) -> Path
     )
 
 
-def pull_range_plan(
-    block_source: BlockSource,
-    pull_range: _SplitPullRange,
-    *,
-    window: TimestampRange,
-) -> BlockPullPlan:
-    return block_source.plan_block_range(pull_range.block_range, window=window)
-
-
 async def pull_plan_range_to_dir(
     *,
     block_source: BlockSource,
@@ -78,7 +69,7 @@ async def pull_plan_range_to_dir(
     materialization: CorpusSplitMaterializationSpec,
     controller: AcquisitionPullController,
 ) -> Path:
-    plan = pull_range_plan(block_source, pull_range, window=window)
+    plan = BlockPullPlan(window=window, block_range=pull_range.block_range)
     return await pull_plan_to_dir(
         block_source=block_source,
         plan=plan,

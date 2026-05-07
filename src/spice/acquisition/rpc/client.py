@@ -103,20 +103,9 @@ class BlockRpcClient:
         )
 
     async def plan_window(self, window: TimestampRange) -> BlockPullPlan:
-        return self.plan_block_range(
-            await self.resolve_block_range(window),
-            window=window,
-        )
-
-    def plan_block_range(
-        self,
-        block_range: BlockRange,
-        *,
-        window: TimestampRange,
-    ) -> BlockPullPlan:
         return BlockPullPlan(
             window=window,
-            block_range=block_range,
+            block_range=await self.resolve_block_range(window),
         )
 
     async def estimate_recent_block_interval(self, sample_size: int = 128) -> float:

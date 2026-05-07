@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import cast
 
 import pytest
 
@@ -10,6 +11,7 @@ from spice.acquisition.errors import (
 )
 from spice.acquisition.pull import AcquisitionPullController, pull_block_range
 from spice.acquisition.types import BlockPullPlan, BlockRange, TimestampRange
+from spice.corpus.contract import CanonicalBlockRow
 from tests.dataset_helpers import make_block_rows
 
 
@@ -33,26 +35,29 @@ class _FakeBlockSource:
         self.chain_id = chain_id
         self.requests: list[tuple[int, int]] = []
 
-    async def get_block_rows(self, start: int, end: int):
+    async def get_block_rows(self, start: int, end: int) -> list[CanonicalBlockRow]:
         self.requests.append((start, end))
-        return make_block_rows(
-            end - start,
-            start_block=start,
-            start_timestamp=1_000 + (start - 100) * 12,
-            chain_id=self.chain_id,
+        return cast(
+            list[CanonicalBlockRow],
+            make_block_rows(
+                end - start,
+                start_block=start,
+                start_timestamp=1_000 + (start - 100) * 12,
+                chain_id=self.chain_id,
+            ),
         )
 
 
 class _FakeSink:
     def __init__(self, *, completed_until: int | None = None) -> None:
         self.completed_until = completed_until
-        self.rows: list[dict[str, object]] = []
+        self.rows: list[CanonicalBlockRow] = []
         self.finished = False
 
     def completed_prefix_end(self, plan: BlockPullPlan) -> int:
         return plan.block_range.start if self.completed_until is None else self.completed_until
 
-    def write_rows(self, rows) -> None:
+    def write_rows(self, rows: list[CanonicalBlockRow]) -> None:
         self.rows.extend(rows)
 
     def finish(self) -> None:
@@ -63,7 +68,7 @@ def test_pull_writes_ordered_chunks_with_out_of_order_completion(tmp_path) -> No
     del tmp_path
 
     class DelayedSource(_FakeBlockSource):
-        async def get_block_rows(self, start: int, end: int):
+        async def get_block_rows(self, start: int, end: int) -> list[CanonicalBlockRow]:
             await asyncio.sleep(0.02 if start == 100 else 0)
             return await super().get_block_rows(start, end)
 
@@ -115,13 +120,16 @@ def test_pull_rejects_rows_that_do_not_match_requested_block_range(tmp_path) -> 
     del tmp_path
 
     class ShiftedSource(_FakeBlockSource):
-        async def get_block_rows(self, start: int, end: int):
+        async def get_block_rows(self, start: int, end: int) -> list[CanonicalBlockRow]:
             self.requests.append((start, end))
-            return make_block_rows(
-                end - start,
-                start_block=start + 1,
-                start_timestamp=1_000 + (start - 100) * 12,
-                chain_id=self.chain_id,
+            return cast(
+                list[CanonicalBlockRow],
+                make_block_rows(
+                    end - start,
+                    start_block=start + 1,
+                    start_timestamp=1_000 + (start - 100) * 12,
+                    chain_id=self.chain_id,
+                ),
             )
 
     sink = _FakeSink()
@@ -148,15 +156,18 @@ def test_pull_splits_oversized_requests_and_backs_off(tmp_path) -> None:
     del tmp_path
 
     class OversizeOnceSource(_FakeBlockSource):
-        async def get_block_rows(self, start: int, end: int):
+        async def get_block_rows(self, start: int, end: int) -> list[CanonicalBlockRow]:
             self.requests.append((start, end))
             if (start, end) == (100, 104):
                 raise OversizedAcquisitionRequestError("batch too large")
-            return make_block_rows(
-                end - start,
-                start_block=start,
-                start_timestamp=1_000 + (start - 100) * 12,
-                chain_id=1,
+            return cast(
+                list[CanonicalBlockRow],
+                make_block_rows(
+                    end - start,
+                    start_block=start,
+                    start_timestamp=1_000 + (start - 100) * 12,
+                    chain_id=1,
+                ),
             )
 
     source = OversizeOnceSource()
@@ -186,7 +197,7 @@ def test_pull_fails_after_transient_retry_limit(tmp_path) -> None:
     del tmp_path
 
     class AlwaysTransientSource(_FakeBlockSource):
-        async def get_block_rows(self, start: int, end: int):
+        async def get_block_rows(self, start: int, end: int) -> list[CanonicalBlockRow]:
             self.requests.append((start, end))
             raise TransientAcquisitionError("timeout")
 
@@ -215,7 +226,7 @@ def test_pull_cancellation_cancels_in_flight_tasks(tmp_path) -> None:
     cancelled = asyncio.Event()
 
     class HangingSource(_FakeBlockSource):
-        async def get_block_rows(self, start: int, end: int):
+        async def get_block_rows(self, start: int, end: int) -> list[CanonicalBlockRow]:
             self.requests.append((start, end))
             started.set()
             try:
@@ -223,6 +234,7 @@ def test_pull_cancellation_cancels_in_flight_tasks(tmp_path) -> None:
             except asyncio.CancelledError:
                 cancelled.set()
                 raise
+            raise AssertionError("hanging source unexpectedly returned")
 
     async def exercise() -> None:
         source = HangingSource()
@@ -263,6 +275,7 @@ def test_pull_controller_backs_off_and_recovers_concurrency() -> None:
 
     assert controller.record_transient_failure() is None
     assert controller.record_transient_failure() == 2
+    recovered: int | None = None
     for _ in range(64):
         recovered = controller.record_success()
     assert recovered == 4

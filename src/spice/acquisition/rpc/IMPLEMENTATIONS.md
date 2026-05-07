@@ -59,7 +59,7 @@ This keeps acquisition productive on healthy endpoints and less aggressive when 
 
 ## Pull Scheduler
 
-`acquisition.pull.pull_block_range` splits the block range into batch requests and runs them concurrently. It depends on the generic `BlockSource` Interface, so it is not an RPC Adapter.
+`acquisition.pull.pull_block_range` splits the block range into batch requests and runs them concurrently. It depends on the generic row-fetch `BlockRowSource` Interface, so it is not an RPC Adapter.
 
 Important behavior:
 

@@ -75,17 +75,6 @@ class _PlanningSource:
             start_block=10_000 if window == self.evaluation_window else 100,
         )
 
-    def plan_block_range(
-        self,
-        block_range: BlockRange,
-        *,
-        window: TimestampRange,
-    ) -> BlockPullPlan:
-        return BlockPullPlan(
-            window=window,
-            block_range=block_range
-        )
-
     async def get_block_rows(self, start: int, end: int):
         del start, end
         raise AssertionError("planning must not fetch rows")

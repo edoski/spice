@@ -109,19 +109,6 @@ def test_acquire_workflow_writes_canonical_corpus_and_metadata(
             self._planned_windows.append(plan)
             return plan
 
-        def plan_block_range(
-            self,
-            block_range: BlockRange,
-            *,
-            window: TimestampRange,
-        ) -> BlockPullPlan:
-            plan = BlockPullPlan(
-                window,
-                block_range=block_range,
-            )
-            self._planned_windows.append(plan)
-            return plan
-
         async def get_block_rows(self, start: int, end: int):
             first_block = start
             for plan in reversed(self._planned_windows):
@@ -221,17 +208,6 @@ def test_acquire_failure_preserves_staging_and_rerun_resumes(
 
         async def plan_window(self, window: TimestampRange) -> BlockPullPlan:
             return evaluation_plan if window == evaluation_plan.window else history_plan
-
-        def plan_block_range(
-            self,
-            block_range: BlockRange,
-            *,
-            window: TimestampRange,
-        ) -> BlockPullPlan:
-            return BlockPullPlan(
-                window=window,
-                block_range=block_range
-            )
 
         async def get_block_rows(self, start: int, end: int):
             requested_ranges.append((start, end))

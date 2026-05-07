@@ -66,13 +66,6 @@ class BlockSource(BlockRowSource, Protocol):
 
     async def plan_window(self, window: TimestampRange) -> BlockPullPlan: ...
 
-    def plan_block_range(
-        self,
-        block_range: BlockRange,
-        *,
-        window: TimestampRange,
-    ) -> BlockPullPlan: ...
-
     async def close(self) -> None: ...
 
 
