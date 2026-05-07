@@ -4,83 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...core import FeatureCatalog, FeatureSpec, SourceSpec
-from . import _base_fee, _block_facts, _fee_context, _time, _transforms
-from ._base_fee import (
-    BASE_FEE_TREND_OUTPUTS,
-    base_fee_trend_features,
-    core_fee_level_features,
-    current_base_fee_sources,
-)
-from ._block_facts import (
-    PREVIOUS_BLOCK_FACT_OUTPUTS,
-    PREVIOUS_GAS_UTILIZATION_ROLLING_OUTPUTS,
-    PREVIOUS_GAS_UTILIZATION_TREND_OUTPUTS,
-    gas_utilization_rolling_features,
-    gas_utilization_trend_features,
-    previous_block_fact_features,
-    previous_block_fact_sources,
-)
-from ._fee_context import (
-    EXTENDED_ROLLING_FEE_CONTEXT_OUTPUTS,
-    LOCAL_FEE_CONTEXT_OUTPUTS,
-    extended_rolling_fee_context_features,
-    local_fee_context_features,
-)
-from ._time import CADENCE_CALENDAR_OUTPUTS, cadence_calendar_features
+from ._family_builder import base_outputs, build_catalog, fingerprint_sources
 
-CORE_FEE_LEVEL_OUTPUTS = _base_fee.CORE_FEE_LEVEL_OUTPUTS
-CORE_FEE_DYNAMICS_FINGERPRINT_SOURCES = (
-    Path(__file__).resolve(),
-    Path(_transforms.__file__).resolve(),
-    Path(_time.__file__).resolve(),
-    Path(_base_fee.__file__).resolve(),
-    Path(_block_facts.__file__).resolve(),
-    Path(_fee_context.__file__).resolve(),
-    Path(__file__).resolve().parents[2] / "core.py",
-)
+CORE_FEE_DYNAMICS_FINGERPRINT_SOURCES = fingerprint_sources(Path(__file__).resolve())
 
-CORE_FEE_DYNAMICS_OUTPUTS = (
-    *CORE_FEE_LEVEL_OUTPUTS,
-    *PREVIOUS_BLOCK_FACT_OUTPUTS,
-    *CADENCE_CALENDAR_OUTPUTS,
-    *LOCAL_FEE_CONTEXT_OUTPUTS,
-    *BASE_FEE_TREND_OUTPUTS,
-    *PREVIOUS_GAS_UTILIZATION_TREND_OUTPUTS,
-    *EXTENDED_ROLLING_FEE_CONTEXT_OUTPUTS,
-    *PREVIOUS_GAS_UTILIZATION_ROLLING_OUTPUTS,
-)
+CORE_FEE_DYNAMICS_OUTPUTS = base_outputs(block_fact_mode="previous")
 
 
-def safe_sources() -> dict[str, SourceSpec]:
-    return {
-        **current_base_fee_sources(),
-        **previous_block_fact_sources(),
-    }
-
-
-def safe_features() -> dict[str, FeatureSpec]:
-    return {
-        **core_fee_level_features(),
-        **previous_block_fact_features(),
-        **cadence_calendar_features(),
-        **local_fee_context_features(),
-        **base_fee_trend_features(),
-        **gas_utilization_trend_features(
-            "prev_gas_utilization",
-            base_warmup_rows=1,
-        ),
-        **extended_rolling_fee_context_features(),
-        **gas_utilization_rolling_features(
-            "prev_gas_utilization",
-            base_warmup_rows=1,
-        ),
-    }
-
-
-CORE_FEE_DYNAMICS = FeatureCatalog(
-    sources=safe_sources(),
-    features=safe_features(),
+CORE_FEE_DYNAMICS = build_catalog(
+    variant_module_path=Path(__file__).resolve(),
+    block_fact_mode="previous",
+    gas_utilization_source="prev_gas_utilization",
+    gas_utilization_base_warmup_rows=1,
     allowed_outputs=CORE_FEE_DYNAMICS_OUTPUTS,
-    fingerprint_sources=CORE_FEE_DYNAMICS_FINGERPRINT_SOURCES,
 )

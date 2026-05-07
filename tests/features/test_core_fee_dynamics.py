@@ -18,6 +18,7 @@ from spice.features import (
 from spice.features import core as feature_core
 from spice.features.sets.core_fee_dynamics import _base_fee as base_fee_module
 from spice.features.sets.core_fee_dynamics import _block_facts as block_facts_module
+from spice.features.sets.core_fee_dynamics import _family_builder as family_builder_module
 from spice.features.sets.core_fee_dynamics import _fee_context as fee_context_module
 from spice.features.sets.core_fee_dynamics import _priority_fee as priority_fee_module
 from spice.features.sets.core_fee_dynamics import _time as time_module
@@ -167,22 +168,26 @@ def test_core_fee_dynamics_fingerprints_follow_owned_modules() -> None:
 
     assert CORE_FEE_DYNAMICS.fingerprint_sources == (
         Path(safe_module.__file__).resolve(),
+        Path(family_builder_module.__file__).resolve(),
         *shared_owner_paths,
         core_path,
     )
     assert CORE_FEE_DYNAMICS_UNSAFE.fingerprint_sources == (
         Path(unsafe_module.__file__).resolve(),
+        Path(family_builder_module.__file__).resolve(),
         *shared_owner_paths,
         core_path,
     )
     assert CORE_FEE_DYNAMICS_PRIORITY_FEE.fingerprint_sources == (
         Path(priority_module.__file__).resolve(),
+        Path(family_builder_module.__file__).resolve(),
         *shared_owner_paths,
         Path(priority_fee_module.__file__).resolve(),
         core_path,
     )
     assert CORE_FEE_DYNAMICS_ELAPSED_POSITION.fingerprint_sources == (
         Path(elapsed_module.__file__).resolve(),
+        Path(family_builder_module.__file__).resolve(),
         *shared_owner_paths,
         core_path,
     )
