@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -65,25 +65,13 @@ class ObservedTimeWindowRecentMedianSlotSpacingConfig(
         return value
 
 
-@dataclass(frozen=True, slots=True)
-class _SlotSpacingSpec:
-    config_type: type[ObservedTimeWindowSlotSpacingConfig]
-    requires_nominal_runtime: bool
-    resolve_slot_spacing_seconds: Callable[
-        [ResolvedFeatureTable, float | None],
-        float,
-    ]
-    resolve_bootstrap_interval_seconds: Callable[
-        [float | None, float | None],
-        float | None,
-    ]
-
-
-def _resolve_nominal_slot_spacing_seconds(
+def _resolve_slot_spacing_seconds(
+    slot_spacing_id: str,
     feature_table: ResolvedFeatureTable,
     nominal_block_time_seconds: float | None,
 ) -> float:
-    del feature_table
+    if slot_spacing_id == "recent_median":
+        return _recent_median_positive_timestamp_delta_seconds(feature_table)
     if nominal_block_time_seconds is None or nominal_block_time_seconds <= 0:
         raise ValueError(
             "observed_time_window requires nominal block time "
@@ -92,53 +80,30 @@ def _resolve_nominal_slot_spacing_seconds(
     return nominal_block_time_seconds
 
 
-def _resolve_recent_median_slot_spacing_seconds(
-    feature_table: ResolvedFeatureTable,
-    nominal_block_time_seconds: float | None,
-) -> float:
-    del nominal_block_time_seconds
-    return _recent_median_positive_timestamp_delta_seconds(feature_table)
-
-
-def _resolve_nominal_bootstrap_interval_seconds(
+def _bootstrap_interval_seconds(
+    slot_spacing_id: str,
     recent_block_interval_seconds: float | None,
     nominal_block_time_seconds: float | None,
 ) -> float | None:
+    if slot_spacing_id == "recent_median":
+        if recent_block_interval_seconds is None or recent_block_interval_seconds <= 0:
+            return None
+        return recent_block_interval_seconds
     del recent_block_interval_seconds
     return nominal_block_time_seconds
 
 
-def _resolve_recent_median_bootstrap_interval_seconds(
-    recent_block_interval_seconds: float | None,
-    nominal_block_time_seconds: float | None,
-) -> float | None:
-    del nominal_block_time_seconds
-    if recent_block_interval_seconds is None or recent_block_interval_seconds <= 0:
-        return None
-    return recent_block_interval_seconds
-
-
-_SLOT_SPACING_SPECS: dict[str, _SlotSpacingSpec] = {
-    "nominal": _SlotSpacingSpec(
-        config_type=ObservedTimeWindowNominalSlotSpacingConfig,
-        requires_nominal_runtime=True,
-        resolve_slot_spacing_seconds=_resolve_nominal_slot_spacing_seconds,
-        resolve_bootstrap_interval_seconds=_resolve_nominal_bootstrap_interval_seconds,
-    ),
-    "recent_median": _SlotSpacingSpec(
-        config_type=ObservedTimeWindowRecentMedianSlotSpacingConfig,
-        requires_nominal_runtime=False,
-        resolve_slot_spacing_seconds=_resolve_recent_median_slot_spacing_seconds,
-        resolve_bootstrap_interval_seconds=_resolve_recent_median_bootstrap_interval_seconds,
-    ),
+_SLOT_SPACING_CONFIG_TYPES: dict[str, type[ObservedTimeWindowSlotSpacingConfig]] = {
+    "nominal": ObservedTimeWindowNominalSlotSpacingConfig,
+    "recent_median": ObservedTimeWindowRecentMedianSlotSpacingConfig,
 }
 
 
-def _slot_spacing_spec(
+def _slot_spacing_config_type(
     slot_spacing_id: str,
-) -> _SlotSpacingSpec:
+) -> type[ObservedTimeWindowSlotSpacingConfig]:
     return lookup_local_spec(
-        _SLOT_SPACING_SPECS,
+        _SLOT_SPACING_CONFIG_TYPES,
         slot_spacing_id,
         "observed_time_window.slot_spacing.id",
     )
@@ -167,8 +132,8 @@ class ObservedTimeWindowCompilerConfig(ProblemCompilerConfig):
             owner="observed_time_window.slot_spacing",
             base_config_type=ObservedTimeWindowSlotSpacingConfig,
             id_label="observed_time_window.slot_spacing.id",
-            lookup_spec=_slot_spacing_spec,
-            spec_config_type=lambda spec: spec.config_type,
+            lookup_spec=_slot_spacing_config_type,
+            spec_config_type=lambda config_type: config_type,
         )
 
 
@@ -185,9 +150,8 @@ class ObservedTimeWindowCompiledProblemContract(CompiledProblemContract):
 
     def initial_history_window_seconds(self, recent_block_interval_seconds: float | None) -> int:
         minimum_window = self.required_history_seconds + self.max_delay_seconds
-        bootstrap_interval_seconds = _slot_spacing_spec(
-            self.slot_spacing.id
-        ).resolve_bootstrap_interval_seconds(
+        bootstrap_interval_seconds = _bootstrap_interval_seconds(
+            self.slot_spacing.id,
             recent_block_interval_seconds,
             self.nominal_block_time_seconds,
         )
@@ -207,9 +171,8 @@ class ObservedTimeWindowCompiledProblemContract(CompiledProblemContract):
         self,
         feature_table: ResolvedFeatureTable,
     ) -> TemporalCapabilityStore:
-        slot_spacing_seconds = _slot_spacing_spec(
-            self.slot_spacing.id
-        ).resolve_slot_spacing_seconds(
+        slot_spacing_seconds = _resolve_slot_spacing_seconds(
+            self.slot_spacing.id,
             feature_table,
             self.nominal_block_time_seconds,
         )
@@ -294,8 +257,7 @@ def compile_problem(
     nominal_block_time_seconds = (
         None if chain_runtime is None else float(chain_runtime.nominal_block_time_seconds)
     )
-    slot_spacing_spec = _slot_spacing_spec(compiler_config.slot_spacing.id)
-    if slot_spacing_spec.requires_nominal_runtime and (
+    if compiler_config.slot_spacing.id == "nominal" and (
         nominal_block_time_seconds is None or nominal_block_time_seconds <= 0
     ):
         raise ValueError(

@@ -106,12 +106,10 @@ def _add_count_tuples(left: tuple[int, ...], right: tuple[int, ...]) -> tuple[in
 
 
 @dataclass(frozen=True, slots=True)
-class MinBlockFeeBatchState:
-    count: int
+class _MinBlockFeeMetricTotals:
     total_loss_sum: float
     classification_loss_sum: float
     regression_loss_sum: float
-    correct_offset_count: int
     log_fee_absolute_error_sum: float
     log_fee_squared_error_sum: float
     offset_counts: OffsetClassificationCounts
@@ -119,43 +117,17 @@ class MinBlockFeeBatchState:
 
 @dataclass(slots=True)
 class MinBlockFeeEpochAccumulator:
-    count: int = 0
-    total_loss_sum: float = 0.0
-    classification_loss_sum: float = 0.0
-    regression_loss_sum: float = 0.0
-    correct_offset_count: int = 0
-    log_fee_absolute_error_sum: float = 0.0
-    log_fee_squared_error_sum: float = 0.0
-    offset_counts: OffsetClassificationCounts | None = None
+    totals: _MinBlockFeeMetricTotals | None = None
 
     def update(self, batch_state: object) -> None:
-        if not isinstance(batch_state, MinBlockFeeBatchState):
-            raise TypeError("min_block_fee_multitask expects MinBlockFeeBatchState values")
-        self.count += batch_state.count
-        self.total_loss_sum += batch_state.total_loss_sum
-        self.classification_loss_sum += batch_state.classification_loss_sum
-        self.regression_loss_sum += batch_state.regression_loss_sum
-        self.correct_offset_count += batch_state.correct_offset_count
-        self.log_fee_absolute_error_sum += batch_state.log_fee_absolute_error_sum
-        self.log_fee_squared_error_sum += batch_state.log_fee_squared_error_sum
-        self.offset_counts = add_offset_classification_counts(
-            self.offset_counts,
-            batch_state.offset_counts,
-        )
+        if not isinstance(batch_state, _MinBlockFeeMetricTotals):
+            raise TypeError("min_block_fee_multitask expects metric totals")
+        self.totals = _add_metric_totals(self.totals, batch_state)
 
     def snapshot(self) -> MetricSet:
-        if self.offset_counts is None:
+        if self.totals is None:
             raise ValueError("Cannot summarize an empty accumulator")
-        return _metric_set_from_totals(
-            count=self.count,
-            total_loss_sum=self.total_loss_sum,
-            classification_loss_sum=self.classification_loss_sum,
-            regression_loss_sum=self.regression_loss_sum,
-            correct_offset_count=self.correct_offset_count,
-            log_fee_absolute_error_sum=self.log_fee_absolute_error_sum,
-            log_fee_squared_error_sum=self.log_fee_squared_error_sum,
-            offset_counts=self.offset_counts,
-        )
+        return _metric_set_from_totals(self.totals)
 
     def finalize(self) -> MetricSet:
         return self.snapshot()
@@ -202,7 +174,7 @@ def compute_batch_loss_and_state(
     targets: MinBlockFeeTargetBatch,
     *,
     training_state: MinBlockFeeTrainingState,
-) -> tuple[torch.Tensor, MinBlockFeeBatchState]:
+) -> tuple[torch.Tensor, _MinBlockFeeMetricTotals]:
     total_loss, classification_loss, regression_loss = compute_multitask_loss(
         offset_logits,
         fee_predictions,
@@ -228,12 +200,10 @@ def compute_batch_loss_and_state(
         targets.min_block_offsets,
         n_classes=int(targets.action_mask.shape[1]),
     )
-    return total_loss, MinBlockFeeBatchState(
-        count=count,
+    return total_loss, _MinBlockFeeMetricTotals(
         total_loss_sum=float(total_loss.detach().item()) * count,
         classification_loss_sum=float(classification_loss.detach().item()) * count,
         regression_loss_sum=float(regression_loss.detach().item()) * count,
-        correct_offset_count=offset_counts.correct_count,
         log_fee_absolute_error_sum=float(log_fee_errors.abs().sum().detach().item()),
         log_fee_squared_error_sum=float(log_fee_errors.square().sum().detach().item()),
         offset_counts=offset_counts,
@@ -265,27 +235,47 @@ def inverse_frequency_class_weights(
     return weights
 
 
-def _metric_set_from_totals(
-    *,
-    count: int,
-    total_loss_sum: float,
-    classification_loss_sum: float,
-    regression_loss_sum: float,
-    correct_offset_count: int,
-    log_fee_absolute_error_sum: float,
-    log_fee_squared_error_sum: float,
-    offset_counts: OffsetClassificationCounts,
-) -> MetricSet:
+def _metric_set_from_totals(totals: _MinBlockFeeMetricTotals) -> MetricSet:
+    count = _sample_count(totals.offset_counts)
     if count <= 0:
         raise ValueError("Cannot summarize an empty accumulator")
     return MetricSet(
         values={
-            "total_loss": total_loss_sum / count,
-            "classification_loss": classification_loss_sum / count,
-            "regression_loss": regression_loss_sum / count,
-            "offset_accuracy": correct_offset_count / count,
-            "macro_f1": macro_f1_from_counts(offset_counts),
-            "log_fee_mae": log_fee_absolute_error_sum / count,
-            "log_fee_mse": log_fee_squared_error_sum / count,
+            "total_loss": totals.total_loss_sum / count,
+            "classification_loss": totals.classification_loss_sum / count,
+            "regression_loss": totals.regression_loss_sum / count,
+            "offset_accuracy": totals.offset_counts.correct_count / count,
+            "macro_f1": macro_f1_from_counts(totals.offset_counts),
+            "log_fee_mae": totals.log_fee_absolute_error_sum / count,
+            "log_fee_mse": totals.log_fee_squared_error_sum / count,
         }
     )
+
+
+def _add_metric_totals(
+    left: _MinBlockFeeMetricTotals | None,
+    right: _MinBlockFeeMetricTotals,
+) -> _MinBlockFeeMetricTotals:
+    if left is None:
+        return right
+    return _MinBlockFeeMetricTotals(
+        total_loss_sum=left.total_loss_sum + right.total_loss_sum,
+        classification_loss_sum=(
+            left.classification_loss_sum + right.classification_loss_sum
+        ),
+        regression_loss_sum=left.regression_loss_sum + right.regression_loss_sum,
+        log_fee_absolute_error_sum=(
+            left.log_fee_absolute_error_sum + right.log_fee_absolute_error_sum
+        ),
+        log_fee_squared_error_sum=(
+            left.log_fee_squared_error_sum + right.log_fee_squared_error_sum
+        ),
+        offset_counts=add_offset_classification_counts(
+            left.offset_counts,
+            right.offset_counts,
+        ),
+    )
+
+
+def _sample_count(counts: OffsetClassificationCounts) -> int:
+    return sum(counts.target_by_class)

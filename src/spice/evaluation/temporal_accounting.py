@@ -12,6 +12,7 @@ from ..prediction.decoded_offsets import DecodedOffsets
 from ..temporal.execution_policy import CompiledExecutionPolicyContract, PreparedActionSpace
 from ..temporal.problem_store import CompiledProblemStore
 from ._temporal_replay_metric_catalog import (
+    temporal_replay_event_metric_sums,
     temporal_replay_event_sum_totals,
     temporal_replay_fee_sum_totals,
     temporal_replay_fee_sums,
@@ -108,12 +109,12 @@ def _summarize_selected_temporal_decision_run(
         baseline_fee_sum=float(baseline_fees.sum()),
         optimum_fee_sum=float(optimum_fees.sum()),
     )
-    event_metric_sums = {
-        "profit_over_baseline": float(profit_values.sum()),
-        "cost_over_optimum": float(cost_values.sum()),
-        "baseline_cost_over_optimum": float(baseline_cost_values.sum()),
-        "exact_optimum_hit_rate": float(exact_hits.sum()),
-    }
+    event_metric_sums = temporal_replay_event_metric_sums(
+        profit_over_baseline_sum=float(profit_values.sum()),
+        cost_over_optimum_sum=float(cost_values.sum()),
+        baseline_cost_over_optimum_sum=float(baseline_cost_values.sum()),
+        exact_optimum_hit_sum=float(exact_hits.sum()),
+    )
     return TemporalReplayRunResult(
         n_events=n_events,
         metrics=temporal_replay_metric_values(

@@ -445,6 +445,29 @@ def test_tuning_space_rejects_model_id_mismatch() -> None:
         )
 
 
+def test_tuning_space_rejects_non_positive_model_int_candidates() -> None:
+    with pytest.raises(ConfigResolutionError, match="integer candidates must be positive"):
+        coerce_tuning_space_config(
+            {"model": {"id": "lstm", "hidden_size": [0]}},
+            model_config=_lstm_model(),
+            problem_config=_problem(),
+        )
+
+
+def test_tuning_space_rejects_invalid_dropout_candidates() -> None:
+    with pytest.raises(ConfigResolutionError, match="dropout values must be in"):
+        coerce_tuning_space_config(
+            {"model": {"id": "transformer_lstm", "dropout": [1.0]}},
+            model_config=_transformer_lstm_model(),
+            problem_config=_problem(),
+        )
+
+
+def test_tuned_model_params_reject_empty_model_group() -> None:
+    with pytest.raises(ConfigResolutionError, match="declare at least one field"):
+        coerce_tuned_parameter_set({"model": {"id": "transformer"}}, model_id="transformer")
+
+
 def test_typed_tuning_space_rejects_model_id_mismatch() -> None:
     with pytest.raises(ConfigResolutionError, match="tuning_space.model.id must match model.id"):
         coerce_tuning_space_config(

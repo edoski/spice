@@ -8,7 +8,6 @@ from pydantic import field_validator
 from ..problem_store import CompiledProblemStore
 from ..semantics import BaselineRowMode
 from .base import (
-    BoolMatrix,
     CompiledExecutionPolicyContract,
     DecodedOffsetBatch,
     ExecutionPolicyConfig,
@@ -31,17 +30,6 @@ class StrictDeadlineMissConfig(ExecutionPolicyConfig):
         return value
 
 
-def _action_mask(
-    store: CompiledProblemStore,
-    sample_indices: IntVector,
-) -> BoolMatrix:
-    resolved_sample_indices = sample_indices.astype(np.int64, copy=False)
-    return np.ones(
-        (resolved_sample_indices.shape[0], store.max_candidate_slots),
-        dtype=np.bool_,
-    )
-
-
 def _prepare_action_space(
     store: CompiledProblemStore,
     sample_indices: IntVector,
@@ -50,7 +38,10 @@ def _prepare_action_space(
     return PreparedActionSpace(
         sample_indices=resolved_sample_indices,
         max_candidate_slots=store.max_candidate_slots,
-        action_mask=_action_mask(store, resolved_sample_indices),
+        action_mask=np.ones(
+            (resolved_sample_indices.shape[0], store.max_candidate_slots),
+            dtype=np.bool_,
+        ),
     )
 
 
@@ -59,10 +50,10 @@ def _reachable_optimum(
     *,
     start_row: int,
     reachable_end_row: int,
-) -> tuple[int, int, float]:
+) -> int:
     candidate_values = store.log_base_fees[start_row:reachable_end_row]
     offset = int(np.argmin(candidate_values))
-    return int(start_row + offset), offset, float(candidate_values[offset])
+    return int(start_row + offset)
 
 
 def _prepare_outcome_facts(
@@ -83,16 +74,14 @@ def _prepare_outcome_facts(
     reachable_action_mask = np.zeros((batch_size, max_candidate_slots), dtype=np.bool_)
     overflow_mask = np.zeros((batch_size, max_candidate_slots), dtype=np.bool_)
     baseline_rows = window_summary.candidate_start_rows.astype(np.int64, copy=True)
-    for row, (start_row, end_row, candidate_count, reachable_end_row) in enumerate(
+    for row, (start_row, end_row, candidate_count) in enumerate(
         zip(
             window_summary.candidate_start_rows,
             window_summary.candidate_end_rows,
             window_summary.candidate_counts,
-            window_summary.reachable_end_rows,
             strict=True,
         )
     ):
-        del reachable_end_row
         slot_count = min(int(candidate_count), max_candidate_slots)
         physical_offsets = np.arange(slot_count, dtype=np.int64)
         action_outcome_rows[row, :slot_count] = int(start_row) + physical_offsets
@@ -146,7 +135,7 @@ def _realize_selections(
     for row, (start_row, reachable_end_row) in enumerate(
         zip(window_summary.candidate_start_rows, window_summary.reachable_end_rows, strict=True)
     ):
-        optimum_rows[row], _, _ = _reachable_optimum(
+        optimum_rows[row] = _reachable_optimum(
             store,
             start_row=int(start_row),
             reachable_end_row=int(reachable_end_row),

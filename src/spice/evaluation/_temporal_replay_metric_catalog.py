@@ -123,6 +123,41 @@ def temporal_replay_fee_sums(
     )
 
 
+def temporal_replay_event_metric_sums(
+    *,
+    profit_over_baseline_sum: float,
+    cost_over_optimum_sum: float,
+    baseline_cost_over_optimum_sum: float,
+    exact_optimum_hit_sum: float,
+) -> dict[str, float]:
+    return validate_temporal_replay_event_metric_sums(
+        {
+            "profit_over_baseline": profit_over_baseline_sum,
+            "cost_over_optimum": cost_over_optimum_sum,
+            "baseline_cost_over_optimum": baseline_cost_over_optimum_sum,
+            "exact_optimum_hit_rate": exact_optimum_hit_sum,
+        }
+    )
+
+
+def validate_temporal_replay_event_metric_sums(
+    values: Mapping[str, float],
+) -> dict[str, float]:
+    return _require_ids(
+        values,
+        expected_ids=_TEMPORAL_REPLAY_EVENT_MEAN_METRIC_IDS,
+        label="Temporal Replay event metric sums",
+    )
+
+
+def validate_temporal_replay_fee_sums(values: Mapping[str, float]) -> dict[str, float]:
+    return _require_ids(
+        values,
+        expected_ids=_TEMPORAL_REPLAY_FEE_SUM_METRIC_IDS,
+        label="Temporal Replay fee-sum metrics",
+    )
+
+
 def temporal_replay_event_mean_values(
     event_metric_sums: Mapping[str, float],
     *,
@@ -130,11 +165,7 @@ def temporal_replay_event_mean_values(
 ) -> dict[str, float]:
     if n_events <= 0:
         raise ValueError("evaluation event count must be positive")
-    sums = _require_ids(
-        event_metric_sums,
-        expected_ids=_TEMPORAL_REPLAY_EVENT_MEAN_METRIC_IDS,
-        label="Temporal Replay event metric sums",
-    )
+    sums = validate_temporal_replay_event_metric_sums(event_metric_sums)
     return {metric_id: metric_sum / n_events for metric_id, metric_sum in sums.items()}
 
 
@@ -143,11 +174,7 @@ def temporal_replay_event_sum_totals(
 ) -> dict[str, float]:
     totals = {metric_id: 0.0 for metric_id in _TEMPORAL_REPLAY_EVENT_MEAN_METRIC_IDS}
     for event_sums in run_event_sums:
-        values = _require_ids(
-            event_sums,
-            expected_ids=_TEMPORAL_REPLAY_EVENT_MEAN_METRIC_IDS,
-            label="Temporal Replay event metric sums",
-        )
+        values = validate_temporal_replay_event_metric_sums(event_sums)
         for metric_id in totals:
             totals[metric_id] += values[metric_id]
     return _require_ids(
@@ -165,11 +192,7 @@ def temporal_replay_metric_values(
 ) -> dict[str, float]:
     values = {
         **temporal_replay_event_mean_values(event_metric_sums, n_events=n_events),
-        **_require_ids(
-            fee_sums,
-            expected_ids=_TEMPORAL_REPLAY_FEE_SUM_METRIC_IDS,
-            label="Temporal Replay fee-sum metrics",
-        ),
+        **validate_temporal_replay_fee_sums(fee_sums),
     }
     return validate_temporal_replay_metric_values(values)
 
@@ -179,11 +202,7 @@ def temporal_replay_fee_sum_totals(
 ) -> dict[str, float]:
     totals = {metric_id: 0.0 for metric_id in _TEMPORAL_REPLAY_FEE_SUM_METRIC_IDS}
     for fee_sums in run_fee_sums:
-        values = _require_ids(
-            fee_sums,
-            expected_ids=_TEMPORAL_REPLAY_FEE_SUM_METRIC_IDS,
-            label="Temporal Replay fee-sum metrics",
-        )
+        values = validate_temporal_replay_fee_sums(fee_sums)
         for metric_id in totals:
             totals[metric_id] += values[metric_id]
     return _require_ids(

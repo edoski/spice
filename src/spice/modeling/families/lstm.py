@@ -5,14 +5,21 @@ from __future__ import annotations
 from typing import Literal
 
 import torch
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field
 from torch import nn
 
 from ...prediction import PredictionOutputSpec
 from ..models import ModelOutputs, TemporalModel
 from ._heads import TemporalOutputHead
 from ._sequence import take_last_valid
-from .base import ModelConfig, ModelTuningSpaceConfig, TunableFieldSpec, TunedModelParams
+from .base import (
+    DropoutTuningCandidates,
+    ModelConfig,
+    ModelTuningSpaceConfig,
+    PositiveIntTuningCandidates,
+    TunableFieldSpec,
+    TunedModelParams,
+)
 from .registry import ModelSpec
 
 
@@ -27,25 +34,11 @@ class LstmModelConfig(ModelConfig[Literal["lstm"]]):
 
 class LstmTuningSpaceModelConfig(ModelTuningSpaceConfig[Literal["lstm"]]):
     id: Literal["lstm"] = "lstm"
-    input_projection_dim: list[int] | None = Field(default=None, min_length=1)
-    hidden_size: list[int] | None = Field(default=None, min_length=1)
-    num_layers: list[int] | None = Field(default=None, min_length=1)
-    head_hidden_dim: list[int] | None = Field(default=None, min_length=1)
-    dropout: list[float] | None = Field(default=None, min_length=1)
-
-    @field_validator("input_projection_dim", "hidden_size", "num_layers", "head_hidden_dim")
-    @classmethod
-    def validate_int_candidates(cls, values: list[int] | None) -> list[int] | None:
-        if values is not None and any(value <= 0 for value in values):
-            raise ValueError("tuning_space.model integer candidates must be positive")
-        return values
-
-    @field_validator("dropout")
-    @classmethod
-    def validate_dropout_candidates(cls, values: list[float] | None) -> list[float] | None:
-        if values is not None and any(value < 0.0 or value >= 1.0 for value in values):
-            raise ValueError("tuning_space.model.dropout values must be in [0.0, 1.0)")
-        return values
+    input_projection_dim: PositiveIntTuningCandidates = None
+    hidden_size: PositiveIntTuningCandidates = None
+    num_layers: PositiveIntTuningCandidates = None
+    head_hidden_dim: PositiveIntTuningCandidates = None
+    dropout: DropoutTuningCandidates = None
 
 
 class LstmTunedModelParams(TunedModelParams[Literal["lstm"]]):
@@ -55,19 +48,6 @@ class LstmTunedModelParams(TunedModelParams[Literal["lstm"]]):
     num_layers: int | None = Field(default=None, gt=0)
     head_hidden_dim: int | None = Field(default=None, gt=0)
     dropout: float | None = Field(default=None, ge=0.0, lt=1.0)
-
-    @model_validator(mode="after")
-    def validate_non_empty_group(self) -> LstmTunedModelParams:
-        if (
-            self.input_projection_dim is None
-            and self.hidden_size is None
-            and self.num_layers is None
-            and self.head_hidden_dim is None
-            and self.dropout is None
-        ):
-            raise ValueError("tuned model params must declare at least one field")
-        return self
-
 
 class LSTMBaseline(TemporalModel):
     def __init__(
