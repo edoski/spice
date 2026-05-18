@@ -27,7 +27,7 @@ from ..storage.workflow_roots import (
 
 def acquire_workflow_facts(config: AcquireConfig) -> list[tuple[str, str]]:
     return [
-        ("dataset", config.dataset.name),
+        ("corpus", config.corpus.name),
         ("chain", config.chain.name),
         ("problem", config.problem.id),
         ("provider", config.rpc_endpoint.provider_name),
@@ -43,22 +43,18 @@ def report_acquire_result(
         reporter.result(
             "acquire",
             [
-                ("history_window", f"{result.requested_history_window_seconds}s"),
-                ("history_blocks", str(result.history_plan.block_range.count)),
-                ("evaluation_blocks", str(result.evaluation_plan.block_range.count)),
+                ("window", f"{result.requested_window_seconds}s"),
+                ("blocks", str(result.blocks_plan.block_range.count)),
             ],
             status="dry_run",
         )
         return
-    history = result.manifest.splits.history
-    evaluation = result.manifest.splits.evaluation
+    blocks = result.manifest.blocks
     reporter.result(
         "acquire",
         [
-            ("history", history.materialization.outcome),
-            ("history_blocks", str(history.coverage.rows)),
-            ("evaluation", evaluation.materialization.outcome),
-            ("evaluation_blocks", str(evaluation.coverage.rows)),
+            ("blocks", blocks.materialization.outcome),
+            ("rows", str(blocks.coverage.rows)),
         ],
     )
 
@@ -75,8 +71,8 @@ def train_workflow_facts(
     roots: TrainWorkflowRoots,
 ) -> list[tuple[str, str]]:
     facts = [
-        ("dataset", roots.corpus.dataset_name),
-        ("dataset_id", roots.corpus.dataset_id),
+        ("corpus", roots.corpus.corpus_name),
+        ("corpus_id", roots.corpus.corpus_id),
         ("chain", roots.corpus.chain_name),
         ("problem", config.problem.id),
         ("prediction", config.prediction.id),
@@ -166,8 +162,8 @@ def report_train_result(
 
 def tune_workflow_facts(config: TuneConfig, roots: TuneWorkflowRoots) -> list[tuple[str, str]]:
     return [
-        ("dataset", roots.corpus.dataset_name),
-        ("dataset_id", roots.corpus.dataset_id),
+        ("corpus", roots.corpus.corpus_name),
+        ("corpus_id", roots.corpus.corpus_id),
         ("chain", roots.corpus.chain_name),
         ("problem", config.problem.id),
         ("features", config.features.id),
@@ -230,11 +226,11 @@ def evaluate_workflow_facts(
     roots: EvaluateWorkflowRoots,
 ) -> list[tuple[str, str]]:
     return [
-        ("dataset", roots.corpus.dataset_name),
-        ("dataset_id", roots.corpus.dataset_id),
+        ("corpus", roots.corpus.corpus_name),
+        ("corpus_id", roots.corpus.corpus_id),
         ("artifact_id", roots.artifact.artifact_id),
         ("delay", "artifact_max" if config.delay_seconds is None else f"{config.delay_seconds}s"),
-        ("evaluation", config.evaluation.id),
+        ("evaluator", config.evaluator.id),
         ("batch_size", str(config.batch_size)),
     ]
 

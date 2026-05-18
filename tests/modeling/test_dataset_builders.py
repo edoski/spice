@@ -2,9 +2,21 @@ from __future__ import annotations
 
 from typing import cast
 
+import numpy as np
 import polars as pl
 
 from spice.config import TrainConfig, WorkflowTask
+from spice.corpus.metadata import (
+    ChainMetadata,
+    CompactValidationReport,
+    CorpusAcquisitionSourceRequirements,
+    CorpusIdentity,
+    CorpusManifest,
+    CorpusSplitManifest,
+    SplitCoverageMetadata,
+    SplitMaterializationMetadata,
+    SplitRequestMetadata,
+)
 from spice.modeling.dataset_builders import (
     ArtifactInferenceDatasetPreparationContext,
     ArtifactInferenceDatasetPreparationFacts,
@@ -28,7 +40,7 @@ def _make_history_rows_with_margin(config: TrainConfig, *, extra_rows: int = 32)
     return make_block_rows(
         count,
         start_block=1,
-        start_timestamp=config.evaluation_window_start_timestamp - count * block_interval_seconds,
+        start_timestamp=config.corpus_window_start_timestamp,
         chain_id=config.chain.runtime.chain_id,
         block_interval_seconds=block_interval_seconds,
     )
@@ -55,24 +67,72 @@ def _make_rows_with_tail_cadence_shift(
 
 
 def _spec(config: TrainConfig):
-    assert config.dataset_id is not None
+    assert config.corpus_id is not None
     corpus = corpus_handle(
         config.storage.root,
         chain_name=config.chain.name,
-        dataset_id=config.dataset_id,
-        dataset_name=config.dataset.name,
+        corpus_id=config.corpus_id,
+        corpus_name=config.corpus.name,
     )
     return build_artifact_training_spec(
         config,
         corpus=corpus,
         artifact=artifact_handle(config.storage.root, corpus=corpus),
+        corpus_manifest=_corpus_manifest(config),
+    )
+
+
+def _corpus_manifest(config: TrainConfig) -> CorpusManifest:
+    assert config.corpus_id is not None
+    blocks = CorpusSplitManifest(
+        kind="blocks",
+        request=SplitRequestMetadata(
+            start_timestamp=0,
+            end_timestamp=10_000,
+            start_block=1,
+            end_block=10_000,
+        ),
+        coverage=SplitCoverageMetadata(
+            first_timestamp=0,
+            last_timestamp=9_999,
+            first_block=1,
+            last_block=9_999,
+            rows=9_999,
+        ),
+        validation=CompactValidationReport(status="clean"),
+        materialization=SplitMaterializationMetadata(outcome="created", file_count=1),
+    )
+    return CorpusManifest(
+        corpus=CorpusIdentity(id=config.corpus_id, name=config.corpus.name),
+        chain=ChainMetadata(name=config.chain.name, runtime=config.chain.runtime),
+        blocks=blocks,
+        source_requirements=CorpusAcquisitionSourceRequirements(
+            required_columns=frozenset(
+                {
+                    "block_number",
+                    "timestamp",
+                    "chain_id",
+                    "base_fee_per_gas",
+                    "gas_used",
+                    "gas_limit",
+                    "tx_count",
+                }
+            ),
+            optional_enrichments=frozenset(),
+            temporal_unit="block",
+            ordering_key="block_number",
+            partition_key="chain_id",
+        ),
     )
 
 
 def _prepare_training_dataset(rows, *, spec):
     return spec.dataset_builder_contract.prepare_training_dataset(
         pl.DataFrame(rows),
-        facts=TrainingDatasetPreparationFacts(split=spec.split),
+        facts=TrainingDatasetPreparationFacts(
+            split=spec.split,
+            training_cutoff_timestamp=spec.training_cutoff_timestamp,
+        ),
         context=TrainingDatasetPreparationContext(
             feature_contract=spec.feature_contract,
             problem_contract=spec.problem_contract,
@@ -95,7 +155,6 @@ def test_fixed_context_dataset_builder_prepares_seq_len_without_builder_owned_cl
                 "problem": {
                     "id": "test_fixed_context_problem",
                     "lookback_seconds": 600,
-                    "sample_count": 4096,
                     "max_delay_seconds": 36,
                     "compiler": {
                         "id": "observed_time_window",
@@ -123,8 +182,7 @@ def test_fixed_context_dataset_builder_prepares_seq_len_without_builder_owned_cl
     assert builder_metadata.sequence_length >= 64
     assert builder_metadata.median_dt_seconds > 0.0
     assert prepared.temporal_capability.action_width == prepared.store.max_candidate_slots
-    assert prepared.sample_count == config.problem.sample_count
-    assert prepared.store.n_samples > prepared.sample_count
+    assert prepared.sample_count == prepared.store.n_samples
     assert prepared.samples.train.sample_indices.size > 0
     assert prepared.samples.validation.sample_indices.size > 0
     assert prepared.samples.test.sample_indices.size > 0
@@ -158,7 +216,6 @@ def test_fixed_sequence_length_calibration_uses_train_sample_rows_only(
                 "problem": {
                     "id": "test_fixed_context_problem",
                     "lookback_seconds": 120,
-                    "sample_count": 120,
                     "max_delay_seconds": 600,
                     "compiler": {
                         "id": "observed_time_window",
@@ -184,6 +241,64 @@ def test_fixed_sequence_length_calibration_uses_train_sample_rows_only(
     assert prepared.builder_runtime_metadata.sequence_length == 10
 
 
+def test_training_cutoff_excludes_samples_whose_outcome_horizon_reaches_cutoff(
+    tmp_path,
+    load_workflow_config,
+) -> None:
+    config = cast(
+        TrainConfig,
+        load_workflow_config(
+            WorkflowTask.TRAIN,
+            workspace=tmp_path,
+            surface="current_row_fee_dynamics",
+            override={
+                "dataset_builder": {
+                    "id": "fixed_sequence_temporal",
+                    "min_sequence_length": 4,
+                    "max_sequence_length": 64,
+                },
+                "problem": {
+                    "id": "test_fixed_context_problem",
+                    "lookback_seconds": 120,
+                    "max_delay_seconds": 36,
+                    "compiler": {
+                        "id": "observed_time_window",
+                        "slot_spacing": {"id": "nominal"},
+                    },
+                    "execution_policy": {
+                        "id": "strict_deadline_miss",
+                    },
+                },
+            },
+        ),
+    )
+    cutoff = 3_600
+    config = config.model_copy(update={"training_cutoff_timestamp": cutoff})
+    spec = _spec(config)
+    rows = make_block_rows(
+        320,
+        start_block=1,
+        start_timestamp=0,
+        chain_id=config.chain.runtime.chain_id,
+        block_interval_seconds=12,
+    )
+
+    prepared = _prepare_training_dataset(rows, spec=spec)
+
+    selected = np.concatenate(
+        [
+            prepared.samples.train.sample_indices,
+            prepared.samples.validation.sample_indices,
+            prepared.samples.test.sample_indices,
+        ]
+    )
+    outcome_end_rows = prepared.store.candidate_end_rows[selected] - 1
+    outcome_end_timestamps = prepared.store.timestamps[outcome_end_rows]
+    assert prepared.sample_count == selected.size
+    assert prepared.sample_count < prepared.store.n_samples
+    assert int(outcome_end_timestamps.max()) < cutoff
+
+
 def test_fixed_sequence_inference_prep_reconstructs_artifact_runtime_state(
     tmp_path,
     load_workflow_config,
@@ -207,7 +322,6 @@ def test_fixed_sequence_inference_prep_reconstructs_artifact_runtime_state(
                 "problem": {
                     "id": "test_fixed_context_problem",
                     "lookback_seconds": 120,
-                    "sample_count": 120,
                     "max_delay_seconds": 36,
                     "compiler": {
                         "id": "observed_time_window",

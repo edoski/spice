@@ -62,7 +62,7 @@ Fresh resolution loads the named surface directly from the concrete Workflow Sel
 Generic Pydantic validation cannot always reconstruct concrete nested types. The owning package knows which selector maps to which concrete type:
 
 ```text
-evaluation.id            -> evaluation config type
+evaluator.id             -> evaluator config type
 dataset_builder.id       -> dataset-builder config type
 model.id                 -> model-family config type
 problem.compiler.id      -> problem compiler config type
@@ -81,7 +81,7 @@ Surface resolution is the fresh path from produce-root Workflow Selection to Wor
 
 Surface resolution does not hydrate raw resolved snapshots. Resolved snapshots are already past selection and surface ownership.
 
-Required workflow refs are checked during fresh resolution: acquire requires acquisition/provider refs, model workflows require model/training/split/objective refs, tune and tuned-train require tuning-space refs, and evaluator-backed objectives require a matching selected evaluation.
+Required workflow refs are checked during fresh resolution: acquire requires acquisition/provider refs, model workflows require model/training/split/objective refs, tune and tuned-train require tuning-space refs, and evaluator-backed objectives require a matching selected evaluator.
 
 ## Resolved Workflow Hydration
 

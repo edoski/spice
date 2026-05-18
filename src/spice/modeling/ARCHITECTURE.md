@@ -95,7 +95,7 @@ feature table
 problem store + Temporal Capability
     |
     v
-prepared dataset + builder runtime metadata
+prepared corpus + builder runtime metadata
 ```
 
 Shared dataset-builder abstractions should remove real duplication without hiding sample-ordering, split, candidate-window, or empty-frame policy.
@@ -105,7 +105,7 @@ Shared dataset-builder abstractions should remove real duplication without hidin
 ```text
 modeling/
   pipeline.py             training spec construction and fit orchestration
-  dataset_builders/       temporal dataset preparation and tensorization strategies
+  dataset_builders/       temporal corpus preparation and tensorization strategies
   families/               neural network family configs/builders/tuning hooks
   models.py               model protocols and model-output envelope
   representations/        generic Representation Seam plus sequence_inputs Adapter

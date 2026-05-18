@@ -42,8 +42,7 @@ class RootMutation(Generic[EffectT]):
 def commit_corpus_acquisition(
     corpus: CorpusRootHandle,
     *,
-    history_dir: Path | None,
-    evaluation_dir: Path | None,
+    blocks_dir: Path | None,
     state_db: Path,
 ) -> ReindexedCatalogRoot:
     require_root_kind(state_db, DATASET_ROOT_KIND)
@@ -53,8 +52,7 @@ def commit_corpus_acquisition(
         expected_root_kind=DATASET_ROOT_KIND,
     )
     promotion_candidates: tuple[tuple[Path, Path | None], ...] = (
-        (corpus.history_dir, history_dir),
-        (corpus.evaluation_dir, evaluation_dir),
+        (corpus.blocks_dir, blocks_dir),
         (corpus.state_db_path, state_db),
     )
     promotions = [

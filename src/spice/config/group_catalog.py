@@ -19,7 +19,8 @@ from ..modeling.families.registry import coerce_model_config
 from ..objectives import coerce_objective_config
 from .models import (
     ChainSpec,
-    DatasetSpec,
+    CorpusSpec,
+    EvaluationsSpec,
     PredictionConfig,
     ProviderSpec,
     SplitConfig,
@@ -36,9 +37,10 @@ _ValidateGroupPayload = Callable[[dict[str, object]], ConfigT]
 class ConfigGroup(StrEnum):
     BENCHMARK = "benchmark"
     CHAIN = "chain"
-    DATASET = "dataset"
+    CORPUS = "corpus"
     DATASET_BUILDER = "dataset_builder"
-    EVALUATION = "evaluation"
+    EVALUATOR = "evaluator"
+    EVALUATIONS = "evaluations"
     EXECUTION = "execution"
     FEATURES = "features"
     MODEL = "model"
@@ -113,9 +115,9 @@ GROUP_SPECS: tuple[GroupSpec[object], ...] = (
         public=True,
     ),
     GroupSpec(
-        group=ConfigGroup.DATASET,
+        group=ConfigGroup.CORPUS,
         seed_name="icdcs_2026",
-        validate=DatasetSpec.model_validate,
+        validate=CorpusSpec.model_validate,
         identity_field="name",
         seed_from_requested_name=True,
         public=True,
@@ -153,9 +155,17 @@ GROUP_SPECS: tuple[GroupSpec[object], ...] = (
         public=True,
     ),
     GroupSpec(
-        group=ConfigGroup.EVALUATION,
+        group=ConfigGroup.EVALUATOR,
         seed_name="poisson_replay",
         validate=coerce_evaluator_config,
+        identity_field="id",
+        seed_from_requested_name=True,
+        public=True,
+    ),
+    GroupSpec(
+        group=ConfigGroup.EVALUATIONS,
+        seed_name=None,
+        validate=EvaluationsSpec.model_validate,
         identity_field="id",
         seed_from_requested_name=True,
         public=True,

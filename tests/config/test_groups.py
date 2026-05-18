@@ -16,7 +16,7 @@ def test_typed_group_loaders_return_owner_concrete_types() -> None:
     problem = typed.load(typed.PROBLEM, "current_row_nominal")
     model = typed.load(typed.MODEL, "lstm")
     builder = typed.load(typed.DATASET_BUILDER, "fixed_sequence_temporal")
-    evaluator = typed.load(typed.EVALUATION, "poisson_replay")
+    evaluator = typed.load(typed.EVALUATOR, "poisson_replay")
     training = typed.load(typed.TRAINING, "default")
     compiler = cast(Any, problem.compiler)
 
@@ -34,7 +34,7 @@ def test_typed_group_loaders_return_owner_concrete_types() -> None:
 @pytest.mark.parametrize(
     ("loader", "name", "identity"),
     [
-        (lambda: typed.load(typed.DATASET, "icdcs_2026"), "icdcs_2026", "name"),
+        (lambda: typed.load(typed.CORPUS, "icdcs_2026"), "icdcs_2026", "name"),
         (lambda: typed.load(typed.CHAIN, "avalanche"), "avalanche", "name"),
         (lambda: typed.load(typed.FEATURES, "core_fee_dynamics"), "core_fee_dynamics", "id"),
         (lambda: typed.load(typed.PROVIDER, "publicnode"), "publicnode", "name"),
@@ -52,13 +52,16 @@ def test_context_free_typed_loader_covers_named_group_shapes(
 
 
 def test_raw_payload_loader_returns_canonical_dicts() -> None:
-    dataset = load_named_group_payload("icdcs_2026", "dataset")
+    corpus = load_named_group_payload("icdcs_2026", "corpus")
     model = load_named_group_payload("lstm", "model")
 
-    assert type(dataset) is dict
-    assert dataset == {
+    assert type(corpus) is dict
+    assert corpus == {
         "name": "icdcs_2026",
-        "evaluation_date": "2025-11-09",
+        "window": {
+            "start": "2025-11-08T00:00:00+00:00",
+            "end": "2025-11-10T00:00:00+00:00",
+        },
     }
     assert type(model) is dict
     assert model["id"] == "lstm"

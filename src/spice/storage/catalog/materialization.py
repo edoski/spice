@@ -7,10 +7,10 @@ from pathlib import Path
 
 from ...core.errors import StateLayoutError
 from ..artifact import load_artifact_manifest
-from ..corpus import load_dataset_manifest
+from ..corpus import load_corpus_manifest
 from ..engine import RootKind, state_db_path
 from ..study_manifest import load_study_manifest
-from .records import CatalogArtifactRecord, CatalogDatasetRecord, CatalogRecord, CatalogStudyRecord
+from .records import CatalogArtifactRecord, CatalogCorpusRecord, CatalogRecord, CatalogStudyRecord
 from .registry import spec_for_record
 
 
@@ -54,12 +54,12 @@ def validate_catalog_root_location(
         )
 
 
-def _build_dataset_record(root_path: Path, db_path: Path) -> CatalogDatasetRecord:
+def _build_dataset_record(root_path: Path, db_path: Path) -> CatalogCorpusRecord:
     del root_path
-    manifest = load_dataset_manifest(db_path)
-    return CatalogDatasetRecord(
-        dataset_id=manifest.dataset.id,
-        dataset_name=manifest.dataset.name,
+    manifest = load_corpus_manifest(db_path)
+    return CatalogCorpusRecord(
+        corpus_id=manifest.corpus.id,
+        corpus_name=manifest.corpus.name,
         chain_name=manifest.chain.name,
     )
 
@@ -70,8 +70,8 @@ def _build_study_record(root_path: Path, db_path: Path) -> CatalogStudyRecord:
     return CatalogStudyRecord(
         study_id=manifest.study_id,
         study_name=manifest.study_name,
-        dataset_id=manifest.dataset_id,
-        dataset_name=manifest.dataset_name,
+        corpus_id=manifest.corpus_id,
+        corpus_name=manifest.corpus_name,
         chain_name=manifest.chain_name,
         features_id=manifest.features.id,
         prediction_id=manifest.prediction.id,
@@ -85,8 +85,8 @@ def _build_artifact_record(root_path: Path, db_path: Path) -> CatalogArtifactRec
     manifest = load_artifact_manifest(db_path)
     return CatalogArtifactRecord(
         artifact_id=manifest.artifact_id,
-        dataset_id=manifest.dataset_id,
-        dataset_name=manifest.dataset_name,
+        corpus_id=manifest.corpus_id,
+        corpus_name=manifest.corpus_name,
         chain_name=manifest.chain_name,
         features_id=manifest.features_id,
         prediction_id=manifest.prediction_id,

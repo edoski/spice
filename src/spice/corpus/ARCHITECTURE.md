@@ -9,10 +9,10 @@
 Corpus identity is durable data identity:
 
 ```text
-chain + dataset name + evaluation date -> corpus id
+chain + corpus name + corpus window -> corpus id
 ```
 
-It does not include model, prediction, objective, evaluator, or artifact settings. It also does not include the incidental acquisition window. Acquisition windows are provenance for a run; corpus identity is the named canonical dataset context.
+It does not include model, prediction, objective, evaluator, or artifact settings.
 
 ## Acquisition To Corpus Flow
 
@@ -23,10 +23,10 @@ provider/RPC blocks
 canonical block rows
   |
   v
-history and evaluation parquet datasets
+blocks parquet dataset
   |
   v
-dataset manifest + acquire run record
+corpus manifest + acquire run record
   |
   v
 corpus root state
@@ -36,13 +36,13 @@ External uncertainty enters through acquisition: provider failures, missing bloc
 
 ## Corpus Assembly
 
-Corpus Assembly owns acquisition-to-corpus orchestration. It builds a Corpus Capability Planning context, asks it for initial history/evaluation windows, delegates committed fulfillment to Corpus Acquisition Stage, and returns the committed corpus result.
+Corpus Assembly owns acquisition-to-corpus orchestration. It builds a Corpus Acquisition Planning context, asks it for the configured block-range plan, delegates committed fulfillment to Corpus Acquisition Stage, and returns the committed corpus result.
 
-Corpus Capability Planning owns feature/problem contract compilation for acquisition coverage, generic Corpus Acquisition Source Requirements, initial history sizing, valid temporal capability sample counting, and the bounded history refill lifecycle including attempt limits, status wording, and termination. It consumes `required_source_columns` and `acquisition_enrichments` from the compiled feature contract. Source requirements describe required source columns, optional enrichments, temporal unit, ordering key, and partition key. They are corpus-level requirements, not RPC configuration. Concrete acquisition adapters receive them and either bind them to provider behavior or fail before acquisition starts.
+Corpus Acquisition Planning owns feature/problem contract compilation for acquisition coverage and generic Corpus Acquisition Source Requirements. It consumes `required_source_columns` and `acquisition_enrichments` from the compiled feature contract. Source requirements describe required source columns, optional enrichments, temporal unit, ordering key, and partition key. They are corpus-level requirements, not RPC configuration. Concrete acquisition adapters receive them and either bind them to provider behavior or fail before acquisition starts.
 
-Corpus Acquisition Stage owns acquire staging paths, materialization session lifecycle, planning-step-to-split-intent adaptation, evaluation fulfillment, state DB staging, partial commit wiring, successful cleanup, and preserve-on-failure behavior. Corpus Split Materialization fulfills Split Intents and owns staged/committed candidate loading, target assessment, pull execution, chunk writing, source reuse, and validation of history/evaluation parquet datasets. Validation includes active required source columns, so a dataset with null required source columns cannot be reused or promoted. Its public session interface stays small; private implementation keeps parquet IO, source reuse, acquisition pulls, invariant checks, and materializer control flow local. History extension materializes a missing prefix; evaluation extension materializes missing prefix/suffix ranges around reusable overlap.
+Corpus Acquisition Stage owns acquire staging paths, materialization session lifecycle, planning-to-intent adaptation, blocks fulfillment, state DB staging, partial commit wiring, successful cleanup, and preserve-on-failure behavior. Corpus Split Materialization fulfills the blocks intent and owns staged/committed candidate loading, target assessment, pull execution, chunk writing, source reuse, and validation of the blocks parquet dataset. Validation includes active required source columns, so a corpus with null required source columns cannot be reused or promoted. Its public session interface stays small; private implementation keeps parquet IO, source reuse, acquisition pulls, invariant checks, and materializer control flow local.
 
-The dataset manifest is split-first. `history` and `evaluation` each record requested timestamps/blocks, observed coverage, validation status/issues, and materialization outcome. Coverage owns observed rows and ranges; validation owns cleanliness and issues. Downstream coverage checks read the split manifests directly instead of reconstructing corpus windows from flat manifest fields.
+The corpus manifest records the requested blocks range, observed coverage, validation status/issues, materialization outcome, chain metadata, and source requirements. Coverage owns observed rows and ranges; validation owns cleanliness and issues.
 
 The acquire workflow supplies a Workflow Config, resolved paths, and a block source constructed with corpus-derived source requirements. It does not know feature-source policy, requirement-to-provider mapping, capability planning, split materialization, refill, staging, or publication ordering.
 
@@ -51,7 +51,7 @@ The acquire workflow supplies a Workflow Config, resolved paths, and a block sou
 Training and evaluation workflows ask corpus coverage whether the stored block windows satisfy the temporal problem and feature prerequisites.
 
 ```text
-dataset manifest
+corpus manifest
   + feature prerequisites
   + temporal problem coverage requirement
   -> pass/fail before model work starts

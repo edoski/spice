@@ -150,25 +150,35 @@ def _resolve_problem(name: str | ProblemSpec) -> ProblemSpec:
     return typed.load(typed.PROBLEM, name)
 
 
-def _resolve_evaluation(name: str | None) -> EvaluatorConfig | None:
+def _resolve_evaluator(name: str | None) -> EvaluatorConfig | None:
     if name is None:
         return None
-    return typed.load(typed.EVALUATION, name)
+    return typed.load(typed.EVALUATOR, name)
 
 
-def _resolve_objective(name: str, *, evaluation_name: str | None) -> ObjectiveConfig:
+def _resolve_training_cutoff(
+    selection: TrainWorkflowSelection | TuneWorkflowSelection,
+    frame: SurfaceFrame,
+) -> int | None:
+    evaluations_name = _selected(selection.evaluations, frame.evaluations)
+    if evaluations_name is None:
+        return None
+    return typed.load(typed.EVALUATIONS, evaluations_name).training_cutoff_timestamp
+
+
+def _resolve_objective(name: str, *, evaluator_name: str | None) -> ObjectiveConfig:
     objective = typed.load(typed.OBJECTIVE, name)
     expected_evaluation = _objective_evaluator_id(objective)
     if expected_evaluation is None:
         return objective
-    if evaluation_name is None:
+    if evaluator_name is None:
         raise ConfigResolutionError(
-            f"objective {name} requires evaluation {expected_evaluation}"
+            f"objective {name} requires evaluator {expected_evaluation}"
         )
-    if expected_evaluation != evaluation_name:
+    if expected_evaluation != evaluator_name:
         raise ConfigResolutionError(
-            f"objective {name} requires evaluation {expected_evaluation}, "
-            f"got {evaluation_name}"
+            f"objective {name} requires evaluator {expected_evaluation}, "
+            f"got {evaluator_name}"
         )
     return objective
 
@@ -200,8 +210,8 @@ def _resolve_model_workflow_fields(
     require_tuning: bool,
     allow_tuned_variant: bool,
 ) -> ResolvedModelWorkflowFields:
-    evaluation_name = _selected(selection.evaluation, frame.evaluation.id)
-    dataset = typed.load(typed.DATASET, frame.dataset)
+    evaluator_name = _selected(selection.evaluator, frame.evaluator.id)
+    corpus = typed.load(typed.CORPUS, frame.corpus)
     chain = typed.load(
         typed.CHAIN,
         _required_value(_selected(selection.chain, frame.chain), "chain"),
@@ -219,9 +229,9 @@ def _resolve_model_workflow_fields(
     prediction = typed.load(typed.PREDICTION, frame.prediction)
     objective = _resolve_objective(
         _required(_selected(selection.objective, frame.objective), "objective"),
-        evaluation_name=evaluation_name,
+        evaluator_name=evaluator_name,
     )
-    evaluation = _resolve_evaluation(evaluation_name)
+    evaluator = _resolve_evaluator(evaluator_name)
     study = _resolve_study(
         frame.study if selection.study is None else StudyConfig(name=selection.study)
     )
@@ -247,7 +257,7 @@ def _resolve_model_workflow_fields(
             problem_config=problem,
         )
     return ResolvedModelWorkflowFields(
-        dataset=dataset,
+        corpus=corpus,
         chain=chain,
         storage=storage,
         problem=problem,
@@ -256,7 +266,7 @@ def _resolve_model_workflow_fields(
         features=features,
         prediction=prediction,
         objective=objective,
-        evaluation=evaluation,
+        evaluator=evaluator,
         study=study,
         artifact=artifact,
         training=training,
@@ -268,7 +278,7 @@ def _resolve_model_workflow_fields(
 
 def _resolve_acquire_config(selection: AcquireWorkflowSelection) -> AcquireConfig:
     frame = _load_surface(selection)
-    dataset = typed.load(typed.DATASET, frame.dataset)
+    corpus = typed.load(typed.CORPUS, _required(_selected(selection.corpus, frame.corpus), "corpus"))
     chain = typed.load(
         typed.CHAIN,
         _required_value(_selected(selection.chain, frame.chain), "chain"),
@@ -303,7 +313,7 @@ def _resolve_acquire_config(selection: AcquireWorkflowSelection) -> AcquireConfi
         acquisition = _validated_config_update(acquisition, dry_run=selection.dry_run)
     return AcquireConfig(
         chain=chain,
-        dataset=dataset,
+        corpus=corpus,
         storage=storage,
         problem=problem,
         features=features,
@@ -323,8 +333,9 @@ def _resolve_train_config(selection: TrainWorkflowSelection) -> TrainConfig:
     return assemble_resolved_workflow_config(
         ResolvedTrainWorkflowFields(
             model_fields=model_fields,
-            dataset_id=selection.dataset_id,
+            corpus_id=selection.corpus_id,
             study_id=selection.study_id,
+            training_cutoff_timestamp=_resolve_training_cutoff(selection, frame),
         )
     )
 
@@ -345,15 +356,16 @@ def _resolve_tune_config(selection: TuneWorkflowSelection) -> TuneConfig:
     return assemble_resolved_workflow_config(
         ResolvedTuneWorkflowFields(
             model_fields=replace(model_fields, tuning=tuning),
-            dataset_id=_required(selection.dataset_id, "dataset_id"),
+            corpus_id=_required(selection.corpus_id, "corpus_id"),
+            training_cutoff_timestamp=_resolve_training_cutoff(selection, frame),
         )
     )
 
 
 def _resolve_evaluate_config(selection: EvaluateWorkflowSelection) -> EvaluateConfig:
-    evaluation = _resolve_evaluation(_required(selection.evaluation, "evaluation"))
-    if evaluation is None:
-        raise ConfigResolutionError("evaluation is required")
+    evaluator = _resolve_evaluator(_required(selection.evaluator, "evaluator"))
+    if evaluator is None:
+        raise ConfigResolutionError("evaluator is required")
     return assemble_resolved_workflow_config(
         ResolvedEvaluateWorkflowFields(
             storage=_resolve_storage(
@@ -362,8 +374,12 @@ def _resolve_evaluate_config(selection: EvaluateWorkflowSelection) -> EvaluateCo
                 else StorageSpec(root=selection.storage_root)
             ),
             artifact_id=_required(selection.artifact_id, "artifact_id"),
-            dataset_id=_required(selection.dataset_id, "dataset_id"),
-            evaluation=evaluation,
+            corpus_id=_required(selection.corpus_id, "corpus_id"),
+            evaluation_window=_required_value(
+                selection.evaluation_window,
+                "evaluation_window",
+            ),
+            evaluator=evaluator,
             delay_seconds=selection.delay_seconds,
             batch_size=final_evaluate_batch_size(selection.batch_size),
         ),

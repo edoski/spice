@@ -78,7 +78,7 @@ Corpus Assembly uses RPC acquisition through the `BlockSource` Interface:
 1. Download history, then count valid temporal samples.
 2. If valid samples are short, refill history with bounded larger lookback estimates.
 3. Download evaluation-day rows.
-4. Write dataset state and promote corpus paths atomically.
+4. Write corpus state and promote corpus paths atomically.
 
 The refill exists because nominal block timing can underestimate how much real history is needed after feature warmup, problem warmup, and row filtering.
 

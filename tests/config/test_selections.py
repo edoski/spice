@@ -40,8 +40,8 @@ def test_evaluate_selection_rejects_surface_fields() -> None:
             {
                 "surface": "current_row_fee_dynamics",
                 "artifact_id": "art_123",
-                "dataset_id": "cor_123",
-                "evaluation": "poisson_replay",
+                "corpus_id": "cor_123",
+                "evaluator": "poisson_replay",
             }
         )
 

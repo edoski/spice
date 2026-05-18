@@ -25,11 +25,11 @@ from ...storage.operator import (
     render_catalog_refresh,
     show_storage,
 )
-from ...storage.selectors import ArtifactSelector, DatasetSelector, StudySelector
+from ...storage.selectors import ArtifactSelector, CorpusSelector, StudySelector
 from ..errors import OperatorTyper
 from ..options import (
     ChainFilterOption,
-    DatasetFilterOption,
+    CorpusFilterOption,
     FeaturesFilterOption,
     ModelFilterOption,
     PredictionFilterOption,
@@ -46,7 +46,7 @@ show_app = OperatorTyper(
     help="Query stored datasets, studies, and artifacts.",
     epilog=(
         "Example:\n"
-        "  spice show artifact --chain ethereum --dataset icdcs_2026 --detail epochs"
+        "  spice show artifact --chain ethereum --corpus icdcs_2026 --detail epochs"
     ),
     no_args_is_help=True,
 )
@@ -90,17 +90,17 @@ class _StorageCliSpec:
 
 _CLI_SPECS: tuple[_StorageCliSpec, ...] = (
     _StorageCliSpec(
-        kind="dataset",
+        kind="corpus",
         selector_flags={
             "chain_name": "--chain",
-            "dataset_name": "--dataset",
+            "corpus_name": "--corpus",
         },
     ),
     _StorageCliSpec(
         kind="study",
         selector_flags={
             "chain_name": "--chain",
-            "dataset_name": "--dataset",
+            "corpus_name": "--corpus",
             "features_id": "--features",
             "prediction_id": "--prediction",
             "model_id": "--model",
@@ -112,7 +112,7 @@ _CLI_SPECS: tuple[_StorageCliSpec, ...] = (
         kind="artifact",
         selector_flags={
             "chain_name": "--chain",
-            "dataset_name": "--dataset",
+            "corpus_name": "--corpus",
             "features_id": "--features",
             "prediction_id": "--prediction",
             "model_id": "--model",
@@ -125,13 +125,13 @@ _CLI_SPECS: tuple[_StorageCliSpec, ...] = (
 _SELECTOR_FLAGS = tuple(spec.selector_flags for spec in _CLI_SPECS)
 
 
-def _dataset_selector(
+def _corpus_selector(
     *,
-    dataset_id: str | None = None,
+    corpus_id: str | None = None,
     chain: str | None,
-    dataset: str | None,
-) -> DatasetSelector:
-    return DatasetSelector(dataset_id=dataset_id, chain_name=chain, dataset_name=dataset)
+    corpus: str | None,
+) -> CorpusSelector:
+    return CorpusSelector(corpus_id=corpus_id, chain_name=chain, corpus_name=corpus)
 
 
 def _raise_show_failure(outcome: StorageShowFailure) -> NoReturn:
@@ -190,7 +190,7 @@ def _run_show(
     *,
     storage_root: Path | None,
     kind: StorageRootKind,
-    selector: DatasetSelector | StudySelector | ArtifactSelector,
+    selector: CorpusSelector | StudySelector | ArtifactSelector,
     detail: str | None,
 ) -> None:
     _render_show(
@@ -209,7 +209,7 @@ def _run_delete(
     *,
     storage_root: Path | None,
     kind: StorageRootKind,
-    selector: DatasetSelector | StudySelector | ArtifactSelector,
+    selector: CorpusSelector | StudySelector | ArtifactSelector,
     cascade: bool = False,
 ) -> None:
     _handle_delete(
@@ -225,24 +225,24 @@ def _run_delete(
 
 
 @show_app.command(
-    "dataset",
+    "corpus",
     short_help="Show datasets.",
-    help="List datasets or show one dataset in detail.",
+    help="List datasets or show one corpus in detail.",
 )
 def show_dataset_command(
-    dataset_id: Annotated[
+    corpus_id: Annotated[
         str | None,
-        typer.Option("--dataset-id", metavar="DATASET_ID", help="Show this dataset root."),
+        typer.Option("--corpus-id", metavar="CORPUS_ID", help="Show this corpus root."),
     ] = None,
     chain: ChainFilterOption = None,
-    dataset: DatasetFilterOption = None,
+    corpus: CorpusFilterOption = None,
     storage_root: StorageRootReadOption = None,
     detail: DatasetDetailOption = None,
 ) -> None:
-    selector = _dataset_selector(dataset_id=dataset_id, chain=chain, dataset=dataset)
+    selector = _corpus_selector(corpus_id=corpus_id, chain=chain, corpus=corpus)
     _run_show(
         storage_root=storage_root,
-        kind="dataset",
+        kind="corpus",
         selector=selector,
         detail=None if detail is None else detail.value,
     )
@@ -259,7 +259,7 @@ def show_study_command(
         typer.Option("--study-id", metavar="STUDY_ID", help="Show this study root."),
     ] = None,
     chain: ChainFilterOption = None,
-    dataset: DatasetFilterOption = None,
+    corpus: CorpusFilterOption = None,
     features: FeaturesFilterOption = None,
     prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
@@ -271,7 +271,7 @@ def show_study_command(
     selector = StudySelector(
         study_id=study_id,
         chain_name=chain,
-        dataset_name=dataset,
+        corpus_name=corpus,
         features_id=features,
         prediction_id=prediction,
         model_id=model,
@@ -296,16 +296,16 @@ def show_artifact_command(
         str | None,
         typer.Option("--artifact-id", metavar="ARTIFACT_ID", help="Show this artifact root."),
     ] = None,
-    dataset_id: Annotated[
+    corpus_id: Annotated[
         str | None,
-        typer.Option("--dataset-id", metavar="DATASET_ID", help="Filter by dataset root."),
+        typer.Option("--corpus-id", metavar="CORPUS_ID", help="Filter by corpus root."),
     ] = None,
     study_id: Annotated[
         str | None,
         typer.Option("--study-id", metavar="STUDY_ID", help="Filter by study root."),
     ] = None,
     chain: ChainFilterOption = None,
-    dataset: DatasetFilterOption = None,
+    corpus: CorpusFilterOption = None,
     features: FeaturesFilterOption = None,
     prediction: PredictionFilterOption = None,
     model: ModelFilterOption = None,
@@ -317,10 +317,10 @@ def show_artifact_command(
 ) -> None:
     selector = ArtifactSelector(
         artifact_id=artifact_id,
-        dataset_id=dataset_id,
+        corpus_id=corpus_id,
         study_id=study_id,
         chain_name=chain,
-        dataset_name=dataset,
+        corpus_name=corpus,
         features_id=features,
         prediction_id=prediction,
         model_id=model,
@@ -388,16 +388,16 @@ def refresh_catalog_command(
 
 
 @delete_app.command(
-    "dataset",
-    short_help="Delete one dataset.",
+    "corpus",
+    short_help="Delete one corpus.",
     help=(
-        "Delete exactly one dataset. Use --cascade to also delete dependent studies and artifacts."
+        "Delete exactly one corpus. Use --cascade to also delete dependent studies and artifacts."
     ),
 )
 def delete_dataset_command(
-    dataset_id: Annotated[
+    corpus_id: Annotated[
         str,
-        typer.Option("--dataset-id", metavar="DATASET_ID", help="Delete this dataset root."),
+        typer.Option("--corpus-id", metavar="CORPUS_ID", help="Delete this corpus root."),
     ],
     storage_root: StorageRootDeleteOption = None,
     cascade: Annotated[
@@ -407,7 +407,7 @@ def delete_dataset_command(
 ) -> None:
     _run_delete(
         storage_root=storage_root,
-        kind="dataset",
-        selector=DatasetSelector(dataset_id=dataset_id),
+        kind="corpus",
+        selector=CorpusSelector(corpus_id=corpus_id),
         cascade=cascade,
     )

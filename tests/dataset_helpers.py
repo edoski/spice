@@ -36,7 +36,6 @@ def required_dataset_blocks(config: TrainTuneWorkflowConfig) -> int:
             / block_interval_seconds
         )
         + contract.warmup_rows
-        + contract.sample_count
         + 8
     )
     return max(64, required_blocks)

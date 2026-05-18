@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Execution Policy - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>Execution Policy</h1>
+      <p class="lede">Execution policies define what a decoded model decision means in time and how to judge whether that decision was reachable, missed a deadline, or mapped to a realized block outcome.</p>
+      <div class="meta">
+        <span class="pill">src/spice/temporal/execution_policy</span>
+        <span class="pill">Docs: ARCHITECTURE.md, IMPLEMENTATIONS.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>They sit between prediction decoding and evaluation. Prediction can choose an offset; execution policy explains how that offset behaves in the simulated temporal world.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>If prediction says &quot;choose action slot 3&quot;, execution policy says whether slot 3 exists, whether it arrived before the deadline, and which fee outcome it produces.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>base.py</code></div><div>Defines execution-policy config, prepared action spaces, temporal outcome facts, realized selections, decoded offsets, and compiled contracts.</div>
+<div><code>strict_deadline_miss.py</code></div><div>Concrete policy where decisions that miss the deadline are treated strictly and overflow action slots are handled explicitly.</div>
+<div><code>__init__.py</code></div><div>Execution-policy package boundary.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>Prepare an action space for each sample.</li>
+<li>Prepare temporal outcome facts from the problem store.</li>
+<li>Prediction decodes offset selections.</li>
+<li>Policy realizes those selections into comparable outcome batches.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Action space</h3><p>The legal candidate offsets for a sample. Some offsets may be masked out.</p>
+<h3>Deadline miss</h3><p>A model can choose an action that is too late. The policy defines how costly or invalid that is.</p>
+<h3>Reachable optimum</h3><p>The best possible valid action under the same constraints, used as a benchmark.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-temporal.html">Temporal</a><a href="spice-prediction.html">Prediction</a><a href="spice-evaluation.html">Evaluation</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/temporal/execution_policy/ARCHITECTURE.md">ARCHITECTURE.md</a>, <a href="../../src/spice/temporal/execution_policy/IMPLEMENTATIONS.md">IMPLEMENTATIONS.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

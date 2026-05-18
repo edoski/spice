@@ -32,14 +32,14 @@ from ._models import (
 @dataclass(frozen=True, slots=True)
 class BenchmarkArtifactSource:
     artifact_id: str
-    dataset_id: str
+    corpus_id: str
 
 
 @dataclass(frozen=True, slots=True)
 class PreparedBenchmarkRootSelection:
     selection: WorkflowSelection
     artifact_from_run_id: str | None
-    artifact_source_dataset_id: str | None
+    artifact_source_corpus_id: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,27 +85,27 @@ class BenchmarkProducedRootIndex:
         facts = self._produced_facts_for_run(artifact_from_run_id)
         if facts is None or facts.produced_artifact_id is None:
             raise ConfigResolutionError("artifact_from may reference train steps only")
-        if facts.produced_artifact_dataset_id is None:
+        if facts.produced_artifact_corpus_id is None:
             raise ConfigResolutionError("artifact_from train step has incomplete root facts")
         return BenchmarkArtifactSource(
             artifact_id=facts.produced_artifact_id,
-            dataset_id=facts.produced_artifact_dataset_id,
+            corpus_id=facts.produced_artifact_corpus_id,
         )
 
-    def produced_study_dataset_ids(self) -> dict[str, str]:
+    def produced_study_corpus_ids(self) -> dict[str, str]:
         return {
-            record.facts.produced_study_id: record.facts.produced_study_dataset_id
+            record.facts.produced_study_id: record.facts.produced_study_corpus_id
             for record in self.records
             if record.facts.produced_study_id is not None
-            and record.facts.produced_study_dataset_id is not None
+            and record.facts.produced_study_corpus_id is not None
         }
 
-    def produced_artifact_dataset_ids(self) -> dict[str, str]:
+    def produced_artifact_corpus_ids(self) -> dict[str, str]:
         return {
-            record.facts.produced_artifact_id: record.facts.produced_artifact_dataset_id
+            record.facts.produced_artifact_id: record.facts.produced_artifact_corpus_id
             for record in self.records
             if record.facts.produced_artifact_id is not None
-            and record.facts.produced_artifact_dataset_id is not None
+            and record.facts.produced_artifact_corpus_id is not None
         }
 
     def _produced_facts_for_run(self, run_id: str) -> BenchmarkRootFacts | None:
@@ -195,12 +195,12 @@ class BenchmarkPlanLedgerMaterializer:
         ):
             study_id = self.produced_roots.dependency_study_id(dependencies.local_run_ids)
             selection = workflow_selection.model_copy(
-                update={"study_id": study_id, "dataset_id": None}
+                update={"study_id": study_id, "corpus_id": None}
             )
             return PreparedBenchmarkRootSelection(
                 selection=selection,
                 artifact_from_run_id=dependencies.artifact_from_run_id,
-                artifact_source_dataset_id=None,
+                artifact_source_corpus_id=None,
             )
         if (
             isinstance(workflow_selection, EvaluateWorkflowSelection)
@@ -210,20 +210,20 @@ class BenchmarkPlanLedgerMaterializer:
                 dependencies.artifact_from_run_id
             )
             updates: dict[str, object] = {"artifact_id": source.artifact_id}
-            dataset_id = workflow_selection.dataset_id
-            if dataset_id is None:
-                dataset_id = source.dataset_id
-                updates["dataset_id"] = dataset_id
+            corpus_id = workflow_selection.corpus_id
+            if corpus_id is None:
+                corpus_id = source.corpus_id
+                updates["corpus_id"] = corpus_id
             selection = workflow_selection.model_copy(update=updates)
             return PreparedBenchmarkRootSelection(
                 selection=selection,
                 artifact_from_run_id=dependencies.artifact_from_run_id,
-                artifact_source_dataset_id=source.dataset_id,
+                artifact_source_corpus_id=source.corpus_id,
             )
         return PreparedBenchmarkRootSelection(
             selection=workflow_selection,
             artifact_from_run_id=dependencies.artifact_from_run_id,
-            artifact_source_dataset_id=None,
+            artifact_source_corpus_id=None,
         )
 
     def _finalize_roots(
@@ -236,23 +236,23 @@ class BenchmarkPlanLedgerMaterializer:
     ) -> FinalizedBenchmarkRoots:
         root_facts = materialize_workflow_root_facts(
             config,
-            known_study_dataset_ids=self.produced_roots.produced_study_dataset_ids(),
-            known_artifact_dataset_ids=self.produced_roots.produced_artifact_dataset_ids(),
-            artifact_source_dataset_id=prepared.artifact_source_dataset_id,
+            known_study_corpus_ids=self.produced_roots.produced_study_corpus_ids(),
+            known_artifact_corpus_ids=self.produced_roots.produced_artifact_corpus_ids(),
+            artifact_source_corpus_id=prepared.artifact_source_corpus_id,
         )
         consumed = root_facts.consumed
         produced = root_facts.produced
         facts = BenchmarkRootFacts(
-            consumed_dataset_id=consumed.dataset_id,
+            consumed_corpus_id=consumed.corpus_id,
             consumed_study_id=consumed.study_id,
-            consumed_study_dataset_id=root_facts.consumed_study_dataset_id,
+            consumed_study_corpus_id=root_facts.consumed_study_corpus_id,
             consumed_artifact_id=consumed.artifact_id,
-            consumed_artifact_dataset_id=root_facts.consumed_artifact_dataset_id,
+            consumed_artifact_corpus_id=root_facts.consumed_artifact_corpus_id,
             produced_study_id=produced.study_id,
-            produced_study_dataset_id=root_facts.produced_study_dataset_id,
+            produced_study_corpus_id=root_facts.produced_study_corpus_id,
             produced_artifact_id=produced.artifact_id,
-            produced_artifact_dataset_id=root_facts.produced_artifact_dataset_id,
-            artifact_source_dataset_id=root_facts.source.artifact_dataset_id,
+            produced_artifact_corpus_id=root_facts.produced_artifact_corpus_id,
+            artifact_source_corpus_id=root_facts.source.artifact_corpus_id,
         )
         return FinalizedBenchmarkRoots(
             facts=facts,
@@ -277,15 +277,15 @@ def _benchmark_root_ledger_entries(
     artifact_from_run_id: str | None,
 ) -> list[BenchmarkRootLedgerEntry]:
     entries: list[BenchmarkRootLedgerEntry] = []
-    if facts.consumed_dataset_id is not None:
+    if facts.consumed_corpus_id is not None:
         entries.append(
             BenchmarkRootLedgerEntry(
                 run_id=run_id,
                 workflow=workflow,
                 role="consumed",
-                root_kind="dataset",
-                root_id=facts.consumed_dataset_id,
-                dataset_id=facts.consumed_dataset_id,
+                root_kind="corpus",
+                root_id=facts.consumed_corpus_id,
+                corpus_id=facts.consumed_corpus_id,
             )
         )
     if facts.consumed_study_id is not None:
@@ -297,7 +297,7 @@ def _benchmark_root_ledger_entries(
                 root_kind="study",
                 root_id=facts.consumed_study_id,
                 study_id=facts.consumed_study_id,
-                dataset_id=facts.consumed_study_dataset_id,
+                corpus_id=facts.consumed_study_corpus_id,
             )
         )
     if facts.consumed_artifact_id is not None:
@@ -309,7 +309,7 @@ def _benchmark_root_ledger_entries(
                 root_kind="artifact",
                 root_id=facts.consumed_artifact_id,
                 artifact_id=facts.consumed_artifact_id,
-                dataset_id=facts.consumed_artifact_dataset_id,
+                corpus_id=facts.consumed_artifact_corpus_id,
                 source_run_id=artifact_from_run_id,
             )
         )
@@ -322,7 +322,7 @@ def _benchmark_root_ledger_entries(
                 root_kind="study",
                 root_id=facts.produced_study_id,
                 study_id=facts.produced_study_id,
-                dataset_id=facts.produced_study_dataset_id,
+                corpus_id=facts.produced_study_corpus_id,
             )
         )
     if facts.produced_artifact_id is not None:
@@ -334,18 +334,18 @@ def _benchmark_root_ledger_entries(
                 root_kind="artifact",
                 root_id=facts.produced_artifact_id,
                 artifact_id=facts.produced_artifact_id,
-                dataset_id=facts.produced_artifact_dataset_id,
+                corpus_id=facts.produced_artifact_corpus_id,
             )
         )
-    if facts.artifact_source_dataset_id is not None:
+    if facts.artifact_source_corpus_id is not None:
         entries.append(
             BenchmarkRootLedgerEntry(
                 run_id=run_id,
                 workflow=workflow,
                 role="source",
-                root_kind="dataset",
-                root_id=facts.artifact_source_dataset_id,
-                dataset_id=facts.artifact_source_dataset_id,
+                root_kind="corpus",
+                root_id=facts.artifact_source_corpus_id,
+                corpus_id=facts.artifact_source_corpus_id,
                 source_run_id=artifact_from_run_id,
             )
         )

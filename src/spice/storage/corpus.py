@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..core.errors import MissingStateError
-from ..corpus.metadata import AcquireRunRecord, DatasetManifest
+from ..corpus.metadata import AcquireRunRecord, CorpusManifest
 from .corpus_codecs import ACQUIRE_RUN_CODEC, DATASET_MANIFEST_CODEC
 from .engine import (
     DATASET_ROOT_KIND,
@@ -29,13 +29,13 @@ _ACQUIRE_RUN_STORE = SequencePayloadStore(
 )
 
 
-def write_dataset_state(
+def write_corpus_state(
     db_path: Path,
     *,
-    manifest: DatasetManifest,
+    manifest: CorpusManifest,
     acquire_run: AcquireRunRecord,
 ) -> None:
-    """Persist the dataset manifest once and append one acquire-run delta record."""
+    """Persist the corpus manifest once and append one acquire-run delta record."""
 
     ensure_state_db(db_path, root_kind=DATASET_ROOT_KIND, tables=DATASET_TABLES)
     engine = create_state_engine(db_path)
@@ -48,18 +48,18 @@ def write_dataset_state(
         engine.dispose()
 
 
-def load_dataset_manifest(db_path: Path) -> DatasetManifest:
-    """Load the canonical dataset manifest that owns corpus provenance."""
+def load_corpus_manifest(db_path: Path) -> CorpusManifest:
+    """Load the canonical corpus manifest that owns corpus provenance."""
 
     if not db_path.is_file():
-        raise MissingStateError(f"Missing dataset manifest: {db_path}")
+        raise MissingStateError(f"Missing corpus manifest: {db_path}")
     require_root_kind(db_path, DATASET_ROOT_KIND)
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
             manifest = _DATASET_MANIFEST_STORE.load(conn)
         if manifest is None:
-            raise MissingStateError(f"Missing dataset manifest: {db_path}")
+            raise MissingStateError(f"Missing corpus manifest: {db_path}")
         return manifest
     finally:
         engine.dispose()

@@ -80,13 +80,13 @@ class _FakeSession:
 
 
 def _dataset_record(root_path: Path):
-    return dataset_record(root_path, dataset_name="current_row_fee_dynamics")
+    return dataset_record(root_path, corpus_name="current_row_fee_dynamics")
 
 
 def _artifact_record(root_path: Path):
     return artifact_record(
         root_path,
-        dataset_name="current_row_fee_dynamics",
+        corpus_name="current_row_fee_dynamics",
         features_id="current_row_fee_dynamics",
         prediction_id="icdcs_2026",
         model_id="lstm",
@@ -112,13 +112,13 @@ def test_storage_transfer_transaction_pushes_dataset_to_canonical_corpus_destina
         session=cast(ExecutionSession, session),
     )
 
-    pushed = transaction.push_root(RootKind.CORPUS, record.dataset_id, replace=False)
+    pushed = transaction.push_root(RootKind.CORPUS, record.corpus_id, replace=False)
 
     assert pushed.source_record == record
     assert pushed.destination_record == record
     assert pushed.root_kind is RootKind.CORPUS
     assert session.captured["destination_root"] == (
-        remote_storage_root / "corpora" / record.chain_name / record.dataset_id
+        remote_storage_root / "corpora" / record.chain_name / record.corpus_id
     )
     staged_root = session.captured["staged_root"]
     assert isinstance(staged_root, Path)
@@ -258,7 +258,7 @@ def test_storage_transfer_transaction_cleanup_failure_preserves_primary_exceptio
     )
 
     with pytest.raises(RuntimeError, match="finalize-stage failed") as exc_info:
-        transaction.push_root(RootKind.CORPUS, record.dataset_id, replace=True)
+        transaction.push_root(RootKind.CORPUS, record.corpus_id, replace=True)
 
     assert "cleanup failed" in "\n".join(exc_info.value.__notes__)
 

@@ -13,9 +13,8 @@ from spice.corpus.metadata import (
     CompactValidationReport,
     CorpusAcquisitionSourceRequirements,
     CorpusSplitManifest,
-    CorpusSplitManifests,
-    DatasetIdentity,
-    DatasetManifest,
+    CorpusIdentity,
+    CorpusManifest,
     SplitCoverageMetadata,
     SplitMaterializationMetadata,
     SplitRequestMetadata,
@@ -29,23 +28,16 @@ def _manifest(
     history_seconds: int,
     history_rows: int,
     required_columns: frozenset[str] | None = None,
-) -> DatasetManifest:
-    history = _split_manifest(
-        "history",
+) -> CorpusManifest:
+    blocks = _split_manifest(
+        "blocks",
         start_timestamp=1000,
         end_timestamp=1000 + history_seconds,
         first_block=1,
         rows=history_rows,
     )
-    evaluation = _split_manifest(
-        "evaluation",
-        start_timestamp=2000,
-        end_timestamp=2100,
-        first_block=10_000,
-        rows=64,
-    )
-    return DatasetManifest(
-        dataset=DatasetIdentity(id="cor_test", name="test"),
+    return CorpusManifest(
+        corpus=CorpusIdentity(id="cor_test", name="test"),
         chain=ChainMetadata(
             name="ethereum",
             runtime=ChainRuntimeSpec(
@@ -54,7 +46,7 @@ def _manifest(
                 nominal_block_time_seconds=12.0,
             ),
         ),
-        splits=CorpusSplitManifests(history=history, evaluation=evaluation),
+        blocks=blocks,
         source_requirements=CorpusAcquisitionSourceRequirements(
             required_columns=(
                 required_columns
@@ -120,7 +112,7 @@ def test_training_corpus_coverage_accepts_compiled_requirement(
         load_workflow_config(
             WorkflowTask.TRAIN,
             workspace=tmp_path,
-            override=model_workflow_override(sample_count=4, lookback_seconds=24),
+            override=model_workflow_override(lookback_seconds=24),
         ),
     )
     feature_contract = compile_feature_contract(features=config.features)
@@ -152,7 +144,7 @@ def test_training_corpus_coverage_rejects_short_history(
         load_workflow_config(
             WorkflowTask.TRAIN,
             workspace=tmp_path,
-            override=model_workflow_override(sample_count=4, lookback_seconds=24),
+            override=model_workflow_override(lookback_seconds=24),
         ),
     )
     feature_contract = compile_feature_contract(features=config.features)
@@ -163,7 +155,7 @@ def test_training_corpus_coverage_rejects_short_history(
     )
     requirement = training_coverage_requirement(contract)
 
-    with pytest.raises(StateConflictError, match="history coverage is insufficient"):
+    with pytest.raises(StateConflictError, match="corpus coverage is insufficient"):
         validate_corpus_coverage(
             _manifest(
                 history_seconds=requirement.history_seconds - 1,
@@ -185,7 +177,7 @@ def test_training_corpus_coverage_rejects_missing_source_columns(
         load_workflow_config(
             WorkflowTask.TRAIN,
             workspace=tmp_path,
-            override=model_workflow_override(sample_count=4, lookback_seconds=24),
+            override=model_workflow_override(lookback_seconds=24),
         ),
     )
     feature_contract = compile_feature_contract(features=config.features)

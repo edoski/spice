@@ -19,7 +19,7 @@ If the catalog is missing or stale, it can be refreshed from roots.
 
 | Table | Indexed root |
 | --- | --- |
-| `dataset_index` | Corpus roots. |
+| `corpus_index` | Corpus roots. |
 | `study_index` | Study roots. |
 | `artifact_index` | Artifact roots. |
 

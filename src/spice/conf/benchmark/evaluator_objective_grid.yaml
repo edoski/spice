@@ -5,11 +5,14 @@ cases:
       training: default
       split: default
       study: evaluator_objective_grid
+      evaluation_window:
+        start: "2026-02-03T14:00:00Z"
+        duration_seconds: 7200
     dimensions:
       data:
-        - set: {chain: ethereum, dataset_id: cor_9a73b1e88edb488afb1e}
-        - set: {chain: polygon, dataset_id: cor_415186063685f5b7588f}
-        - set: {chain: avalanche, dataset_id: cor_91fa9b80b6014317c148}
+        - set: {chain: ethereum, corpus_id: cor_9a73b1e88edb488afb1e}
+        - set: {chain: polygon, corpus_id: cor_415186063685f5b7588f}
+        - set: {chain: avalanche, corpus_id: cor_91fa9b80b6014317c148}
       models:
         - set:
             model: lstm
@@ -27,35 +30,11 @@ cases:
         workflow: train
         set:
           objective: profit_poisson_replay
-          evaluation: poisson_replay
-          variant: baseline
-      - id: train_full_objective
-        workflow: train
-        set:
-          objective: profit_full_temporal_replay
-          evaluation: full_temporal_replay
+          evaluator: poisson_replay
           variant: baseline
       - id: evaluate_poisson_artifact_with_poisson
         workflow: evaluate
         after: [train_poisson_objective]
         artifact_from: train_poisson_objective
         set:
-          evaluation: poisson_replay
-      - id: evaluate_poisson_artifact_with_full
-        workflow: evaluate
-        after: [train_poisson_objective]
-        artifact_from: train_poisson_objective
-        set:
-          evaluation: full_temporal_replay
-      - id: evaluate_full_artifact_with_poisson
-        workflow: evaluate
-        after: [train_full_objective]
-        artifact_from: train_full_objective
-        set:
-          evaluation: poisson_replay
-      - id: evaluate_full_artifact_with_full
-        workflow: evaluate
-        after: [train_full_objective]
-        artifact_from: train_full_objective
-        set:
-          evaluation: full_temporal_replay
+          evaluator: poisson_replay

@@ -21,11 +21,11 @@ def run(config: TrainConfig, *, reporter: Reporter | None = None) -> None:
     spec = prepared.spec
     active_reporter.header("train", train_workflow_facts(prepared.active_config, roots))
     artifact_dir = roots.artifact.root_path
-    history_block_path = roots.corpus.history_dir
+    block_path = roots.corpus.blocks_dir
     committed = commit_artifact_root(
         roots.artifact,
         writer=lambda staged_root: run_persisted_training(
-            history_block_path,
+            block_path,
             spec=spec,
             artifact_dir=staged_root,
             callbacks=train_reporting_callbacks(active_reporter, spec=spec),

@@ -12,8 +12,9 @@ from ..config.models import (
     TuneConfig,
 )
 from ..core.errors import MissingStateError, StateConflictError
-from ..corpus.metadata import DatasetManifest
+from ..corpus.metadata import CorpusManifest
 from ..modeling.pipeline import compile_training_context
+from ..modeling.results import TrainingSourceProvenance
 from ..semantics import StudySemantics
 from .engine import STUDY_ROOT_KIND, create_state_engine, ensure_state_db, require_root_kind
 from .identity import (
@@ -44,7 +45,7 @@ def manifest_from_tune_config(
     *,
     corpus: CorpusRootHandle,
     study: StudyRootHandle,
-    corpus_manifest: DatasetManifest,
+    corpus_manifest: CorpusManifest,
 ) -> StudyManifest:
     """Build the canonical study manifest from one validated tuning definition."""
 
@@ -57,11 +58,16 @@ def manifest_from_tune_config(
         dataset_builder=config.dataset_builder,
         prediction=config.prediction,
         objective=config.objective,
-        evaluation=config.evaluation,
+        evaluator=config.evaluator,
         study_name=study.study_name,
         chain_name=corpus_manifest.chain.name,
-        dataset_id=corpus.dataset_id,
-        dataset_name=corpus_manifest.dataset.name,
+        corpus_id=corpus.corpus_id,
+        corpus_name=corpus_manifest.corpus.name,
+        training_source=_training_source_from_corpus_manifest(
+            corpus.corpus_id,
+            training_cutoff_timestamp=config.training_cutoff_timestamp,
+            corpus_manifest=corpus_manifest,
+        ),
         problem=config.problem,
         features=config.features,
         model=config.model,
@@ -82,6 +88,36 @@ def manifest_from_tune_config(
             input_normalization=context.input_normalization_contract.semantics,
             representation=context.representation_contract.semantics,
             dataset_builder=context.dataset_builder_contract.semantics,
+        ),
+    )
+
+
+def _training_source_from_corpus_manifest(
+    corpus_id: str,
+    *,
+    training_cutoff_timestamp: int | None,
+    corpus_manifest: CorpusManifest,
+) -> TrainingSourceProvenance:
+    blocks = corpus_manifest.blocks
+    coverage = blocks.coverage
+    if (
+        coverage.first_block is None
+        or coverage.last_block is None
+        or coverage.first_timestamp is None
+        or coverage.last_timestamp is None
+    ):
+        raise StateConflictError("Training corpus manifest is missing block coverage")
+    return TrainingSourceProvenance(
+        corpus_id=corpus_id,
+        window_start_timestamp=blocks.request.start_timestamp,
+        window_end_timestamp=blocks.request.end_timestamp,
+        first_block=coverage.first_block,
+        last_block=coverage.last_block,
+        first_timestamp=coverage.first_timestamp,
+        last_timestamp=coverage.last_timestamp,
+        training_cutoff_timestamp=training_cutoff_timestamp,
+        source_requirements_fingerprint=(
+            corpus_manifest.source_requirements.fingerprint()
         ),
     )
 
@@ -145,7 +181,7 @@ def validate_tuned_artifact_definition(
     *,
     manifest: StudyManifest,
     study_id: str,
-    dataset_id: str,
+    corpus_id: str,
 ) -> None:
     """Reject tuned artifacts whose identity diverges from the stored study."""
 
@@ -155,8 +191,8 @@ def validate_tuned_artifact_definition(
             config,
             study_id=study_id,
             chain_name=manifest.chain_name,
-            dataset_id=dataset_id,
-            dataset_name=manifest.dataset_name,
+            corpus_id=corpus_id,
+            corpus_name=manifest.corpus_name,
         ),
     )
     if mismatches:

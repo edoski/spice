@@ -8,7 +8,7 @@ Checked-in YAML specs define runnable experiments without Python edits. A surfac
 
 ```yaml
 chain: ethereum
-dataset: icdcs_2026
+corpus: icdcs_2026
 features: core_fee_dynamics
 problem: current_row_nominal
 dataset_builder: fixed_sequence_temporal
@@ -18,7 +18,8 @@ objective: profit_poisson_replay
 acquisition: {provider: publicnode}
 training: {id: default, split: default}
 tuning: {id: default, space: lstm_fixed_context}
-evaluation: {id: poisson_replay}
+evaluator: {id: poisson_replay}
+evaluations: null
 ```
 
 Producer workflow selections may override surface fields by name. Evaluation is a root consumer: it selects an existing artifact and corpus by id, plus evaluator/runtime controls.
@@ -28,7 +29,7 @@ The surface YAML uses targeted nesting where the nesting matches ownership:
 | Field | Meaning |
 | --- | --- |
 | `chain` | Chain spec used for runtime chain id, POA handling, and nominal block time. |
-| `dataset` | Corpus/evaluation-date spec. |
+| `corpus` | Acquired block-range spec. |
 | `features` | Feature catalog/output spec. |
 | `problem` | Temporal problem spec. |
 | `dataset_builder` | Training/evaluation dataset builder. |
@@ -40,7 +41,8 @@ The surface YAML uses targeted nesting where the nesting matches ownership:
 | `training.split` | Split spec. |
 | `tuning.id` | Optuna runtime spec. |
 | `tuning.space` | Tuning search-space spec. |
-| `evaluation.id` | Evaluator spec used by train/tune objectives. |
+| `evaluator.id` | Evaluator spec used by train/tune objectives and evaluate runs. |
+| `evaluations` | Optional reusable suite of named evaluation windows. |
 
 ## Current Specs
 
@@ -48,7 +50,7 @@ Chains: `ethereum`, `polygon`, `avalanche`.
 
 Providers: `publicnode`, `tenderly`.
 
-Dataset: `icdcs_2026`.
+Corpus: `icdcs_2026`.
 
 Features: `core_fee_dynamics` is the canonical no-priority safe catalog. `core_fee_dynamics_with_priority_fee` adds lagged priority-fee scalars and p50/spread local trends. `core_fee_dynamics_elapsed_position` is the elapsed-position ablation catalog; it is identical to `core_fee_dynamics` plus `elapsed_seconds`, a corpus-position signal.
 
@@ -65,7 +67,7 @@ Dataset builders:
 
 - `fixed_sequence_temporal`: derives and persists one fixed context length from training data.
 
-Evaluators: `poisson_replay` and `full_temporal_replay`. The default surface uses `poisson_replay`; `full_temporal_replay` is available as a sibling evaluator and objective.
+Evaluators: `poisson_replay`. The default surface uses `poisson_replay`.
 
 Benchmarks: `priority_fee_ablation`, `safe_baseline_grid`, `large_capacity_hpo`, `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, `delay_degradation_sweep`, and `evaluator_objective_grid`.
 
@@ -73,4 +75,4 @@ Benchmarks: `priority_fee_ablation`, `safe_baseline_grid`, `large_capacity_hpo`,
 
 ## Invariants
 
-Config ids name concrete specs. Surface fields point at existing specs. Evaluation objectives declare `evaluator_id`, and train/tune selected evaluation config ids must match it. Estimated-block runnable paths are archived, not available as current configs.
+Config ids name concrete specs. Surface fields point at existing specs. Evaluation objectives declare `evaluator_id`, and train/tune selected evaluator config ids must match it. Estimated-block runnable paths are archived, not available as current configs.

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RPC Acquisition - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>RPC Acquisition</h1>
+      <p class="lede">RPC acquisition is the concrete block source that talks to Ethereum-compatible JSON-RPC endpoints through Web3. It enriches block headers with fee-history and priority-fee information needed by later features.</p>
+      <div class="meta">
+        <span class="pill">src/spice/acquisition/rpc</span>
+        <span class="pill">Docs: ARCHITECTURE.md, IMPLEMENTATIONS.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>It implements the acquisition source interface used by <code>spice.acquisition.pull</code> and feeds corpus assembly.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>This module is the network adapter. The generic puller asks for block ranges; the RPC client translates that into batched JSON-RPC calls, handles provider retry behavior, and returns typed block rows.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>client.py</code></div><div>Defines block header parsing, fee-history enrichment, supported enrichment flags, and <code>BlockRpcClient</code>.</div>
+<div><code>transport.py</code></div><div>Builds retrying async Web3 transports with project user-agent and retry configuration.</div>
+<div><code>__init__.py</code></div><div>Exports the RPC acquisition package boundary.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>Build an async Web3 transport for a provider endpoint.</li>
+<li>Fetch headers and fee history for the requested range.</li>
+<li>Build canonical row data for each block.</li>
+<li>Let the generic pull controller handle scheduling and validation.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Fee history enrichment</h3><p>Headers alone are not enough for fee modeling. Fee history calls supply reward percentile data and base-fee context.</p>
+<h3>Batch transport</h3><p>Many RPC calls are grouped to reduce network overhead, but the adaptive controller still protects providers from oversized requests.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-acquisition.html">Acquisition</a><a href="spice-corpus.html">Corpus</a><a href="spice-conf.html">Checked-In Config Specs</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/acquisition/rpc/ARCHITECTURE.md">ARCHITECTURE.md</a>, <a href="../../src/spice/acquisition/rpc/IMPLEMENTATIONS.md">IMPLEMENTATIONS.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

@@ -59,10 +59,6 @@ def _poisson_config() -> dict[str, str | int | float]:
     }
 
 
-def _full_config() -> dict[str, str]:
-    return {"id": "full_temporal_replay"}
-
-
 def _execution_policy():
     return compile_execution_policy_contract(
         coerce_execution_policy_config({"id": "strict_deadline_miss"})
@@ -83,15 +79,6 @@ def test_evaluator_config_supports_explicit_temporal_replay_specs() -> None:
     assert contract.accepted_decoded_result_id == OFFSET_DECODED_RESULT_ID
     assert contract.primary_metric_id == "profit_over_baseline"
     assert contract.primary_metric_descriptor.direction == "maximize"
-
-    full_config = coerce_evaluator_config(_full_config())
-    full_contract = compile_evaluator_contract(full_config)
-
-    assert full_config.id == "full_temporal_replay"
-    assert full_contract.evaluator_id == "full_temporal_replay"
-    assert full_contract.config == full_config
-    assert full_contract.accepted_decoded_result_id == OFFSET_DECODED_RESULT_ID
-    assert full_contract.metric_descriptors == contract.metric_descriptors
 
     with pytest.raises(ConfigResolutionError, match="Extra inputs"):
         coerce_evaluator_config({**_poisson_config(), "engine": "replay"})
@@ -209,28 +196,6 @@ def test_poisson_replay_reports_event_summary_metadata() -> None:
         end = cast(int | float, run.metadata["window_end_timestamp"])
         assert start < end
     assert all("overflow_count" in run.metadata for run in summary.runs)
-
-
-def test_full_temporal_replay_scores_every_supplied_sample_once() -> None:
-    store = _store()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-    offsets = DecodedOffsets(torch.tensor([0, 1, 0, 1], dtype=torch.int64))
-    evaluator = compile_evaluator_contract(coerce_evaluator_config(_full_config()))
-
-    summary = evaluator.run(
-        store,
-        _execution_policy(),
-        offsets,
-        _action_space(store, sample_indices),
-    )
-
-    assert summary.total_events == store.n_samples
-    assert summary.runs[0].n_events == store.n_samples
-    assert summary.runs[0].metadata["mode"] == "full_temporal_replay"
-    assert summary.runs[0].metadata["sample_count"] == store.n_samples
-    assert set(summary.metrics.values) == {
-        descriptor.id for descriptor in evaluator.metric_descriptors
-    }
 
 
 def test_poisson_replay_handles_non_chronological_sample_indices() -> None:

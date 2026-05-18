@@ -41,8 +41,8 @@ def test_commit_corpus_acquisition_replaces_declared_paths_and_reindexes(
     monkeypatch,
 ) -> None:
     storage_root = tmp_path / "outputs"
-    root_path = storage_root / "corpora" / "ethereum" / "dataset-1"
-    source_dir = tmp_path / "stage" / "history"
+    root_path = storage_root / "corpora" / "ethereum" / "corpus-1"
+    source_dir = tmp_path / "stage" / "blocks"
     source_dir.mkdir(parents=True)
     (source_dir / "blocks.parquet").write_text("payload", encoding="utf-8")
     source_state = tmp_path / "stage" / "state.sqlite"
@@ -60,17 +60,16 @@ def test_commit_corpus_acquisition_replaces_declared_paths_and_reindexes(
         fake_reindex_catalog_root,
     )
 
-    corpus = corpus_handle(storage_root, dataset_id="dataset-1")
+    corpus = corpus_handle(storage_root, corpus_id="corpus-1")
     assert commit_corpus_acquisition(
         corpus,
-        history_dir=source_dir,
-        evaluation_dir=None,
+        blocks_dir=source_dir,
         state_db=source_state,
     ) == ReindexedCatalogRoot(
         root_kind=RootKind.CORPUS,
         record=record,
     )
-    assert (root_path / "history" / "blocks.parquet").read_text(encoding="utf-8") == "payload"
+    assert (root_path / "blocks" / "blocks.parquet").read_text(encoding="utf-8") == "payload"
     assert state_db_path(root_path).is_file()
     assert captured == {"storage_root": storage_root, "root_path": root_path}
 
@@ -80,7 +79,7 @@ def test_commit_artifact_root_derives_storage_policy_from_handle(
     monkeypatch,
 ) -> None:
     storage_root = tmp_path / "outputs"
-    corpus = corpus_handle(storage_root, dataset_id="dataset-1")
+    corpus = corpus_handle(storage_root, corpus_id="corpus-1")
     artifact = artifact_handle(storage_root, corpus=corpus, artifact_id="artifact-1")
     seen: dict[str, object] = {}
 
@@ -131,7 +130,7 @@ def test_commit_artifact_root_promotes_after_writer_success(
 
     artifact = artifact_handle(
         storage_root,
-        corpus=corpus_handle(storage_root, dataset_id="dataset-1"),
+        corpus=corpus_handle(storage_root, corpus_id="corpus-1"),
         artifact_id="artifact-1",
     )
     monkeypatch.setattr("spice.storage.transactions.staged_root", fake_staged_root)
@@ -161,7 +160,7 @@ def test_commit_artifact_root_does_not_promote_after_writer_failure(
 
     artifact = artifact_handle(
         storage_root,
-        corpus=corpus_handle(storage_root, dataset_id="dataset-1"),
+        corpus=corpus_handle(storage_root, corpus_id="corpus-1"),
         artifact_id="artifact-1",
     )
     monkeypatch.setattr("spice.storage.transactions.staged_root", fake_staged_root)
@@ -177,21 +176,19 @@ def test_commit_corpus_acquisition_validates_handle_root_layout(tmp_path: Path) 
     storage_root = tmp_path / "outputs"
     corpus = CorpusRootHandle(
         storage_root=storage_root,
-        dataset_id="dataset-1",
-        dataset_name="dataset",
+        corpus_id="corpus-1",
+        corpus_name="corpus",
         chain_name="ethereum",
-        root_path=storage_root / "corpora" / "dataset-1",
-        state_db_path=storage_root / "corpora" / "dataset-1" / ".spice" / "state.sqlite",
-        history_dir=storage_root / "corpora" / "dataset-1" / "history",
-        evaluation_dir=storage_root / "corpora" / "dataset-1" / "evaluation",
+        root_path=storage_root / "corpora" / "corpus-1",
+        state_db_path=storage_root / "corpora" / "corpus-1" / ".spice" / "state.sqlite",
+        blocks_dir=storage_root / "corpora" / "corpus-1" / "blocks",
     )
     ensure_state_db(corpus.state_db_path, root_kind=DATASET_ROOT_KIND, tables=())
 
     with pytest.raises(StateLayoutError, match="canonical <chain>/<root-id>"):
         commit_corpus_acquisition(
             corpus,
-            history_dir=None,
-            evaluation_dir=None,
+            blocks_dir=corpus.blocks_dir,
             state_db=corpus.state_db_path,
         )
 
@@ -232,7 +229,7 @@ def test_record_artifact_evaluation_state_validates_root_without_reindex(
     storage_root = tmp_path / "outputs"
     artifact = artifact_handle(
         storage_root,
-        corpus=corpus_handle(storage_root, dataset_id="dataset-1"),
+        corpus=corpus_handle(storage_root, corpus_id="corpus-1"),
         artifact_id="artifact-1",
     )
     ensure_state_db(
@@ -338,8 +335,8 @@ def test_delete_catalog_root_materializes_canonical_record_path(tmp_path: Path) 
     record = artifact_record(
         root_path,
         artifact_id="artifact-1",
-        dataset_id="dataset-1",
-        dataset_name="dataset",
+        corpus_id="corpus-1",
+        corpus_name="corpus",
         chain_name="ethereum",
         features_id="features",
         prediction_id="prediction",

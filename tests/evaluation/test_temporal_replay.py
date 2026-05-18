@@ -7,11 +7,7 @@ import pytest
 import torch
 
 from spice.core.errors import SpiceOperatorError
-from spice.evaluation.config import (
-    FullTemporalReplayEvaluatorConfig,
-    PoissonReplayEvaluatorConfig,
-)
-from spice.evaluation.full_temporal_replay import FullTemporalReplayAdapter
+from spice.evaluation.config import PoissonReplayEvaluatorConfig
 from spice.evaluation.poisson_replay import (
     PoissonReplayAdapter,
     _select_sample_positions_for_arrivals,
@@ -81,22 +77,6 @@ def test_poisson_adapter_returns_positions_in_original_sample_order() -> None:
     for selection in selections:
         sample_timestamps = samples.sample_timestamps[selection.selected_positions]
         assert sample_timestamps.tolist() == sorted(sample_timestamps.tolist())
-
-
-def test_full_temporal_replay_adapter_selects_every_sample_once() -> None:
-    samples = TemporalReplaySampleView(
-        sample_positions=np.array([0, 1, 2], dtype=np.int64),
-        sample_timestamps=np.array([180, 60, 120], dtype=np.int64),
-        sample_count=3,
-    )
-    adapter = FullTemporalReplayAdapter(
-        FullTemporalReplayEvaluatorConfig(id="full_temporal_replay")
-    )
-
-    selections = adapter.selections(samples)
-
-    assert len(selections) == 1
-    assert selections[0].selected_positions.tolist() == [0, 1, 2]
 
 
 @dataclass(frozen=True, slots=True)

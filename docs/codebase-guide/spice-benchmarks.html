@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Benchmarks - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>Benchmarks</h1>
+      <p class="lede">Benchmarks materialize experiment grids into durable workflow plans, submit them, collect evaluation results, and maintain/export result indexes.</p>
+      <div class="meta">
+        <span class="pill">src/spice/benchmarks</span>
+        <span class="pill">Docs: ARCHITECTURE.md, IMPLEMENTATIONS.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>Benchmarks coordinate config, workflows, execution, storage, and evaluation. They do not own model math or storage root internals.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>A benchmark is a controlled set of workflow runs. The plan says what to run; submission starts jobs; collection finds matching evaluation summaries; the index makes results easy to compare.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>_result_schema.py</code></div><div>Defines result-index schema details.</div>
+<div><code>_run_state_codec.py</code></div><div>Reads/writes benchmark run metadata, plan JSONL, submissions, and collection files.</div>
+<div><code>collection.py</code></div><div>Collects benchmark run results and handles root transfer selection.</div>
+<div><code>collection_resolver.py</code></div><div>Matches benchmark cases to evaluation summaries and validates provenance.</div>
+<div><code>result_index.py</code></div><div>Maintains, lists, counts, rebuilds, and exports benchmark result indexes.</div>
+<div><code>result_records.py</code></div><div>Builds benchmark result records and collection snapshots.</div>
+<div><code>runs.py</code></div><div>Creates/loads benchmark runs, records submissions, writes collection snapshots, and timestamps run paths.</div>
+<div><code>schema.py</code></div><div>Defines benchmark dimensions, problem grids, steps, cases, specs, and dependencies.</div>
+<div><code>submission.py</code></div><div>Materializes benchmark plans, submits entries, and composes job dependencies.</div>
+<div><code>plan_materialization/</code></div><div>Undocumented child implementation that expands specs into concrete workflow selections and dependencies.</div>
+<div><code>__init__.py</code></div><div>Benchmark package boundary.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>A benchmark YAML spec is loaded.</li>
+<li>Plan materialization expands dimensions into workflow entries.</li>
+<li>Submission sends entries locally or remotely with dependencies.</li>
+<li>Collection resolves produced evaluations and writes index rows.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Plan vs run</h3><p>The plan is what should happen. A run is a concrete materialized instance with metadata and submissions.</p>
+<h3>Dimension</h3><p>One axis of variation, such as model, delay, or problem choice.</p>
+<h3>Collection resolver</h3><p>The matching layer that decides which produced evaluation summary belongs to which planned benchmark case.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-conf.html">Checked-In Config Specs</a><a href="spice-config.html">Config</a><a href="spice-execution.html">Execution</a><a href="spice-evaluation.html">Evaluation</a><a href="spice-storage.html">Storage</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/benchmarks/ARCHITECTURE.md">ARCHITECTURE.md</a>, <a href="../../src/spice/benchmarks/IMPLEMENTATIONS.md">IMPLEMENTATIONS.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

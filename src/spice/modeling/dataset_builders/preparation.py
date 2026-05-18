@@ -33,6 +33,7 @@ class TrainingDatasetPreparationContext:
 @dataclass(slots=True)
 class TrainingDatasetPreparationFacts:
     split: SplitConfig
+    training_cutoff_timestamp: int | None = None
 
 
 @dataclass(slots=True)

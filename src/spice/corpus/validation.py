@@ -71,14 +71,14 @@ def _coerce_validation_frame(
     missing = [column for column in expected_columns if column not in frame.columns]
     if missing:
         raise ValueError(
-            "Block dataset is missing required validation columns: " + ", ".join(missing)
+            "Block corpus is missing required validation columns: " + ", ".join(missing)
         )
     null_required = [
         column for column in sorted(required_columns) if frame[column].null_count() > 0
     ]
     if null_required:
         raise ValueError(
-            "Block dataset has null required source columns: " + ", ".join(null_required)
+            "Block corpus has null required source columns: " + ", ".join(null_required)
         )
     return frame.select(
         [
@@ -91,7 +91,7 @@ def _coerce_validation_frame(
 
 def _summarize_validation_frame(validation_frame: pl.DataFrame) -> BlockFrameSummary:
     if validation_frame.height == 0:
-        raise ValueError("Block dataset is empty")
+        raise ValueError("Block corpus is empty")
 
     block_numbers = [int(value) for value in validation_frame["block_number"].to_list()]
     timestamps = [int(value) for value in validation_frame["timestamp"].to_list()]
@@ -125,12 +125,12 @@ def assess_block_frame_summary(
     errors: list[str] = []
     chain_id: int | None = None
     if len(summary.chain_ids) != 1:
-        errors.append("Block dataset must contain exactly one chain_id")
+        errors.append("Block corpus must contain exactly one chain_id")
     else:
         chain_id = summary.chain_ids[0]
         if chain_id != expected_chain_id:
             errors.append(
-                f"Block dataset chain_id mismatch: expected {expected_chain_id}, got {chain_id}"
+                f"Block corpus chain_id mismatch: expected {expected_chain_id}, got {chain_id}"
             )
 
     if summary.duplicate_count:

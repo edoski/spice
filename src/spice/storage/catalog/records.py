@@ -7,9 +7,9 @@ from typing import TypeAlias
 
 
 @dataclass(frozen=True, slots=True)
-class CatalogDatasetRecord:
-    dataset_id: str
-    dataset_name: str
+class CatalogCorpusRecord:
+    corpus_id: str
+    corpus_name: str
     chain_name: str
 
 
@@ -17,8 +17,8 @@ class CatalogDatasetRecord:
 class CatalogStudyRecord:
     study_id: str
     study_name: str
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
     chain_name: str
     features_id: str
     prediction_id: str
@@ -29,8 +29,8 @@ class CatalogStudyRecord:
 @dataclass(frozen=True, slots=True)
 class CatalogArtifactRecord:
     artifact_id: str
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
     chain_name: str
     features_id: str
     prediction_id: str
@@ -41,4 +41,4 @@ class CatalogArtifactRecord:
     study_name: str | None
 
 
-CatalogRecord: TypeAlias = CatalogDatasetRecord | CatalogStudyRecord | CatalogArtifactRecord
+CatalogRecord: TypeAlias = CatalogCorpusRecord | CatalogStudyRecord | CatalogArtifactRecord

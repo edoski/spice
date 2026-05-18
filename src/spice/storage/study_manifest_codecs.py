@@ -24,6 +24,7 @@ from ..objectives import coerce_objective_config
 from .identity import identity_payload, study_manifest_identity
 from .payloads import PayloadCodec, PayloadRecord, decode_payload_record
 from .semantics_codecs import STUDY_SEMANTICS_CODEC
+from .artifact_codecs import TrainingSourcePayload
 from .study_models import StudyManifest
 
 
@@ -32,11 +33,12 @@ class StudyDefinitionPayload(PayloadRecord):
     dataset_builder: dict[str, object]
     prediction: dict[str, object]
     objective: dict[str, object]
-    evaluation: dict[str, object] | None = None
+    evaluator: dict[str, object] | None = None
     study_name: str
     chain_name: str
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
+    training_source: dict[str, object]
     problem: dict[str, object]
     features: dict[str, object]
     model: dict[str, object]
@@ -60,6 +62,12 @@ class StudyManifestPayload(PayloadRecord):
             **identity_payload(study_manifest_identity(manifest)),
             "semantics": STUDY_SEMANTICS_CODEC.encode(manifest.semantics),
         }
+        definition = payload["definition"]
+        if not isinstance(definition, dict):
+            raise TypeError("study manifest definition did not serialize to a mapping")
+        definition["training_source"] = TrainingSourcePayload.from_provenance(
+            manifest.training_source
+        ).model_dump(mode="json")
         return cls.model_validate(payload)
 
     def to_manifest(self) -> StudyManifest:
@@ -72,15 +80,19 @@ class StudyManifestPayload(PayloadRecord):
             dataset_builder=coerce_dataset_builder_config(definition.dataset_builder),
             prediction=prediction,
             objective=coerce_objective_config(definition.objective),
-            evaluation=(
+            evaluator=(
                 None
-                if definition.evaluation is None
-                else coerce_evaluator_config(definition.evaluation)
+                if definition.evaluator is None
+                else coerce_evaluator_config(definition.evaluator)
             ),
             study_name=definition.study_name,
             chain_name=definition.chain_name,
-            dataset_id=definition.dataset_id,
-            dataset_name=definition.dataset_name,
+            corpus_id=definition.corpus_id,
+            corpus_name=definition.corpus_name,
+            training_source=TrainingSourcePayload.model_validate(
+                definition.training_source,
+                strict=True,
+            ).to_provenance(),
             problem=problem,
             features=coerce_features_config(definition.features),
             model=model,

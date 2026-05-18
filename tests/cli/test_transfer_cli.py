@@ -13,7 +13,7 @@ runner = CliRunner()
 
 def test_transfer_push_dataset_command_routes_to_dataset_transfer(monkeypatch, tmp_path) -> None:
     captured: dict[str, object] = {}
-    record = dataset_record(tmp_path / "outputs" / "corpora" / "ethereum" / "dataset-1")
+    record = dataset_record(tmp_path / "outputs" / "corpora" / "ethereum" / "corpus-1")
 
     class FakeTransaction:
         def push_root(self, root_kind: RootKind, root_id: str, *, replace: bool):
@@ -41,9 +41,9 @@ def test_transfer_push_dataset_command_routes_to_dataset_transfer(monkeypatch, t
         [
             "transfer",
             "push",
-            "dataset",
-            "--dataset-id",
-            record.dataset_id,
+            "corpus",
+            "--corpus-id",
+            record.corpus_id,
             "--storage-root",
             str(tmp_path / "outputs"),
         ],
@@ -52,8 +52,8 @@ def test_transfer_push_dataset_command_routes_to_dataset_transfer(monkeypatch, t
     assert result.exit_code == 0, result.stdout
     assert captured["target"] == "disi_l40"
     assert captured["root_kind"] is RootKind.CORPUS
-    assert captured["root_id"] == record.dataset_id
-    assert "push dataset=dataset dataset_id=dataset-1" in result.stdout
+    assert captured["root_id"] == record.corpus_id
+    assert "push corpus=corpus corpus_id=dataset-1" in result.stdout
 
 
 def test_transfer_pull_artifact_command_uses_pulled_envelope(monkeypatch, tmp_path) -> None:
@@ -78,7 +78,7 @@ def test_transfer_pull_artifact_command_uses_pulled_envelope(monkeypatch, tmp_pa
     monkeypatch.setattr(
         "spice.cli.commands.transfer.artifact_local_dependency_warnings",
         lambda _root, _record: (
-            "matching local dataset root is missing; local inspection still needs that dataset",
+            "matching local corpus root is missing; local inspection still needs that corpus",
         ),
     )
 
@@ -86,4 +86,4 @@ def test_transfer_pull_artifact_command_uses_pulled_envelope(monkeypatch, tmp_pa
 
     assert result.exit_code == 0, result.stdout
     assert "pull artifact=artifact-1" in result.stdout
-    assert "matching local dataset root is missing" in result.stderr
+    assert "matching local corpus root is missing" in result.stderr

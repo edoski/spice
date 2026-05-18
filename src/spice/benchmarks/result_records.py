@@ -62,9 +62,9 @@ class BenchmarkResultRecord(BaseModel):
 
     artifact_id: str
     evaluation_storage_id: str
-    artifact_dataset_id: str
-    artifact_dataset_name: str
-    evaluation_dataset_id: str
+    artifact_corpus_id: str
+    artifact_corpus_name: str
+    evaluation_corpus_id: str
     chain_name: str
     features_id: str
     model_id: str
@@ -147,9 +147,9 @@ def build_benchmark_result_record(
         evaluation_target=match.evaluation_target,
         artifact_id=match.artifact_id,
         evaluation_storage_id=match.evaluation_storage_id,
-        artifact_dataset_id=match.artifact_dataset_id,
-        artifact_dataset_name=manifest.dataset_name,
-        evaluation_dataset_id=match.evaluation_dataset_id,
+        artifact_corpus_id=match.artifact_corpus_id,
+        artifact_corpus_name=manifest.corpus_name,
+        evaluation_corpus_id=match.evaluation_corpus_id,
         chain_name=manifest.chain_name,
         features_id=manifest.features_id,
         model_id=manifest.model.id,

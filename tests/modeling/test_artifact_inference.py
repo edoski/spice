@@ -36,8 +36,8 @@ def _roots(config: EvaluateConfig) -> EvaluateWorkflowRoots:
     corpus = corpus_handle(
         config.storage.root,
         chain_name="ethereum",
-        dataset_id=config.dataset_id,
-        dataset_name="test_dataset",
+        corpus_id=config.corpus_id,
+        corpus_name="test_dataset",
     )
     artifact = artifact_handle(
         config.storage.root,
@@ -69,6 +69,10 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
             builder_runtime_metadata=runtime_metadata,
             scaler=object(),
             temporal_capability=temporal_capability,
+            training_source=SimpleNamespace(
+                window_end_timestamp=1_700_000_000,
+                training_cutoff_timestamp=None,
+            ),
             model=object(),
             features=object(),
             feature_graph_fingerprint="feature-fp",
@@ -130,9 +134,10 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
                 nominal_block_time_seconds=12.0,
             ),
         ),
-        splits=SimpleNamespace(
-            evaluation=SimpleNamespace(
-                coverage=SimpleNamespace(first_timestamp=1000, last_timestamp=2000)
+        blocks=SimpleNamespace(
+            coverage=SimpleNamespace(
+                first_timestamp=1_700_000_000,
+                last_timestamp=1_800_000_000,
             )
         ),
     )
@@ -162,7 +167,7 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
     monkeypatch.setattr(
         CorpusRootHandle,
         "load_manifest",
-        lambda _self: calls.append("load_dataset_manifest") or corpus_manifest,
+        lambda _self: calls.append("load_corpus_manifest") or corpus_manifest,
     )
     monkeypatch.setattr(
         "spice.modeling.artifact_inference.validate_corpus_coverage",
@@ -170,7 +175,8 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
     )
     monkeypatch.setattr(
         "spice.modeling.artifact_inference.load_block_frame",
-        lambda path: calls.append(f"load_blocks:{path.name}") or object(),
+        lambda path: calls.append(f"load_blocks:{path.name}")
+        or SimpleNamespace(head=lambda _count: SimpleNamespace()),
     )
     monkeypatch.setattr(
         "spice.modeling.artifact_inference.build_cuda_modeling_runtime_plan",
@@ -278,8 +284,8 @@ def test_artifact_inference_passes_observed_evaluation_coverage(
     )
 
     assert captured == {
-        "evaluation_first_timestamp": 1000,
-        "evaluation_last_timestamp": 2000,
+        "evaluation_first_timestamp": config.evaluation_window.start_timestamp,
+        "evaluation_last_timestamp": config.evaluation_window.end_timestamp - 1,
     }
 
 

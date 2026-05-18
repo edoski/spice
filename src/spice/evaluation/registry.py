@@ -13,11 +13,9 @@ from ..core.specs import (
 )
 from .config import (
     EvaluatorConfig,
-    FullTemporalReplayEvaluatorConfig,
     PoissonReplayEvaluatorConfig,
 )
 from .contracts import CompiledEvaluatorContract
-from .full_temporal_replay import compile_full_temporal_replay_evaluator_contract
 from .poisson_replay import compile_poisson_replay_evaluator_contract
 
 
@@ -31,13 +29,7 @@ _EVALUATOR_SPECS: dict[str, _EvaluatorSpec] = {
     "poisson_replay": _EvaluatorSpec(
         config_type=PoissonReplayEvaluatorConfig,
         compile_contract=lambda config: compile_poisson_replay_evaluator_contract(
-            require_spec_config(config, PoissonReplayEvaluatorConfig, "evaluation config")
-        ),
-    ),
-    "full_temporal_replay": _EvaluatorSpec(
-        config_type=FullTemporalReplayEvaluatorConfig,
-        compile_contract=lambda config: compile_full_temporal_replay_evaluator_contract(
-            require_spec_config(config, FullTemporalReplayEvaluatorConfig, "evaluation config")
+            require_spec_config(config, PoissonReplayEvaluatorConfig, "evaluator config")
         ),
     ),
 }
@@ -48,9 +40,9 @@ def coerce_evaluator_config(
 ) -> EvaluatorConfig:
     return coerce_spec_config(
         payload,
-        owner="evaluation",
+        owner="evaluator",
         base_config_type=EvaluatorConfig,
-        id_label="evaluation.id",
+        id_label="evaluator.id",
         lookup_spec=evaluator_spec,
         spec_config_type=lambda spec: spec.config_type,
     )
@@ -65,10 +57,10 @@ def compile_evaluator_contract(
         config_id=evaluator_config.id,
         lookup_spec=evaluator_spec,
         spec_config_type=lambda entry: entry.config_type,
-        label="evaluation config",
+        label="evaluator config",
     )
     return spec.compile_contract(concrete_config)
 
 
 def evaluator_spec(evaluator_id: str) -> _EvaluatorSpec:
-    return lookup_local_spec(_EVALUATOR_SPECS, evaluator_id, "evaluation.id")
+    return lookup_local_spec(_EVALUATOR_SPECS, evaluator_id, "evaluator.id")

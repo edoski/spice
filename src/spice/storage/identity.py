@@ -32,13 +32,14 @@ class IdentityModel(BaseModel):
 
 class StudyStorageIdentity(IdentityModel):
     corpus_id: str
+    training_cutoff_timestamp: int | None
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     features: FeaturesConfig
     model: SerializeAsAny[ModelConfig]
     problem: ProblemSpec
     prediction: PredictionConfig
     objective: ObjectiveConfig
-    evaluation: SerializeAsAny[EvaluatorConfig] | None
+    evaluator: SerializeAsAny[EvaluatorConfig] | None
     study: StudyConfig
     split: SplitConfig
     training: TrainingConfig
@@ -48,13 +49,14 @@ class StudyStorageIdentity(IdentityModel):
 
 class ArtifactStorageIdentity(IdentityModel):
     corpus_id: str
+    training_cutoff_timestamp: int | None
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     features: FeaturesConfig
     model: SerializeAsAny[ModelConfig]
     problem: ProblemSpec
     prediction: PredictionConfig
     objective: ObjectiveConfig
-    evaluation: SerializeAsAny[EvaluatorConfig] | None
+    evaluator: SerializeAsAny[EvaluatorConfig] | None
     split: SplitConfig
     training: TrainingConfig
     variant: ArtifactVariant
@@ -66,12 +68,13 @@ class StudyDefinitionIdentity(IdentityModel):
     study_name: str
     study_id: str | None
     chain_name: str
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
+    training_cutoff_timestamp: int | None
     dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     prediction: PredictionConfig
     objective: ObjectiveConfig
-    evaluation: SerializeAsAny[EvaluatorConfig] | None
+    evaluator: SerializeAsAny[EvaluatorConfig] | None
     problem: ProblemSpec
     features: FeaturesConfig
     model: SerializeAsAny[ModelConfig]
@@ -99,13 +102,14 @@ def identity_payload(identity: IdentityModel) -> dict[str, object]:
 def study_storage_identity(
     *,
     corpus_id: str,
+    training_cutoff_timestamp: int | None,
     dataset_builder: DatasetBuilderConfig,
     features: FeaturesConfig,
     model: ModelConfig,
     problem: ProblemSpec,
     prediction: PredictionConfig,
     objective: ObjectiveConfig,
-    evaluation: EvaluatorConfig | None,
+    evaluator: EvaluatorConfig | None,
     study: StudyConfig,
     split: SplitConfig,
     training: TrainingConfig,
@@ -114,13 +118,14 @@ def study_storage_identity(
 ) -> StudyStorageIdentity:
     return StudyStorageIdentity(
         corpus_id=corpus_id,
+        training_cutoff_timestamp=training_cutoff_timestamp,
         dataset_builder=dataset_builder,
         features=features,
         model=model,
         problem=problem,
         prediction=prediction,
         objective=objective,
-        evaluation=evaluation,
+        evaluator=evaluator,
         study=study,
         split=split,
         training=training,
@@ -137,13 +142,14 @@ def study_storage_identity_from_config(
     tuning, tuning_space = _study_definition(config)
     return study_storage_identity(
         corpus_id=corpus_id,
+        training_cutoff_timestamp=config.training_cutoff_timestamp,
         dataset_builder=config.dataset_builder,
         features=config.features,
         model=config.model,
         problem=config.problem,
         prediction=config.prediction,
         objective=config.objective,
-        evaluation=config.evaluation,
+        evaluator=config.evaluator,
         study=config.study,
         split=config.split,
         training=config.training,
@@ -162,13 +168,14 @@ def artifact_storage_identity_from_config(
         raise ConfigResolutionError("study_id is required for tuned artifact identity")
     return ArtifactStorageIdentity(
         corpus_id=corpus_id,
+        training_cutoff_timestamp=config.training_cutoff_timestamp,
         dataset_builder=config.dataset_builder,
         features=config.features,
         model=config.model,
         problem=config.problem,
         prediction=config.prediction,
         objective=config.objective,
-        evaluation=config.evaluation,
+        evaluator=config.evaluator,
         split=config.split,
         training=config.training,
         variant=config.artifact.variant,
@@ -182,12 +189,13 @@ def study_definition_identity(
     study_name: str,
     study_id: str | None,
     chain_name: str,
-    dataset_id: str,
-    dataset_name: str,
+    corpus_id: str,
+    corpus_name: str,
+    training_cutoff_timestamp: int | None,
     dataset_builder: DatasetBuilderConfig,
     prediction: PredictionConfig,
     objective: ObjectiveConfig,
-    evaluation: EvaluatorConfig | None,
+    evaluator: EvaluatorConfig | None,
     problem: ProblemSpec,
     features: FeaturesConfig,
     model: ModelConfig,
@@ -200,12 +208,13 @@ def study_definition_identity(
         study_name=study_name,
         study_id=study_id,
         chain_name=chain_name,
-        dataset_id=dataset_id,
-        dataset_name=dataset_name,
+        corpus_id=corpus_id,
+        corpus_name=corpus_name,
+        training_cutoff_timestamp=training_cutoff_timestamp,
         dataset_builder=dataset_builder,
         prediction=prediction,
         objective=objective,
-        evaluation=evaluation,
+        evaluator=evaluator,
         problem=problem,
         features=features,
         model=model,
@@ -221,12 +230,13 @@ def study_definition_identity_from_manifest(manifest: StudyManifest) -> StudyDef
         study_name=manifest.study_name,
         study_id=manifest.study_id,
         chain_name=manifest.chain_name,
-        dataset_id=manifest.dataset_id,
-        dataset_name=manifest.dataset_name,
+        corpus_id=manifest.corpus_id,
+        corpus_name=manifest.corpus_name,
+        training_cutoff_timestamp=manifest.training_source.training_cutoff_timestamp,
         dataset_builder=manifest.dataset_builder,
         prediction=manifest.prediction,
         objective=manifest.objective,
-        evaluation=manifest.evaluation,
+        evaluator=manifest.evaluator,
         problem=manifest.problem,
         features=manifest.features,
         model=manifest.model,
@@ -242,8 +252,8 @@ def study_definition_identity_from_tuned_config(
     *,
     study_id: str,
     chain_name: str,
-    dataset_id: str,
-    dataset_name: str,
+    corpus_id: str,
+    corpus_name: str,
 ) -> StudyDefinitionIdentity:
     if config.tuning is None or config.tuning_space is None:
         raise ConfigResolutionError(
@@ -253,12 +263,13 @@ def study_definition_identity_from_tuned_config(
         study_name=config.study.name,
         study_id=study_id,
         chain_name=chain_name,
-        dataset_id=dataset_id,
-        dataset_name=dataset_name,
+        corpus_id=corpus_id,
+        corpus_name=corpus_name,
+        training_cutoff_timestamp=config.training_cutoff_timestamp,
         dataset_builder=config.dataset_builder,
         prediction=config.prediction,
         objective=config.objective,
-        evaluation=config.evaluation,
+        evaluator=config.evaluator,
         problem=config.problem,
         features=config.features,
         model=config.model,

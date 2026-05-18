@@ -10,7 +10,7 @@ from pydantic import Field
 
 from ..core.config_model import ConfigModel
 from ..core.errors import ConfigResolutionError
-from .models import ProblemSpec, WorkflowTask
+from .models import ProblemSpec, TimestampWindowSpec, WorkflowTask
 
 
 class WorkflowSelectionBase(ConfigModel):
@@ -22,13 +22,15 @@ class WorkflowSelectionBase(ConfigModel):
 
 
 class AcquireWorkflowSelection(WorkflowSelectionBase):
+    corpus: str | None = None
     provider: str | None = None
     dry_run: bool | None = None
 
 
 class ModelWorkflowSelectionBase(WorkflowSelectionBase):
     objective: str | None = None
-    evaluation: str | None = None
+    evaluator: str | None = None
+    evaluations: str | None = None
     model: str | None = None
     tuning_space: str | None = None
     training: str | None = None
@@ -38,21 +40,23 @@ class ModelWorkflowSelectionBase(WorkflowSelectionBase):
 
 
 class TrainWorkflowSelection(ModelWorkflowSelectionBase):
-    dataset_id: str | None = None
+    corpus_id: str | None = None
     study_id: str | None = None
     variant: str | None = None
 
 
 class TuneWorkflowSelection(ModelWorkflowSelectionBase):
-    dataset_id: str | None = None
+    corpus_id: str | None = None
     trial_count: int | None = Field(default=None, gt=0)
 
 
 class EvaluateWorkflowSelection(ConfigModel):
     storage_root: Path | None = None
     artifact_id: str | None = None
-    dataset_id: str | None = None
-    evaluation: str | None = None
+    corpus_id: str | None = None
+    evaluation_window: TimestampWindowSpec | None = None
+    evaluations: str | None = None
+    evaluator: str | None = None
     delay_seconds: int | None = Field(default=None, gt=0)
     batch_size: int | None = Field(default=None, gt=0)
 

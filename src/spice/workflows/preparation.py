@@ -16,7 +16,7 @@ from ..config.models import (
 )
 from ..corpus.assembly import CorpusAssemblyRequest, prepare_corpus_assembly_request
 from ..corpus.coverage import training_coverage_requirement, validate_corpus_coverage
-from ..corpus.metadata import DatasetManifest
+from ..corpus.metadata import CorpusManifest
 from ..modeling.artifact_inference import (
     ArtifactInferenceContext,
     prepare_artifact_inference_context,
@@ -54,7 +54,7 @@ class PreparedTrainWorkflow:
     requested_config: TrainConfig
     active_config: TrainConfig
     roots: TrainWorkflowRoots
-    corpus_manifest: DatasetManifest
+    corpus_manifest: CorpusManifest
     spec: TrainingSpec
 
 
@@ -62,7 +62,7 @@ class PreparedTrainWorkflow:
 class PreparedTuneWorkflow:
     config: TuneConfig
     roots: TuneWorkflowRoots
-    corpus_manifest: DatasetManifest
+    corpus_manifest: CorpusManifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +146,7 @@ def _build_tuning_coverage_spec(
     config: TuneConfig,
     *,
     roots: TuneWorkflowRoots,
-    corpus_manifest: DatasetManifest,
+    corpus_manifest: CorpusManifest,
 ) -> TrainingSpec:
     if (
         config.tuning_space.problem is None
@@ -174,7 +174,7 @@ def _build_tuning_coverage_spec(
 
 
 def _validate_training_coverage(
-    corpus_manifest: DatasetManifest,
+    corpus_manifest: CorpusManifest,
     *,
     spec: TrainingSpec,
 ) -> None:

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CLI - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>CLI</h1>
+      <p class="lede">The CLI is the operator edge. It owns Typer command registration, command defaults, shared options, output formatting, and conversion of domain errors into readable terminal messages.</p>
+      <div class="meta">
+        <span class="pill">src/spice/cli</span>
+        <span class="pill">Docs: ARCHITECTURE.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>It is above config, workflows, storage, execution, and benchmarks. It should pass explicit values downward instead of hiding CLI-only defaults in lower packages.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>The CLI translates human commands into typed selections and workflow calls. It is allowed to be convenient. The deeper code should be deterministic and explicit.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>app.py</code></div><div>Registers the Typer app and command groups, then exposes the <code>spice</code> console entry point.</div>
+<div><code>errors.py</code></div><div>Adapts operator-facing exceptions into Typer errors with consistent messages.</div>
+<div><code>options.py</code></div><div>Defines shared command options and CLI defaults such as the default storage root and remote target.</div>
+<div><code>output.py</code></div><div>Prints JSON, key-value rows, warnings, and sectioned command output.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>Typer parses command flags.</li>
+<li>Command modules build typed selections or storage queries.</li>
+<li>Config/workflow/storage/execution packages do the real work.</li>
+<li>CLI output helpers render the result.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Remote default boundary</h3><p><code>DEFAULT_REMOTE_TARGET = &quot;disi_l40&quot;</code> belongs here. Execution code receives a concrete target name and does not guess.</p>
+<h3>CLI vs workflows</h3><p>CLI commands should not train models directly. They prepare arguments and call workflow or execution services.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-cli-commands.html">CLI Commands</a><a href="spice-config.html">Config</a><a href="spice-workflows.html">Workflows</a><a href="spice-execution.html">Execution</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/cli/ARCHITECTURE.md">ARCHITECTURE.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

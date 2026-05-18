@@ -8,10 +8,26 @@ from spice.config.models import EvaluateConfig, TrainConfig, TuneConfig, Workflo
 from spice.core.errors import ConfigResolutionError
 
 ETH_DATASET_ID = "cor_9a73b1e88edb488afb1e"
+EVALUATION_WINDOW = {"start": "2026-02-03T14:00:00Z", "duration_seconds": 7200}
+
+
+def _with_evaluation_windows(payload: object) -> object:
+    if isinstance(payload, dict):
+        if payload.get("workflow") == "evaluate":
+            step_set = payload.setdefault("set", {})
+            if isinstance(step_set, dict):
+                step_set.setdefault("evaluation_window", EVALUATION_WINDOW)
+        for value in payload.values():
+            _with_evaluation_windows(value)
+    elif isinstance(payload, list):
+        for value in payload:
+            _with_evaluation_windows(value)
+    return payload
 
 
 def _write_benchmark(conf_root, name: str, payload: dict[str, object]) -> None:
     path = conf_root / "benchmark" / f"{name}.yaml"
+    _with_evaluation_windows(payload)
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
@@ -34,7 +50,7 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
                         "study": "window_sweep",
                     },
                     "dimensions": {
-                        "data": [{"set": {"chain": "ethereum", "dataset_id": ETH_DATASET_ID}}],
+                        "data": [{"set": {"chain": "ethereum", "corpus_id": ETH_DATASET_ID}}],
                         "models": [
                             {"set": {"model": "lstm", "tuning_space": "lstm_large_capacity"}},
                             {
@@ -51,7 +67,6 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
                                     "base": "current_row_nominal",
                                     "fields": {
                                         "lookback_seconds": [600],
-                                        "sample_count": [1000000],
                                     },
                                 }
                             },
@@ -63,7 +78,7 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
                             "workflow": "tune",
                             "set": {
                                 "objective": "validation_total_loss",
-                                "evaluation": "poisson_replay",
+                                "evaluator": "poisson_replay",
                                 "trial_count": 3,
                             },
                         },
@@ -79,7 +94,7 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
                             "after": ["train_tuned"],
                             "artifact_from": "train_tuned",
                             "set": {
-                                "evaluation": "poisson_replay",
+                                "evaluator": "poisson_replay",
                                 "delay_seconds": 36,
                             },
                         },
@@ -97,35 +112,30 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
         entry
         for entry in plan
         if entry.step_id == "tune"
-        and "problems-current_row_nominal__lookback_seconds-600__sample_count-1000000"
-        in entry.run_id
+        and "problems-current_row_nominal__lookback_seconds-600" in entry.run_id
     )
     evaluate = next(
         entry
         for entry in plan
         if entry.step_id == "evaluate_tuned"
         and "models-model-lstm__tuning_space-lstm_large_capacity" in entry.run_id
-        and "problems-current_row_nominal__lookback_seconds-600__sample_count-1000000"
-        in entry.run_id
+        and "problems-current_row_nominal__lookback_seconds-600" in entry.run_id
     )
     assert isinstance(train.config, TrainConfig)
     assert train.config.study_id is not None
     assert isinstance(grid_tune.config, TuneConfig)
-    assert grid_tune.config.problem.id == (
-        "current_row_nominal__lookback_seconds-600__sample_count-1000000"
-    )
+    assert grid_tune.config.problem.id == "current_row_nominal__lookback_seconds-600"
     assert grid_tune.config.problem.lookback_seconds == 600
-    assert grid_tune.config.problem.sample_count == 1000000
     assert isinstance(evaluate.config, EvaluateConfig)
     assert evaluate.dependencies.artifact_from_run_id == evaluate.dependencies.local_run_ids[0]
-    assert evaluate.config.dataset_id == ETH_DATASET_ID
+    assert evaluate.config.corpus_id == ETH_DATASET_ID
     assert evaluate.config.artifact_id.startswith("art_")
     assert evaluate.config.delay_seconds == 36
 
 
 def test_packaged_benchmark_yamls_keep_expected_shapes() -> None:
     expected_counts = {
-        "evaluator_objective_grid": 54,
+        "evaluator_objective_grid": 18,
         "large_capacity_hpo": 27,
         "priority_fee_ablation": 36,
         "safe_baseline_grid": 18,
@@ -152,45 +162,29 @@ def test_packaged_benchmark_yamls_keep_expected_shapes() -> None:
         )
 
 
-def test_evaluator_objective_grid_keeps_cross_evaluation_bindings() -> None:
+def test_evaluator_objective_grid_keeps_poisson_evaluation_binding() -> None:
     plan = materialize_benchmark_plan("evaluator_objective_grid")
 
-    poisson_full = next(
+    evaluate = next(
         entry
         for entry in plan
-        if entry.step_id == "evaluate_poisson_artifact_with_full"
-        and "data-chain-ethereum__dataset_id-cor_9a73b1e88edb488afb1e" in entry.run_id
-        and "models-model-lstm__tuning_space-lstm_large_capacity" in entry.run_id
-    )
-    full_poisson = next(
-        entry
-        for entry in plan
-        if entry.step_id == "evaluate_full_artifact_with_poisson"
-        and "data-chain-ethereum__dataset_id-cor_9a73b1e88edb488afb1e" in entry.run_id
+        if entry.step_id == "evaluate_poisson_artifact_with_poisson"
+        and "data-chain-ethereum__corpus_id-cor_9a73b1e88edb488afb1e" in entry.run_id
         and "models-model-lstm__tuning_space-lstm_large_capacity" in entry.run_id
     )
 
-    assert isinstance(poisson_full.config, EvaluateConfig)
-    assert poisson_full.config.evaluation.id == "full_temporal_replay"
-    assert poisson_full.selection.surface == "current_row_fee_dynamics"
-    assert poisson_full.selection.model == "lstm"
-    assert poisson_full.selection.problem == "current_row_nominal"
-    assert poisson_full.root_facts.consumed_artifact_id == poisson_full.config.artifact_id
-    assert poisson_full.dependencies.local_run_ids == (
+    assert isinstance(evaluate.config, EvaluateConfig)
+    assert evaluate.config.evaluator.id == "poisson_replay"
+    assert evaluate.selection.surface == "current_row_fee_dynamics"
+    assert evaluate.selection.model == "lstm"
+    assert evaluate.selection.problem == "current_row_nominal"
+    assert evaluate.root_facts.consumed_artifact_id == evaluate.config.artifact_id
+    assert evaluate.dependencies.local_run_ids == (
         "evaluator_objective_grid."
-        "data-chain-ethereum__dataset_id-cor_9a73b1e88edb488afb1e."
+        "data-chain-ethereum__corpus_id-cor_9a73b1e88edb488afb1e."
         "models-model-lstm__tuning_space-lstm_large_capacity."
         "problems-current_row_nominal."
         "train_poisson_objective",
-    )
-    assert isinstance(full_poisson.config, EvaluateConfig)
-    assert full_poisson.config.evaluation.id == "poisson_replay"
-    assert full_poisson.dependencies.local_run_ids == (
-        "evaluator_objective_grid."
-        "data-chain-ethereum__dataset_id-cor_9a73b1e88edb488afb1e."
-        "models-model-lstm__tuning_space-lstm_large_capacity."
-        "problems-current_row_nominal."
-        "train_full_objective",
     )
 
 
@@ -235,7 +229,7 @@ def test_benchmark_rejects_invalid_problem_grid(isolate_conf_root) -> None:
                             {
                                 "grid": {
                                     "base": "current_row_nominal",
-                                    "fields": {"sample_count": [0]},
+                                    "fields": {"lookback_seconds": [0]},
                                 }
                             }
                         ]

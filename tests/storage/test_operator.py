@@ -14,15 +14,15 @@ from spice.storage.operator import (
     delete_storage,
     show_storage,
 )
-from spice.storage.selectors import ArtifactSelector, DatasetSelector
+from spice.storage.selectors import ArtifactSelector, CorpusSelector
 from tests.catalog_helpers import artifact_record, dataset_record, study_record
 
 
 def _dataset_record(storage_root: Path):
     return dataset_record(
         storage_root / "corpora" / "ethereum" / "cor_1",
-        dataset_id="cor_1",
-        dataset_name="dataset",
+        corpus_id="cor_1",
+        corpus_name="corpus",
         chain_name="ethereum",
     )
 
@@ -32,8 +32,8 @@ def _study_record(storage_root: Path):
         storage_root / "studies" / "ethereum" / "std_1",
         study_id="std_1",
         study_name="study",
-        dataset_id="cor_1",
-        dataset_name="dataset",
+        corpus_id="cor_1",
+        corpus_name="corpus",
         chain_name="ethereum",
         features_id="features",
         prediction_id="prediction",
@@ -51,8 +51,8 @@ def _artifact_record(
     return artifact_record(
         storage_root / "artifacts" / "ethereum" / artifact_id,
         artifact_id=artifact_id,
-        dataset_id="cor_1",
-        dataset_name="dataset",
+        corpus_id="cor_1",
+        corpus_name="corpus",
         chain_name="ethereum",
         features_id="features",
         prediction_id="prediction",
@@ -142,8 +142,8 @@ def test_delete_dataset_blocked_returns_dependent_sections(tmp_path: Path) -> No
     outcome = delete_storage(
         StorageDeleteCommand(
             storage_root=storage_root,
-            kind="dataset",
-            selector=DatasetSelector(dataset_id="cor_1"),
+            kind="corpus",
+            selector=CorpusSelector(corpus_id="cor_1"),
         )
     )
 

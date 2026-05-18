@@ -1,5 +1,5 @@
 chain: ethereum
-dataset: icdcs_2026
+corpus: icdcs_2026
 features: core_fee_dynamics
 problem: current_row_nominal
 dataset_builder: fixed_sequence_temporal
@@ -14,5 +14,5 @@ training:
 tuning:
   id: default
   space: lstm_fixed_context
-evaluation:
+evaluator:
   id: poisson_replay

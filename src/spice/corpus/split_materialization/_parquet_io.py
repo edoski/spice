@@ -380,7 +380,7 @@ def completed_prefix_end(
         raise RuntimeError(f"Cannot resume from invalid partial block dataset: {validation}")
     if validation.first_block_number != plan.block_range.start:
         raise RuntimeError(
-            "Cannot resume partial block dataset with a different start block: "
+            "Cannot resume partial block corpus with a different start block: "
             f"expected {plan.block_range.start}, got {validation.first_block_number}"
         )
     if validation.last_block_number is None:

@@ -76,7 +76,7 @@ async def _ensure_split(
     controller: AcquisitionPullController,
     status: StatusCallback | None,
 ) -> CorpusSplitMaterializationResult:
-    if intent.kind not in (CorpusSplitKind.HISTORY, CorpusSplitKind.EVALUATION):
+    if intent.kind is not CorpusSplitKind.BLOCKS:
         raise ValueError(f"Unsupported corpus split kind: {intent.kind}")
     emit = status or noop_status
     existing = load_split_candidate(
@@ -113,16 +113,11 @@ def _split_validator(
     plan: BlockPullPlan,
     materialization: CorpusSplitMaterializationSpec,
 ) -> ValidationCallback:
-    if kind is CorpusSplitKind.HISTORY:
-        return lambda validation, _dataset_dir: validate_history_result(
+    if kind is CorpusSplitKind.BLOCKS:
+        return lambda validation, dataset_dir: validate_blocks_result(
             validation,
-            history_plan=plan,
-        )
-    if kind is CorpusSplitKind.EVALUATION:
-        return lambda validation, dataset_dir: validate_evaluation_result(
-            validation,
-            evaluation_dir=dataset_dir,
-            evaluation_plan=plan,
+            blocks_dir=dataset_dir,
+            blocks_plan=plan,
             expected_chain_id=materialization.expected_chain_id,
             required_columns=materialization.required_columns,
         )
@@ -152,30 +147,17 @@ async def _materialize_split(
         emit(f"{kind.value} reused staged dataset")
         return staged_reuse
 
-    if kind is CorpusSplitKind.HISTORY:
-        committed = await _reuse_or_extend_history_split(
-            existing=existing,
-            plan=plan,
-            kind=kind,
-            working_dir=working_dir,
-            materialization=materialization,
-            block_source=block_source,
-            controller=controller,
-            emit=emit,
-            validate_result=validate_result,
-        )
-    else:
-        committed = await _reuse_or_extend_evaluation_split(
-            existing=existing,
-            plan=plan,
-            kind=kind,
-            working_dir=working_dir,
-            materialization=materialization,
-            block_source=block_source,
-            controller=controller,
-            emit=emit,
-            validate_result=validate_result,
-        )
+    committed = await _reuse_or_extend_blocks(
+        existing=existing,
+        plan=plan,
+        kind=kind,
+        working_dir=working_dir,
+        materialization=materialization,
+        block_source=block_source,
+        controller=controller,
+        emit=emit,
+        validate_result=validate_result,
+    )
     if committed is not None:
         return committed
 
@@ -193,55 +175,7 @@ async def _materialize_split(
     )
 
 
-async def _reuse_or_extend_history_split(
-    *,
-    existing: _SplitDatasetCandidate | None,
-    plan: BlockPullPlan,
-    kind: CorpusSplitKind,
-    working_dir: Path,
-    materialization: CorpusSplitMaterializationSpec,
-    block_source: BlockSource,
-    controller: AcquisitionPullController,
-    emit: StatusCallback,
-    validate_result: ValidationCallback,
-) -> CorpusSplitMaterializationResult | None:
-    if existing is not None and existing.facts.status == "clean":
-        existing_start = _required_first_block(existing.facts)
-        existing_end = _required_end_block(existing.facts)
-        target_start = plan.block_range.start
-        target_end = plan.block_range.end
-
-        if existing_end == target_end and existing_start <= target_start:
-            existing_validation = _target_validation(existing, validate_result)
-            if existing_validation is not None:
-                emit("history reused committed dataset")
-                return reused_result(existing, validation=existing_validation)
-
-        if existing_end == target_end and existing_start > target_start:
-            emit("history extending committed dataset")
-            prefix_dir = await pull_plan_range_to_dir(
-                block_source=block_source,
-                pull_range=_SplitPullRange(
-                    label="history-prefix",
-                    block_range=BlockRange(start=target_start, end=existing_start),
-                ),
-                window=plan.window,
-                working_dir=working_dir,
-                materialization=materialization,
-                controller=controller,
-            )
-            return materialize_dataset_from_sources(
-                mode=kind.value,
-                materialization=materialization,
-                working_dir=working_dir,
-                validate_result=validate_result,
-                source_dirs=(prefix_dir, existing.path),
-                outcome=CorpusSplitOutcome.EXTENDED,
-            )
-    return None
-
-
-async def _reuse_or_extend_evaluation_split(
+async def _reuse_or_extend_blocks(
     *,
     existing: _SplitDatasetCandidate | None,
     plan: BlockPullPlan,
@@ -262,7 +196,7 @@ async def _reuse_or_extend_evaluation_split(
         if existing_start == target_start and existing_end == target_end:
             existing_validation = _target_validation(existing, validate_result)
             if existing_validation is not None:
-                emit("evaluation reused committed dataset")
+                emit("blocks reused committed dataset")
                 return reused_result(existing, validation=existing_validation)
 
         overlap_start = max(existing_start, target_start)
@@ -278,18 +212,18 @@ async def _reuse_or_extend_evaluation_split(
                 if target_start < overlap_start:
                     pull_ranges.append(
                         _SplitPullRange(
-                            label="evaluation-prefix",
+                            label="blocks-prefix",
                             block_range=BlockRange(start=target_start, end=overlap_start),
                         )
                     )
                 if overlap_end < target_end:
                     pull_ranges.append(
                         _SplitPullRange(
-                            label="evaluation-suffix",
+                            label="blocks-suffix",
                             block_range=BlockRange(start=overlap_end, end=target_end),
                         )
                     )
-                return await _extend_evaluation_committed_split(
+                return await _extend_committed_blocks(
                     existing=existing,
                     reusable_range=reusable_range,
                     pull_ranges=tuple(pull_ranges),
@@ -305,7 +239,7 @@ async def _reuse_or_extend_evaluation_split(
     return None
 
 
-async def _extend_evaluation_committed_split(
+async def _extend_committed_blocks(
     *,
     existing: _SplitDatasetCandidate,
     reusable_range: BlockRange,
@@ -335,7 +269,7 @@ async def _extend_evaluation_committed_split(
                 controller=controller,
             )
         )
-    emit("evaluation extending committed dataset")
+    emit("blocks extending committed dataset")
     return materialize_dataset_from_sources(
         mode=kind.value,
         materialization=materialization,
@@ -424,67 +358,44 @@ def _target_validation(
 
 def _required_first_block(facts: _SplitDatasetFacts) -> int:
     if facts.first_block_number is None:
-        raise ValueError("validated dataset is missing the first block number")
+        raise ValueError("validated corpus is missing the first block number")
     return facts.first_block_number
 
 
 def _required_end_block(facts: _SplitDatasetFacts) -> int:
     if facts.last_block_number is None:
-        raise ValueError("validated dataset is missing the last block number")
+        raise ValueError("validated corpus is missing the last block number")
     return facts.last_block_number + 1
 
 
-def validate_history_result(
+def validate_blocks_result(
     validation: BlockDatasetValidationReport,
     *,
-    history_plan: BlockPullPlan,
-) -> None:
-    if validation.status != "clean":
-        raise ValueError(f"Canonical history dataset validation failed: {validation}")
-    if validation.last_block_number != history_plan.block_range.end - 1:
-        raise ValueError(
-            "History dataset does not end at the requested evaluation boundary: "
-            f"expected last block {history_plan.block_range.end - 1}, "
-            f"got {validation.last_block_number}"
-        )
-    if validation.first_block_number is None:
-        raise ValueError("History dataset validation did not produce a first block number")
-    if validation.first_block_number > history_plan.block_range.start:
-        raise ValueError(
-            "History dataset does not cover the requested oldest history block: "
-            f"expected at most {history_plan.block_range.start}, "
-            f"got {validation.first_block_number}"
-        )
-
-
-def validate_evaluation_result(
-    validation: BlockDatasetValidationReport,
-    *,
-    evaluation_dir: Path,
-    evaluation_plan: BlockPullPlan,
+    blocks_dir: Path,
+    blocks_plan: BlockPullPlan,
     expected_chain_id: int,
     required_columns: frozenset[str],
 ) -> None:
     exact_validation = validate_exact_window_frame(
-        load_block_frame(evaluation_dir),
-        dataset_path=evaluation_dir,
+        load_block_frame(blocks_dir),
+        dataset_path=blocks_dir,
         expected_chain_id=expected_chain_id,
-        expected_start_timestamp=evaluation_plan.window.start,
-        expected_end_timestamp=evaluation_plan.window.end,
+        expected_start_timestamp=blocks_plan.window.start,
+        expected_end_timestamp=blocks_plan.window.end,
         required_columns=required_columns,
     )
     if exact_validation.status != "clean":
-        raise ValueError(f"Canonical evaluation dataset validation failed: {exact_validation}")
-    if exact_validation.first_block_number != evaluation_plan.block_range.start:
+        raise ValueError(f"Canonical blocks corpus validation failed: {exact_validation}")
+    if exact_validation.first_block_number != blocks_plan.block_range.start:
         raise ValueError(
-            "Evaluation dataset does not start at the requested block boundary: "
-            f"expected first block {evaluation_plan.block_range.start}, "
+            "Blocks corpus does not start at the requested block boundary: "
+            f"expected first block {blocks_plan.block_range.start}, "
             f"got {exact_validation.first_block_number}"
         )
-    if exact_validation.last_block_number != evaluation_plan.block_range.end - 1:
+    if exact_validation.last_block_number != blocks_plan.block_range.end - 1:
         raise ValueError(
-            "Evaluation dataset does not end at the requested block boundary: "
-            f"expected last block {evaluation_plan.block_range.end - 1}, "
+            "Blocks corpus does not end at the requested block boundary: "
+            f"expected last block {blocks_plan.block_range.end - 1}, "
             f"got {exact_validation.last_block_number}"
         )
     validation.status = exact_validation.status

@@ -13,10 +13,10 @@ from .engine import (
     state_db_path,
 )
 from .inspect_artifact import ArtifactRootDescription, artifact_sections, describe_artifact_root
-from .inspect_dataset import DatasetRootDescription, dataset_sections, describe_dataset_root
+from .inspect_dataset import CorpusRootDescription, dataset_sections, describe_dataset_root
 from .inspect_study import StudyRootDescription, describe_study_root, study_sections
 
-RootDescription = DatasetRootDescription | ArtifactRootDescription | StudyRootDescription
+RootDescription = CorpusRootDescription | ArtifactRootDescription | StudyRootDescription
 
 
 def describe_root(root: Path, *, detail: str | None = None) -> RootDescription:
@@ -34,8 +34,8 @@ def describe_root(root: Path, *, detail: str | None = None) -> RootDescription:
 def sectioned_summary(
     description: RootDescription,
 ) -> tuple[str, list[tuple[str, list[tuple[str, str]]]]]:
-    if isinstance(description, DatasetRootDescription):
-        return "dataset summary", dataset_sections(description)
+    if isinstance(description, CorpusRootDescription):
+        return "corpus summary", dataset_sections(description)
     if isinstance(description, ArtifactRootDescription):
         return "artifact summary", artifact_sections(description)
     if isinstance(description, StudyRootDescription):

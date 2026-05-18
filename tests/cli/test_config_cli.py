@@ -38,6 +38,8 @@ def test_acquire_cli_resolves_selection_surface(tmp_path, monkeypatch) -> None:
             "current_row_fee_dynamics",
             "--chain",
             "avalanche",
+            "--corpus",
+            "icdcs_2026",
             "--storage-root",
             str(tmp_path / "outputs"),
             "--dry-run",
@@ -47,6 +49,7 @@ def test_acquire_cli_resolves_selection_surface(tmp_path, monkeypatch) -> None:
     assert result.exit_code == 0, result.stdout
     config = cast(AcquireConfig, captured["config"])
     assert config.chain.name == "avalanche"
+    assert config.corpus.name == "icdcs_2026"
     assert config.acquisition.dry_run is True
     assert config.storage.root == tmp_path / "outputs"
 
@@ -59,7 +62,7 @@ def test_acquire_cli_resolves_selection_surface(tmp_path, monkeypatch) -> None:
             [
                 "--surface",
                 "current_row_fee_dynamics",
-                "--dataset-id",
+                "--corpus-id",
                 "cor_9a73b1e88edb488afb1e",
                 "--study",
                 "experiment",
@@ -72,7 +75,7 @@ def test_acquire_cli_resolves_selection_surface(tmp_path, monkeypatch) -> None:
             [
                 "--surface",
                 "current_row_fee_dynamics",
-                "--dataset-id",
+                "--corpus-id",
                 "cor_9a73b1e88edb488afb1e",
                 "--trial-count",
                 "2",
@@ -83,10 +86,14 @@ def test_acquire_cli_resolves_selection_surface(tmp_path, monkeypatch) -> None:
             [
                 "--artifact-id",
                 "art_test",
-                "--dataset-id",
+                "--corpus-id",
                 "cor_9a73b1e88edb488afb1e",
-                "--evaluation",
+                "--evaluator",
                 "poisson_replay",
+                "--evaluation-start",
+                "2026-02-03T14:00:00Z",
+                "--evaluation-duration-seconds",
+                "7200",
                 "--delay-seconds",
                 "12",
             ],
@@ -134,7 +141,7 @@ def test_model_workflow_cli_resolves_and_submits_selection_surface(
         return
     if isinstance(config, EvaluateConfig):
         assert config.artifact_id == "art_test"
-        assert config.dataset_id == "cor_9a73b1e88edb488afb1e"
+        assert config.corpus_id == "cor_9a73b1e88edb488afb1e"
         assert config.delay_seconds == 12
         return
     assert config.study.name == "experiment"
@@ -148,19 +155,19 @@ def test_config_public_commands_only(isolate_conf_root) -> None:
     assert list_result.exit_code == 0, list_result.stdout
     assert "current_row_fee_dynamics" in list_result.stdout.splitlines()
 
-    show_result = runner.invoke(app, ["config", "show", "dataset", "icdcs_2026"])
+    show_result = runner.invoke(app, ["config", "show", "corpus", "icdcs_2026"])
     assert show_result.exit_code == 0, show_result.stdout
     assert yaml.safe_load(show_result.stdout) == {
         "name": "icdcs_2026",
-        "evaluation_date": "2025-11-09",
+        "window": {
+            "start": "2025-11-08T00:00:00+00:00",
+            "end": "2025-11-10T00:00:00+00:00",
+        },
     }
 
-    evaluation_result = runner.invoke(app, ["config", "list", "evaluation"])
+    evaluation_result = runner.invoke(app, ["config", "list", "evaluator"])
     assert evaluation_result.exit_code == 0, evaluation_result.stdout
-    assert evaluation_result.stdout.splitlines() == [
-        "full_temporal_replay",
-        "poisson_replay",
-    ]
+    assert evaluation_result.stdout.splitlines() == ["poisson_replay"]
 
     builder_result = runner.invoke(app, ["config", "list", "dataset_builder"])
     assert builder_result.exit_code == 0, builder_result.stdout
@@ -231,7 +238,7 @@ def test_train_submit_uses_cli_default_remote_target(monkeypatch) -> None:
             "train",
             "--surface",
             "current_row_fee_dynamics",
-            "--dataset-id",
+            "--corpus-id",
             "cor_9a73b1e88edb488afb1e",
         ],
     )
@@ -246,7 +253,7 @@ def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:
     def _fake_resolve(selection) -> object:
         assert isinstance(selection, TrainWorkflowSelection)
         assert selection.surface == "current_row_fee_dynamics"
-        assert selection.dataset_id == "cor_9a73b1e88edb488afb1e"
+        assert selection.corpus_id == "cor_9a73b1e88edb488afb1e"
         return TrainConfig.model_construct(workflow=WorkflowTask.TRAIN)
 
     class FakeSession:
@@ -282,7 +289,7 @@ def test_train_submit_cli_renders_follow_failure(monkeypatch) -> None:
             "train",
             "--surface",
             "current_row_fee_dynamics",
-            "--dataset-id",
+            "--corpus-id",
             "cor_9a73b1e88edb488afb1e",
         ],
     )

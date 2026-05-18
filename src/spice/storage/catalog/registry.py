@@ -10,8 +10,8 @@ from sqlalchemy import Table
 
 from ..engine import RootKind
 from ..layout import ARTIFACTS_ROOT_NAME, CORPORA_ROOT_NAME, STUDIES_ROOT_NAME
-from .records import CatalogArtifactRecord, CatalogDatasetRecord, CatalogRecord, CatalogStudyRecord
-from .schema import artifact_index, dataset_index, study_index
+from .records import CatalogArtifactRecord, CatalogCorpusRecord, CatalogRecord, CatalogStudyRecord
+from .schema import artifact_index, corpus_index, study_index
 
 RecordT = TypeVar("RecordT", bound=CatalogRecord)
 
@@ -49,14 +49,14 @@ class CatalogRootKindSpec(Generic[RecordT]):
         )
 
 
-DATASET_ROOT_SPEC: CatalogRootKindSpec[CatalogDatasetRecord] = CatalogRootKindSpec(
+DATASET_ROOT_SPEC: CatalogRootKindSpec[CatalogCorpusRecord] = CatalogRootKindSpec(
     root_kind=RootKind.CORPUS,
-    label="dataset",
-    record_type=CatalogDatasetRecord,
-    table=dataset_index,
-    key_field="dataset_id",
+    label="corpus",
+    record_type=CatalogCorpusRecord,
+    table=corpus_index,
+    key_field="corpus_id",
     parent_name=CORPORA_ROOT_NAME,
-    default_order=("chain_name", "dataset_name"),
+    default_order=("chain_name", "corpus_name"),
     count_field="dataset_roots",
 )
 STUDY_ROOT_SPEC: CatalogRootKindSpec[CatalogStudyRecord] = CatalogRootKindSpec(
@@ -68,7 +68,7 @@ STUDY_ROOT_SPEC: CatalogRootKindSpec[CatalogStudyRecord] = CatalogRootKindSpec(
     parent_name=STUDIES_ROOT_NAME,
     default_order=(
         "chain_name",
-        "dataset_name",
+        "corpus_name",
         "features_id",
         "prediction_id",
         "model_id",
@@ -86,7 +86,7 @@ ARTIFACT_ROOT_SPEC: CatalogRootKindSpec[CatalogArtifactRecord] = CatalogRootKind
     parent_name=ARTIFACTS_ROOT_NAME,
     default_order=(
         "chain_name",
-        "dataset_name",
+        "corpus_name",
         "features_id",
         "prediction_id",
         "model_id",
@@ -103,7 +103,7 @@ _SPECS_BY_ROOT_KIND = {
     RootKind.ARTIFACT: ARTIFACT_ROOT_SPEC,
 }
 _ROOT_KIND_BY_RECORD_TYPE = {
-    CatalogDatasetRecord: RootKind.CORPUS,
+    CatalogCorpusRecord: RootKind.CORPUS,
     CatalogStudyRecord: RootKind.STUDY,
     CatalogArtifactRecord: RootKind.ARTIFACT,
 }

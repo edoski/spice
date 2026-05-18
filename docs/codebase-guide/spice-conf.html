@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Checked-In Config Specs - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>Checked-In Config Specs</h1>
+      <p class="lede">This package stores the YAML specs that users and workflows name. These files are the checked-in catalog of chains, datasets, providers, models, objectives, surfaces, benchmarks, and tuning spaces.</p>
+      <div class="meta">
+        <span class="pill">src/spice/conf</span>
+        <span class="pill">Docs: ARCHITECTURE.md, IMPLEMENTATIONS.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>Config loading reads this directory. Runtime code should see typed models produced from these YAML files, not raw dictionaries.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>If <code>src/spice/config</code> is the loader and validator, <code>src/spice/conf</code> is the recipe book. A surface recipe chooses many smaller recipes, and workflow resolution validates the final meal before anything runs.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>__init__.py</code></div><div>Marks the YAML tree as package data so the wheel can include <code>src/spice/conf/**/*.yaml</code>.</div>
+<div><code>benchmark/*.yaml</code></div><div>Benchmark sweeps and named benchmark cases.</div>
+<div><code>chain/*.yaml</code></div><div>Chain identity and chain-level facts.</div>
+<div><code>dataset/*.yaml</code></div><div>Dataset names, dates, and history/evaluation windows.</div>
+<div><code>dataset_builder/*.yaml</code></div><div>Dataset-builder implementation choices such as fixed sequence temporal windows.</div>
+<div><code>evaluation/*.yaml</code></div><div>Evaluator specs such as Poisson replay and full temporal replay.</div>
+<div><code>execution/*.yaml</code></div><div>Remote execution target specs.</div>
+<div><code>features/*.yaml</code></div><div>Feature family selections.</div>
+<div><code>model/*.yaml</code></div><div>Model family configs.</div>
+<div><code>objective/*.yaml</code></div><div>Optimization objective specs.</div>
+<div><code>prediction/*.yaml</code></div><div>Prediction family selections.</div>
+<div><code>problem/*.yaml</code></div><div>Temporal problem compiler specs.</div>
+<div><code>provider/*.yaml</code></div><div>RPC provider settings.</div>
+<div><code>surface/*.yaml</code></div><div>Named workflow bundles.</div>
+<div><code>training/*.yaml</code></div><div>Training loop settings.</div>
+<div><code>tuning/*.yaml and tuning_space/*.yaml</code></div><div>Optuna run settings and search spaces.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>A workflow selection names a surface.</li>
+<li>The surface names group specs such as model, problem, features, and objective.</li>
+<li>Typed loading validates every YAML file against its owning model.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>YAML identity rule</h3><p>The file name and the internal id must agree. This prevents a file path from lying about the thing inside it.</p>
+<h3>Declarative, not executable</h3><p>YAML chooses behavior. Python compilers execute behavior after validation.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-config.html">Config</a><a href="spice-cli.html">CLI</a><a href="spice-benchmarks.html">Benchmarks</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/conf/ARCHITECTURE.md">ARCHITECTURE.md</a>, <a href="../../src/spice/conf/IMPLEMENTATIONS.md">IMPLEMENTATIONS.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

@@ -161,7 +161,7 @@ class ObservedTimeWindowCompiledProblemContract(CompiledProblemContract):
             minimum_window,
             self.required_history_seconds
             + self.max_delay_seconds
-            + math.ceil((self.warmup_rows + self.sample_count + 1) * bootstrap_interval_seconds),
+            + math.ceil((self.warmup_rows + 1) * bootstrap_interval_seconds),
         )
 
     def count_valid_capability_samples(self, feature_table: ResolvedFeatureTable) -> int:
@@ -269,7 +269,6 @@ def compile_problem(
         problem_id=problem.id,
         features_id=feature_contract.features_id,
         lookback_seconds=problem.lookback_seconds,
-        sample_count=problem.sample_count,
         max_delay_seconds=problem.max_delay_seconds,
         feature_prerequisites=feature_contract.feature_prerequisites,
         execution_policy=execution_policy,

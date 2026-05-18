@@ -19,7 +19,7 @@ from .catalog.index import (
 from .catalog.materialization import materialize_catalog_root
 from .catalog.records import (
     CatalogArtifactRecord,
-    CatalogDatasetRecord,
+    CatalogCorpusRecord,
     CatalogRecord,
     CatalogStudyRecord,
 )
@@ -29,10 +29,10 @@ from .inspect_artifact import artifact_list_sections
 from .inspect_dataset import dataset_list_sections
 from .inspect_study import study_list_sections
 from .lifecycle import delete_artifact_record, delete_dataset_record, delete_study_record
-from .selectors import ArtifactSelector, DatasetSelector, StudySelector
+from .selectors import ArtifactSelector, CorpusSelector, StudySelector
 
-StorageRootKind: TypeAlias = Literal["dataset", "study", "artifact"]
-StorageSelector: TypeAlias = DatasetSelector | StudySelector | ArtifactSelector
+StorageRootKind: TypeAlias = Literal["corpus", "study", "artifact"]
+StorageSelector: TypeAlias = CorpusSelector | StudySelector | ArtifactSelector
 StorageShowOutcome: TypeAlias = "StorageShowRendered | StorageShowFailure"
 StorageDeleteOutcome: TypeAlias = "StorageDeleteCompleted | StorageDeleteFailure"
 SectionRows: TypeAlias = list[tuple[str, list[tuple[str, str]]]]
@@ -143,12 +143,12 @@ class _OperatorSpec(Generic[SelectorT, RecordT]):
 
 
 _SPECS: dict[StorageRootKind, _OperatorSpec[Any, Any]] = {
-    "dataset": _OperatorSpec(
-        kind="dataset",
-        selector_type=DatasetSelector,
-        record_type=CatalogDatasetRecord,
+    "corpus": _OperatorSpec(
+        kind="corpus",
+        selector_type=CorpusSelector,
+        record_type=CatalogCorpusRecord,
         valid_details=frozenset(detail.value for detail in DatasetInspectionDetail),
-        narrowing_attributes=("chain_name", "dataset_name"),
+        narrowing_attributes=("chain_name", "corpus_name"),
         list_catalog_records=lambda root, selector: list_dataset_records(
             root,
             selector=selector,
@@ -167,7 +167,7 @@ _SPECS: dict[StorageRootKind, _OperatorSpec[Any, Any]] = {
         valid_details=frozenset(detail.value for detail in StudyInspectionDetail),
         narrowing_attributes=(
             "chain_name",
-            "dataset_name",
+            "corpus_name",
             "features_id",
             "prediction_id",
             "model_id",
@@ -192,7 +192,7 @@ _SPECS: dict[StorageRootKind, _OperatorSpec[Any, Any]] = {
         valid_details=frozenset(detail.value for detail in ArtifactInspectionDetail),
         narrowing_attributes=(
             "chain_name",
-            "dataset_name",
+            "corpus_name",
             "features_id",
             "prediction_id",
             "model_id",

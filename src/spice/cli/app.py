@@ -30,8 +30,8 @@ app.add_typer(refresh_app, name="refresh")
 
 app.command(
     "acquire",
-    short_help="Acquire canonical datasets.",
-    help="Acquire canonical history and evaluation block datasets.",
+    short_help="Acquire canonical corpora.",
+    help="Acquire one canonical block-range corpus.",
     epilog=(
         "Example:\n"
         "  spice acquire --surface current_row_fee_dynamics --chain avalanche"
@@ -44,7 +44,7 @@ app.command(
     epilog=(
         "Example:\n"
         "  spice train --surface current_row_fee_dynamics "
-        "--dataset-id cor_9a73b1e88edb488afb1e"
+        "--corpus-id cor_9a73b1e88edb488afb1e"
     ),
 )(train_command)
 app.command(
@@ -54,7 +54,7 @@ app.command(
     epilog=(
         "Example:\n"
         "  spice tune --surface current_row_fee_dynamics "
-        "--dataset-id cor_9a73b1e88edb488afb1e --trial-count 20"
+        "--corpus-id cor_9a73b1e88edb488afb1e --trial-count 20"
     ),
 )(tune_command)
 app.command(
@@ -64,7 +64,7 @@ app.command(
     epilog=(
         "Example:\n"
         "  spice evaluate --artifact-id art_... "
-        "--dataset-id cor_9a73b1e88edb488afb1e --evaluation poisson_replay"
+        "--corpus-id cor_9a73b1e88edb488afb1e --evaluator poisson_replay"
     ),
 )(evaluate_command)
 

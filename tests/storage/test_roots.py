@@ -13,8 +13,8 @@ def _artifact_record(root_path):
     return artifact_record(
         root_path,
         artifact_id="art_1",
-        dataset_id="cor_1",
-        dataset_name="dataset",
+        corpus_id="cor_1",
+        corpus_name="corpus",
         chain_name="ethereum",
         features_id="features",
         prediction_id="prediction",

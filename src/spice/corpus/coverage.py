@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from ..core.errors import StateConflictError
 from ..features import CompiledFeatureContract
 from ..temporal.contracts import CompiledProblemContract
-from .metadata import DatasetManifest, SplitCoverageMetadata
+from .metadata import CorpusManifest, SplitCoverageMetadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +24,7 @@ def training_coverage_requirement(
 ) -> CorpusCoverageRequirement:
     return CorpusCoverageRequirement(
         history_seconds=contract.required_history_seconds + contract.max_delay_seconds,
-        history_rows=contract.warmup_rows + contract.sample_count,
+        history_rows=contract.warmup_rows + 1,
     )
 
 
@@ -48,7 +48,7 @@ def evaluation_coverage_requirement(
 
 
 def validate_corpus_coverage(
-    manifest: DatasetManifest,
+    manifest: CorpusManifest,
     *,
     contract: CompiledProblemContract,
     feature_contract: CompiledFeatureContract,
@@ -69,41 +69,31 @@ def validate_corpus_coverage(
             "Corpus source requirements do not satisfy feature contract: missing "
             + ", ".join(sorted(missing_source_columns))
         )
-    _validate_clean_split(manifest, split="history")
+    _validate_clean_split(manifest)
     _require_window_span(
-        manifest.splits.history.coverage,
+        manifest.blocks.coverage,
         minimum_seconds=requirement.history_seconds,
-        label="history coverage",
+        label="corpus coverage",
     )
-    if manifest.splits.history.coverage.rows < requirement.history_rows:
+    if manifest.blocks.coverage.rows < requirement.history_rows:
         raise StateConflictError(
-            "Corpus history rows are insufficient for compiled problem: "
-            f"{manifest.splits.history.coverage.rows} < {requirement.history_rows}"
+            "Corpus rows are insufficient for compiled problem: "
+            f"{manifest.blocks.coverage.rows} < {requirement.history_rows}"
         )
     if requirement.evaluation_delay_seconds is not None:
-        _validate_clean_split(manifest, split="evaluation")
         _require_window_span(
-            manifest.splits.evaluation.coverage,
+            manifest.blocks.coverage,
             minimum_seconds=requirement.evaluation_delay_seconds,
-            label="evaluation coverage",
+            label="corpus coverage",
         )
 
 
-def _validate_clean_split(manifest: DatasetManifest, *, split: str) -> None:
-    report = (
-        manifest.splits.history.validation
-        if split == "history"
-        else manifest.splits.evaluation.validation
-    )
+def _validate_clean_split(manifest: CorpusManifest) -> None:
+    report = manifest.blocks.validation
     if report.status != "clean":
-        raise StateConflictError(f"Corpus {split} validation is not clean: {report.status}")
-    coverage = (
-        manifest.splits.history.coverage
-        if split == "history"
-        else manifest.splits.evaluation.coverage
-    )
-    if coverage.rows <= 0:
-        raise StateConflictError(f"Corpus {split} split is empty")
+        raise StateConflictError(f"Corpus validation is not clean: {report.status}")
+    if manifest.blocks.coverage.rows <= 0:
+        raise StateConflictError("Corpus is empty")
 
 
 def _require_window_span(

@@ -128,7 +128,7 @@ def benchmark_index_list_command(
     benchmark: Annotated[str | None, typer.Option("--benchmark")] = None,
     chain: Annotated[str | None, typer.Option("--chain")] = None,
     model: Annotated[str | None, typer.Option("--model")] = None,
-    evaluation: Annotated[str | None, typer.Option("--evaluation")] = None,
+    evaluator: Annotated[str | None, typer.Option("--evaluator")] = None,
     limit: Annotated[int | None, typer.Option("--limit")] = None,
     index_path: Annotated[
         Path,
@@ -142,7 +142,7 @@ def benchmark_index_list_command(
         benchmark=benchmark,
         chain=chain,
         model=model,
-        evaluation=evaluation,
+        evaluator=evaluator,
         limit=limit,
     ):
         echo_json(asdict(row))
@@ -157,7 +157,7 @@ def benchmark_index_export_command(
     benchmark: Annotated[str | None, typer.Option("--benchmark")] = None,
     chain: Annotated[str | None, typer.Option("--chain")] = None,
     model: Annotated[str | None, typer.Option("--model")] = None,
-    evaluation: Annotated[str | None, typer.Option("--evaluation")] = None,
+    evaluator: Annotated[str | None, typer.Option("--evaluator")] = None,
     index_path: Annotated[
         Path,
         typer.Option("--index", help="Benchmark result index path."),
@@ -171,6 +171,6 @@ def benchmark_index_export_command(
         benchmark=benchmark,
         chain=chain,
         model=model,
-        evaluation=evaluation,
+        evaluator=evaluator,
     )
     echo_json({"output": str(output), "rows": len(rows)})

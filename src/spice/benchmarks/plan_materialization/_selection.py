@@ -10,7 +10,7 @@ from ...config.resolved_workflows import SUPPORTED_RESOLVED_WORKFLOWS
 from ...config.selections import WorkflowSelection, workflow_selection_field_set
 from ._models import BenchmarkSelectionLedger
 
-_BENCHMARK_SELECTION_ROOT_FIELDS = frozenset({"dataset_id", "study_id", "artifact_id"})
+_BENCHMARK_SELECTION_ROOT_FIELDS = frozenset({"corpus_id", "study_id", "artifact_id"})
 _BENCHMARK_SELECTION_COORDINATE_FIELDS = (
     frozenset(
         field

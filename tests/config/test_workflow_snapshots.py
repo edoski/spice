@@ -26,16 +26,20 @@ def _resolved_config(task: WorkflowTask) -> TrainConfig | TuneConfig | EvaluateC
     selection_payload = {
         WorkflowTask.TRAIN: {
             "surface": "current_row_fee_dynamics",
-            "dataset_id": TEST_DATASET_ID,
+            "corpus_id": TEST_DATASET_ID,
         },
         WorkflowTask.TUNE: {
             "surface": "current_row_fee_dynamics",
-            "dataset_id": TEST_DATASET_ID,
+            "corpus_id": TEST_DATASET_ID,
         },
         WorkflowTask.EVALUATE: {
             "artifact_id": "art_test",
-            "dataset_id": TEST_DATASET_ID,
-            "evaluation": "poisson_replay",
+            "corpus_id": TEST_DATASET_ID,
+            "evaluator": "poisson_replay",
+            "evaluation_window": {
+                "start": "2026-02-03T14:00:00Z",
+                "duration_seconds": 7200,
+            },
         },
     }[task]
     config = resolve_workflow_config(
@@ -106,7 +110,7 @@ def test_workflow_snapshot_preserves_owner_config_types() -> None:
     assert type(restored_train.problem.compiler) is type(train.problem.compiler)
     assert type(restored_train.objective) is type(train.objective)
     assert type(restored_tune.tuning_space.model) is type(tune.tuning_space.model)
-    assert type(restored_evaluate.evaluation) is type(evaluate.evaluation)
+    assert type(restored_evaluate.evaluator) is type(evaluate.evaluator)
 
 
 def test_workflow_snapshot_rejects_acquire_and_mismatched_workflow() -> None:

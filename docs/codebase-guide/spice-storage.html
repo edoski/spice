@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Storage - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>Storage</h1>
+      <p class="lede">Storage owns durable roots for corpora, studies, and artifacts. It manages layout, ids, root-local SQLite state, payload codecs, lifecycle commits, inspection, selection, deletion, and catalog reindexing hooks.</p>
+      <div class="meta">
+        <span class="pill">src/spice/storage</span>
+        <span class="pill">Docs: ARCHITECTURE.md, IMPLEMENTATIONS.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>It is the persistence boundary used by workflows, modeling, corpus, benchmarks, CLI storage commands, and remote transfer code.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>Storage is the project filing system. A corpus root stores dataset state, a study root stores tuning/search state, and an artifact root stores a trained model plus summaries. The catalog is an index of those files, not the source of truth.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>artifact.py</code></div><div>Writes/loads artifact manifests, training summaries, epochs, evaluation summaries, and evaluation runs.</div>
+<div><code>artifact_codecs.py</code></div><div>Encodes and decodes artifact manifest, training, metric, temporal capability, and evaluation payloads.</div>
+<div><code>corpus.py</code></div><div>Writes dataset state and lists acquisition runs.</div>
+<div><code>corpus_codecs.py</code></div><div>Payload codecs for dataset manifests and acquisition runs.</div>
+<div><code>engine.py</code></div><div>Defines root kinds, state DB paths, SQLAlchemy engine helpers, state initialization, and root-kind detection.</div>
+<div><code>errors.py</code></div><div>Defines delete-blocked storage errors.</div>
+<div><code>identity.py</code></div><div>Builds identity models for studies, artifacts, and study definitions.</div>
+<div><code>ids.py</code></div><div>Creates stable corpus, study, and artifact ids from canonical identity payloads.</div>
+<div><code>inspect.py</code></div><div>Shared root-description and section rendering helpers.</div>
+<div><code>inspect_artifact.py</code></div><div>Describes artifact roots, dependencies, feature prerequisites, epochs, and evaluation runs.</div>
+<div><code>inspect_dataset.py</code></div><div>Describes dataset roots, requests, coverage, and acquisition runs.</div>
+<div><code>inspect_study.py</code></div><div>Describes study roots, trials, and summaries.</div>
+<div><code>layout.py</code></div><div>Defines storage directory names and path builders for corpora, studies, artifacts, and catalog DBs.</div>
+<div><code>lifecycle.py</code></div><div>Stages, promotes, cleans up, validates, and deletes roots and catalog records.</div>
+<div><code>operator.py</code></div><div>Implements storage show/delete operator models and result/failure types.</div>
+<div><code>payloads.py</code></div><div>Generic payload records, codecs, singleton/sequence stores, and Pydantic helpers.</div>
+<div><code>schema.py</code></div><div>Defines SQLite table groups for dataset, study, and artifact roots.</div>
+<div><code>selectors.py</code></div><div>Defines dataset, study, and artifact selector models.</div>
+<div><code>semantics_codecs.py</code></div><div>Encodes/decodes study and artifact semantic payloads.</div>
+<div><code>study_manifest.py</code></div><div>Builds, inserts, loads, diffs, and validates study manifests.</div>
+<div><code>study_manifest_codecs.py</code></div><div>Payload codecs for study definitions and manifests.</div>
+<div><code>study_models.py</code></div><div>Defines trial state, manifests, trial records, summaries, and Optuna trial extraction.</div>
+<div><code>study_optuna.py</code></div><div>Loads or creates Optuna-backed materialized studies and study summaries.</div>
+<div><code>study_render.py</code></div><div>Formats study result fields and parameters.</div>
+<div><code>sync_cli.py</code></div><div>Internal command helpers for staged remote/local root synchronization.</div>
+<div><code>transactions.py</code></div><div>Commits corpus acquisitions, artifact roots, study mutations, and artifact evaluation state with reindexing.</div>
+<div><code>workflow_root_materialization.py</code></div><div>Materializes consumed/produced root facts from workflow configs.</div>
+<div><code>workflow_roots.py</code></div><div>Defines root handles for acquire, train, tune, and evaluate workflows.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>A workflow materializes expected root facts.</li>
+<li>Work happens in a staged root or existing root.</li>
+<li>Payload stores write root-local state.</li>
+<li>Transactions promote or mutate roots and reindex the catalog.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Root</h3><p>A top-level durable directory for one corpus, study, or artifact identity.</p>
+<h3>Catalog vs state DB</h3><p>The root-local state DB is authoritative. The catalog is a searchable index that can be rebuilt.</p>
+<h3>Stable id</h3><p>Ids come from canonical identity payloads so the same meaning maps to the same storage location.</p>
+<h3>Staged commit</h3><p>New roots are built in a staging area, then promoted only after state is complete.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-storage-catalog.html">Storage Catalog</a><a href="spice-workflows.html">Workflows</a><a href="spice-execution.html">Execution</a><a href="spice-cli-commands.html">CLI Commands</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/storage/ARCHITECTURE.md">ARCHITECTURE.md</a>, <a href="../../src/spice/storage/IMPLEMENTATIONS.md">IMPLEMENTATIONS.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

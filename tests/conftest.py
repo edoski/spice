@@ -3,7 +3,6 @@ from __future__ import annotations
 import shutil
 from collections.abc import Mapping
 from copy import deepcopy
-from datetime import date
 from pathlib import Path
 from typing import cast
 
@@ -40,7 +39,10 @@ _SELECTION_FIELD_NAMES = frozenset().union(
 )
 _SELECTION_GROUP_KEYS = _SELECTION_FIELD_NAMES & frozenset(named_group_keys())
 _SURFACE_FIELDS = frozenset(SurfaceFrame.model_fields)
-TEST_EVALUATION_DATE = date(2025, 11, 9)
+TEST_EVALUATION_WINDOW = {
+    "start": "2026-02-03T14:00:00Z",
+    "duration_seconds": 7200,
+}
 TEST_DATASET_ID = "cor_9a73b1e88edb488afb1e"
 TEST_STUDY_ID = "std_test"
 TEST_ARTIFACT_ID = "art_test"
@@ -77,7 +79,6 @@ def _spec_name_for_payload(group: str, default_name: str, payload: Mapping[str, 
 def model_workflow_override():
     def _override(
         *,
-        sample_count: int = 24,
         lookback_seconds: int = 120,
         max_delay_seconds: int = 36,
         delay_seconds: int | None = None,
@@ -86,16 +87,14 @@ def model_workflow_override():
         problem = _named_group_copy("current_row_nominal", "problem")
         problem["id"] = "test_problem"
         problem["lookback_seconds"] = lookback_seconds
-        problem["sample_count"] = sample_count
         problem["max_delay_seconds"] = max_delay_seconds
         problem["compiler"] = cast(dict[str, object], problem["compiler"])
-        dataset = _named_group_copy("icdcs_2026", "dataset")
-        dataset["evaluation_date"] = TEST_EVALUATION_DATE.isoformat()
+        corpus = _named_group_copy("icdcs_2026", "corpus")
         return {
             "chain": "ethereum",
             "model": "lstm",
             "features": "core_fee_dynamics",
-            "dataset": dataset,
+            "corpus": corpus,
             "problem": problem,
             "training": {
                 "learning_rate": 0.0003,
@@ -112,7 +111,7 @@ def model_workflow_override():
                 "log_every_n_steps": 1,
                 "input_normalization": {"id": "row_standard"},
             },
-            "evaluation": {
+            "evaluator": {
                 "id": "poisson_replay",
                 "window_seconds": 600,
                 "arrival_rate_per_second": 0.02,
@@ -154,20 +153,17 @@ def tune_override():
 def acquire_override():
     def _override(
         *,
-        sample_count: int = 4,
         lookback_seconds: int = 24,
         max_delay_seconds: int = 12,
     ) -> dict[str, object]:
         problem = _named_group_copy("current_row_nominal", "problem")
         problem["id"] = "acquire_test_problem"
         problem["lookback_seconds"] = lookback_seconds
-        problem["sample_count"] = sample_count
         problem["max_delay_seconds"] = max_delay_seconds
-        dataset = _named_group_copy("icdcs_2026", "dataset")
-        dataset["evaluation_date"] = TEST_EVALUATION_DATE.isoformat()
+        corpus = _named_group_copy("icdcs_2026", "corpus")
         return {
             "chain": "ethereum",
-            "dataset": dataset,
+            "corpus": corpus,
             "problem": problem,
             "acquisition": {
                 "dry_run": False,
@@ -220,18 +216,19 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
         override_payload = dict(override or {})
         selection_values: dict[str, object] = {"storage_root": workspace_root / "outputs"}
         if workflow is WorkflowTask.TUNE:
-            selection_values["dataset_id"] = TEST_DATASET_ID
+            selection_values["corpus_id"] = TEST_DATASET_ID
         elif workflow is WorkflowTask.TRAIN:
             if variant == "tuned":
                 selection_values["study_id"] = TEST_STUDY_ID
             else:
-                selection_values["dataset_id"] = TEST_DATASET_ID
+                selection_values["corpus_id"] = TEST_DATASET_ID
         elif workflow is WorkflowTask.EVALUATE:
             selection_values.update(
                 {
                     "artifact_id": TEST_ARTIFACT_ID,
-                    "dataset_id": TEST_DATASET_ID,
-                    "evaluation": "poisson_replay",
+                    "corpus_id": TEST_DATASET_ID,
+                    "evaluator": "poisson_replay",
+                    "evaluation_window": TEST_EVALUATION_WINDOW,
                 }
             )
         selection_values.update(
@@ -253,7 +250,7 @@ def load_workflow_config(tmp_path: Path, isolate_conf_root):
             if key in _SELECTION_GROUP_KEYS and key in workflow_fields:
                 if isinstance(value, Mapping):
                     payload = dict(value)
-                    if key == "evaluation":
+                    if key == "evaluator":
                         resolved_delay = payload.pop("delay_seconds", None)
                         if resolved_delay is not None and "delay_seconds" in workflow_fields:
                             selection_values["delay_seconds"] = resolved_delay

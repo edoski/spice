@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Self
@@ -46,8 +46,82 @@ class ArtifactVariant(StrEnum):
     TUNED = "tuned"
 
 
-def _utc_midnight_timestamp(value: date) -> int:
-    return int(datetime.combine(value, time.min, tzinfo=UTC).timestamp())
+class TimestampWindowSpec(_ConfigModel):
+    start: datetime
+    end: datetime | None = None
+    duration_seconds: int | None = Field(default=None, gt=0)
+
+    @field_validator("start", "end")
+    @classmethod
+    def validate_utc_datetime(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("timestamp windows require timezone-aware UTC datetimes")
+        resolved = value.astimezone(UTC)
+        if resolved.utcoffset() != UTC.utcoffset(resolved):
+            raise ValueError("timestamp windows require UTC datetimes")
+        return resolved
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> Self:
+        if (self.end is None) == (self.duration_seconds is None):
+            raise ValueError("timestamp window must define exactly one of end or duration_seconds")
+        if self.end is not None and self.end <= self.start:
+            raise ValueError("timestamp window end must be greater than start")
+        return self
+
+    @property
+    def start_timestamp(self) -> int:
+        return int(self.start.timestamp())
+
+    @property
+    def end_timestamp(self) -> int:
+        if self.end is not None:
+            return int(self.end.timestamp())
+        if self.duration_seconds is None:
+            raise ValueError("timestamp window duration_seconds was not resolved")
+        return self.start_timestamp + self.duration_seconds
+
+
+class EvaluationWindowSpec(TimestampWindowSpec):
+    id: str
+    tags: list[str] = Field(default_factory=list)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return validate_path_segment(value, label="evaluation_window.id")
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("evaluation_window.tags must not contain duplicates")
+        for tag in value:
+            validate_path_segment(tag, label="evaluation_window.tags")
+        return value
+
+
+class EvaluationsSpec(_ConfigModel):
+    id: str
+    items: list[EvaluationWindowSpec] = Field(min_length=1)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        return validate_path_segment(value, label="evaluations.id")
+
+    @model_validator(mode="after")
+    def validate_items(self) -> Self:
+        ids = [item.id for item in self.items]
+        if len(set(ids)) != len(ids):
+            raise ValueError("evaluations.items must not contain duplicate ids")
+        return self
+
+    @property
+    def training_cutoff_timestamp(self) -> int:
+        return min(item.start_timestamp for item in self.items)
 
 
 def _validate_http_endpoint_url(value: str, *, label: str) -> str:
@@ -73,14 +147,14 @@ class ChainSpec(_ConfigModel):
         return validate_path_segment(value, label="chain.name")
 
 
-class DatasetSpec(_ConfigModel):
+class CorpusSpec(_ConfigModel):
     name: str
-    evaluation_date: date
+    window: TimestampWindowSpec
 
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: str) -> str:
-        return validate_path_segment(value, label="dataset.name")
+        return validate_path_segment(value, label="corpus.name")
 
 
 class StorageSpec(_ConfigModel):
@@ -90,7 +164,6 @@ class StorageSpec(_ConfigModel):
 class ProblemSpec(_ConfigModel):
     id: str
     lookback_seconds: int = Field(gt=0)
-    sample_count: int = Field(gt=0)
     max_delay_seconds: int = Field(gt=0)
     compiler: SerializeAsAny[ProblemCompilerConfig]
     execution_policy: SerializeAsAny[ExecutionPolicyConfig]
@@ -467,20 +540,16 @@ class ProviderSpec(_ConfigModel):
 class WorkflowConfig(_ConfigModel):
     workflow: WorkflowTask
     chain: ChainSpec
-    dataset: DatasetSpec
+    corpus: CorpusSpec
     storage: StorageSpec
 
     @property
-    def evaluation_window_start_timestamp(self) -> int:
-        return _utc_midnight_timestamp(self.dataset.evaluation_date)
+    def corpus_window_start_timestamp(self) -> int:
+        return self.corpus.window.start_timestamp
 
     @property
-    def evaluation_window_end_timestamp(self) -> int:
-        return _utc_midnight_timestamp(self.dataset.evaluation_date + timedelta(days=1))
-
-    @property
-    def history_window_end_timestamp(self) -> int:
-        return self.evaluation_window_start_timestamp
+    def corpus_window_end_timestamp(self) -> int:
+        return self.corpus.window.end_timestamp
 
 
 class AcquireConfig(WorkflowConfig):
@@ -503,13 +572,14 @@ class ModelWorkflowConfig(WorkflowConfig):
 
 class ObjectiveModelWorkflowConfig(ModelWorkflowConfig):
     objective: SerializeAsAny[ObjectiveConfig]
-    evaluation: SerializeAsAny[EvaluatorConfig] | None = None
+    evaluator: SerializeAsAny[EvaluatorConfig] | None = None
 
 
 class TrainConfig(ObjectiveModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.TRAIN
-    dataset_id: str | None = None
+    corpus_id: str | None = None
     study_id: str | None = None
+    training_cutoff_timestamp: int | None = Field(default=None, gt=0)
     split: SplitConfig
     training: TrainingConfig
     tuning: TuningConfig | None = None
@@ -520,11 +590,11 @@ class TrainConfig(ObjectiveModelWorkflowConfig):
         if self.artifact.variant is ArtifactVariant.TUNED:
             if self.study_id is None:
                 raise ConfigResolutionError("tuned training requires study_id")
-            if self.dataset_id is not None:
-                raise ConfigResolutionError("tuned training must not define dataset_id")
+            if self.corpus_id is not None:
+                raise ConfigResolutionError("tuned training must not define corpus_id")
             return self
-        if self.dataset_id is None:
-            raise ConfigResolutionError("baseline training requires dataset_id")
+        if self.corpus_id is None:
+            raise ConfigResolutionError("baseline training requires corpus_id")
         if self.study_id is not None:
             raise ConfigResolutionError("baseline training must not define study_id")
         return self
@@ -532,7 +602,8 @@ class TrainConfig(ObjectiveModelWorkflowConfig):
 
 class TuneConfig(ObjectiveModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.TUNE
-    dataset_id: str
+    corpus_id: str
+    training_cutoff_timestamp: int | None = Field(default=None, gt=0)
     split: SplitConfig
     training: TrainingConfig
     tuning: TuningConfig
@@ -551,13 +622,14 @@ class EvaluateConfig(_ConfigModel):
     workflow: WorkflowTask = WorkflowTask.EVALUATE
     storage: StorageSpec = Field(default_factory=StorageSpec)
     artifact_id: str
-    dataset_id: str
-    evaluation: SerializeAsAny[EvaluatorConfig]
+    corpus_id: str
+    evaluation_window: TimestampWindowSpec
+    evaluator: SerializeAsAny[EvaluatorConfig]
     delay_seconds: int | None = Field(default=None, gt=0)
     batch_size: int = Field(default=256, gt=0)
 
     @model_validator(mode="after")
     def validate_required_evaluator(self) -> Self:
-        if self.evaluation is None:
-            raise ConfigResolutionError("evaluation workflow requires evaluation")
+        if self.evaluator is None:
+            raise ConfigResolutionError("evaluation workflow requires evaluator")
         return self

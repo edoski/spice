@@ -29,9 +29,10 @@ def _evaluate_config(tmp_path: Path) -> EvaluateConfig:
     return EvaluateConfig(
         storage=StorageSpec(root=tmp_path / "outputs"),
         artifact_id="artifact-1",
-        dataset_id="dataset-1",
-        evaluation=coerce_evaluator_config(
-            load_named_group_payload("poisson_replay", "evaluation")
+        corpus_id="dataset-1",
+        evaluation_window={"start": "2026-02-03T14:00:00Z", "duration_seconds": 7200},
+        evaluator=coerce_evaluator_config(
+            load_named_group_payload("poisson_replay", "evaluator")
         ),
         delay_seconds=36,
     )
@@ -51,13 +52,13 @@ def _evaluate_entry(tmp_path: Path) -> BenchmarkPlanEntry:
         ),
         dimension_labels={"features": "core"},
         selection=BenchmarkSelectionLedger(
-            evaluation=config.evaluation.id,
+            evaluator=config.evaluator.id,
             delay_seconds=config.delay_seconds,
         ),
         root_facts=BenchmarkRootFacts(
-            consumed_dataset_id=config.dataset_id,
+            consumed_corpus_id=config.corpus_id,
             consumed_artifact_id=config.artifact_id,
-            consumed_artifact_dataset_id=config.dataset_id,
+            consumed_artifact_corpus_id=config.corpus_id,
         ),
         root_ledger=BenchmarkRootLedger(),
         config=config,
@@ -80,8 +81,8 @@ def test_plan_jsonl_keeps_operator_run_state_shape(tmp_path: Path) -> None:
     assert row["dependencies"]["local_run_ids"] == ["case.train"]
     assert row["dimension_labels"] == {"features": "core"}
     assert set(row) >= {"selection", "root_facts", "root_ledger", "config"}
-    assert "dataset_id" not in row["selection"]
-    assert row["root_facts"]["consumed_dataset_id"] == "dataset-1"
+    assert "corpus_id" not in row["selection"]
+    assert row["root_facts"]["consumed_corpus_id"] == "dataset-1"
     assert row["config"]["workflow"] == "evaluate"
 
 

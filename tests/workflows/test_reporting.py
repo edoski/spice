@@ -134,8 +134,8 @@ def test_evaluate_workflow_uses_prepared_artifact_inference_context(
 
     corpus = corpus_handle(
         tmp_path / "outputs",
-        dataset_id=cast(str, config.dataset_id),
-        dataset_name="test_dataset",
+        corpus_id=cast(str, config.corpus_id),
+        corpus_name="test_dataset",
     )
     artifact = artifact_handle(
         tmp_path / "outputs",
@@ -171,7 +171,7 @@ def test_evaluate_workflow_uses_prepared_artifact_inference_context(
     assert calls[0].startswith(f"prepare:{config.delay_seconds}:")
     assert calls[1:] == ["score:True:True", "summary:True"]
     rendered = output.getvalue()
-    assert "evaluate dataset=test_dataset dataset_id=" in rendered
+    assert "evaluate corpus=test_dataset corpus_id=" in rendered
     assert "prepare history_rows=10 evaluation_rows=5 samples=2" in rendered
     assert "evaluate complete evaluation_storage_id=eval_test events=2" in rendered
 
@@ -201,8 +201,8 @@ def test_train_workflow_emits_compact_epoch_output(
         corpus=corpus_handle(
             tmp_path / "outputs",
             chain_name=config.chain.name,
-            dataset_id=cast(str, config.dataset_id),
-            dataset_name=config.dataset.name,
+            corpus_id=cast(str, config.corpus_id),
+            corpus_name=config.corpus.name,
         ),
     )
 
@@ -251,7 +251,7 @@ def test_train_workflow_emits_compact_epoch_output(
     train_workflow.run(config, reporter=reporter)
 
     rendered = output.getvalue()
-    assert "train dataset=" in rendered
+    assert "train corpus=" in rendered
     assert "prepare rows=128 samples=24" in rendered
     assert "fit started epochs=3" in rendered
     assert "fit epoch=1/3 objective.profit_over_baseline=0.2000" in rendered
@@ -279,8 +279,8 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
     corpus = corpus_handle(
         tmp_path / "outputs",
         chain_name=config.chain.name,
-        dataset_id=cast(str, config.dataset_id),
-        dataset_name=config.dataset.name,
+        corpus_id=cast(str, config.corpus_id),
+        corpus_name=config.corpus.name,
     )
     study = study_handle(
         tmp_path / "outputs",
@@ -359,7 +359,7 @@ def test_tune_workflow_emits_per_trial_not_per_epoch_output(
     tune_workflow.run(config, reporter=reporter)
 
     rendered = output.getvalue()
-    assert "tune dataset=" in rendered
+    assert "tune corpus=" in rendered
     assert "study started trials=2" in rendered
     assert "trial 1/2 complete value=0.2000 best_epoch=2" in rendered
     assert "trial 2/2 complete value=0.3500 best_epoch=3" in rendered

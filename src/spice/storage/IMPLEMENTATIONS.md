@@ -7,7 +7,7 @@ Storage keeps datasets, trained artifacts, tuning studies, and derived catalog i
 There are three root kinds:
 
 ```text
-corpus root   -> acquired history/evaluation block data
+corpus root   -> acquired canonical block data
 study root    -> tuning manifest + Optuna state
 artifact root -> trained model + manifest + training/evaluation state
 ```
@@ -20,8 +20,7 @@ The catalog is an index over roots. Root manifests and state DBs are the source 
 outputs/
   .spice/catalog.sqlite
   corpora/{chain}/{corpus_id}/
-    history/
-    evaluation/
+    blocks/
     .spice/state.sqlite
   studies/{chain}/{study_id}/
     .spice/state.sqlite
@@ -56,7 +55,7 @@ IDs are content-derived:
 
 | ID | Source |
 | --- | --- |
-| Corpus id | Chain, dataset name, evaluation date. |
+| Corpus id | Chain, corpus name, corpus window. |
 | Study id | Canonical study identity payload. |
 | Artifact id | Canonical artifact identity payload. |
 
@@ -64,7 +63,7 @@ Hashes make storage paths stable for identical experiment identities.
 
 ## Corpus State
 
-Corpus state stores one dataset manifest plus acquire-run history. The manifest records dataset id, dataset name, chain name, chain id, and split-level history/evaluation provenance. Each split records the requested timestamp/block range, observed coverage extent, compact validation status/issues, materialization outcome, and backing file count.
+Corpus state stores one corpus manifest plus acquire-run history. The manifest records corpus id, corpus name, chain name, chain id, source requirements, and canonical block-corpus provenance. The block manifest records the requested timestamp/block range, observed coverage extent, compact validation status/issues, materialization outcome, and backing file count.
 
 Acquire-run rows store provider identity, endpoint fingerprint, sizing facts, acquisition config snapshot, and RPC controller counters.
 

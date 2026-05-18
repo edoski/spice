@@ -15,10 +15,11 @@ from ..config.models import AcquireConfig
 from ..storage.workflow_roots import AcquireWorkflowRoots
 from .acquisition_stage import CorpusAcquisitionPublication, CorpusAcquisitionStage
 from .planning import (
+    CorpusAcquisitionPlan,
+    CorpusAcquisitionPlanningContext,
+    CorpusAcquisitionPlanningSpec,
     CorpusAcquisitionSourceRequirements,
-    CorpusCapabilityPlanningContext,
-    CorpusCapabilityPlanningSpec,
-    build_corpus_capability_planning_context,
+    build_corpus_acquisition_planning_context,
 )
 from .split_materialization import CorpusSplitMaterializationSpec
 
@@ -29,7 +30,7 @@ StatusCallback = Callable[[str], None]
 class CorpusAssemblyRequest:
     config: AcquireConfig
     roots: AcquireWorkflowRoots
-    planning_context: CorpusCapabilityPlanningContext
+    planning_context: CorpusAcquisitionPlanningContext
     materialization: CorpusSplitMaterializationSpec
 
     @property
@@ -40,9 +41,8 @@ class CorpusAssemblyRequest:
 @dataclass(frozen=True, slots=True)
 class CorpusAssemblyDryRunResult:
     mode: Literal["dry_run"]
-    history_plan: BlockPullPlan
-    evaluation_plan: BlockPullPlan
-    requested_history_window_seconds: int
+    blocks_plan: BlockPullPlan
+    requested_window_seconds: int
 
 
 CorpusAssemblyResult = CorpusAssemblyDryRunResult | CorpusAcquisitionPublication
@@ -52,14 +52,13 @@ def _noop_status(message: str) -> None:
     del message
 
 
-def _planning_spec(config: AcquireConfig) -> CorpusCapabilityPlanningSpec:
-    return CorpusCapabilityPlanningSpec(
+def _planning_spec(config: AcquireConfig) -> CorpusAcquisitionPlanningSpec:
+    return CorpusAcquisitionPlanningSpec(
         features=config.features,
         problem=config.problem,
         chain_runtime=config.chain.runtime,
-        history_window_end_timestamp=config.history_window_end_timestamp,
-        evaluation_window_start_timestamp=config.evaluation_window_start_timestamp,
-        evaluation_window_end_timestamp=config.evaluation_window_end_timestamp,
+        window_start_timestamp=config.corpus_window_start_timestamp,
+        window_end_timestamp=config.corpus_window_end_timestamp,
     )
 
 
@@ -81,7 +80,7 @@ def prepare_corpus_assembly_request(
     config: AcquireConfig,
     roots: AcquireWorkflowRoots,
 ) -> CorpusAssemblyRequest:
-    planning_context = build_corpus_capability_planning_context(_planning_spec(config))
+    planning_context = build_corpus_acquisition_planning_context(_planning_spec(config))
     return CorpusAssemblyRequest(
         config=config,
         roots=roots,
@@ -104,16 +103,14 @@ async def assemble_corpus(
     emit = status or _noop_status
     planning_context = request.planning_context
     initial_plan = await planning_context.initial_plan(block_source)
-    history_plan = initial_plan.history_plan
-    evaluation_plan = initial_plan.evaluation_plan
-    requested_history_window_seconds = initial_plan.requested_history_window_seconds
+    blocks_plan = initial_plan.blocks_plan
+    requested_window_seconds = initial_plan.requested_window_seconds
 
     if config.acquisition.dry_run:
         return CorpusAssemblyDryRunResult(
             mode="dry_run",
-            history_plan=history_plan,
-            evaluation_plan=evaluation_plan,
-            requested_history_window_seconds=requested_history_window_seconds,
+            blocks_plan=blocks_plan,
+            requested_window_seconds=requested_window_seconds,
         )
 
     controller = AcquisitionPullController.from_config(config.acquisition)
@@ -126,9 +123,8 @@ async def assemble_corpus(
     )
     fulfillment = await stage.fulfill(
         block_source=block_source,
-        initial_history_plan=history_plan,
-        evaluation_plan=evaluation_plan,
-        requested_history_window_seconds=requested_history_window_seconds,
+        blocks_plan=blocks_plan,
+        requested_window_seconds=requested_window_seconds,
         status=emit,
     )
     return stage.publish(fulfillment=fulfillment)

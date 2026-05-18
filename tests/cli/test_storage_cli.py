@@ -22,7 +22,7 @@ def _write_artifact_record(
     root_path = storage_root / "artifacts" / "ethereum" / artifact_id
     upsert_catalog_record(
         storage_root,
-        artifact_record(root_path, artifact_id=artifact_id, dataset_id="cor_1", model_id=model_id),
+        artifact_record(root_path, artifact_id=artifact_id, corpus_id="cor_1", model_id=model_id),
     )
 
 

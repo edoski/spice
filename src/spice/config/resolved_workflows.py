@@ -12,7 +12,7 @@ from ..objectives import ObjectiveConfig
 from .models import (
     ArtifactConfig,
     ChainSpec,
-    DatasetSpec,
+    CorpusSpec,
     EvaluateConfig,
     FeaturesConfig,
     PredictionConfig,
@@ -25,6 +25,7 @@ from .models import (
     TuneConfig,
     TuningConfig,
     TuningSpaceConfig,
+    TimestampWindowSpec,
     WorkflowTask,
 )
 
@@ -40,7 +41,7 @@ DEFAULT_EVALUATE_BATCH_SIZE = 256
 @dataclass(frozen=True, slots=True)
 class ResolvedModelWorkflowFields:
     chain: ChainSpec
-    dataset: DatasetSpec
+    corpus: CorpusSpec
     storage: StorageSpec
     problem: ProblemSpec
     model: ModelConfig[str]
@@ -48,7 +49,7 @@ class ResolvedModelWorkflowFields:
     features: FeaturesConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
-    evaluation: EvaluatorConfig | None
+    evaluator: EvaluatorConfig | None
     study: StudyConfig
     artifact: ArtifactConfig
     split: SplitConfig
@@ -60,22 +61,25 @@ class ResolvedModelWorkflowFields:
 @dataclass(frozen=True, slots=True)
 class ResolvedTrainWorkflowFields:
     model_fields: ResolvedModelWorkflowFields
-    dataset_id: str | None
+    corpus_id: str | None
     study_id: str | None
+    training_cutoff_timestamp: int | None
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedTuneWorkflowFields:
     model_fields: ResolvedModelWorkflowFields
-    dataset_id: str
+    corpus_id: str
+    training_cutoff_timestamp: int | None
 
 
 @dataclass(frozen=True, slots=True)
 class ResolvedEvaluateWorkflowFields:
     storage: StorageSpec
     artifact_id: str
-    dataset_id: str
-    evaluation: EvaluatorConfig
+    corpus_id: str
+    evaluation_window: TimestampWindowSpec
+    evaluator: EvaluatorConfig
     delay_seconds: int | None
     batch_size: int
 
@@ -86,8 +90,17 @@ ResolvedWorkflowFields: TypeAlias = (
     | ResolvedEvaluateWorkflowFields
 )
 _MODEL_WORKFLOW_FIELD_NAMES = frozenset(ResolvedModelWorkflowFields.__dataclass_fields__)
-_TRAIN_FIELD_NAMES = _MODEL_WORKFLOW_FIELD_NAMES | {"workflow", "dataset_id", "study_id"}
-_TUNE_FIELD_NAMES = _MODEL_WORKFLOW_FIELD_NAMES | {"workflow", "dataset_id"}
+_TRAIN_FIELD_NAMES = _MODEL_WORKFLOW_FIELD_NAMES | {
+    "workflow",
+    "corpus_id",
+    "study_id",
+    "training_cutoff_timestamp",
+}
+_TUNE_FIELD_NAMES = _MODEL_WORKFLOW_FIELD_NAMES | {
+    "workflow",
+    "corpus_id",
+    "training_cutoff_timestamp",
+}
 _EVALUATE_FIELD_NAMES = frozenset(ResolvedEvaluateWorkflowFields.__dataclass_fields__) | {
     "workflow"
 }
@@ -125,17 +138,18 @@ def _assemble_train_config(fields: ResolvedTrainWorkflowFields) -> TrainConfig:
     model_fields = fields.model_fields
     return TrainConfig(
         chain=model_fields.chain,
-        dataset=model_fields.dataset,
+        corpus=model_fields.corpus,
         storage=model_fields.storage,
-        dataset_id=fields.dataset_id,
+        corpus_id=fields.corpus_id,
         study_id=fields.study_id,
+        training_cutoff_timestamp=fields.training_cutoff_timestamp,
         problem=model_fields.problem,
         model=model_fields.model,
         dataset_builder=model_fields.dataset_builder,
         features=model_fields.features,
         prediction=model_fields.prediction,
         objective=model_fields.objective,
-        evaluation=model_fields.evaluation,
+        evaluator=model_fields.evaluator,
         study=model_fields.study,
         artifact=model_fields.artifact,
         training=model_fields.training,
@@ -151,16 +165,17 @@ def _assemble_tune_config(fields: ResolvedTuneWorkflowFields) -> TuneConfig:
         raise ValueError("tune workflow requires tuning and tuning_space")
     return TuneConfig(
         chain=model_fields.chain,
-        dataset=model_fields.dataset,
+        corpus=model_fields.corpus,
         storage=model_fields.storage,
-        dataset_id=fields.dataset_id,
+        corpus_id=fields.corpus_id,
+        training_cutoff_timestamp=fields.training_cutoff_timestamp,
         problem=model_fields.problem,
         model=model_fields.model,
         dataset_builder=model_fields.dataset_builder,
         features=model_fields.features,
         prediction=model_fields.prediction,
         objective=model_fields.objective,
-        evaluation=model_fields.evaluation,
+        evaluator=model_fields.evaluator,
         study=model_fields.study,
         artifact=model_fields.artifact,
         training=model_fields.training,
@@ -174,8 +189,9 @@ def _assemble_evaluate_config(fields: ResolvedEvaluateWorkflowFields) -> Evaluat
     return EvaluateConfig(
         storage=fields.storage,
         artifact_id=fields.artifact_id,
-        dataset_id=fields.dataset_id,
-        evaluation=fields.evaluation,
+        corpus_id=fields.corpus_id,
+        evaluation_window=fields.evaluation_window,
+        evaluator=fields.evaluator,
         delay_seconds=fields.delay_seconds,
         batch_size=fields.batch_size,
     )

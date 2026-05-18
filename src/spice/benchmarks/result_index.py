@@ -34,14 +34,14 @@ BENCHMARK_RESULT_EXPORT_COLUMNS = (
     "artifact_id",
     "evaluation_storage_id",
     "chain",
-    "dataset",
+    "corpus",
     "surface",
     "features",
     "model",
     "problem",
     "prediction",
     "objective",
-    "evaluation",
+    "evaluator",
     "delay_seconds",
     "variant",
     "study",
@@ -85,9 +85,9 @@ class BenchmarkResultIndexRow:
     git_commit: str
     execution_ref: str
     chain_name: str
-    artifact_dataset_id: str
-    evaluation_dataset_id: str
-    artifact_dataset_name: str
+    artifact_corpus_id: str
+    evaluation_corpus_id: str
+    artifact_corpus_name: str
     surface: str
     features_id: str
     model_id: str
@@ -144,7 +144,7 @@ def list_benchmark_results(
     benchmark: str | None = None,
     chain: str | None = None,
     model: str | None = None,
-    evaluation: str | None = None,
+    evaluator: str | None = None,
     limit: int | None = None,
 ) -> list[BenchmarkResultIndexRow]:
     return _list_indexed_results(
@@ -152,7 +152,7 @@ def list_benchmark_results(
         benchmark=benchmark,
         chain=chain,
         model=model,
-        evaluation=evaluation,
+        evaluator=evaluator,
         limit=limit,
     )
 
@@ -164,7 +164,7 @@ def export_benchmark_results_csv(
     benchmark: str | None = None,
     chain: str | None = None,
     model: str | None = None,
-    evaluation: str | None = None,
+    evaluator: str | None = None,
 ) -> list[dict[str, str]]:
     rows = [
         _result_record_csv_row(row)
@@ -173,7 +173,7 @@ def export_benchmark_results_csv(
             benchmark=benchmark,
             chain=chain,
             model=model,
-            evaluation=evaluation,
+            evaluator=evaluator,
         )
     ]
     _write_results_csv(output_path, rows)
@@ -255,10 +255,10 @@ def _upsert_collection_snapshot(path: Path, snapshot: BenchmarkCollectionSnapsho
                         execution_ref=record.execution_ref,
                         artifact_id=record.artifact_id,
                         evaluation_storage_id=record.evaluation_storage_id,
-                        artifact_dataset_id=record.artifact_dataset_id,
-                        evaluation_dataset_id=record.evaluation_dataset_id,
+                        artifact_corpus_id=record.artifact_corpus_id,
+                        evaluation_corpus_id=record.evaluation_corpus_id,
                         chain_name=record.chain_name,
-                        artifact_dataset_name=record.artifact_dataset_name,
+                        artifact_corpus_name=record.artifact_corpus_name,
                         surface=record.selection.surface or "",
                         features_id=record.features_id,
                         model_id=record.model_id,
@@ -326,7 +326,7 @@ def _list_indexed_results(
     benchmark: str | None = None,
     chain: str | None = None,
     model: str | None = None,
-    evaluation: str | None = None,
+    evaluator: str | None = None,
     limit: int | None = None,
 ) -> list[BenchmarkResultIndexRow]:
     _ensure_result_index(path)
@@ -337,8 +337,8 @@ def _list_indexed_results(
         filters.append(result_observations.c.chain_name == chain)
     if model is not None:
         filters.append(result_observations.c.model_id == model)
-    if evaluation is not None:
-        filters.append(result_observations.c.evaluator_id == evaluation)
+    if evaluator is not None:
+        filters.append(result_observations.c.evaluator_id == evaluator)
     statement = select(
         result_observations.c.observation_id,
         result_observations.c.run_id,
@@ -347,9 +347,9 @@ def _list_indexed_results(
         result_observations.c.git_commit,
         result_observations.c.execution_ref,
         result_observations.c.chain_name,
-        result_observations.c.artifact_dataset_id,
-        result_observations.c.evaluation_dataset_id,
-        result_observations.c.artifact_dataset_name,
+        result_observations.c.artifact_corpus_id,
+        result_observations.c.evaluation_corpus_id,
+        result_observations.c.artifact_corpus_name,
         result_observations.c.surface,
         result_observations.c.features_id,
         result_observations.c.model_id,
@@ -407,9 +407,9 @@ def _list_indexed_results(
                     git_commit=str(row["git_commit"]),
                     execution_ref=str(row["execution_ref"]),
                     chain_name=str(row["chain_name"]),
-                    artifact_dataset_id=str(row["artifact_dataset_id"]),
-                    evaluation_dataset_id=str(row["evaluation_dataset_id"]),
-                    artifact_dataset_name=str(row["artifact_dataset_name"]),
+                    artifact_corpus_id=str(row["artifact_corpus_id"]),
+                    evaluation_corpus_id=str(row["evaluation_corpus_id"]),
+                    artifact_corpus_name=str(row["artifact_corpus_name"]),
                     surface=str(row["surface"]),
                     features_id=str(row["features_id"]),
                     model_id=str(row["model_id"]),
@@ -452,14 +452,14 @@ def _result_record_csv_row(record: BenchmarkResultIndexRow) -> dict[str, str]:
         "artifact_id": record.artifact_id,
         "evaluation_storage_id": record.evaluation_storage_id,
         "chain": record.chain_name,
-        "dataset": record.artifact_dataset_name,
+        "corpus": record.artifact_corpus_name,
         "surface": record.surface,
         "features": record.features_id,
         "model": record.model_id,
         "problem": record.problem_id,
         "prediction": record.prediction_id,
         "objective": record.objective_id,
-        "evaluation": record.evaluator_id,
+        "evaluator": record.evaluator_id,
         "delay_seconds": str(record.delay_seconds),
         "variant": record.variant,
         "study": record.study_name or "",

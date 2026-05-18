@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Features - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>Features</h1>
+      <p class="lede">Features convert canonical block rows into numeric columns a model can use. Feature contracts describe required source columns, produced feature names, and semantic fingerprints.</p>
+      <div class="meta">
+        <span class="pill">src/spice/features</span>
+        <span class="pill">Docs: ARCHITECTURE.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>Features sit between corpus rows and temporal problem stores. They do not choose samples or train models; they prepare the row-level measurements that later stages consume.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>A model cannot learn from raw concepts like &quot;recent fee pressure&quot; unless those ideas become numbers. Features compute those numbers consistently and record what they mean.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>contracts.py</code></div><div>Compiles feature configs into feature contracts used by dataset preparation.</div>
+<div><code>core.py</code></div><div>Defines feature config models, prerequisites, canonical block series, source specs, feature specs, catalogs, and resolved feature tables.</div>
+<div><code>registry.py</code></div><div>Finds feature catalogs and validates selected feature families.</div>
+<div><code>sets/core_fee_dynamics/</code></div><div>Undocumented child implementation for base-fee, priority-fee, time, elapsed-position, and safe fee-dynamics feature sets.</div>
+<div><code>__init__.py</code></div><div>Feature package exports.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>Validate selected feature names.</li>
+<li>Build source series from canonical block rows.</li>
+<li>Compute configured feature columns.</li>
+<li>Return a resolved feature table plus feature semantics.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Source vs feature</h3><p>A source column comes from canonical data. A feature column is computed from source columns.</p>
+<h3>Fingerprint</h3><p>A stable description of selected feature meaning. It helps compare artifacts and datasets later.</p>
+<h3>Feature family</h3><p>A related group of feature definitions registered together, such as core fee dynamics.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-corpus.html">Corpus</a><a href="spice-temporal.html">Temporal</a><a href="spice-modeling-dataset-builders.html">Dataset Builders</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/features/ARCHITECTURE.md">ARCHITECTURE.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

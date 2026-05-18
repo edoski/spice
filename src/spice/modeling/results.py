@@ -50,6 +50,21 @@ FrozenJsonValue: TypeAlias = JsonScalar | _FrozenJsonObject | _FrozenJsonArray
 
 
 @dataclass(frozen=True, slots=True)
+class TrainingSourceProvenance:
+    """Exact source range used to train an artifact or study."""
+
+    corpus_id: str
+    window_start_timestamp: int
+    window_end_timestamp: int
+    first_block: int
+    last_block: int
+    first_timestamp: int
+    last_timestamp: int
+    training_cutoff_timestamp: int | None
+    source_requirements_fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
 class TrainingArtifactManifest:
     """Single-source persisted artifact provenance plus exact authored config payloads."""
 
@@ -57,10 +72,11 @@ class TrainingArtifactManifest:
     dataset_builder: DatasetBuilderConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
-    evaluation: EvaluatorConfig | None
+    evaluator: EvaluatorConfig | None
     chain_name: str
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
+    training_source: TrainingSourceProvenance
     problem: ProblemSpec
     variant: ArtifactVariant
     study: StudyConfig | None
@@ -99,9 +115,6 @@ class TrainingArtifactManifest:
         return self.semantics.problem.lookback_seconds
 
     @property
-    def sample_count(self) -> int:
-        return self.semantics.problem.sample_count
-
     @property
     def feature_prerequisites(self):
         return self.semantics.feature.feature_prerequisites
@@ -216,6 +229,10 @@ class EvaluationRuntimeSummary:
     evaluator_id: str
     evaluation_config: EvaluationConfigSnapshot
     metric_descriptors: tuple[MetricDescriptor, ...]
+    scenario_window_start_timestamp: int
+    scenario_window_end_timestamp: int
+    required_coverage_start_timestamp: int
+    required_coverage_end_timestamp: int
     n_history_rows: int
     n_evaluation_rows: int
     sample_count: int
@@ -285,6 +302,10 @@ def build_evaluation_runtime_summary(
     evaluator_id: str,
     evaluation_config: EvaluatorConfig,
     metric_descriptors: tuple[MetricDescriptor, ...],
+    scenario_window_start_timestamp: int,
+    scenario_window_end_timestamp: int,
+    required_coverage_start_timestamp: int,
+    required_coverage_end_timestamp: int,
     execution_provenance: EvaluationExecutionProvenance | None = None,
 ) -> EvaluationRuntimeSummary:
     return EvaluationRuntimeSummary(
@@ -293,6 +314,10 @@ def build_evaluation_runtime_summary(
         evaluation_config=EvaluationConfigSnapshot.from_config(evaluation_config),
         execution_provenance=execution_provenance,
         metric_descriptors=metric_descriptors,
+        scenario_window_start_timestamp=scenario_window_start_timestamp,
+        scenario_window_end_timestamp=scenario_window_end_timestamp,
+        required_coverage_start_timestamp=required_coverage_start_timestamp,
+        required_coverage_end_timestamp=required_coverage_end_timestamp,
         n_history_rows=prepared.n_history_rows,
         n_evaluation_rows=prepared.n_evaluation_rows,
         sample_count=prepared.sample_count,

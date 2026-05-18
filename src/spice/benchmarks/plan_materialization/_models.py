@@ -19,7 +19,7 @@ from ...config.workflow_snapshots import (
 from ...core.config_model import ConfigModel
 
 BenchmarkRootRole = Literal["consumed", "produced", "source"]
-BenchmarkRootKind = Literal["dataset", "study", "artifact"]
+BenchmarkRootKind = Literal["corpus", "study", "artifact"]
 
 
 class BenchmarkDependencyLedger(ConfigModel):
@@ -43,7 +43,8 @@ class BenchmarkSelectionLedger(ConfigModel):
     model: str | None = None
     tuning_space: str | None = None
     objective: str | None = None
-    evaluation: str | None = None
+    evaluator: str | None = None
+    evaluations: str | None = None
     training: str | None = None
     split: str | None = None
     tuning: str | None = None
@@ -62,7 +63,7 @@ class BenchmarkRootLedgerEntry(ConfigModel):
     root_kind: BenchmarkRootKind
     root_id: str
     source_run_id: str | None = None
-    dataset_id: str | None = None
+    corpus_id: str | None = None
     study_id: str | None = None
     artifact_id: str | None = None
 
@@ -79,16 +80,16 @@ class BenchmarkRootLedger(ConfigModel):
 
 
 class BenchmarkRootFacts(ConfigModel):
-    consumed_dataset_id: str | None = None
+    consumed_corpus_id: str | None = None
     consumed_study_id: str | None = None
-    consumed_study_dataset_id: str | None = None
+    consumed_study_corpus_id: str | None = None
     consumed_artifact_id: str | None = None
-    consumed_artifact_dataset_id: str | None = None
+    consumed_artifact_corpus_id: str | None = None
     produced_study_id: str | None = None
-    produced_study_dataset_id: str | None = None
+    produced_study_corpus_id: str | None = None
     produced_artifact_id: str | None = None
-    produced_artifact_dataset_id: str | None = None
-    artifact_source_dataset_id: str | None = None
+    produced_artifact_corpus_id: str | None = None
+    artifact_source_corpus_id: str | None = None
 
 
 class BenchmarkPlanEntry(ConfigModel):

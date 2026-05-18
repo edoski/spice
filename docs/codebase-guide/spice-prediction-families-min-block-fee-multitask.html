@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Minimum Block Fee Multitask Prediction - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>Minimum Block Fee Multitask Prediction</h1>
+      <p class="lede">This concrete prediction family trains the model to choose the candidate block offset with the minimum fee while also learning an auxiliary minimum log-fee regression target.</p>
+      <div class="meta">
+        <span class="pill">src/spice/prediction/families/min_block_fee_multitask</span>
+        <span class="pill">Docs: ARCHITECTURE.md, IMPLEMENTATIONS.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>It implements the prediction-family contract consumed by modeling and evaluated later through temporal execution policies and evaluators.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>The model gets two related lessons. One head learns &quot;which candidate offset is best?&quot; and another head learns &quot;how low is the fee there?&quot;. The auxiliary task can improve shared representation learning.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>__init__.py</code></div><div>Compiles the family contract, fits training state, computes batch loss/state, and decodes candidate offsets.</div>
+<div><code>batch.py</code></div><div>Materializes min-block-fee targets, prepared targets, and training state such as class weights.</div>
+<div><code>loss.py</code></div><div>Computes multitask loss from offset classification and fee regression outputs.</div>
+<div><code>metrics.py</code></div><div>Tracks classification counts, macro F1, inverse-frequency weights, loss totals, and epoch accumulators.</div>
+<div><code>outputs.py</code></div><div>Defines output head ids, output specs, masked logits, and masked argmax decoding.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>Materialize targets from temporal outcome facts.</li>
+<li>Build output specs for offset logits and min log fee.</li>
+<li>Train with multitask loss and class weighting.</li>
+<li>Decode masked offset logits into <code>DecodedOffsets</code>.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Multitask learning</h3><p>One network optimizes more than one related target. Shared layers can learn better features because they receive richer feedback.</p>
+<h3>Class weights</h3><p>If some offsets are rare, inverse-frequency weights keep the model from ignoring rare classes.</p>
+<h3>Masked argmax</h3><p>The model may score every offset, but invalid offsets are suppressed before choosing the best one.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-prediction.html">Prediction</a><a href="spice-temporal-execution-policy.html">Execution Policy</a><a href="spice-evaluation.html">Evaluation</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/prediction/families/min_block_fee_multitask/ARCHITECTURE.md">ARCHITECTURE.md</a>, <a href="../../src/spice/prediction/families/min_block_fee_multitask/IMPLEMENTATIONS.md">IMPLEMENTATIONS.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

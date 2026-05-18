@@ -11,9 +11,8 @@ from spice.corpus.metadata import (
     CompactValidationReport,
     CorpusAcquisitionSourceRequirements,
     CorpusSplitManifest,
-    CorpusSplitManifests,
-    DatasetIdentity,
-    DatasetManifest,
+    CorpusIdentity,
+    CorpusManifest,
     SplitCoverageMetadata,
     SplitMaterializationMetadata,
     SplitRequestMetadata,
@@ -31,9 +30,9 @@ from tests.root_handle_helpers import corpus_handle, study_handle
 TEST_DATASET_ID = "cor_9a73b1e88edb488afb1e"
 
 
-def _corpus_manifest(config: TuneConfig) -> DatasetManifest:
+def _corpus_manifest(config: TuneConfig) -> CorpusManifest:
     split = CorpusSplitManifest(
-        kind="history",
+        kind="blocks",
         request=SplitRequestMetadata(
             start_timestamp=1,
             end_timestamp=2,
@@ -52,10 +51,10 @@ def _corpus_manifest(config: TuneConfig) -> DatasetManifest:
         ),
         materialization=SplitMaterializationMetadata(outcome="reused", file_count=1),
     )
-    return DatasetManifest(
-        dataset=DatasetIdentity(id=TEST_DATASET_ID, name=config.dataset.name),
+    return CorpusManifest(
+        corpus=CorpusIdentity(id=TEST_DATASET_ID, name=config.corpus.name),
         chain=ChainMetadata(name=config.chain.name, runtime=config.chain.runtime),
-        splits=CorpusSplitManifests(history=split, evaluation=split),
+        blocks=split,
         source_requirements=CorpusAcquisitionSourceRequirements(
             required_columns=frozenset(
                 {"block_number", "timestamp", "chain_id", "base_fee_per_gas"}
@@ -81,8 +80,8 @@ def _study_manifest(tmp_path, load_workflow_config, *, study_name: str):
     corpus = corpus_handle(
         config.storage.root,
         chain_name=config.chain.name,
-        dataset_id=TEST_DATASET_ID,
-        dataset_name=config.dataset.name,
+        corpus_id=TEST_DATASET_ID,
+        corpus_name=config.corpus.name,
     )
     study = study_handle(
         config.storage.root,

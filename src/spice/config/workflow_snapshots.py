@@ -20,7 +20,7 @@ from .models import (
     ArtifactConfig,
     ChainSpec,
     DatasetBuilderConfig,
-    DatasetSpec,
+    CorpusSpec,
     FeaturesConfig,
     ModelConfig,
     PredictionConfig,
@@ -31,6 +31,7 @@ from .models import (
     TrainingConfig,
     TuningConfig,
     TuningSpaceConfig,
+    TimestampWindowSpec,
     WorkflowTask,
     coerce_features_config,
     coerce_problem_spec,
@@ -153,9 +154,14 @@ def _hydrate_evaluate_fields(payload: Mapping[str, object]) -> ResolvedEvaluateW
     return ResolvedEvaluateWorkflowFields(
         storage=_model_field(raw, "storage", StorageSpec),
         artifact_id=_required_str(raw, "artifact_id"),
-        dataset_id=_required_str(raw, "dataset_id"),
-        evaluation=coerce_evaluator_config(
-            _owner_field(raw, "evaluation", EvaluatorConfig)
+        corpus_id=_required_str(raw, "corpus_id"),
+        evaluation_window=_model_field(
+            raw,
+            "evaluation_window",
+            TimestampWindowSpec,
+        ),
+        evaluator=coerce_evaluator_config(
+            _owner_field(raw, "evaluator", EvaluatorConfig)
         ),
         delay_seconds=_optional_int(raw.get("delay_seconds"), label="delay_seconds"),
         batch_size=final_evaluate_batch_size(
@@ -168,8 +174,12 @@ def _hydrate_train_fields(payload: Mapping[str, object]) -> ResolvedTrainWorkflo
     raw = dict(payload)
     return ResolvedTrainWorkflowFields(
         model_fields=_hydrate_model_workflow_fields(raw),
-        dataset_id=_optional_str(raw.get("dataset_id"), label="dataset_id"),
+        corpus_id=_optional_str(raw.get("corpus_id"), label="corpus_id"),
         study_id=_optional_str(raw.get("study_id"), label="study_id"),
+        training_cutoff_timestamp=_optional_int(
+            raw.get("training_cutoff_timestamp"),
+            label="training_cutoff_timestamp",
+        ),
     )
 
 
@@ -177,7 +187,11 @@ def _hydrate_tune_fields(payload: Mapping[str, object]) -> ResolvedTuneWorkflowF
     raw = dict(payload)
     return ResolvedTuneWorkflowFields(
         model_fields=_hydrate_model_workflow_fields(raw),
-        dataset_id=_required_str(raw, "dataset_id"),
+        corpus_id=_required_str(raw, "corpus_id"),
+        training_cutoff_timestamp=_optional_int(
+            raw.get("training_cutoff_timestamp"),
+            label="training_cutoff_timestamp",
+        ),
     )
 
 
@@ -202,7 +216,7 @@ def _hydrate_model_workflow_fields(
     )
     return ResolvedModelWorkflowFields(
         chain=_model_field(raw, "chain", ChainSpec),
-        dataset=_model_field(raw, "dataset", DatasetSpec),
+        corpus=_model_field(raw, "corpus", CorpusSpec),
         storage=_model_field(raw, "storage", StorageSpec),
         problem=problem,
         model=model,
@@ -214,7 +228,7 @@ def _hydrate_model_workflow_fields(
         objective=coerce_objective_config(
             _owner_field(raw, "objective", ObjectiveConfig)
         ),
-        evaluation=_optional_evaluation(raw.get("evaluation")),
+        evaluator=_optional_evaluator(raw.get("evaluator")),
         study=_model_field(raw, "study", StudyConfig),
         artifact=_model_field(raw, "artifact", ArtifactConfig),
         split=_model_field(raw, "split", SplitConfig),
@@ -224,11 +238,11 @@ def _hydrate_model_workflow_fields(
     )
 
 
-def _optional_evaluation(payload: object) -> EvaluatorConfig | None:
+def _optional_evaluator(payload: object) -> EvaluatorConfig | None:
     if payload is None:
         return None
     return coerce_evaluator_config(
-        _mapping_or_owner(payload, label="evaluation", config_type=EvaluatorConfig)
+        _mapping_or_owner(payload, label="evaluator", config_type=EvaluatorConfig)
     )
 
 

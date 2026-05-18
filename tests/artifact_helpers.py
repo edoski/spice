@@ -17,7 +17,7 @@ from spice.modeling.dataset_builders import (
 )
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.representations import compile_representation_contract
-from spice.modeling.results import TrainingArtifactManifest
+from spice.modeling.results import TrainingArtifactManifest, TrainingSourceProvenance
 from spice.objectives import coerce_objective_config
 from spice.prediction import compile_prediction_contract
 from spice.semantics import (
@@ -80,7 +80,6 @@ def _problem_config():
         {
             "id": "test_problem",
             "lookback_seconds": 120,
-            "sample_count": 24,
             "max_delay_seconds": 36,
             "compiler": {
                 "id": "observed_time_window",
@@ -162,10 +161,21 @@ def manifest(
         dataset_builder=_dataset_builder_config(),
         prediction=prediction,
         objective=_objective_config(),
-        evaluation=None,
+        evaluator=None,
         chain_name="ethereum",
-        dataset_id="current_row_fee_dynamics",
-        dataset_name="current_row_fee_dynamics",
+        corpus_id="current_row_fee_dynamics",
+        corpus_name="current_row_fee_dynamics",
+        training_source=TrainingSourceProvenance(
+            corpus_id="current_row_fee_dynamics",
+            window_start_timestamp=1_000,
+            window_end_timestamp=2_000,
+            first_block=100,
+            last_block=199,
+            first_timestamp=1_000,
+            last_timestamp=1_999,
+            training_cutoff_timestamp=None,
+            source_requirements_fingerprint="source-fingerprint",
+        ),
         problem=problem,
         variant=ArtifactVariant.BASELINE,
         study=StudyConfig(name="default"),

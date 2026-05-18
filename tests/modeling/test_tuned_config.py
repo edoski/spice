@@ -107,7 +107,6 @@ def _problem():
         {
             "id": "test_problem",
             "lookback_seconds": 900,
-            "sample_count": 1024,
             "max_delay_seconds": 36,
             "compiler": {
                 "id": "observed_time_window",
@@ -344,8 +343,8 @@ def test_apply_study_best_params_uses_manifest_study_name(tmp_path, monkeypatch)
     corpus = corpus_handle(
         tmp_path / "outputs",
         chain_name=config.chain.name,
-        dataset_id="cor_9a73b1e88edb488afb1e",
-        dataset_name=config.dataset.name,
+        corpus_id="cor_9a73b1e88edb488afb1e",
+        corpus_name=config.corpus.name,
     )
     study = study_handle(
         tmp_path / "outputs",
@@ -382,8 +381,8 @@ def test_apply_study_best_params_rejects_mismatched_manifest_before_loading_para
     corpus = corpus_handle(
         tmp_path / "outputs",
         chain_name=config.chain.name,
-        dataset_id="cor_9a73b1e88edb488afb1e",
-        dataset_name=config.dataset.name,
+        corpus_id="cor_9a73b1e88edb488afb1e",
+        corpus_name=config.corpus.name,
     )
     study = study_handle(
         tmp_path / "outputs",

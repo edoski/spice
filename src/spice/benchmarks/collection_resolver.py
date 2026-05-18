@@ -24,8 +24,8 @@ class BenchmarkCollectionSelection:
     run_id: str
     storage_root: Path
     artifact_id: str
-    artifact_dataset_id: str
-    evaluation_dataset_id: str
+    artifact_corpus_id: str
+    evaluation_corpus_id: str
     evaluator_id: str
     configured_delay_seconds: int | None
     execution_ref: str
@@ -38,8 +38,8 @@ class BenchmarkCollectionSelection:
 @dataclass(frozen=True, slots=True)
 class BenchmarkCollectionMatchFacts:
     artifact_id: str
-    artifact_dataset_id: str
-    evaluation_dataset_id: str
+    artifact_corpus_id: str
+    evaluation_corpus_id: str
     evaluation_storage_id: str
     evaluator_id: str
     delay_seconds: int
@@ -85,16 +85,16 @@ def benchmark_collection_selection(
             f"benchmark run {entry.run_id} root facts artifact mismatch: "
             f"{facts.consumed_artifact_id} != {entry.config.artifact_id}"
         )
-    if facts.consumed_dataset_id is None:
+    if facts.consumed_corpus_id is None:
         raise SpiceOperatorError(
             f"benchmark run {entry.run_id} root facts are missing consumed dataset"
         )
-    if facts.consumed_dataset_id != entry.config.dataset_id:
+    if facts.consumed_corpus_id != entry.config.corpus_id:
         raise SpiceOperatorError(
-            f"benchmark run {entry.run_id} root facts dataset mismatch: "
-            f"{facts.consumed_dataset_id} != {entry.config.dataset_id}"
+            f"benchmark run {entry.run_id} root facts corpus mismatch: "
+            f"{facts.consumed_corpus_id} != {entry.config.corpus_id}"
         )
-    if facts.consumed_artifact_dataset_id is None:
+    if facts.consumed_artifact_corpus_id is None:
         raise SpiceOperatorError(
             f"benchmark run {entry.run_id} root facts are missing consumed artifact dataset"
         )
@@ -102,9 +102,9 @@ def benchmark_collection_selection(
         run_id=entry.run_id,
         storage_root=entry.config.storage.root,
         artifact_id=facts.consumed_artifact_id,
-        artifact_dataset_id=facts.consumed_artifact_dataset_id,
-        evaluation_dataset_id=facts.consumed_dataset_id,
-        evaluator_id=entry.config.evaluation.id,
+        artifact_corpus_id=facts.consumed_artifact_corpus_id,
+        evaluation_corpus_id=facts.consumed_corpus_id,
+        evaluator_id=entry.config.evaluator.id,
         configured_delay_seconds=entry.config.delay_seconds,
         execution_ref=submission.execution_ref,
         job_id=submission.job_id,
@@ -132,11 +132,11 @@ def resolve_benchmark_evaluation(
             "Artifact manifest does not match benchmark collection selection for "
             f"{selection.run_id}: {manifest.artifact_id} != {selection.artifact_id}"
         )
-    if manifest.dataset_id != selection.artifact_dataset_id:
+    if manifest.corpus_id != selection.artifact_corpus_id:
         raise SpiceOperatorError(
-            "Artifact manifest dataset does not match benchmark collection "
-            f"selection for {selection.run_id}: {manifest.dataset_id} != "
-            f"{selection.artifact_dataset_id}"
+            "Artifact manifest corpus does not match benchmark collection "
+            f"selection for {selection.run_id}: {manifest.corpus_id} != "
+            f"{selection.artifact_corpus_id}"
         )
     expected_delay = (
         selection.configured_delay_seconds
@@ -160,8 +160,8 @@ def resolve_benchmark_evaluation(
         training=training_summary,
         match_facts=BenchmarkCollectionMatchFacts(
             artifact_id=selection.artifact_id,
-            artifact_dataset_id=selection.artifact_dataset_id,
-            evaluation_dataset_id=selection.evaluation_dataset_id,
+            artifact_corpus_id=selection.artifact_corpus_id,
+            evaluation_corpus_id=selection.evaluation_corpus_id,
             evaluation_storage_id=evaluation.evaluation_storage_id,
             evaluator_id=selection.evaluator_id,
             delay_seconds=expected_delay,

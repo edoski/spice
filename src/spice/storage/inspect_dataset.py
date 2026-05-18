@@ -1,4 +1,4 @@
-"""Dataset-root inspection helpers."""
+"""Corpus-root inspection helpers."""
 
 from __future__ import annotations
 
@@ -7,30 +7,30 @@ from pathlib import Path
 
 from ..corpus.metadata import (
     AcquireRunRecord,
-    DatasetManifest,
+    CorpusManifest,
     SplitCoverageMetadata,
     SplitRequestMetadata,
 )
-from .catalog.records import CatalogDatasetRecord
-from .corpus import list_acquire_runs, load_dataset_manifest
+from .catalog.records import CatalogCorpusRecord
+from .corpus import list_acquire_runs, load_corpus_manifest
 
 
 @dataclass(frozen=True, slots=True)
-class DatasetRootDescription:
-    manifest: DatasetManifest
+class CorpusRootDescription:
+    manifest: CorpusManifest
     runs: list[AcquireRunRecord] | None = None
 
 
 def dataset_list_sections(
-    records: list[CatalogDatasetRecord],
+    records: list[CatalogCorpusRecord],
 ) -> list[tuple[str, list[tuple[str, str]]]]:
     return [
         (
-            "datasets",
+            "corpora",
             [
                 (
-                    record.dataset_name,
-                    f"chain={record.chain_name} id={record.dataset_id}",
+                    record.corpus_name,
+                    f"chain={record.chain_name} id={record.corpus_id}",
                 )
                 for record in records
             ],
@@ -40,42 +40,39 @@ def dataset_list_sections(
 
 def describe_dataset_root(
     root_db_path: Path, *, detail: str | None = None
-) -> DatasetRootDescription:
-    return DatasetRootDescription(
-        manifest=load_dataset_manifest(root_db_path),
+) -> CorpusRootDescription:
+    return CorpusRootDescription(
+        manifest=load_corpus_manifest(root_db_path),
         runs=list_acquire_runs(root_db_path) if detail == "runs" else None,
     )
 
 
 def dataset_sections(
-    description: DatasetRootDescription,
+    description: CorpusRootDescription,
 ) -> list[tuple[str, list[tuple[str, str]]]]:
     manifest = description.manifest
+    blocks = manifest.blocks
     sections = [
         (
-            "dataset",
+            "corpus",
             [
-                ("name", manifest.dataset.name),
-                ("storage id", manifest.dataset.id),
+                ("name", manifest.corpus.name),
+                ("storage id", manifest.corpus.id),
                 ("chain", manifest.chain.name),
             ],
         ),
         (
             "request",
             [
-                ("history", request_string(manifest.splits.history.request)),
-                ("evaluation", request_string(manifest.splits.evaluation.request)),
+                ("blocks", request_string(blocks.request)),
             ],
         ),
         (
             "coverage",
             [
-                ("history", coverage_string(manifest.splits.history.coverage)),
-                ("evaluation", coverage_string(manifest.splits.evaluation.coverage)),
-                ("history rows", str(manifest.splits.history.coverage.rows)),
-                ("evaluation rows", str(manifest.splits.evaluation.coverage.rows)),
-                ("history outcome", manifest.splits.history.materialization.outcome),
-                ("evaluation outcome", manifest.splits.evaluation.materialization.outcome),
+                ("blocks", coverage_string(blocks.coverage)),
+                ("rows", str(blocks.coverage.rows)),
+                ("outcome", blocks.materialization.outcome),
             ],
         ),
     ]
@@ -103,6 +100,5 @@ def coverage_string(window: SplitCoverageMetadata) -> str:
 def acquire_run_string(run: AcquireRunRecord) -> str:
     return (
         f"provider={run.provider.name} "
-        f"requested_history={run.facts.requested_history_window_seconds}s "
-        f"samples={run.facts.resolved_capability_samples}"
+        f"requested_window={run.facts.requested_window_seconds}s"
     )

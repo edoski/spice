@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prediction - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>Prediction</h1>
+      <p class="lede">Prediction defines what the model is trained to output, how batches and targets are represented, how losses/metrics accumulate, and how raw outputs become decoded decisions.</p>
+      <div class="meta">
+        <span class="pill">src/spice/prediction</span>
+        <span class="pill">Docs: ARCHITECTURE.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>It sits between model families and evaluation. Model families emit output heads; prediction families assign meaning, loss, metrics, and decoding rules.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>A neural network outputs tensors. Prediction code says which tensor is an offset classifier, which tensor is a fee estimate, what the correct targets are, and how to turn tensors into an action.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>base.py</code></div><div>Defines prediction head/output specs that model families use when building output heads.</div>
+<div><code>contracts.py</code></div><div>Defines model input batches, target batches, prepared targets, epoch accumulators, prediction batches, and compiled prediction contracts.</div>
+<div><code>decoded_offsets.py</code></div><div>Defines the decoded-offset result id, decoded offset model, and require helper.</div>
+<div><code>decoding.py</code></div><div>Defines generic decoded prediction results, decode input batches, action-space context, and tensor coercion helpers.</div>
+<div><code>registry.py</code></div><div>Validates supported prediction-family ids and compiles the selected prediction contract.</div>
+<div><code>__init__.py</code></div><div>Prediction package exports.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>Config selects a prediction family.</li>
+<li>The contract defines targets, output heads, loss, metrics, and decoding.</li>
+<li>Training uses the loss and accumulators.</li>
+<li>Inference decodes model outputs into typed results.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Logits</h3><p>Raw scores before probabilities. Classification loss can use logits directly.</p>
+<h3>Decoded result</h3><p>A typed decision after raw tensors have been converted into domain meaning.</p>
+<h3>Action masking</h3><p>Some candidate offsets are illegal. Masking prevents them from winning decoding.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-prediction-families.html">Prediction Families</a><a href="spice-prediction-families-min-block-fee-multitask.html">Minimum Block Fee Multitask Prediction</a><a href="spice-evaluation.html">Evaluation</a><a href="spice-modeling.html">Modeling Runtime</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/prediction/ARCHITECTURE.md">ARCHITECTURE.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

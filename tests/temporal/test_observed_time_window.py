@@ -91,7 +91,6 @@ def _problem(slot_spacing_id: str = "nominal"):
         {
             "id": f"test_{slot_spacing_id}",
             "lookback_seconds": 24,
-            "sample_count": 4,
             "max_delay_seconds": 36,
             "compiler": {
                 "id": "observed_time_window",

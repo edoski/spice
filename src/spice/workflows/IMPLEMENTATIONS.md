@@ -27,7 +27,7 @@ resolve config
   -> close block source
 ```
 
-Corpus Assembly builds Corpus Capability Planning, materializes history/evaluation splits through Corpus Acquisition Stage, lets planning run bounded refill attempts when compiled valid sample count is short, writes corpus state, and commits the root. Committed acquire reporting reads materialization outcomes and row counts from the dataset manifest; dry-run reporting reads the planned block ranges directly.
+Corpus Assembly builds Corpus Capability Planning, materializes one canonical `blocks/` corpus through Corpus Acquisition Stage, writes corpus state, and commits the root. Committed acquire reporting reads materialization outcome and row count from the corpus manifest; dry-run reporting reads the planned block range directly.
 
 Dry run reports the plan without materializing data.
 
@@ -86,7 +86,7 @@ Workflow functions require resolved configs. CLI submission chooses the target a
 
 | Workflow | Common failures |
 | --- | --- |
-| acquire | RPC retry exhaustion, insufficient valid samples after refill, invalid corpus validation. |
+| acquire | RPC retry exhaustion, invalid corpus validation. |
 | train | Missing corpus coverage, CUDA unavailable, artifact destination conflict. |
 | tune | Study identity mismatch, requested trial count below existing trial count, missing coverage for max tuned lookback. |
 | evaluate | Artifact semantic mismatch, evaluation delay too large, missing corpus coverage. |

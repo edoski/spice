@@ -74,9 +74,6 @@ arrivals
 
 Duplicate selected samples can occur when several arrivals map to the same sample. They count as repeated events and contribute independently to event-weighted aggregate metrics.
 
-## Full Temporal Replay
-
-`full_temporal_replay` selects every supplied sample position exactly once, then the Temporal Replay Runner accounts those selected positions. In train and tune objectives, supplied samples are validation samples. In the evaluate workflow, supplied samples are held-out evaluation-window samples.
 
 ## Objective Link
 

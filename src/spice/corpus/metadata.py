@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+import json
 from hashlib import sha256
 from typing import Literal, cast
 
@@ -14,7 +15,7 @@ from ..acquisition import AcquisitionRuntimeSnapshot, BlockPullPlan
 from ..config.models import AcquireConfig, ChainRuntimeSpec
 from ..corpus.validation import BlockDatasetValidationReport, ValidationStatus
 
-SplitKindValue = Literal["history", "evaluation"]
+SplitKindValue = Literal["blocks"]
 SplitMaterializationOutcomeValue = Literal["created", "reused", "extended", "rebuilt"]
 
 
@@ -28,7 +29,7 @@ class CorpusMetadataRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
 
-class DatasetIdentity(CorpusMetadataRecord):
+class CorpusIdentity(CorpusMetadataRecord):
     id: str
     name: str
 
@@ -93,11 +94,6 @@ class CorpusSplitManifest(CorpusMetadataRecord):
     materialization: SplitMaterializationMetadata
 
 
-class CorpusSplitManifests(CorpusMetadataRecord):
-    history: CorpusSplitManifest
-    evaluation: CorpusSplitManifest
-
-
 class CorpusAcquisitionSourceRequirements(CorpusMetadataRecord):
     required_columns: frozenset[str]
     optional_enrichments: frozenset[str]
@@ -125,11 +121,17 @@ class CorpusAcquisitionSourceRequirements(CorpusMetadataRecord):
     def _serialize_string_set(self, value: frozenset[str]) -> list[str]:
         return sorted(value)
 
+    def fingerprint(self) -> str:
+        payload = self.model_dump(mode="json")
+        return sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
 
-class DatasetManifest(CorpusMetadataRecord):
-    dataset: DatasetIdentity
+
+class CorpusManifest(CorpusMetadataRecord):
+    corpus: CorpusIdentity
     chain: ChainMetadata
-    splits: CorpusSplitManifests
+    blocks: CorpusSplitManifest
     source_requirements: CorpusAcquisitionSourceRequirements
 
 
@@ -147,11 +149,10 @@ class AcquisitionConfigSnapshot(CorpusMetadataRecord):
 
 
 class AcquireRunFacts(CorpusMetadataRecord):
-    requested_history_window_seconds: int
-    resolved_capability_samples: int
+    requested_window_seconds: int
 
 
-class DatasetAcquisitionRuntimeMetadata(CorpusMetadataRecord):
+class CorpusAcquisitionRuntimeMetadata(CorpusMetadataRecord):
     configured_batch_size: int
     final_batch_size: int
     min_batch_size: int
@@ -173,7 +174,7 @@ class DatasetAcquisitionRuntimeMetadata(CorpusMetadataRecord):
 class AcquireRunRecord(CorpusMetadataRecord):
     provider: ProviderMetadata
     settings: AcquisitionConfigSnapshot
-    runtime: DatasetAcquisitionRuntimeMetadata
+    runtime: CorpusAcquisitionRuntimeMetadata
     facts: AcquireRunFacts
 
 
@@ -252,8 +253,8 @@ def acquisition_settings(config: AcquireConfig) -> AcquisitionConfigSnapshot:
 
 def acquisition_runtime_metadata(
     runtime: AcquisitionRuntimeSnapshot,
-) -> DatasetAcquisitionRuntimeMetadata:
-    return DatasetAcquisitionRuntimeMetadata(
+) -> CorpusAcquisitionRuntimeMetadata:
+    return CorpusAcquisitionRuntimeMetadata(
         configured_batch_size=runtime.configured_batch_size,
         final_batch_size=runtime.final_batch_size,
         min_batch_size=runtime.min_batch_size,
@@ -271,41 +272,28 @@ def acquisition_runtime_metadata(
 def build_dataset_manifest(
     *,
     config: AcquireConfig,
-    dataset_id: str,
-    history_plan: BlockPullPlan,
-    evaluation_plan: BlockPullPlan,
-    history_validation: BlockDatasetValidationReport,
-    evaluation_validation: BlockDatasetValidationReport,
-    history_outcome: SplitMaterializationOutcomeValue,
-    evaluation_outcome: SplitMaterializationOutcomeValue,
-    history_file_count: int,
-    evaluation_file_count: int,
+    corpus_id: str,
+    blocks_plan: BlockPullPlan,
+    blocks_validation: BlockDatasetValidationReport,
+    blocks_outcome: SplitMaterializationOutcomeValue,
+    blocks_file_count: int,
     source_requirements: CorpusAcquisitionSourceRequirements,
-) -> DatasetManifest:
-    return DatasetManifest(
-        dataset=DatasetIdentity(
-            id=dataset_id,
-            name=config.dataset.name,
+) -> CorpusManifest:
+    return CorpusManifest(
+        corpus=CorpusIdentity(
+            id=corpus_id,
+            name=config.corpus.name,
         ),
         chain=ChainMetadata(
             name=config.chain.name,
             runtime=config.chain.runtime,
         ),
-        splits=CorpusSplitManifests(
-            history=split_manifest(
-                kind="history",
-                plan=history_plan,
-                validation=history_validation,
-                outcome=history_outcome,
-                file_count=history_file_count,
-            ),
-            evaluation=split_manifest(
-                kind="evaluation",
-                plan=evaluation_plan,
-                validation=evaluation_validation,
-                outcome=evaluation_outcome,
-                file_count=evaluation_file_count,
-            ),
+        blocks=split_manifest(
+            kind="blocks",
+            plan=blocks_plan,
+            validation=blocks_validation,
+            outcome=blocks_outcome,
+            file_count=blocks_file_count,
         ),
         source_requirements=source_requirements,
     )
@@ -316,15 +304,13 @@ def build_acquire_run_record(
     config: AcquireConfig,
     provider: ProviderMetadata,
     acquisition_runtime: AcquisitionRuntimeSnapshot,
-    requested_history_window_seconds: int,
-    resolved_capability_samples: int,
+    requested_window_seconds: int,
 ) -> AcquireRunRecord:
     return AcquireRunRecord(
         provider=provider,
         settings=acquisition_settings(config),
         runtime=acquisition_runtime_metadata(acquisition_runtime),
         facts=AcquireRunFacts(
-            requested_history_window_seconds=requested_history_window_seconds,
-            resolved_capability_samples=resolved_capability_samples,
+            requested_window_seconds=requested_window_seconds,
         ),
     )

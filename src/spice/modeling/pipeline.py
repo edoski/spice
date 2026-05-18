@@ -1,4 +1,4 @@
-"""Training and inference dataset preparation."""
+"""Training and inference corpus preparation."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from ..config.models import (
     TuneConfig,
 )
 from ..corpus.io import load_block_frame
-from ..corpus.metadata import DatasetManifest
+from ..corpus.metadata import CorpusManifest
 from ..evaluation import CompiledEvaluatorContract, EvaluatorConfig, compile_evaluator_contract
 from ..features import CompiledFeatureContract, compile_feature_contract
 from ..objectives import ObjectiveConfig
@@ -43,6 +43,7 @@ from .families.base import ModelConfig
 from .families.registry import build_model
 from .objective_runtime import CompiledObjectiveRuntime, compile_objective_runtime
 from .representations import CompiledRepresentationContract, compile_representation_contract
+from .results import TrainingSourceProvenance
 from .training_run import TrainingRunResult
 from .training_runner import (
     EarlyStopCallback,
@@ -59,8 +60,10 @@ if TYPE_CHECKING:
 @dataclass(slots=True)
 class TrainingSpec:
     chain: ChainSpec
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
+    training_source: TrainingSourceProvenance
+    training_cutoff_timestamp: int | None
     artifact_id: str
     problem: ProblemSpec
     dataset_builder: DatasetBuilderConfig
@@ -70,7 +73,7 @@ class TrainingSpec:
     features: FeaturesConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
-    evaluation: EvaluatorConfig | None
+    evaluator: EvaluatorConfig | None
     prediction_contract: CompiledPredictionContract
     objective_runtime: CompiledObjectiveRuntime
     input_normalization_contract: CompiledInputNormalizationContract
@@ -108,7 +111,7 @@ def build_artifact_training_spec(
     *,
     corpus: CorpusRootHandle,
     artifact: ArtifactRootHandle,
-    corpus_manifest: DatasetManifest | None = None,
+    corpus_manifest: CorpusManifest | None = None,
 ) -> TrainingSpec:
     return _build_training_spec(
         config,
@@ -126,7 +129,7 @@ def build_trial_training_spec(
     *,
     corpus: CorpusRootHandle,
     study: StudyRootHandle,
-    corpus_manifest: DatasetManifest | None = None,
+    corpus_manifest: CorpusManifest | None = None,
 ) -> TrainingSpec:
     return _build_training_spec(
         config,
@@ -147,7 +150,7 @@ def _build_training_spec(
     variant: ArtifactVariant,
     study: StudyConfig | None,
     study_id: str | None,
-    corpus_manifest: DatasetManifest | None,
+    corpus_manifest: CorpusManifest | None,
 ) -> TrainingSpec:
     chain = (
         ChainSpec(name=corpus_manifest.chain.name, runtime=corpus_manifest.chain.runtime)
@@ -160,10 +163,16 @@ def _build_training_spec(
     )
     return TrainingSpec(
         chain=chain,
-        dataset_id=corpus.dataset_id,
-        dataset_name=(
-            corpus.dataset_name if corpus_manifest is None else corpus_manifest.dataset.name
+        corpus_id=corpus.corpus_id,
+        corpus_name=(
+            corpus.corpus_name if corpus_manifest is None else corpus_manifest.corpus.name
         ),
+        training_source=_training_source_from_corpus_manifest(
+            corpus.corpus_id,
+            training_cutoff_timestamp=config.training_cutoff_timestamp,
+            corpus_manifest=corpus_manifest,
+        ),
+        training_cutoff_timestamp=config.training_cutoff_timestamp,
         artifact_id=artifact_id,
         problem=config.problem,
         dataset_builder=config.dataset_builder,
@@ -173,7 +182,7 @@ def _build_training_spec(
         features=config.features,
         prediction=config.prediction,
         objective=config.objective,
-        evaluation=config.evaluation,
+        evaluator=config.evaluator,
         prediction_contract=context.prediction_contract,
         objective_runtime=context.objective_runtime,
         input_normalization_contract=context.input_normalization_contract,
@@ -184,6 +193,38 @@ def _build_training_spec(
         study_id=study_id if variant is ArtifactVariant.TUNED else None,
         split=config.split,
         training=config.training,
+    )
+
+
+def _training_source_from_corpus_manifest(
+    corpus_id: str,
+    *,
+    training_cutoff_timestamp: int | None,
+    corpus_manifest: CorpusManifest | None,
+) -> TrainingSourceProvenance:
+    if corpus_manifest is None:
+        raise ValueError("training source provenance requires a corpus manifest")
+    blocks = corpus_manifest.blocks
+    coverage = blocks.coverage
+    if (
+        coverage.first_block is None
+        or coverage.last_block is None
+        or coverage.first_timestamp is None
+        or coverage.last_timestamp is None
+    ):
+        raise ValueError("training corpus manifest is missing block coverage")
+    return TrainingSourceProvenance(
+        corpus_id=corpus_id,
+        window_start_timestamp=blocks.request.start_timestamp,
+        window_end_timestamp=blocks.request.end_timestamp,
+        first_block=coverage.first_block,
+        last_block=coverage.last_block,
+        first_timestamp=coverage.first_timestamp,
+        last_timestamp=coverage.last_timestamp,
+        training_cutoff_timestamp=training_cutoff_timestamp,
+        source_requirements_fingerprint=(
+            corpus_manifest.source_requirements.fingerprint()
+        ),
     )
 
 
@@ -198,7 +239,7 @@ def compile_training_context(
         family_id=config.prediction.family_id,
     )
     evaluator_contract = (
-        None if config.evaluation is None else compile_evaluator_contract(config.evaluation)
+        None if config.evaluator is None else compile_evaluator_contract(config.evaluator)
     )
     objective_runtime = compile_objective_runtime(
         config.objective,
@@ -233,7 +274,10 @@ def run_training(
     blocks = load_block_frame(history_block_path)
     prepared = spec.dataset_builder_contract.prepare_training_dataset(
         blocks,
-        facts=TrainingDatasetPreparationFacts(split=spec.split),
+        facts=TrainingDatasetPreparationFacts(
+            split=spec.split,
+            training_cutoff_timestamp=spec.training_cutoff_timestamp,
+        ),
         context=TrainingDatasetPreparationContext(
             feature_contract=spec.feature_contract,
             problem_contract=spec.problem_contract,

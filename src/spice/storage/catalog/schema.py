@@ -6,11 +6,11 @@ from sqlalchemy import Column, Integer, MetaData, String, Table
 
 metadata = MetaData()
 
-dataset_index = Table(
-    "dataset_index",
+corpus_index = Table(
+    "corpus_index",
     metadata,
-    Column("dataset_id", String, primary_key=True),
-    Column("dataset_name", String, nullable=False),
+    Column("corpus_id", String, primary_key=True),
+    Column("corpus_name", String, nullable=False),
     Column("chain_name", String, nullable=False),
     Column("created_at", Integer, nullable=False),
     Column("updated_at", Integer, nullable=False),
@@ -21,8 +21,8 @@ study_index = Table(
     metadata,
     Column("study_id", String, primary_key=True),
     Column("study_name", String, nullable=False),
-    Column("dataset_id", String, nullable=False),
-    Column("dataset_name", String, nullable=False),
+    Column("corpus_id", String, nullable=False),
+    Column("corpus_name", String, nullable=False),
     Column("chain_name", String, nullable=False),
     Column("features_id", String, nullable=False),
     Column("prediction_id", String, nullable=False),
@@ -36,8 +36,8 @@ artifact_index = Table(
     "artifact_index",
     metadata,
     Column("artifact_id", String, primary_key=True),
-    Column("dataset_id", String, nullable=False),
-    Column("dataset_name", String, nullable=False),
+    Column("corpus_id", String, nullable=False),
+    Column("corpus_name", String, nullable=False),
     Column("chain_name", String, nullable=False),
     Column("features_id", String, nullable=False),
     Column("prediction_id", String, nullable=False),

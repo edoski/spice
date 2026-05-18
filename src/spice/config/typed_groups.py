@@ -15,7 +15,8 @@ from .group_catalog import ConfigGroup, GroupSpec, group_spec, validate_named_gr
 from .groups import load_named_group_document
 from .models import (
     ChainSpec,
-    DatasetSpec,
+    CorpusSpec,
+    EvaluationsSpec,
     FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
@@ -29,12 +30,13 @@ from .surfaces import SurfaceFrame
 ConfigT = TypeVar("ConfigT")
 
 CHAIN = cast(GroupSpec[ChainSpec], group_spec(ConfigGroup.CHAIN))
-DATASET = cast(GroupSpec[DatasetSpec], group_spec(ConfigGroup.DATASET))
+CORPUS = cast(GroupSpec[CorpusSpec], group_spec(ConfigGroup.CORPUS))
 DATASET_BUILDER = cast(
     GroupSpec[DatasetBuilderConfig],
     group_spec(ConfigGroup.DATASET_BUILDER),
 )
-EVALUATION = cast(GroupSpec[EvaluatorConfig], group_spec(ConfigGroup.EVALUATION))
+EVALUATOR = cast(GroupSpec[EvaluatorConfig], group_spec(ConfigGroup.EVALUATOR))
+EVALUATIONS = cast(GroupSpec[EvaluationsSpec], group_spec(ConfigGroup.EVALUATIONS))
 EXECUTION = cast(GroupSpec[ExecutionSpec], group_spec(ConfigGroup.EXECUTION))
 FEATURES = cast(GroupSpec[FeaturesConfig], group_spec(ConfigGroup.FEATURES))
 MODEL = cast(GroupSpec[ModelConfig[str]], group_spec(ConfigGroup.MODEL))

@@ -41,6 +41,7 @@ if TYPE_CHECKING:
         TrainingArtifactManifest,
         TrainingEpochRecord,
         TrainingRuntimeSummary,
+        TrainingSourceProvenance,
     )
 
 
@@ -121,15 +122,60 @@ class TemporalCapabilityPayload(PayloadRecord):
         )
 
 
+class TrainingSourcePayload(PayloadRecord):
+    corpus_id: str
+    window_start_timestamp: int
+    window_end_timestamp: int
+    first_block: int
+    last_block: int
+    first_timestamp: int
+    last_timestamp: int
+    training_cutoff_timestamp: int | None = None
+    source_requirements_fingerprint: str
+
+    @classmethod
+    def from_provenance(
+        cls,
+        source: TrainingSourceProvenance,
+    ) -> TrainingSourcePayload:
+        return cls(
+            corpus_id=source.corpus_id,
+            window_start_timestamp=source.window_start_timestamp,
+            window_end_timestamp=source.window_end_timestamp,
+            first_block=source.first_block,
+            last_block=source.last_block,
+            first_timestamp=source.first_timestamp,
+            last_timestamp=source.last_timestamp,
+            training_cutoff_timestamp=source.training_cutoff_timestamp,
+            source_requirements_fingerprint=source.source_requirements_fingerprint,
+        )
+
+    def to_provenance(self) -> TrainingSourceProvenance:
+        from ..modeling.results import TrainingSourceProvenance
+
+        return TrainingSourceProvenance(
+            corpus_id=self.corpus_id,
+            window_start_timestamp=self.window_start_timestamp,
+            window_end_timestamp=self.window_end_timestamp,
+            first_block=self.first_block,
+            last_block=self.last_block,
+            first_timestamp=self.first_timestamp,
+            last_timestamp=self.last_timestamp,
+            training_cutoff_timestamp=self.training_cutoff_timestamp,
+            source_requirements_fingerprint=self.source_requirements_fingerprint,
+        )
+
+
 class ArtifactManifestPayload(PayloadRecord):
     artifact_id: str
     dataset_builder: dict[str, object]
     prediction: dict[str, object]
     objective: dict[str, object]
-    evaluation: dict[str, object] | None = None
+    evaluator: dict[str, object] | None = None
     chain_name: str
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
+    training_source: dict[str, object]
     problem: dict[str, object]
     variant: str
     study_id: str | None
@@ -150,14 +196,17 @@ class ArtifactManifestPayload(PayloadRecord):
             dataset_builder=manifest.dataset_builder.model_dump(mode="json", exclude_none=True),
             prediction=manifest.prediction.model_dump(mode="json"),
             objective=manifest.objective.model_dump(mode="json", exclude_none=True),
-            evaluation=(
+            evaluator=(
                 None
-                if manifest.evaluation is None
-                else manifest.evaluation.model_dump(mode="json", exclude_none=True)
+                if manifest.evaluator is None
+                else manifest.evaluator.model_dump(mode="json", exclude_none=True)
             ),
             chain_name=manifest.chain_name,
-            dataset_id=manifest.dataset_id,
-            dataset_name=manifest.dataset_name,
+            corpus_id=manifest.corpus_id,
+            corpus_name=manifest.corpus_name,
+            training_source=TrainingSourcePayload.from_provenance(
+                manifest.training_source
+            ).model_dump(mode="json"),
             problem=manifest.problem.model_dump(mode="json"),
             variant=manifest.variant.value,
             study_id=manifest.study_id,
@@ -196,12 +245,19 @@ class ArtifactManifestPayload(PayloadRecord):
             dataset_builder=dataset_builder,
             prediction=PredictionConfig.model_validate(self.prediction),
             objective=coerce_objective_config(self.objective),
-            evaluation=(
-                None if self.evaluation is None else coerce_evaluator_config(self.evaluation)
+            evaluator=(
+                None if self.evaluator is None else coerce_evaluator_config(self.evaluator)
             ),
             chain_name=self.chain_name,
-            dataset_id=self.dataset_id,
-            dataset_name=self.dataset_name,
+            corpus_id=self.corpus_id,
+            corpus_name=self.corpus_name,
+            training_source=TrainingSourcePayload.model_validate(
+                mapping_payload(
+                    self.training_source,
+                    label="artifact_manifest.training_source",
+                ),
+                strict=True,
+            ).to_provenance(),
             problem=coerce_problem_spec(self.problem),
             variant=ArtifactVariant(self.variant),
             study=_study_config_from_name(self.study_name),
@@ -345,6 +401,10 @@ class EvaluationSummaryPayload(PayloadRecord):
     evaluation_config: dict[str, object]
     execution_provenance: EvaluationExecutionProvenancePayload | None = None
     metric_descriptors: list[MetricDescriptorPayload]
+    scenario_window_start_timestamp: int
+    scenario_window_end_timestamp: int
+    required_coverage_start_timestamp: int
+    required_coverage_end_timestamp: int
     n_history_rows: int
     n_evaluation_rows: int
     sample_count: int
@@ -366,6 +426,10 @@ class EvaluationSummaryPayload(PayloadRecord):
                 _metric_descriptor_payload(descriptor)
                 for descriptor in summary.metric_descriptors
             ],
+            scenario_window_start_timestamp=summary.scenario_window_start_timestamp,
+            scenario_window_end_timestamp=summary.scenario_window_end_timestamp,
+            required_coverage_start_timestamp=summary.required_coverage_start_timestamp,
+            required_coverage_end_timestamp=summary.required_coverage_end_timestamp,
             n_history_rows=summary.n_history_rows,
             n_evaluation_rows=summary.n_evaluation_rows,
             sample_count=summary.sample_count,
@@ -392,6 +456,10 @@ class EvaluationSummaryPayload(PayloadRecord):
                 _metric_descriptor_from_payload(payload)
                 for payload in self.metric_descriptors
             ),
+            scenario_window_start_timestamp=self.scenario_window_start_timestamp,
+            scenario_window_end_timestamp=self.scenario_window_end_timestamp,
+            required_coverage_start_timestamp=self.required_coverage_start_timestamp,
+            required_coverage_end_timestamp=self.required_coverage_end_timestamp,
             n_history_rows=self.n_history_rows,
             n_evaluation_rows=self.n_evaluation_rows,
             sample_count=self.sample_count,

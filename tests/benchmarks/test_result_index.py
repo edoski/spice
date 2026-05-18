@@ -46,10 +46,10 @@ def _record(
         dimension_labels={"models": "lstm"},
         selection=BenchmarkSelectionLedger(surface="current_row_fee_dynamics"),
         root_facts=BenchmarkRootFacts(
-            consumed_dataset_id="evaluation-dataset-1",
+            consumed_corpus_id="evaluation-dataset-1",
             consumed_artifact_id="artifact-1",
-            consumed_artifact_dataset_id="dataset-1",
-            artifact_source_dataset_id="dataset-1",
+            consumed_artifact_corpus_id="dataset-1",
+            artifact_source_corpus_id="dataset-1",
         ),
         job_id="42",
         execution_ref="slurm:42",
@@ -63,9 +63,9 @@ def _record(
         evaluation_target="disi_l40",
         artifact_id="artifact-1",
         evaluation_storage_id="eval-1",
-        artifact_dataset_id="dataset-1",
-        artifact_dataset_name="icdcs_2026",
-        evaluation_dataset_id="evaluation-dataset-1",
+        artifact_corpus_id="dataset-1",
+        artifact_corpus_name="icdcs_2026",
+        evaluation_corpus_id="evaluation-dataset-1",
         chain_name="ethereum",
         features_id="core_fee_dynamics",
         model_id="lstm",
@@ -180,8 +180,8 @@ def test_index_query_and_export_use_normalized_rows(tmp_path: Path) -> None:
     rows = export_benchmark_results_csv(output_path=output_path, index_path=index_path)
 
     assert [row.artifact_id for row in indexed_rows] == ["artifact-1"]
-    assert indexed_rows[0].artifact_dataset_id == "dataset-1"
-    assert indexed_rows[0].evaluation_dataset_id == "evaluation-dataset-1"
+    assert indexed_rows[0].artifact_corpus_id == "dataset-1"
+    assert indexed_rows[0].evaluation_corpus_id == "evaluation-dataset-1"
     assert rows[0]["artifact_id"] == "artifact-1"
     assert rows[0]["surface"] == "current_row_fee_dynamics"
 

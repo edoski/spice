@@ -9,8 +9,7 @@ CORPORA_ROOT_NAME = "corpora"
 STUDIES_ROOT_NAME = "studies"
 ARTIFACTS_ROOT_NAME = "artifacts"
 STATE_DIR_NAME = ".spice"
-CORPUS_HISTORY_DIR_NAME = "history"
-CORPUS_EVALUATION_DIR_NAME = "evaluation"
+CORPUS_BLOCKS_DIR_NAME = "blocks"
 
 
 def catalog_db_path(storage_root: Path) -> Path:
@@ -21,12 +20,8 @@ def corpus_root_path(storage_root: Path, *, chain_name: str, corpus_id: str) -> 
     return storage_root / CORPORA_ROOT_NAME / chain_name / corpus_id
 
 
-def corpus_history_dir_path(corpus_root: Path) -> Path:
-    return corpus_root / CORPUS_HISTORY_DIR_NAME
-
-
-def corpus_evaluation_dir_path(corpus_root: Path) -> Path:
-    return corpus_root / CORPUS_EVALUATION_DIR_NAME
+def corpus_blocks_dir_path(corpus_root: Path) -> Path:
+    return corpus_root / CORPUS_BLOCKS_DIR_NAME
 
 
 def study_root_path(storage_root: Path, *, chain_name: str, study_id: str) -> Path:

@@ -2,7 +2,6 @@
 
 from .config import (
     EvaluatorConfig,
-    FullTemporalReplayEvaluatorConfig,
     PoissonReplayEvaluatorConfig,
 )
 from .contracts import (
@@ -20,7 +19,6 @@ __all__ = [
     "EvaluationRun",
     "EvaluationSummary",
     "EvaluatorConfig",
-    "FullTemporalReplayEvaluatorConfig",
     "PoissonReplayEvaluatorConfig",
     "coerce_evaluator_config",
     "compile_evaluator_contract",

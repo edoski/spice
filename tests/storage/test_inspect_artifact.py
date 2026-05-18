@@ -13,21 +13,21 @@ def test_artifact_dependency_warning_reports_missing_dataset(tmp_path: Path) -> 
     artifact = artifact_record(tmp_path / "outputs" / "artifacts" / "ethereum" / "artifact-1")
 
     assert artifact_local_dependency_warnings(tmp_path / "outputs", artifact) == (
-        "matching local dataset root is missing; local inspection still needs that dataset",
+        "matching local corpus root is missing; local inspection still needs that corpus",
     )
 
 
 def test_artifact_dependency_warning_accepts_cataloged_dataset_root(tmp_path: Path) -> None:
     storage_root = tmp_path / "outputs"
     artifact = artifact_record(storage_root / "artifacts" / "ethereum" / "artifact-1")
-    dataset = dataset_record(
-        storage_root / "corpora" / artifact.chain_name / artifact.dataset_id,
-        dataset_id=artifact.dataset_id,
-        dataset_name=artifact.dataset_name,
+    corpus = dataset_record(
+        storage_root / "corpora" / artifact.chain_name / artifact.corpus_id,
+        corpus_id=artifact.corpus_id,
+        corpus_name=artifact.corpus_name,
         chain_name=artifact.chain_name,
     )
-    location = materialize_catalog_root(storage_root, dataset)
+    location = materialize_catalog_root(storage_root, corpus)
     ensure_state_db(state_db_path(location.root_path), root_kind=RootKind.CORPUS, tables=())
-    upsert_catalog_record(storage_root, dataset)
+    upsert_catalog_record(storage_root, corpus)
 
     assert artifact_local_dependency_warnings(storage_root, artifact) == ()

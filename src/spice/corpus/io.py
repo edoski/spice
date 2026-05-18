@@ -1,4 +1,4 @@
-"""Parquet-only block dataset IO."""
+"""Parquet-only block corpus IO."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def iter_block_files(path: Path) -> list[Path]:
             raise ValueError(f"Unsupported block file format: {path.suffix}")
         return [path]
     if not path.is_dir():
-        raise ValueError(f"Block dataset path does not exist: {path}")
+        raise ValueError(f"Block corpus path does not exist: {path}")
 
     files = [
         candidate

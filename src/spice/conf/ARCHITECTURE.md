@@ -23,7 +23,7 @@ conf/
   surface/          reusable workflow compositions
   benchmark/        experiment matrices that expand into workflow DAGs
   chain/            chain identity and timing assumptions
-  dataset/          dataset date/window identity
+  dataset/          corpus date/window identity
   provider/         RPC endpoint/provider specs
   features/         feature-composition specs
   problem/          temporal problem specs

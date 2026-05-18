@@ -30,10 +30,26 @@ from spice.core.errors import SpiceOperatorError
 from spice.execution.provenance import ExecutionJobProvenance
 
 runner = CliRunner()
+EVALUATION_WINDOW = {"start": "2026-02-03T14:00:00Z", "duration_seconds": 7200}
+
+
+def _with_evaluation_windows(payload: object) -> object:
+    if isinstance(payload, dict):
+        if payload.get("workflow") == "evaluate":
+            step_set = payload.setdefault("set", {})
+            if isinstance(step_set, dict):
+                step_set.setdefault("evaluation_window", EVALUATION_WINDOW)
+        for value in payload.values():
+            _with_evaluation_windows(value)
+    elif isinstance(payload, list):
+        for value in payload:
+            _with_evaluation_windows(value)
+    return payload
 
 
 def _write_benchmark(conf_root, name: str, payload: dict[str, object]) -> None:
     path = conf_root / "benchmark" / f"{name}.yaml"
+    _with_evaluation_windows(payload)
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
@@ -51,10 +67,10 @@ def _benchmark_record() -> BenchmarkResultRecord:
         dimension_labels={"models": "lstm"},
         selection=BenchmarkSelectionLedger(surface="current_row_fee_dynamics"),
         root_facts=BenchmarkRootFacts(
-            consumed_dataset_id="dataset-1",
+            consumed_corpus_id="dataset-1",
             consumed_artifact_id="artifact-1",
-            consumed_artifact_dataset_id="dataset-1",
-            artifact_source_dataset_id="dataset-1",
+            consumed_artifact_corpus_id="dataset-1",
+            artifact_source_corpus_id="dataset-1",
         ),
         job_id="42",
         execution_ref="slurm:42",
@@ -68,15 +84,15 @@ def _benchmark_record() -> BenchmarkResultRecord:
         evaluation_target="disi_l40",
         artifact_id="artifact-1",
         evaluation_storage_id="eval-1",
-        artifact_dataset_id="dataset-1",
-        artifact_dataset_name="icdcs_2026",
-        evaluation_dataset_id="dataset-1",
+        artifact_corpus_id="dataset-1",
+        artifact_corpus_name="icdcs_2026",
+        evaluation_corpus_id="dataset-1",
         chain_name="ethereum",
         features_id="core_fee_dynamics",
         model_id="lstm",
         problem_id="current_row_nominal",
         prediction_id="icdcs_2026",
-        objective_id="evaluation",
+        objective_id="evaluator",
         evaluator_id="poisson_replay",
         delay_seconds=36,
         variant="baseline",
@@ -87,7 +103,7 @@ def _benchmark_record() -> BenchmarkResultRecord:
         total_events=7,
         n_history_rows=200,
         n_evaluation_rows=100,
-        metrics=(MetricValueRecord(source="evaluation", metric_id="profit", value=0.12),),
+        metrics=(MetricValueRecord(source="evaluator", metric_id="profit", value=0.12),),
         window_metrics=(),
     )
 
@@ -127,7 +143,7 @@ def test_benchmark_plan_creates_run_dir(isolate_conf_root, tmp_path: Path) -> No
                     "base": {
                         "surface": "current_row_fee_dynamics",
                         "study": "single",
-                        "dataset_id": "cor_9a73b1e88edb488afb1e",
+                        "corpus_id": "cor_9a73b1e88edb488afb1e",
                     },
                     "steps": [
                         {
@@ -182,7 +198,7 @@ def test_benchmark_submit_uses_persisted_plan(
                     "base": {
                         "surface": "current_row_fee_dynamics",
                         "study": "single",
-                        "dataset_id": "cor_9a73b1e88edb488afb1e",
+                        "corpus_id": "cor_9a73b1e88edb488afb1e",
                     },
                     "steps": [
                         {
@@ -197,7 +213,7 @@ def test_benchmark_submit_uses_persisted_plan(
                             "after": ["train"],
                             "artifact_from": "train",
                             "set": {
-                                "evaluation": "poisson_replay",
+                                "evaluator": "poisson_replay",
                                 "delay_seconds": 12,
                             },
                         },
@@ -299,7 +315,7 @@ def test_benchmark_collect_failure_writes_no_cli_state(monkeypatch, tmp_path: Pa
     run_dir.mkdir()
 
     def fail_collect(_run_dir):
-        raise SpiceOperatorError("missing evaluation summary")
+        raise SpiceOperatorError("missing evaluator summary")
 
     monkeypatch.setattr("spice.benchmarks.collection.collect_benchmark_run", fail_collect)
 
@@ -307,7 +323,7 @@ def test_benchmark_collect_failure_writes_no_cli_state(monkeypatch, tmp_path: Pa
 
     assert result.exit_code != 0
     assert isinstance(result.exception, SystemExit)
-    assert "missing evaluation summary" in result.stderr
+    assert "missing evaluator summary" in result.stderr
     assert not (run_dir / "collection.json").exists()
 
 

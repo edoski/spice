@@ -35,8 +35,8 @@ def test_acquire_preparation_materializes_roots_and_corpus_assembly_request(
     assembly_request = object()
 
     def fake_prepare_corpus_assembly_request(*, config, roots):
-        captured["dataset"] = config.dataset.name
-        captured["corpus"] = roots.corpus.dataset_id
+        captured["corpus"] = config.corpus.name
+        captured["corpus"] = roots.corpus.corpus_id
         return assembly_request
 
     monkeypatch.setattr(preparation, "materialize_acquire_roots", lambda _config: roots)
@@ -51,8 +51,8 @@ def test_acquire_preparation_materializes_roots_and_corpus_assembly_request(
     assert prepared.roots is roots
     assert prepared.assembly_request is cast(Any, assembly_request)
     assert captured == {
-        "dataset": config.dataset.name,
-        "corpus": roots.corpus.dataset_id,
+        "corpus": config.corpus.name,
+        "corpus": roots.corpus.corpus_id,
     }
 
 
@@ -76,13 +76,13 @@ def test_train_preparation_uses_resolved_corpus_manifest(
         corpus=corpus_handle(
             tmp_path / "outputs",
             chain_name="polygon",
-            dataset_id=cast(str, config.dataset_id),
-            dataset_name="polygon_dataset",
+            corpus_id=cast(str, config.corpus_id),
+            corpus_name="polygon_dataset",
         ),
     )
     corpus_manifest = SimpleNamespace(
         chain=SimpleNamespace(name="polygon", runtime=SimpleNamespace()),
-        dataset=SimpleNamespace(name="polygon_dataset"),
+        corpus=SimpleNamespace(name="polygon_dataset"),
     )
     captured: dict[str, object] = {}
 
@@ -144,8 +144,8 @@ def test_tuned_train_preparation_keeps_artifact_root_stable_after_best_params(
     corpus = corpus_handle(
         tmp_path / "outputs",
         chain_name=config.chain.name,
-        dataset_id="cor_9a73b1e88edb488afb1e",
-        dataset_name=config.dataset.name,
+        corpus_id="cor_9a73b1e88edb488afb1e",
+        corpus_name=config.corpus.name,
     )
     study = study_handle(
         tmp_path / "outputs",
@@ -186,7 +186,7 @@ def test_tuned_train_preparation_keeps_artifact_root_stable_after_best_params(
         "load_manifest",
         lambda _self: SimpleNamespace(
             chain=SimpleNamespace(name=config.chain.name, runtime=SimpleNamespace()),
-            dataset=SimpleNamespace(name=config.dataset.name),
+            corpus=SimpleNamespace(name=config.corpus.name),
         ),
     )
     monkeypatch.setattr(
@@ -234,8 +234,8 @@ def test_tune_preparation_uses_resolved_corpus_manifest(
     corpus = corpus_handle(
         tmp_path / "outputs",
         chain_name="polygon",
-        dataset_id=cast(str, config.dataset_id),
-        dataset_name="polygon_dataset",
+        corpus_id=cast(str, config.corpus_id),
+        corpus_name="polygon_dataset",
     )
     roots = tune_roots(
         tmp_path / "outputs",
@@ -249,7 +249,7 @@ def test_tune_preparation_uses_resolved_corpus_manifest(
     )
     corpus_manifest = SimpleNamespace(
         chain=SimpleNamespace(name="polygon", runtime=SimpleNamespace()),
-        dataset=SimpleNamespace(name="polygon_dataset"),
+        corpus=SimpleNamespace(name="polygon_dataset"),
     )
     captured: dict[str, object] = {}
 

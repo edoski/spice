@@ -29,7 +29,6 @@ class ProblemSemantics:
     compiler_id: str
     problem_id: str
     lookback_seconds: int
-    sample_count: int
     max_delay_seconds: int
 
 

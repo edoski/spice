@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Modeling Runtime - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>Modeling Runtime</h1>
+      <p class="lede">Modeling owns training, inference, tuning execution, artifact persistence helpers, runtime planning, batching, scoring, and the bridge between model outputs and objectives/evaluators.</p>
+      <div class="meta">
+        <span class="pill">src/spice/modeling</span>
+        <span class="pill">Docs: ARCHITECTURE.md, IMPLEMENTATIONS.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>It sits after dataset builders and before prediction/evaluation/storage commits. Workflows call modeling services to train artifacts, run trials, and score saved models.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>This is the machine-learning engine room. Dataset builders prepare tensors; model families build networks; prediction contracts define losses and decoding; modeling coordinates CUDA/runtime choices, batches, epochs, early stopping, inference, and summaries.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>_epoch_execution.py</code></div><div>Runs one training or validation epoch over prepared batches.</div>
+<div><code>_fit_policy.py</code></div><div>Tracks best epochs, early stopping decisions, finite metric checks, and CPU state snapshots.</div>
+<div><code>_runtime.py</code></div><div>Handles CUDA device selection, seeds, precision context, memory budgeting, and forward passes.</div>
+<div><code>_runtime_probe.py</code></div><div>Measures runtime budget with warmup/probe logic.</div>
+<div><code>artifact_inference.py</code></div><div>Prepares an artifact for inference against a corpus/evaluation request.</div>
+<div><code>artifacts.py</code></div><div>Builds, loads, and persists training artifact manifests and state.</div>
+<div><code>batch_plan.py</code></div><div>Plans host/device batch sources, samplers, collators, prediction batches, and memory-aware loading.</div>
+<div><code>forward_runtime.py</code></div><div>Runs planned model-input and prediction forward passes.</div>
+<div><code>models.py</code></div><div>Defines the <code>TemporalModel</code> protocol and named model outputs.</div>
+<div><code>objective_runtime.py</code></div><div>Compiles objective contracts and resolves metric descriptors for optimization.</div>
+<div><code>persisted_training.py</code></div><div>Runs persisted training or trial training and writes summaries.</div>
+<div><code>pipeline.py</code></div><div>Builds training specs, compiles training contexts, and runs training.</div>
+<div><code>results.py</code></div><div>Defines manifests, runtime summaries, epoch records, evaluation summaries, and JSON freezing/thawing helpers.</div>
+<div><code>runtime_planning.py</code></div><div>Builds CUDA/runtime plans and prepares models for backend execution.</div>
+<div><code>scoring.py</code></div><div>Scores artifacts through evaluators or prediction metrics and validates finite outputs.</div>
+<div><code>summary.py</code></div><div>Renders training result fields.</div>
+<div><code>training_run.py</code></div><div>Defines the returned training-run result.</div>
+<div><code>training_runner.py</code></div><div>Runs the fit loop with callbacks and early-stop events.</div>
+<div><code>training_runtime.py</code></div><div>Plans and prepares training runtime and batch budgets.</div>
+<div><code>tuned_config.py</code></div><div>Coerces tuning spaces and sampled/tuned parameter sets.</div>
+<div><code>tuning.py</code></div><div>Applies study best params to train/tune configs.</div>
+<div><code>tuning_execution.py</code></div><div>Runs Optuna trials, records trial params, and reports tuning progress.</div>
+<div><code>representations/</code></div><div>Undocumented child package for model input representation contracts and sequence-input representation.</div>
+<div><code>__init__.py</code></div><div>Modeling package boundary.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>Compile dataset-builder, model-family, prediction, and objective contracts.</li>
+<li>Prepare runtime and batch plans.</li>
+<li>Run epochs or inference batches.</li>
+<li>Summarize metrics and persist artifact/study state through storage.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Loss</h3><p>A numeric penalty the optimizer tries to reduce. It converts wrong predictions into gradients.</p>
+<h3>Backpropagation</h3><p>The algorithm that computes how each model weight contributed to the loss.</p>
+<h3>Runtime plan</h3><p>A practical plan for device, precision, memory budget, and batching before heavy tensor work starts.</p>
+<h3>Scoring service</h3><p>The bridge that turns trained model outputs into prediction metrics or evaluator summaries.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-modeling-dataset-builders.html">Dataset Builders</a><a href="spice-modeling-families.html">Model Families</a><a href="spice-prediction.html">Prediction</a><a href="spice-objectives.html">Objectives</a><a href="spice-evaluation.html">Evaluation</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/modeling/ARCHITECTURE.md">ARCHITECTURE.md</a>, <a href="../../src/spice/modeling/IMPLEMENTATIONS.md">IMPLEMENTATIONS.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

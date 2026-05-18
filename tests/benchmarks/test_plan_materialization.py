@@ -13,10 +13,26 @@ from spice.storage.workflow_root_materialization import produced_artifact_id, pr
 from tests.catalog_helpers import artifact_record, study_record
 
 ETH_DATASET_ID = "cor_9a73b1e88edb488afb1e"
+EVALUATION_WINDOW = {"start": "2026-02-03T14:00:00Z", "duration_seconds": 7200}
+
+
+def _with_evaluation_windows(payload: object) -> object:
+    if isinstance(payload, dict):
+        if payload.get("workflow") == "evaluate":
+            step_set = payload.setdefault("set", {})
+            if isinstance(step_set, dict):
+                step_set.setdefault("evaluation_window", EVALUATION_WINDOW)
+        for value in payload.values():
+            _with_evaluation_windows(value)
+    elif isinstance(payload, list):
+        for value in payload:
+            _with_evaluation_windows(value)
+    return payload
 
 
 def _materialize(isolate_conf_root, payload: dict[str, object]):
     conf_root = isolate_conf_root()
+    _with_evaluation_windows(payload)
     benchmark_path = conf_root / "benchmark" / "materialization_case.yaml"
     benchmark_path.write_text(
         yaml.safe_dump(payload, sort_keys=False),
@@ -36,7 +52,7 @@ def test_plan_materialization_derives_study_id_for_tuned_train_dependency(
                     "id": "case",
                     "base": {
                         "surface": "current_row_fee_dynamics",
-                        "dataset_id": ETH_DATASET_ID,
+                        "corpus_id": ETH_DATASET_ID,
                         "study": "case_study",
                     },
                     "steps": [
@@ -59,14 +75,14 @@ def test_plan_materialization_derives_study_id_for_tuned_train_dependency(
     assert isinstance(tune.config, TuneConfig)
     assert isinstance(train.config, TrainConfig)
     assert train.config.study_id == produced_study_id(tune.config)
-    assert train.config.dataset_id is None
+    assert train.config.corpus_id is None
     assert train.root_facts.consumed_study_id == train.config.study_id
     consumed_study = next(
         entry
         for entry in train.root_ledger.entries
         if entry.role == "consumed" and entry.root_kind == "study"
     )
-    assert consumed_study.dataset_id == ETH_DATASET_ID
+    assert consumed_study.corpus_id == ETH_DATASET_ID
     assert tune.root_facts.produced_study_id == produced_study_id(tune.config)
     assert train.selection.study == "case_study"
 
@@ -83,7 +99,7 @@ def test_plan_materialization_rejects_tuned_train_without_study_source(
                         "id": "case",
                         "base": {
                             "surface": "current_row_fee_dynamics",
-                            "dataset_id": ETH_DATASET_ID,
+                            "corpus_id": ETH_DATASET_ID,
                         },
                         "steps": [
                             {
@@ -110,7 +126,7 @@ def test_plan_materialization_rejects_ambiguous_tuned_train_dependency(
                         "id": "case",
                         "base": {
                             "surface": "current_row_fee_dynamics",
-                            "dataset_id": ETH_DATASET_ID,
+                            "corpus_id": ETH_DATASET_ID,
                         },
                         "steps": [
                             {
@@ -147,7 +163,7 @@ def test_plan_materialization_derives_artifact_and_dataset_for_artifact_from(
                     "id": "case",
                     "base": {
                         "surface": "current_row_fee_dynamics",
-                        "dataset_id": ETH_DATASET_ID,
+                        "corpus_id": ETH_DATASET_ID,
                     },
                     "steps": [
                         {
@@ -159,7 +175,7 @@ def test_plan_materialization_derives_artifact_and_dataset_for_artifact_from(
                             "id": "evaluate",
                             "workflow": "evaluate",
                             "artifact_from": "train",
-                            "set": {"evaluation": "poisson_replay"},
+                            "set": {"evaluator": "poisson_replay"},
                         },
                     ],
                 }
@@ -174,20 +190,20 @@ def test_plan_materialization_derives_artifact_and_dataset_for_artifact_from(
     assert isinstance(evaluate.config, EvaluateConfig)
     assert evaluate.dependencies.artifact_from_run_id == train.run_id
     assert train.root_facts.produced_artifact_id == evaluate.config.artifact_id
-    assert evaluate.config.dataset_id == ETH_DATASET_ID
+    assert evaluate.config.corpus_id == ETH_DATASET_ID
     assert evaluate.config.artifact_id == produced_artifact_id(
         train.config,
-        dataset_id=ETH_DATASET_ID,
+        corpus_id=ETH_DATASET_ID,
     )
-    assert evaluate.root_facts.consumed_dataset_id == ETH_DATASET_ID
+    assert evaluate.root_facts.consumed_corpus_id == ETH_DATASET_ID
     assert evaluate.root_facts.consumed_artifact_id == evaluate.config.artifact_id
-    assert evaluate.root_facts.artifact_source_dataset_id == ETH_DATASET_ID
+    assert evaluate.root_facts.artifact_source_corpus_id == ETH_DATASET_ID
 
 
-def test_plan_materialization_preserves_explicit_evaluate_dataset_id_with_artifact_from(
+def test_plan_materialization_preserves_explicit_evaluate_corpus_id_with_artifact_from(
     isolate_conf_root,
 ) -> None:
-    evaluate_dataset_id = "cor_cross_corpus_same_chain"
+    evaluate_corpus_id = "cor_cross_corpus_same_chain"
 
     entries = _materialize(
         isolate_conf_root,
@@ -197,7 +213,7 @@ def test_plan_materialization_preserves_explicit_evaluate_dataset_id_with_artifa
                     "id": "case",
                     "base": {
                         "surface": "current_row_fee_dynamics",
-                        "dataset_id": ETH_DATASET_ID,
+                        "corpus_id": ETH_DATASET_ID,
                     },
                     "steps": [
                         {
@@ -210,8 +226,8 @@ def test_plan_materialization_preserves_explicit_evaluate_dataset_id_with_artifa
                             "workflow": "evaluate",
                             "artifact_from": "train",
                             "set": {
-                                "dataset_id": evaluate_dataset_id,
-                                "evaluation": "poisson_replay",
+                                "corpus_id": evaluate_corpus_id,
+                                "evaluator": "poisson_replay",
                             },
                         },
                     ],
@@ -225,20 +241,20 @@ def test_plan_materialization_preserves_explicit_evaluate_dataset_id_with_artifa
 
     assert isinstance(train.config, TrainConfig)
     assert isinstance(evaluate.config, EvaluateConfig)
-    assert evaluate.config.dataset_id == evaluate_dataset_id
+    assert evaluate.config.corpus_id == evaluate_corpus_id
     assert evaluate.config.artifact_id == produced_artifact_id(
         train.config,
-        dataset_id=ETH_DATASET_ID,
+        corpus_id=ETH_DATASET_ID,
     )
     consumed_artifact = next(
         entry
         for entry in evaluate.root_ledger.entries
         if entry.role == "consumed" and entry.root_kind == "artifact"
     )
-    assert consumed_artifact.dataset_id == ETH_DATASET_ID
-    assert evaluate.root_facts.consumed_dataset_id == evaluate_dataset_id
+    assert consumed_artifact.corpus_id == ETH_DATASET_ID
+    assert evaluate.root_facts.consumed_corpus_id == evaluate_corpus_id
     assert evaluate.root_facts.consumed_artifact_id == evaluate.config.artifact_id
-    assert evaluate.root_facts.artifact_source_dataset_id == ETH_DATASET_ID
+    assert evaluate.root_facts.artifact_source_corpus_id == ETH_DATASET_ID
 
 
 def test_plan_materialization_uses_catalog_dataset_for_explicit_tuned_study(
@@ -253,8 +269,8 @@ def test_plan_materialization_uses_catalog_dataset_for_explicit_tuned_study(
             study_root,
             study_id="std_existing",
             study_name="existing",
-            dataset_id=ETH_DATASET_ID,
-            dataset_name="icdcs_2026",
+            corpus_id=ETH_DATASET_ID,
+            corpus_name="icdcs_2026",
             chain_name="ethereum",
             features_id="core_fee_dynamics",
             prediction_id="icdcs_2026",
@@ -286,7 +302,7 @@ def test_plan_materialization_uses_catalog_dataset_for_explicit_tuned_study(
                             "id": "evaluate",
                             "workflow": "evaluate",
                             "artifact_from": "train",
-                            "set": {"evaluation": "poisson_replay"},
+                            "set": {"evaluator": "poisson_replay"},
                         },
                     ],
                 }
@@ -304,15 +320,15 @@ def test_plan_materialization_uses_catalog_dataset_for_explicit_tuned_study(
         for entry in train.root_ledger.entries
         if entry.role == "consumed" and entry.root_kind == "study"
     )
-    assert consumed_study.dataset_id == ETH_DATASET_ID
-    assert evaluate.config.dataset_id == ETH_DATASET_ID
+    assert consumed_study.corpus_id == ETH_DATASET_ID
+    assert evaluate.config.corpus_id == ETH_DATASET_ID
     assert evaluate.config.artifact_id == produced_artifact_id(
         train.config,
-        dataset_id=ETH_DATASET_ID,
+        corpus_id=ETH_DATASET_ID,
     )
 
 
-def test_plan_materialization_records_explicit_artifact_source_dataset_from_catalog(
+def test_plan_materialization_records_explicit_artifact_source_corpus_from_catalog(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
@@ -323,8 +339,8 @@ def test_plan_materialization_records_explicit_artifact_source_dataset_from_cata
         artifact_record(
             artifact_root,
             artifact_id="art_existing",
-            dataset_id=ETH_DATASET_ID,
-            dataset_name="icdcs_2026",
+            corpus_id=ETH_DATASET_ID,
+            corpus_name="icdcs_2026",
             chain_name="ethereum",
             features_id="core_fee_dynamics",
             prediction_id="icdcs_2026",
@@ -335,7 +351,7 @@ def test_plan_materialization_records_explicit_artifact_source_dataset_from_cata
             study_name=None,
         ),
     )
-    evaluate_dataset_id = "cor_cross_corpus_same_chain"
+    evaluate_corpus_id = "cor_cross_corpus_same_chain"
 
     entries = _materialize(
         isolate_conf_root,
@@ -352,9 +368,9 @@ def test_plan_materialization_records_explicit_artifact_source_dataset_from_cata
                             "id": "evaluate",
                             "workflow": "evaluate",
                             "set": {
-                                "dataset_id": evaluate_dataset_id,
+                                "corpus_id": evaluate_corpus_id,
                                 "artifact_id": "art_existing",
-                                "evaluation": "poisson_replay",
+                                "evaluator": "poisson_replay",
                             },
                         },
                     ],
@@ -371,9 +387,9 @@ def test_plan_materialization_records_explicit_artifact_source_dataset_from_cata
     )
 
     assert isinstance(evaluate.config, EvaluateConfig)
-    assert evaluate.root_facts.consumed_dataset_id == evaluate_dataset_id
-    assert evaluate.root_facts.consumed_artifact_dataset_id == ETH_DATASET_ID
-    assert consumed_artifact.dataset_id == ETH_DATASET_ID
+    assert evaluate.root_facts.consumed_corpus_id == evaluate_corpus_id
+    assert evaluate.root_facts.consumed_artifact_corpus_id == ETH_DATASET_ID
+    assert consumed_artifact.corpus_id == ETH_DATASET_ID
 
 
 def test_plan_materialization_preserves_selection_ledger_context(
@@ -387,7 +403,7 @@ def test_plan_materialization_preserves_selection_ledger_context(
                     "id": "case",
                     "base": {
                         "surface": "current_row_fee_dynamics",
-                        "dataset_id": ETH_DATASET_ID,
+                        "corpus_id": ETH_DATASET_ID,
                         "objective": "validation_total_loss",
                     },
                     "steps": [
@@ -400,7 +416,7 @@ def test_plan_materialization_preserves_selection_ledger_context(
                             "id": "evaluate",
                             "workflow": "evaluate",
                             "artifact_from": "train",
-                            "set": {"evaluation": "poisson_replay"},
+                            "set": {"evaluator": "poisson_replay"},
                         },
                     ],
                 }
@@ -413,8 +429,82 @@ def test_plan_materialization_preserves_selection_ledger_context(
     assert isinstance(evaluate.config, EvaluateConfig)
     assert evaluate.selection.surface == "current_row_fee_dynamics"
     assert evaluate.selection.objective == "validation_total_loss"
-    assert evaluate.root_facts.consumed_dataset_id == ETH_DATASET_ID
+    assert evaluate.root_facts.consumed_corpus_id == ETH_DATASET_ID
     assert evaluate.root_facts.consumed_artifact_id == evaluate.config.artifact_id
+
+
+def test_evaluations_suite_fans_out_evaluate_steps_and_sets_train_cutoff(
+    isolate_conf_root,
+) -> None:
+    conf_root = isolate_conf_root()
+    (conf_root / "evaluations" / "suite.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "suite",
+                "items": [
+                    {
+                        "id": "early",
+                        "start": "2026-01-20T00:00:00Z",
+                        "duration_seconds": 3600,
+                    },
+                    {
+                        "id": "late",
+                        "start": "2026-02-03T14:00:00Z",
+                        "duration_seconds": 7200,
+                    },
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    benchmark_path = conf_root / "benchmark" / "suite_case.yaml"
+    benchmark_path.write_text(
+        yaml.safe_dump(
+            {
+                "cases": [
+                    {
+                        "id": "case",
+                        "base": {
+                            "surface": "current_row_fee_dynamics",
+                            "corpus_id": ETH_DATASET_ID,
+                            "evaluations": "suite",
+                        },
+                        "steps": [
+                            {
+                                "id": "train",
+                                "workflow": "train",
+                                "set": {"variant": "baseline"},
+                            },
+                            {
+                                "id": "evaluate",
+                                "workflow": "evaluate",
+                                "artifact_from": "train",
+                                "set": {"evaluator": "poisson_replay"},
+                            },
+                        ],
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    entries = materialize_benchmark_plan("suite_case")
+    train = next(entry for entry in entries if entry.workflow is WorkflowTask.TRAIN)
+    evaluations = [entry for entry in entries if entry.workflow is WorkflowTask.EVALUATE]
+
+    assert isinstance(train.config, TrainConfig)
+    assert train.config.training_cutoff_timestamp == 1768867200
+    assert [entry.dimension_labels["evaluations"] for entry in evaluations] == [
+        "early",
+        "late",
+    ]
+    assert [entry.config.evaluation_window.start_timestamp for entry in evaluations] == [
+        1768867200,
+        1770127200,
+    ]
 
 
 def test_problem_grid_keeps_selection_problem_id_with_inline_workflow_problem(
@@ -428,7 +518,7 @@ def test_problem_grid_keeps_selection_problem_id_with_inline_workflow_problem(
                     "id": "case",
                     "base": {
                         "surface": "current_row_fee_dynamics",
-                        "dataset_id": ETH_DATASET_ID,
+                        "corpus_id": ETH_DATASET_ID,
                     },
                     "dimensions": {
                         "problems": [
@@ -437,7 +527,6 @@ def test_problem_grid_keeps_selection_problem_id_with_inline_workflow_problem(
                                     "base": "current_row_nominal",
                                     "fields": {
                                         "lookback_seconds": [600],
-                                        "sample_count": [1000000],
                                     },
                                 }
                             }
@@ -453,14 +542,14 @@ def test_problem_grid_keeps_selection_problem_id_with_inline_workflow_problem(
                             "id": "evaluate",
                             "workflow": "evaluate",
                             "artifact_from": "train",
-                            "set": {"evaluation": "poisson_replay"},
+                            "set": {"evaluator": "poisson_replay"},
                         },
                     ],
                 }
             ]
         },
     )
-    problem_id = "current_row_nominal__lookback_seconds-600__sample_count-1000000"
+    problem_id = "current_row_nominal__lookback_seconds-600"
     train = next(entry for entry in entries if entry.workflow is WorkflowTask.TRAIN)
     evaluate = next(entry for entry in entries if entry.workflow is WorkflowTask.EVALUATE)
 
@@ -468,6 +557,5 @@ def test_problem_grid_keeps_selection_problem_id_with_inline_workflow_problem(
     assert isinstance(evaluate.config, EvaluateConfig)
     assert train.config.problem.id == problem_id
     assert train.config.problem.lookback_seconds == 600
-    assert train.config.problem.sample_count == 1000000
     assert train.selection.problem == problem_id
     assert evaluate.selection.problem == problem_id

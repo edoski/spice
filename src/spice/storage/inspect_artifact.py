@@ -20,10 +20,10 @@ from .catalog.index import list_dataset_records
 from .catalog.materialization import materialize_catalog_root
 from .catalog.records import CatalogArtifactRecord
 from .engine import RootKind, require_root_kind, state_db_path
-from .selectors import DatasetSelector
+from .selectors import CorpusSelector
 
 _MISSING_ARTIFACT_DATASET_WARNING = (
-    "matching local dataset root is missing; local inspection still needs that dataset"
+    "matching local corpus root is missing; local inspection still needs that corpus"
 )
 
 
@@ -42,7 +42,7 @@ def artifact_local_dependency_warnings(
 ) -> tuple[str, ...]:
     matches = list_dataset_records(
         storage_root,
-        selector=DatasetSelector(dataset_id=record.dataset_id),
+        selector=CorpusSelector(corpus_id=record.corpus_id),
     )
     for dataset_record in matches:
         location = materialize_catalog_root(storage_root, dataset_record)
@@ -65,7 +65,7 @@ def artifact_list_sections(
                     record.artifact_id,
                     (
                         f"chain={record.chain_name} "
-                        f"dataset={record.dataset_name} "
+                        f"corpus={record.corpus_name} "
                         f"features={record.features_id} "
                         f"prediction={record.prediction_id} "
                         f"model={record.model_id} "
@@ -112,8 +112,8 @@ def artifact_sections(
             [
                 ("artifact id", manifest.artifact_id),
                 ("prediction", manifest.prediction_id),
-                ("dataset", manifest.dataset_name),
-                ("dataset id", manifest.dataset_id),
+                ("corpus", manifest.corpus_name),
+                ("corpus id", manifest.corpus_id),
                 ("chain", manifest.chain_name),
                 ("problem", manifest.problem_id),
                 ("execution policy", manifest.semantics.execution_policy.execution_policy_id),

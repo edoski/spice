@@ -11,10 +11,10 @@ from uuid import uuid4
 from ...core.errors import SelectorResolutionError
 from ..engine import RootKind, detect_root_kind, state_db_path
 from ..layout import catalog_db_path
-from ..selectors import ArtifactSelector, DatasetSelector, StudySelector
+from ..selectors import ArtifactSelector, CorpusSelector, StudySelector
 from . import store as catalog_store
 from .materialization import catalog_record_from_root, validate_catalog_root_location
-from .records import CatalogArtifactRecord, CatalogDatasetRecord, CatalogRecord, CatalogStudyRecord
+from .records import CatalogArtifactRecord, CatalogCorpusRecord, CatalogRecord, CatalogStudyRecord
 from .registry import (
     ARTIFACT_ROOT_SPEC,
     DATASET_ROOT_SPEC,
@@ -25,7 +25,7 @@ from .registry import (
 )
 
 T = TypeVar("T", bound=CatalogRecord)
-SelectorT = TypeVar("SelectorT", DatasetSelector, StudySelector, ArtifactSelector)
+SelectorT = TypeVar("SelectorT", CorpusSelector, StudySelector, ArtifactSelector)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,11 +44,11 @@ class ReindexedCatalogRoot:
 def list_dataset_records(
     storage_root: Path,
     *,
-    selector: DatasetSelector | None = None,
-) -> list[CatalogDatasetRecord]:
+    selector: CorpusSelector | None = None,
+) -> list[CatalogCorpusRecord]:
     return _list_catalog_records(
         storage_root,
-        selector=selector or DatasetSelector(),
+        selector=selector or CorpusSelector(),
         spec=DATASET_ROOT_SPEC,
     )
 
@@ -77,32 +77,32 @@ def list_artifact_records(
     )
 
 
-def list_studies_for_dataset(
+def list_studies_for_corpus(
     storage_root: Path,
     *,
-    dataset_id: str,
+    corpus_id: str,
 ) -> list[CatalogStudyRecord]:
     return _typed_records(
         catalog_store.list_catalog_records(
             catalog_db_path(storage_root),
             RootKind.STUDY,
-            filters={"dataset_id": dataset_id},
+            filters={"corpus_id": corpus_id},
             order_by=("study_name",),
         ),
         CatalogStudyRecord,
     )
 
 
-def list_artifacts_for_dataset(
+def list_artifacts_for_corpus(
     storage_root: Path,
     *,
-    dataset_id: str,
+    corpus_id: str,
 ) -> list[CatalogArtifactRecord]:
     return _typed_records(
         catalog_store.list_catalog_records(
             catalog_db_path(storage_root),
             RootKind.ARTIFACT,
-            filters={"dataset_id": dataset_id},
+            filters={"corpus_id": corpus_id},
             order_by=("variant", "model_id"),
         ),
         CatalogArtifactRecord,
@@ -125,15 +125,15 @@ def list_artifacts_for_study(
     )
 
 
-def resolve_dataset_record(
+def resolve_corpus_record(
     storage_root: Path,
     *,
-    selector: DatasetSelector | None = None,
-) -> CatalogDatasetRecord:
+    selector: CorpusSelector | None = None,
+) -> CatalogCorpusRecord:
     return _resolve_catalog_record(
-        "dataset",
+        "corpus",
         storage_root,
-        selector=selector or DatasetSelector(),
+        selector=selector or CorpusSelector(),
         spec=DATASET_ROOT_SPEC,
     )
 

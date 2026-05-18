@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spice Beginner Codebase Guide</title>
+  <link rel="stylesheet" href="docs/codebase-guide/assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Repository guide</p>
+      <h1>Spice Beginner Codebase Guide</h1>
+      <p class="lede">Spice is a modular machine-learning system for blockchain fee-decision research. This guide turns the root README and architecture guide into a navigable map, then links to module-level explanations for the code under <code>src/spice</code>.</p>
+      <div class="meta">
+        <span class="pill">Root docs: README.md and ARCHITECTURE.md</span>
+        <span class="pill">Module pages: 27</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="how-to-read">
+        <h2>How To Read This Codebase</h2>
+        <p>The core pipeline is linear even though the implementation is modular: acquire blockchain blocks, validate them into a corpus, compute features, compile temporal examples, tensorize datasets, train models, decode predictions, evaluate decisions, and store durable results.</p>
+        <p>Most packages follow the same seam: human config or payload selects an id, the owning package validates the concrete config, a local spec table dispatches to the implementation, and workflows consume a compiled contract instead of concrete implementation details.</p>
+      </section>
+      <section id="basic-terms">
+        <h2>Basic Terms</h2>
+        <p><strong>Corpus</strong> means canonical block history for one chain/dataset identity. <strong>Study</strong> means tuning/search state. <strong>Artifact</strong> means a trained model plus summaries and evaluations. These are separate storage root kinds because they have different lifecycle rules.</p>
+        <p><strong>Config</strong> describes user intent. <strong>Contract</strong> describes executable behavior after validation. <strong>Semantics</strong> describes durable meaning so future code can compare datasets, studies, and artifacts without guessing.</p>
+      </section>
+      <section id="module-map">
+        <h2>Module Map</h2>
+        <h2 class="group-title">Foundation</h2>
+<div class="grid">
+<article class="card">
+<h3><a href="docs/codebase-guide/spice.html">Spice Package</a></h3>
+<p><code>src/spice</code></p>
+<p>This is the top-level Python package. It defines shared vocabulary used across the whole project and points readers toward the major domains: config, acquisition, corpus, temporal problems, modeling, prediction, evaluation, storage, benchmarks, workflows, and CLI.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-core.html">Core</a></h3>
+<p><code>src/spice/core</code></p>
+<p>Core holds small primitives that many packages need: strict config model behavior, operator-facing errors, safe file replacement, rendering helpers, reporting, path validation, and generic local-spec helpers.</p>
+</article>
+</div><h2 class="group-title">Configuration</h2>
+<div class="grid">
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-config.html">Config</a></h3>
+<p><code>src/spice/config</code></p>
+<p>Config turns human-facing names, YAML fragments, workflow selections, and persisted snapshots into typed runtime config objects. It is where string references become validated objects.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-conf.html">Checked-In Config Specs</a></h3>
+<p><code>src/spice/conf</code></p>
+<p>This package stores the YAML specs that users and workflows name. These files are the checked-in catalog of chains, datasets, providers, models, objectives, surfaces, benchmarks, and tuning spaces.</p>
+</article>
+</div><h2 class="group-title">Operator Interface</h2>
+<div class="grid">
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-cli.html">CLI</a></h3>
+<p><code>src/spice/cli</code></p>
+<p>The CLI is the operator edge. It owns Typer command registration, command defaults, shared options, output formatting, and conversion of domain errors into readable terminal messages.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-cli-commands.html">CLI Commands</a></h3>
+<p><code>src/spice/cli/commands</code></p>
+<p>This package holds concrete command handlers for workflows, config inspection, storage inspection/deletion, transfers, and benchmark operations.</p>
+</article>
+</div><h2 class="group-title">Workflow Runtime</h2>
+<div class="grid">
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-workflows.html">Workflows</a></h3>
+<p><code>src/spice/workflows</code></p>
+<p>Workflows orchestrate complete tasks: acquire a corpus, train an artifact, tune a study, or evaluate an artifact. They connect configs, storage roots, feature building, temporal compilation, modeling, prediction, and evaluation.</p>
+</article>
+</div><h2 class="group-title">Data Pipeline</h2>
+<div class="grid">
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-acquisition.html">Acquisition</a></h3>
+<p><code>src/spice/acquisition</code></p>
+<p>Acquisition fetches raw block information from a source and delivers canonical block rows to corpus assembly. It owns block-range planning, retry-aware pulling, and validation of fetched rows.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-acquisition-rpc.html">RPC Acquisition</a></h3>
+<p><code>src/spice/acquisition/rpc</code></p>
+<p>RPC acquisition is the concrete block source that talks to Ethereum-compatible JSON-RPC endpoints through Web3. It enriches block headers with fee-history and priority-fee information needed by later features.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-corpus.html">Corpus</a></h3>
+<p><code>src/spice/corpus</code></p>
+<p>Corpus turns acquired block data into a canonical, validated dataset with history/evaluation splits and metadata. It is the durable raw-data foundation for feature building and modeling.</p>
+</article>
+</div><h2 class="group-title">Learning Inputs</h2>
+<div class="grid">
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-features.html">Features</a></h3>
+<p><code>src/spice/features</code></p>
+<p>Features convert canonical block rows into numeric columns a model can use. Feature contracts describe required source columns, produced feature names, and semantic fingerprints.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-temporal.html">Temporal</a></h3>
+<p><code>src/spice/temporal</code></p>
+<p>Temporal code defines how row-level feature history becomes supervised examples. It describes context windows, candidate decision windows, capability requirements, and compiled problem stores.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-temporal-compilers.html">Temporal Compilers</a></h3>
+<p><code>src/spice/temporal/compilers</code></p>
+<p>Temporal compilers turn problem configs into compiled problem contracts. They decide how samples, context windows, candidate offsets, and runtime metadata are materialized.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-temporal-execution-policy.html">Execution Policy</a></h3>
+<p><code>src/spice/temporal/execution_policy</code></p>
+<p>Execution policies define what a decoded model decision means in time and how to judge whether that decision was reachable, missed a deadline, or mapped to a realized block outcome.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-temporal-input-normalization.html">Input Normalization</a></h3>
+<p><code>src/spice/temporal/input_normalization</code></p>
+<p>Input normalization scales feature values so training is numerically stable while avoiding leakage from future data.</p>
+</article>
+</div><h2 class="group-title">Modeling</h2>
+<div class="grid">
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-modeling-dataset-builders.html">Dataset Builders</a></h3>
+<p><code>src/spice/modeling/dataset_builders</code></p>
+<p>Dataset builders turn temporal problem stores and feature tables into tensors and sample selections used by training and inference.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-modeling-families.html">Model Families</a></h3>
+<p><code>src/spice/modeling/families</code></p>
+<p>Model families define neural-network architectures, their configs, tuning spaces, tuned parameter types, and construction logic.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-modeling.html">Modeling Runtime</a></h3>
+<p><code>src/spice/modeling</code></p>
+<p>Modeling owns training, inference, tuning execution, artifact persistence helpers, runtime planning, batching, scoring, and the bridge between model outputs and objectives/evaluators.</p>
+</article>
+</div><h2 class="group-title">Prediction And Evaluation</h2>
+<div class="grid">
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-prediction.html">Prediction</a></h3>
+<p><code>src/spice/prediction</code></p>
+<p>Prediction defines what the model is trained to output, how batches and targets are represented, how losses/metrics accumulate, and how raw outputs become decoded decisions.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-prediction-families.html">Prediction Families</a></h3>
+<p><code>src/spice/prediction/families</code></p>
+<p>Prediction families are concrete implementations of prediction contracts. They define target construction, output specs, loss, training-state fitting, metrics, and decoding for one task family.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-prediction-families-min-block-fee-multitask.html">Minimum Block Fee Multitask Prediction</a></h3>
+<p><code>src/spice/prediction/families/min_block_fee_multitask</code></p>
+<p>This concrete prediction family trains the model to choose the candidate block offset with the minimum fee while also learning an auxiliary minimum log-fee regression target.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-evaluation.html">Evaluation</a></h3>
+<p><code>src/spice/evaluation</code></p>
+<p>Evaluation scores decoded model decisions against temporal fee outcomes. It owns evaluator configs, evaluator contracts, replay adapters, temporal accounting, metric descriptors, and evaluation summaries.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-objectives.html">Objectives</a></h3>
+<p><code>src/spice/objectives</code></p>
+<p>Objectives tell training and tuning which metric to optimize and whether bigger or smaller is better. They can point at validation metrics or evaluator-backed economic metrics.</p>
+</article>
+</div><h2 class="group-title">Persistence</h2>
+<div class="grid">
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-storage.html">Storage</a></h3>
+<p><code>src/spice/storage</code></p>
+<p>Storage owns durable roots for corpora, studies, and artifacts. It manages layout, ids, root-local SQLite state, payload codecs, lifecycle commits, inspection, selection, deletion, and catalog reindexing hooks.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-storage-catalog.html">Storage Catalog</a></h3>
+<p><code>src/spice/storage/catalog</code></p>
+<p>The storage catalog is a searchable index of dataset, study, and artifact roots. It records enough metadata for selectors, listing, relationship queries, and refresh/reindex operations.</p>
+</article>
+</div><h2 class="group-title">Operations</h2>
+<div class="grid">
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-execution.html">Execution</a></h3>
+<p><code>src/spice/execution</code></p>
+<p>Execution submits already resolved workflows to remote targets, runs remote workflow snapshots, records job provenance, follows logs, and transfers storage roots between local and remote locations.</p>
+</article>
+<article class="card">
+<h3><a href="docs/codebase-guide/spice-benchmarks.html">Benchmarks</a></h3>
+<p><code>src/spice/benchmarks</code></p>
+<p>Benchmarks materialize experiment grids into durable workflow plans, submit them, collect evaluation results, and maintain/export result indexes.</p>
+</article>
+</div>
+      </section>
+      <section id="source-docs">
+        <h2>Source Docs Used</h2>
+        <p><a href="README.md">README.md</a> and <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> are the only root markdown files represented here. ADRs, agent docs, progress notes, archives, and benchmark README files are intentionally excluded.</p>
+      </section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#how-to-read">How to read</a>
+        <a href="#basic-terms">Basic terms</a>
+        <a href="#module-map">Module map</a>
+        <a href="#source-docs">Source docs</a>
+      </nav>
+      <div class="box">
+        <h2>Entry Points</h2>
+        <a href="docs/codebase-guide/spice.html">Package overview</a>
+        <a href="docs/codebase-guide/spice-config.html">Config</a>
+        <a href="docs/codebase-guide/spice-workflows.html">Workflows</a>
+        <a href="docs/codebase-guide/spice-modeling.html">Modeling</a>
+        <a href="docs/codebase-guide/spice-storage.html">Storage</a>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

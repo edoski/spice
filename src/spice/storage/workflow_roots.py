@@ -8,34 +8,32 @@ from typing import TYPE_CHECKING
 
 from ..config.models import ArtifactVariant
 from .catalog.materialization import materialize_catalog_root
-from .catalog.records import CatalogArtifactRecord, CatalogDatasetRecord, CatalogStudyRecord
-from .corpus import load_dataset_manifest
+from .catalog.records import CatalogArtifactRecord, CatalogCorpusRecord, CatalogStudyRecord
+from .corpus import load_corpus_manifest
 from .engine import state_db_path
 from .layout import (
     artifact_root_path,
-    corpus_evaluation_dir_path,
-    corpus_history_dir_path,
+    corpus_blocks_dir_path,
     corpus_root_path,
     study_root_path,
 )
 
 if TYPE_CHECKING:
-    from ..corpus.metadata import DatasetManifest
+    from ..corpus.metadata import CorpusManifest
 
 
 @dataclass(frozen=True, slots=True)
 class CorpusRootHandle:
     storage_root: Path
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
     chain_name: str
     root_path: Path
     state_db_path: Path
-    history_dir: Path
-    evaluation_dir: Path
+    blocks_dir: Path
 
-    def load_manifest(self) -> DatasetManifest:
-        return load_dataset_manifest(self.state_db_path)
+    def load_manifest(self) -> CorpusManifest:
+        return load_corpus_manifest(self.state_db_path)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,8 +41,8 @@ class StudyRootHandle:
     storage_root: Path
     study_id: str
     study_name: str
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
     chain_name: str
     root_path: Path
     state_db_path: Path
@@ -54,8 +52,8 @@ class StudyRootHandle:
 class ArtifactRootHandle:
     storage_root: Path
     artifact_id: str
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
     chain_name: str
     root_path: Path
     state_db_path: Path
@@ -99,18 +97,17 @@ class EvaluateWorkflowRoots:
 
 def corpus_root_handle_from_record(
     storage_root: Path,
-    record: CatalogDatasetRecord,
+    record: CatalogCorpusRecord,
 ) -> CorpusRootHandle:
     location = materialize_catalog_root(storage_root, record)
     return CorpusRootHandle(
         storage_root=storage_root,
-        dataset_id=record.dataset_id,
-        dataset_name=record.dataset_name,
+        corpus_id=record.corpus_id,
+        corpus_name=record.corpus_name,
         chain_name=record.chain_name,
         root_path=location.root_path,
         state_db_path=location.state_db_path,
-        history_dir=corpus_history_dir_path(location.root_path),
-        evaluation_dir=corpus_evaluation_dir_path(location.root_path),
+        blocks_dir=corpus_blocks_dir_path(location.root_path),
     )
 
 
@@ -123,8 +120,8 @@ def study_root_handle_from_record(
         storage_root=storage_root,
         study_id=record.study_id,
         study_name=record.study_name,
-        dataset_id=record.dataset_id,
-        dataset_name=record.dataset_name,
+        corpus_id=record.corpus_id,
+        corpus_name=record.corpus_name,
         chain_name=record.chain_name,
         root_path=location.root_path,
         state_db_path=location.state_db_path,
@@ -139,8 +136,8 @@ def artifact_root_handle_from_record(
     return ArtifactRootHandle(
         storage_root=storage_root,
         artifact_id=record.artifact_id,
-        dataset_id=record.dataset_id,
-        dataset_name=record.dataset_name,
+        corpus_id=record.corpus_id,
+        corpus_name=record.corpus_name,
         chain_name=record.chain_name,
         root_path=location.root_path,
         state_db_path=location.state_db_path,
@@ -154,19 +151,18 @@ def produced_corpus_root_handle(
     storage_root: Path,
     *,
     chain_name: str,
-    dataset_id: str,
-    dataset_name: str,
+    corpus_id: str,
+    corpus_name: str,
 ) -> CorpusRootHandle:
-    root_path = corpus_root_path(storage_root, chain_name=chain_name, corpus_id=dataset_id)
+    root_path = corpus_root_path(storage_root, chain_name=chain_name, corpus_id=corpus_id)
     return CorpusRootHandle(
         storage_root=storage_root,
-        dataset_id=dataset_id,
-        dataset_name=dataset_name,
+        corpus_id=corpus_id,
+        corpus_name=corpus_name,
         chain_name=chain_name,
         root_path=root_path,
         state_db_path=state_db_path(root_path),
-        history_dir=corpus_history_dir_path(root_path),
-        evaluation_dir=corpus_evaluation_dir_path(root_path),
+        blocks_dir=corpus_blocks_dir_path(root_path),
     )
 
 
@@ -186,8 +182,8 @@ def produced_study_root_handle(
         storage_root=storage_root,
         study_id=study_id,
         study_name=study_name,
-        dataset_id=corpus.dataset_id,
-        dataset_name=corpus.dataset_name,
+        corpus_id=corpus.corpus_id,
+        corpus_name=corpus.corpus_name,
         chain_name=corpus.chain_name,
         root_path=root_path,
         state_db_path=state_db_path(root_path),
@@ -210,8 +206,8 @@ def produced_artifact_root_handle(
     return ArtifactRootHandle(
         storage_root=storage_root,
         artifact_id=artifact_id,
-        dataset_id=corpus.dataset_id,
-        dataset_name=corpus.dataset_name,
+        corpus_id=corpus.corpus_id,
+        corpus_name=corpus.corpus_name,
         chain_name=corpus.chain_name,
         root_path=root_path,
         state_db_path=state_db_path(root_path),

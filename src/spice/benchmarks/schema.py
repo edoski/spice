@@ -15,13 +15,13 @@ from ..config.selections import workflow_selection_field_set
 
 _MODEL_WORKFLOWS = frozenset(SUPPORTED_RESOLVED_WORKFLOWS)
 _BENCHMARK_DIMENSION_FIELDS = {
-    "data": frozenset({"surface", "chain", "dataset_id"}),
+    "data": frozenset({"surface", "chain", "corpus_id"}),
     "features": frozenset({"features", "surface"}),
     "models": frozenset({"model", "tuning_space"}),
-    "scoring": frozenset({"objective", "evaluation"}),
+    "scoring": frozenset({"objective", "evaluator", "evaluations"}),
     "runtime": frozenset(
         {
-            "dataset_id",
+            "corpus_id",
             "training",
             "split",
             "tuning",
@@ -36,7 +36,7 @@ _BENCHMARK_DIMENSION_FIELDS = {
     ),
 }
 _STANDARD_DIMENSIONS = frozenset(_BENCHMARK_DIMENSION_FIELDS) | {"problems"}
-_PROBLEM_GRID_FIELDS = frozenset({"lookback_seconds", "sample_count", "max_delay_seconds"})
+_PROBLEM_GRID_FIELDS = frozenset({"lookback_seconds", "max_delay_seconds"})
 _BASE_FIELDS = frozenset(
     field
     for workflow in _MODEL_WORKFLOWS

@@ -13,11 +13,12 @@ from ..corpus.contract import CanonicalBlockRow
 from .errors import OversizedAcquisitionRequestError, TransientAcquisitionError
 from .types import AcquisitionRuntimeSnapshot, BlockPullPlan, BlockRowSource
 
-MAX_ACQUISITION_ATTEMPTS_PER_RANGE = 8
+MAX_ACQUISITION_ATTEMPTS_PER_RANGE = 32
 TRANSIENT_FAILURE_WINDOW = 32
 TRANSIENT_FAILURE_WINDOW_THRESHOLD = 3
 TRANSIENT_FAILURE_STREAK_THRESHOLD = 2
 SUCCESS_STREAK_FOR_RECOVERY = 64
+TRANSIENT_EXHAUSTION_COOLDOWN_SECONDS = 30.0
 
 
 @dataclass(slots=True)
@@ -119,6 +120,11 @@ class AcquisitionPullController:
         self.transient_backoffs += 1
         return self.current_concurrency
 
+    def reset_transient_pressure(self) -> None:
+        self._success_streak = 0
+        self._transient_streak = 0
+        self._recent_transient_attempts.clear()
+
     def snapshot(self) -> AcquisitionRuntimeSnapshot:
         return AcquisitionRuntimeSnapshot(
             configured_batch_size=self.configured_batch_size,
@@ -151,6 +157,9 @@ class _BatchRequest:
             end=self.end,
             attempts=self.attempts + 1,
         )
+
+    def reset_attempts(self) -> _BatchRequest:
+        return _BatchRequest(start=self.start, end=self.end)
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,11 +233,11 @@ async def pull_block_range(
                     if _is_transient_error(exc):
                         controller.record_transient_failure()
                         if request.attempts + 1 >= MAX_ACQUISITION_ATTEMPTS_PER_RANGE:
-                            raise RuntimeError(
-                                f"Acquisition range {request.start}..{request.end} exceeded "
-                                f"{MAX_ACQUISITION_ATTEMPTS_PER_RANGE} transient retry attempts"
-                            ) from exc
-                        heappush(pending_requests, request.retry())
+                            controller.reset_transient_pressure()
+                            await asyncio.sleep(TRANSIENT_EXHAUSTION_COOLDOWN_SECONDS)
+                            heappush(pending_requests, request.reset_attempts())
+                        else:
+                            heappush(pending_requests, request.retry())
                         continue
 
                     raise

@@ -31,9 +31,10 @@ def _evaluate_config(tmp_path: Path) -> EvaluateConfig:
     return EvaluateConfig(
         storage=StorageSpec(root=tmp_path / "outputs"),
         artifact_id="artifact-1",
-        dataset_id="dataset-1",
-        evaluation=coerce_evaluator_config(
-            load_named_group_payload("poisson_replay", "evaluation")
+        corpus_id="dataset-1",
+        evaluation_window={"start": "2026-02-03T14:00:00Z", "duration_seconds": 7200},
+        evaluator=coerce_evaluator_config(
+            load_named_group_payload("poisson_replay", "evaluator")
         ),
         delay_seconds=36,
     )
@@ -54,7 +55,7 @@ def _submission(*, execution_ref: str = "slurm:57549") -> BenchmarkSubmissionRec
 def _entry(
     config: EvaluateConfig | None = None,
     *,
-    artifact_source_dataset_id: str | None = None,
+    artifact_source_corpus_id: str | None = None,
 ) -> BenchmarkPlanEntry:
     config = _evaluate_config(Path("/tmp/spice-test")) if config is None else config
     root_entries = [
@@ -62,9 +63,9 @@ def _entry(
             run_id="case.evaluate",
             workflow=WorkflowTask.EVALUATE,
             role="consumed",
-            root_kind="dataset",
-            root_id=config.dataset_id,
-            dataset_id=config.dataset_id,
+            root_kind="corpus",
+            root_id=config.corpus_id,
+            corpus_id=config.corpus_id,
         ),
         BenchmarkRootLedgerEntry(
             run_id="case.evaluate",
@@ -73,26 +74,26 @@ def _entry(
             root_kind="artifact",
             root_id=config.artifact_id,
             artifact_id=config.artifact_id,
-            dataset_id=config.dataset_id,
+            corpus_id=config.corpus_id,
         ),
     ]
-    if artifact_source_dataset_id is not None:
+    if artifact_source_corpus_id is not None:
         root_entries.append(
             BenchmarkRootLedgerEntry(
                 run_id="case.evaluate",
                 workflow=WorkflowTask.EVALUATE,
                 role="source",
-                root_kind="dataset",
-                root_id=artifact_source_dataset_id,
-                dataset_id=artifact_source_dataset_id,
+                root_kind="corpus",
+                root_id=artifact_source_corpus_id,
+                corpus_id=artifact_source_corpus_id,
                 source_run_id="case.train",
             )
         )
     root_facts = BenchmarkRootFacts(
-        consumed_dataset_id=config.dataset_id,
+        consumed_corpus_id=config.corpus_id,
         consumed_artifact_id=config.artifact_id,
-        consumed_artifact_dataset_id=artifact_source_dataset_id or config.dataset_id,
-        artifact_source_dataset_id=artifact_source_dataset_id,
+        consumed_artifact_corpus_id=artifact_source_corpus_id or config.corpus_id,
+        artifact_source_corpus_id=artifact_source_corpus_id,
     )
     return BenchmarkPlanEntry(
         run_id="case.evaluate",
@@ -106,7 +107,7 @@ def _entry(
         ),
         dimension_labels={},
         selection=BenchmarkSelectionLedger(
-            evaluation=config.evaluation.id,
+            evaluator=config.evaluator.id,
             delay_seconds=config.delay_seconds,
         ),
         root_facts=root_facts,
@@ -134,7 +135,7 @@ def _summary(
         evaluation_storage_id="poisson_replay-36s-storage",
         runtime=SimpleNamespace(
             delay_seconds=config.delay_seconds if delay_seconds is None else delay_seconds,
-            evaluator_id=config.evaluation.id if evaluator_id is None else evaluator_id,
+            evaluator_id=config.evaluator.id if evaluator_id is None else evaluator_id,
             execution_provenance=None
             if execution_ref is None
             else SimpleNamespace(
@@ -152,12 +153,12 @@ def _manifest(
     *,
     max_delay_seconds: int = 36,
     artifact_id: str = "artifact-1",
-    dataset_id: str = "dataset-1",
+    corpus_id: str = "dataset-1",
 ):
     return SimpleNamespace(
         temporal_capability=SimpleNamespace(max_delay_seconds=max_delay_seconds),
         artifact_id=artifact_id,
-        dataset_id=dataset_id,
+        corpus_id=corpus_id,
     )
 
 
@@ -415,7 +416,7 @@ def test_collection_resolver_rejects_manifest_artifact_mismatch(
         resolve_benchmark_evaluation(_selection(config), artifact_record=artifact_record)
 
 
-def test_collection_resolver_rejects_artifact_source_dataset_mismatch(
+def test_collection_resolver_rejects_artifact_source_corpus_mismatch(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -427,14 +428,14 @@ def test_collection_resolver_rejects_artifact_source_dataset_mismatch(
     )
     monkeypatch.setattr(
         "spice.benchmarks.collection_resolver.load_artifact_manifest",
-        lambda _path: _manifest(dataset_id="other-source"),
+        lambda _path: _manifest(corpus_id="other-source"),
     )
 
     selection = benchmark_collection_selection(
-        _entry(config, artifact_source_dataset_id="source-dataset"),
+        _entry(config, artifact_source_corpus_id="source-dataset"),
         _submission(),
         target="disi_l40",
     )
 
-    with pytest.raises(SpiceOperatorError, match="manifest dataset"):
+    with pytest.raises(SpiceOperatorError, match="manifest corpus"):
         resolve_benchmark_evaluation(selection, artifact_record=artifact_record)

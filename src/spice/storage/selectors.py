@@ -6,17 +6,17 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
-class DatasetSelector:
-    dataset_id: str | None = None
+class CorpusSelector:
+    corpus_id: str | None = None
     chain_name: str | None = None
-    dataset_name: str | None = None
+    corpus_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class StudySelector:
     study_id: str | None = None
     chain_name: str | None = None
-    dataset_name: str | None = None
+    corpus_name: str | None = None
     features_id: str | None = None
     prediction_id: str | None = None
     model_id: str | None = None
@@ -27,10 +27,10 @@ class StudySelector:
 @dataclass(frozen=True, slots=True)
 class ArtifactSelector:
     artifact_id: str | None = None
-    dataset_id: str | None = None
+    corpus_id: str | None = None
     study_id: str | None = None
     chain_name: str | None = None
-    dataset_name: str | None = None
+    corpus_name: str | None = None
     features_id: str | None = None
     prediction_id: str | None = None
     model_id: str | None = None

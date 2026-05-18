@@ -23,6 +23,7 @@ from ..core.errors import ConfigResolutionError, StateLayoutError
 from ..evaluation import EvaluatorConfig
 from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import ModelConfig
+from ..modeling.results import TrainingSourceProvenance
 from ..modeling.tuned_config import coerce_tuned_parameter_set
 from ..objectives import ObjectiveConfig
 from ..semantics import StudySemantics
@@ -46,8 +47,9 @@ class StudyManifest:
     prediction: PredictionConfig
     study_name: str
     chain_name: str
-    dataset_id: str
-    dataset_name: str
+    corpus_id: str
+    corpus_name: str
+    training_source: TrainingSourceProvenance
     problem: ProblemSpec
     features: FeaturesConfig
     model: ModelConfig
@@ -59,7 +61,7 @@ class StudyManifest:
     pruner_name: str
     enable_pruning: bool
     objective: ObjectiveConfig
-    evaluation: EvaluatorConfig | None
+    evaluator: EvaluatorConfig | None
     tuning_space: TuningSpaceConfig
     semantics: StudySemantics
 

@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 
 from ...execution.transfer_transaction import open_storage_transfer_transaction
-from ...storage.catalog.records import CatalogArtifactRecord, CatalogDatasetRecord
+from ...storage.catalog.records import CatalogArtifactRecord, CatalogCorpusRecord
 from ...storage.engine import RootKind
 from ...storage.inspect_artifact import artifact_local_dependency_warnings
 from ..errors import OperatorTyper
@@ -39,11 +39,11 @@ ReplaceOption = Annotated[
 ]
 
 
-@push_app.command("dataset", short_help="Push one dataset root to cluster storage.")
+@push_app.command("corpus", short_help="Push one corpus root to cluster storage.")
 def push_dataset_command(
-    dataset_id: Annotated[
+    corpus_id: Annotated[
         str,
-        typer.Option("--dataset-id", metavar="DATASET_ID", help="Push this dataset root."),
+        typer.Option("--corpus-id", metavar="CORPUS_ID", help="Push this corpus root."),
     ],
     storage_root: StorageRootReadOption = None,
     target: RemoteTargetOption = DEFAULT_REMOTE_TARGET,
@@ -51,13 +51,13 @@ def push_dataset_command(
 ) -> None:
     root = resolve_storage_root(storage_root)
     transaction = open_storage_transfer_transaction(target, local_storage_root=root)
-    transferred = transaction.push_root(RootKind.CORPUS, dataset_id, replace=replace)
+    transferred = transaction.push_root(RootKind.CORPUS, corpus_id, replace=replace)
     record = transferred.destination_record
-    if not isinstance(record, CatalogDatasetRecord):
-        raise TypeError("transfer push dataset returned non-dataset record")
+    if not isinstance(record, CatalogCorpusRecord):
+        raise TypeError("transfer push corpus returned non-corpus record")
     echo_key_value(
         "push",
-        [("dataset", record.dataset_name), ("dataset_id", record.dataset_id)],
+        [("corpus", record.corpus_name), ("corpus_id", record.corpus_id)],
     )
 
 

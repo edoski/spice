@@ -10,6 +10,7 @@ from itertools import product
 from typing import cast
 
 from ...config.models import WorkflowTask
+from ...config import typed_groups as typed
 from ...core.errors import ConfigResolutionError
 from ..schema import (
     BenchmarkCase,
@@ -83,7 +84,49 @@ def expand_case(case: BenchmarkCase) -> list[PlanSeed]:
                         selection_row=selection_row,
                     )
                 )
-    return seeds
+    return _expand_evaluation_suites(seeds)
+
+
+def _expand_evaluation_suites(seeds: list[PlanSeed]) -> list[PlanSeed]:
+    expanded: list[PlanSeed] = []
+    for seed in seeds:
+        evaluations = seed.workflow_row.get("evaluations")
+        if seed.workflow is not WorkflowTask.EVALUATE or evaluations is None:
+            expanded.append(seed)
+            continue
+        if not isinstance(evaluations, str):
+            raise ConfigResolutionError("evaluations must be a named evaluations suite")
+        if seed.workflow_row.get("evaluation_window") is not None:
+            raise ConfigResolutionError(
+                "evaluate steps cannot define both evaluations and evaluation_window"
+            )
+        suite = typed.load(typed.EVALUATIONS, evaluations)
+        for item in suite.items:
+            window_payload = item.model_dump(
+                mode="json",
+                include={"start", "end", "duration_seconds"},
+                exclude_none=True,
+            )
+            expanded.append(
+                PlanSeed(
+                    case_id=seed.case_id,
+                    step_id=seed.step_id,
+                    workflow=seed.workflow,
+                    dimension_labels={
+                        **dict(seed.dimension_labels),
+                        "evaluations": item.id,
+                    },
+                    workflow_row={
+                        **dict(seed.workflow_row),
+                        "evaluation_window": window_payload,
+                    },
+                    selection_row={
+                        **dict(seed.selection_row),
+                        "evaluation_window": window_payload,
+                    },
+                )
+            )
+    return expanded
 
 
 def run_ids(seeds: Sequence[PlanSeed]) -> list[str]:

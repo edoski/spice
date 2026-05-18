@@ -27,8 +27,7 @@ class CorpusSplitMaterializationSpec:
 
 
 class CorpusSplitKind(StrEnum):
-    HISTORY = "history"
-    EVALUATION = "evaluation"
+    BLOCKS = "blocks"
 
 
 @dataclass(slots=True)

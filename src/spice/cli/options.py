@@ -38,9 +38,9 @@ ChainFilterOption = Annotated[
     str | None,
     typer.Option("--chain", metavar="CHAIN", help="Filter by chain."),
 ]
-DatasetFilterOption = Annotated[
+CorpusFilterOption = Annotated[
     str | None,
-    typer.Option("--dataset", metavar="DATASET", help="Filter by dataset name."),
+    typer.Option("--corpus", metavar="CORPUS", help="Filter by corpus name."),
 ]
 FeaturesFilterOption = Annotated[
     str | None,
@@ -95,6 +95,10 @@ WorkflowChainOption = Annotated[
     str | None,
     workflow_selection_option("--chain", metavar="CHAIN", help="Override the target chain."),
 ]
+WorkflowCorpusOption = Annotated[
+    str | None,
+    workflow_selection_option("--corpus", metavar="CORPUS", help="Override the corpus spec."),
+]
 WorkflowProblemOption = Annotated[
     str | None,
     workflow_selection_option("--problem", metavar="PROBLEM", help="Override the problem spec."),
@@ -123,19 +127,19 @@ WorkflowObjectiveOption = Annotated[
         help="Override the objective spec.",
     ),
 ]
-WorkflowEvaluationOverrideOption = Annotated[
+WorkflowEvaluatorOverrideOption = Annotated[
     str | None,
     workflow_selection_option(
-        "--evaluation",
-        metavar="EVALUATION",
-        help="Override the evaluation spec.",
+        "--evaluator",
+        metavar="EVALUATOR",
+        help="Override the evaluator spec.",
     ),
 ]
-WorkflowEvaluationSpecOption = Annotated[
+WorkflowEvaluatorSpecOption = Annotated[
     str | None,
     workflow_selection_option(
-        "--evaluation",
-        metavar="EVALUATION",
+        "--evaluator",
+        metavar="EVALUATOR",
         help="Use this evaluator spec.",
     ),
 ]
@@ -179,20 +183,36 @@ WorkflowVariantOption = Annotated[
         help="Override the artifact variant.",
     ),
 ]
-WorkflowDatasetConsumerOption = Annotated[
+WorkflowCorpusConsumerOption = Annotated[
     str | None,
     workflow_selection_option(
-        "--dataset-id",
-        metavar="DATASET_ID",
+        "--corpus-id",
+        metavar="CORPUS_ID",
         help="Consume this corpus root.",
     ),
 ]
-WorkflowEvaluationDatasetOption = Annotated[
+WorkflowEvaluationCorpusOption = Annotated[
     str | None,
     workflow_selection_option(
-        "--dataset-id",
-        metavar="DATASET_ID",
+        "--corpus-id",
+        metavar="CORPUS_ID",
         help="Evaluate on this corpus root.",
+    ),
+]
+WorkflowEvaluationWindowStartOption = Annotated[
+    str | None,
+    workflow_selection_option(
+        "--evaluation-start",
+        metavar="UTC_TIMESTAMP",
+        help="Start of the scored evaluation window.",
+    ),
+]
+WorkflowEvaluationWindowDurationOption = Annotated[
+    int | None,
+    workflow_selection_option(
+        "--evaluation-duration-seconds",
+        metavar="SECONDS",
+        help="Duration of the scored evaluation window.",
     ),
 ]
 WorkflowStudyConsumerOption = Annotated[

@@ -12,7 +12,7 @@ from optuna.trial import FrozenTrial, TrialState
 
 from ..config.models import TuneConfig, TunedParameterSet
 from ..core.errors import StateConflictError
-from ..corpus.metadata import DatasetManifest
+from ..corpus.metadata import CorpusManifest
 from ..storage.study_manifest import (
     diff_study_manifests,
     insert_study_manifest,
@@ -74,7 +74,7 @@ def open_tuning_execution(
     config: TuneConfig,
     *,
     roots: TuneWorkflowRoots,
-    corpus_manifest: DatasetManifest,
+    corpus_manifest: CorpusManifest,
 ) -> OpenTuningExecution:
     requested_manifest = manifest_from_tune_config(
         config,
@@ -117,7 +117,7 @@ def run_tuning_execution(
     *,
     config: TuneConfig,
     roots: TuneWorkflowRoots,
-    corpus_manifest: DatasetManifest,
+    corpus_manifest: CorpusManifest,
     callbacks: TuningExecutionCallbacks | None = None,
 ) -> StudySummary:
     active_callbacks = callbacks or TuningExecutionCallbacks()
@@ -203,7 +203,7 @@ def _trial_objective(
     trial: optuna.Trial,
     *,
     roots: TuneWorkflowRoots,
-    corpus_manifest: DatasetManifest,
+    corpus_manifest: CorpusManifest,
 ) -> float:
     assert base_config.tuning_space is not None
     params = sample_tuned_parameters(trial, tuning_space=base_config.tuning_space)
@@ -216,8 +216,8 @@ def _trial_objective(
         study=roots.study,
         corpus_manifest=corpus_manifest,
     )
-    history_block_path = roots.corpus.history_dir
-    trial_run = run_trial_training(history_block_path, spec=spec)
+    block_path = roots.corpus.blocks_dir
+    trial_run = run_trial_training(block_path, spec=spec)
     metric_value = trial_run.summary.runtime.best_objective_value
     best_epoch = trial_run.training_run.training_result.best_epoch
     _record_trial_best_epoch(trial, best_epoch)

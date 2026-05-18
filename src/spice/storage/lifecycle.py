@@ -16,22 +16,22 @@ from ..core.files import (
 )
 from .catalog.index import (
     ReindexedCatalogRoot,
-    list_artifacts_for_dataset,
+    list_artifacts_for_corpus,
     list_artifacts_for_study,
-    list_studies_for_dataset,
+    list_studies_for_corpus,
     reindex_catalog_root,
     resolve_artifact_record,
-    resolve_dataset_record,
+    resolve_corpus_record,
     resolve_study_record,
 )
 from .catalog.materialization import materialize_catalog_root
-from .catalog.records import CatalogArtifactRecord, CatalogDatasetRecord, CatalogStudyRecord
+from .catalog.records import CatalogArtifactRecord, CatalogCorpusRecord, CatalogStudyRecord
 from .catalog.registry import catalog_record_root_kind, catalog_root_parent_path
 from .catalog.store import delete_catalog_record
 from .engine import RootKind, detect_root_kind, require_root_kind, state_db_path
 from .errors import DeleteBlockedError
 from .layout import catalog_db_path
-from .selectors import ArtifactSelector, DatasetSelector, StudySelector
+from .selectors import ArtifactSelector, CorpusSelector, StudySelector
 
 
 @dataclass(slots=True)
@@ -153,13 +153,13 @@ def staged_root(
 def delete_dataset_record(
     storage_root: Path,
     *,
-    selector: DatasetSelector | None = None,
-    record: CatalogDatasetRecord | None = None,
+    selector: CorpusSelector | None = None,
+    record: CatalogCorpusRecord | None = None,
     cascade: bool = False,
-) -> CatalogDatasetRecord:
-    record = record or resolve_dataset_record(storage_root, selector=selector)
-    dependent_artifacts = list_artifacts_for_dataset(storage_root, dataset_id=record.dataset_id)
-    dependent_studies = list_studies_for_dataset(storage_root, dataset_id=record.dataset_id)
+) -> CatalogCorpusRecord:
+    record = record or resolve_corpus_record(storage_root, selector=selector)
+    dependent_artifacts = list_artifacts_for_corpus(storage_root, corpus_id=record.corpus_id)
+    dependent_studies = list_studies_for_corpus(storage_root, corpus_id=record.corpus_id)
     if (dependent_artifacts or dependent_studies) and not cascade:
         raise DeleteBlockedError(
             message="Dataset has dependent studies or artifacts.",
@@ -213,13 +213,13 @@ def delete_catalog_study_root(storage_root: Path, record: CatalogStudyRecord) ->
     delete_catalog_root(storage_root, record)
 
 
-def delete_catalog_dataset_root(storage_root: Path, record: CatalogDatasetRecord) -> None:
+def delete_catalog_dataset_root(storage_root: Path, record: CatalogCorpusRecord) -> None:
     delete_catalog_root(storage_root, record)
 
 
 def delete_catalog_root(
     storage_root: Path,
-    record: CatalogDatasetRecord | CatalogStudyRecord | CatalogArtifactRecord,
+    record: CatalogCorpusRecord | CatalogStudyRecord | CatalogArtifactRecord,
 ) -> None:
     expected_root_kind = catalog_record_root_kind(record)
     location = materialize_catalog_root(storage_root, record)

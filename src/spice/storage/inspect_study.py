@@ -29,7 +29,7 @@ def study_list_sections(
                     record.study_name,
                     (
                         f"chain={record.chain_name} "
-                        f"dataset={record.dataset_name} "
+                        f"corpus={record.corpus_name} "
                         f"features={record.features_id} "
                         f"prediction={record.prediction_id} "
                         f"model={record.model_id} "
@@ -65,8 +65,8 @@ def study_sections(
                 ("storage id", manifest.study_id),
                 ("prediction", manifest.prediction_id),
                 ("chain", manifest.chain_name),
-                ("dataset", manifest.dataset_name),
-                ("dataset id", manifest.dataset_id),
+                ("corpus", manifest.corpus_name),
+                ("corpus id", manifest.corpus_id),
                 ("problem", manifest.problem_id),
                 ("features", manifest.features_id),
                 ("model", manifest.model_id),

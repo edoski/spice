@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Temporal - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>Temporal</h1>
+      <p class="lede">Temporal code defines how row-level feature history becomes supervised examples. It describes context windows, candidate decision windows, capability requirements, and compiled problem stores.</p>
+      <div class="meta">
+        <span class="pill">src/spice/temporal</span>
+        <span class="pill">Docs: ARCHITECTURE.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>It sits after features and before dataset builders/prediction. Temporal subpackages own problem compilers, execution policies, and input normalization.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>The project asks time-based questions: given what was known before a deadline, which future block offset should be selected? Temporal code turns that question into aligned arrays the model and evaluator can share.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>capability.py</code></div><div>Defines <code>TemporalCapability</code>, a compact description of required context and candidate-window behavior.</div>
+<div><code>contracts.py</code></div><div>Compiles problem configs into <code>CompiledProblemContract</code> objects and exposes problem-store contracts.</div>
+<div><code>problem_store.py</code></div><div>Defines the compiled problem store: context summaries, candidate summaries, row-aligned arrays, and validation.</div>
+<div><code>semantics.py</code></div><div>Defines temporal semantic enums such as baseline row mode.</div>
+<div><code>__init__.py</code></div><div>Temporal package boundary.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>Feature rows are available for a corpus split.</li>
+<li>A problem compiler chooses samples, context windows, and candidate actions.</li>
+<li>The compiled problem store aligns feature rows with target/candidate facts.</li>
+<li>Dataset builders tensorize that store.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Context window</h3><p>Past rows the model is allowed to inspect.</p>
+<h3>Candidate window</h3><p>Future action slots the model may choose from.</p>
+<h3>Temporal capability</h3><p>A promise about what history and future candidates a downstream workflow needs.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-temporal-compilers.html">Temporal Compilers</a><a href="spice-temporal-execution-policy.html">Execution Policy</a><a href="spice-temporal-input-normalization.html">Input Normalization</a><a href="spice-modeling-dataset-builders.html">Dataset Builders</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/temporal/ARCHITECTURE.md">ARCHITECTURE.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

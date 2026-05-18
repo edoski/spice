@@ -1,20 +1,18 @@
 # Concrete Corpus Implementation
 
-The corpus layer owns canonical blockchain data: how raw RPC block payloads become parquet rows, how rows are validated, and how enough history is proven before modeling.
+The corpus layer owns canonical blockchain data: how raw RPC block payloads become parquet rows, how rows are validated, and how one acquired block range is materialized.
 
 ## Mental Model
 
-A corpus is split into history and evaluation data:
+A corpus is one contiguous acquired block range:
 
 ```text
-history rows
-  -> fit features, build training/validation/test examples
-
-evaluation rows
-  -> run diagnostic replay for the evaluation day
+corpora/{chain}/{corpus_id}/blocks/
+  -> train consumes the full acquired range
+  -> evaluate scores a user-authored scenario window inside an acquired range
 ```
 
-The dataset identity is based on dataset name, chain, and evaluation date. It is not based on the exact acquisition window.
+The corpus identity is based on corpus name, chain, and the authored corpus window. Training and evaluation never acquire blocks; they consume already materialized corpora.
 
 ## Canonical Block Schema
 
@@ -41,13 +39,11 @@ RPC payload conversion builds this schema. Missing required block fields fail du
 
 ## Parquet IO
 
-Corpus IO is parquet-only. Data is stored as chunk files under history and evaluation directories:
+Corpus IO is parquet-only. Data is stored as chunk files under a single `blocks/` directory:
 
 ```text
 corpus root/
-  history/
-    ethereum__blocks__START_to_END.parquet
-  evaluation/
+  blocks/
     ethereum__blocks__START_to_END.parquet
 ```
 
@@ -55,20 +51,18 @@ Loads scan recursively, skip hidden paths, combine chunks, and sort by `block_nu
 
 ## Corpus Assembly
 
-Corpus acquisition has two public Interfaces: `prepare_corpus_assembly_request()` prepares acquisition source requirements, planning context, and split materialization policy; `assemble_corpus()` consumes that request for dry-run planning or committed corpus publication. Corpus Capability Planning owns history sizing and the bounded refill lifecycle. Corpus Acquisition Stage owns staging roots, split sequencing, planning-step-to-split-intent adaptation, dataset provenance publication, state DB staging, selected-path commit, cleanup, and preserve-on-failure behavior. Corpus Split Materialization owns history/evaluation dataset reuse, extension, rebuild, validation, and parquet IO. Its private materializer assesses staged and committed split candidates against the active Split Intent and active required source columns, then directly executes staged reuse, committed reuse, extension, full materialization, or invalid staged rejection. Private parquet IO keeps candidate loading, chunk IO, source reuse/copying, and acquisition pulls local to the materializer. History extension pulls a missing prefix before a committed history split. Evaluation extension reuses overlapping clean chunks and pulls missing prefix and/or suffix ranges.
+Corpus acquisition has two public Interfaces: `prepare_corpus_assembly_request()` prepares acquisition source requirements, planning context, and materialization policy; `assemble_corpus()` consumes that request for dry-run planning or committed corpus publication. Corpus Planning owns the configured block-range plan. Corpus Acquisition Stage owns staging roots, planning-to-intent adaptation, corpus provenance publication, state DB staging, selected-path commit, cleanup, and preserve-on-failure behavior. Corpus Split Materialization owns blocks corpus reuse, extension, rebuild, validation, and parquet IO. Its private materializer assesses staged and committed candidates against the active intent and active required source columns, then directly executes staged reuse, committed reuse, extension, full materialization, or invalid staged rejection. Private parquet IO keeps candidate loading, chunk IO, source reuse/copying, and acquisition pulls local to the materializer.
 
 | Materialization outcome | Behavior |
 | --- | --- |
 | Staged reuse | Reuse a clean staged split only when it validates against the current Split Intent. Invalid staged data is fatal; stale clean staged data is ignored. |
-| Committed history reuse | Reuse a clean committed history split when it ends at the requested boundary and starts at or before the requested history start. |
-| Committed evaluation reuse | Reuse a clean committed evaluation split only when block range and exact timestamp-window validation match. |
+| Committed reuse | Reuse clean committed blocks when block range and timestamp-window validation match. |
 | Extension | Pull missing prefix/suffix ranges and reuse overlapping clean parquet chunks or trimmed edge frames. |
 | Full materialization | Create when no committed split exists; rebuild when committed data exists but cannot satisfy the target. |
-| Completed-prefix resume | Pull sinks resume only from a clean contiguous partial dataset starting at the plan start. |
+| Completed-prefix resume | Pull sinks resume only from a clean contiguous partial corpus starting at the plan start. |
 
 All reuse and resume decisions validate active `required_columns`. A clean block range with null priority-fee columns is not clean for a corpus whose feature contract requires priority-fee source facts.
 
-History refill is bounded inside Corpus Capability Planning. Planning materializes the initial history step through a stage callback, counts valid capability samples, emits refill status, expands the requested history window up to a small internal cap when observed block cadence under-requested usable rows, and fails with planning-owned wording if the cap cannot satisfy the compiled sample requirement.
 
 ## Source Requirements
 
@@ -84,21 +78,16 @@ Corpus planning derives source requirements from the compiled feature contract a
 
 Priority-fee feature sources declare the `priority_fee_percentiles` enrichment and require priority-fee source columns. Corpus planning copies compiled feature contract `required_source_columns` and `acquisition_enrichments` into source requirements alongside corpus-generic columns. The RPC adapter maps that enrichment to `eth_feeHistory`; other future adapters can satisfy the same requirement differently.
 
-## Split Manifest
+## Corpus Manifest
 
-Corpus state stores split-level provenance:
+Corpus state stores block-range provenance:
 
 ```text
-DatasetManifest
-  dataset
+CorpusManifest
+  corpus
   chain
   source_requirements
-  splits.history
-    request
-    coverage
-    validation
-    materialization
-  splits.evaluation
+  blocks
     request
     coverage
     validation

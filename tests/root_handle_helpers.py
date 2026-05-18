@@ -21,14 +21,14 @@ def corpus_handle(
     storage_root: Path,
     *,
     chain_name: str = "ethereum",
-    dataset_id: str = "cor_test",
-    dataset_name: str = "test_dataset",
+    corpus_id: str = "cor_test",
+    corpus_name: str = "test_dataset",
 ) -> CorpusRootHandle:
     return produced_corpus_root_handle(
         storage_root=storage_root,
         chain_name=chain_name,
-        dataset_id=dataset_id,
-        dataset_name=dataset_name,
+        corpus_id=corpus_id,
+        corpus_name=corpus_name,
     )
 
 

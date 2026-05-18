@@ -97,15 +97,27 @@ def _train_scaler(
     )
 
 
-def _latest_sample_indices(store: CompiledProblemStore, *, sample_count: int) -> np.ndarray:
-    if sample_count <= 0:
-        raise ValueError("sample_count must be positive")
-    if store.n_samples < sample_count:
+def _all_sample_indices(store: CompiledProblemStore) -> np.ndarray:
+    return np.arange(store.n_samples, dtype=np.int64)
+
+
+def _training_sample_indices(
+    store: CompiledProblemStore,
+    *,
+    training_cutoff_timestamp: int | None,
+) -> np.ndarray:
+    sample_indices = _all_sample_indices(store)
+    if training_cutoff_timestamp is None:
+        return sample_indices
+    outcome_end_rows = store.candidate_end_rows[sample_indices] - 1
+    mask = store.timestamps[outcome_end_rows] < training_cutoff_timestamp
+    selected = sample_indices[mask].astype(np.int64, copy=False)
+    if selected.size == 0:
         raise ValueError(
-            "History dataset is too short for the requested sample count; "
-            f"need at least {sample_count} valid anchors, got {store.n_samples}"
+            "training cutoff produced no valid supervised samples: "
+            f"training_cutoff_timestamp={training_cutoff_timestamp}"
         )
-    return np.arange(store.n_samples - sample_count, store.n_samples, dtype=np.int64)
+    return selected
 
 
 def _store_with_fixed_context(
@@ -211,17 +223,11 @@ def prepare_training_dataset(
     config: FixedSequenceTemporalDatasetBuilderConfig,
 ) -> PreparedTrainingDataset:
     sorted_blocks = _prepare_blocks(blocks)
-    sample_count = context.problem_contract.sample_count
-    if sorted_blocks.height < sample_count:
-        raise ValueError(
-            "History dataset is too short for the requested sample count; "
-            f"need at least {sample_count} rows, got {sorted_blocks.height}"
-        )
     capability_store = _build_selected_store(sorted_blocks, context=context)
     store_raw = capability_store.store
-    raw_selected_sample_indices = _latest_sample_indices(
+    raw_selected_sample_indices = _training_sample_indices(
         store_raw,
-        sample_count=sample_count,
+        training_cutoff_timestamp=facts.training_cutoff_timestamp,
     )
     raw_split_indices = _split_store_indices(
         raw_selected_sample_indices,
@@ -241,9 +247,9 @@ def prepare_training_dataset(
         history_seconds=history_seconds,
         warmup_rows=warmup_rows,
     )
-    selected_sample_indices = _latest_sample_indices(
+    selected_sample_indices = _training_sample_indices(
         store,
-        sample_count=sample_count,
+        training_cutoff_timestamp=facts.training_cutoff_timestamp,
     )
     split_indices = _split_store_indices(
         selected_sample_indices,
@@ -325,7 +331,7 @@ def prepare_inference_dataset(
         ),
     )
     if sample_indices.size == 0:
-        raise ValueError("Evaluation dataset produced no valid inference examples")
+        raise ValueError("Evaluation corpus produced no valid inference examples")
     scaled_store = _scale_store(store, scaler=spec.scaler)
     return PreparedInferenceDataset(
         n_history_rows=history_blocks.height,

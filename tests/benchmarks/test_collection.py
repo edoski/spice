@@ -39,9 +39,10 @@ def _evaluate_config(tmp_path: Path) -> EvaluateConfig:
     return EvaluateConfig(
         storage=StorageSpec(root=tmp_path / "outputs"),
         artifact_id="artifact-1",
-        dataset_id="dataset-1",
-        evaluation=coerce_evaluator_config(
-            load_named_group_payload("poisson_replay", "evaluation")
+        corpus_id="dataset-1",
+        evaluation_window={"start": "2026-02-03T14:00:00Z", "duration_seconds": 7200},
+        evaluator=coerce_evaluator_config(
+            load_named_group_payload("poisson_replay", "evaluator")
         ),
         delay_seconds=36,
     )
@@ -60,17 +61,17 @@ def _evaluate_entry(config) -> BenchmarkPlanEntry:
         ),
         dimension_labels={"models": "lstm"},
         selection=BenchmarkSelectionLedger(
-            evaluation=config.evaluation.id,
+            evaluator=config.evaluator.id,
             delay_seconds=config.delay_seconds,
         ),
         root_facts=_evaluate_root_facts(
             artifact_id=config.artifact_id,
-            dataset_id=config.dataset_id,
+            corpus_id=config.corpus_id,
         ),
         root_ledger=_evaluate_root_ledger(
             "case.evaluate",
             artifact_id=config.artifact_id,
-            dataset_id=config.dataset_id,
+            corpus_id=config.corpus_id,
         ),
         config=config,
     )
@@ -107,7 +108,7 @@ def _evaluate_root_ledger(
     run_id: str,
     *,
     artifact_id: str,
-    dataset_id: str,
+    corpus_id: str,
 ) -> BenchmarkRootLedger:
     return BenchmarkRootLedger(
         entries=(
@@ -115,9 +116,9 @@ def _evaluate_root_ledger(
                 run_id=run_id,
                 workflow=WorkflowTask.EVALUATE,
                 role="consumed",
-                root_kind="dataset",
-                root_id=dataset_id,
-                dataset_id=dataset_id,
+                root_kind="corpus",
+                root_id=corpus_id,
+                corpus_id=corpus_id,
             ),
             BenchmarkRootLedgerEntry(
                 run_id=run_id,
@@ -126,7 +127,7 @@ def _evaluate_root_ledger(
                 root_kind="artifact",
                 root_id=artifact_id,
                 artifact_id=artifact_id,
-                dataset_id=dataset_id,
+                corpus_id=corpus_id,
             ),
         )
     )
@@ -135,14 +136,14 @@ def _evaluate_root_ledger(
 def _evaluate_root_facts(
     *,
     artifact_id: str,
-    dataset_id: str,
-    artifact_source_dataset_id: str | None = None,
+    corpus_id: str,
+    artifact_source_corpus_id: str | None = None,
 ) -> BenchmarkRootFacts:
     return BenchmarkRootFacts(
-        consumed_dataset_id=dataset_id,
+        consumed_corpus_id=corpus_id,
         consumed_artifact_id=artifact_id,
-        consumed_artifact_dataset_id=artifact_source_dataset_id or dataset_id,
-        artifact_source_dataset_id=artifact_source_dataset_id,
+        consumed_artifact_corpus_id=artifact_source_corpus_id or corpus_id,
+        artifact_source_corpus_id=artifact_source_corpus_id,
     )
 
 
@@ -152,9 +153,10 @@ def _loaded_summary(config):
         recorded_at=1_700_000_000,
         manifest=SimpleNamespace(
             artifact_id="artifact-1",
-            dataset_id="dataset-1",
+            corpus_id="dataset-1",
+        evaluation_window={"start": "2026-02-03T14:00:00Z", "duration_seconds": 7200},
             chain_name="ethereum",
-            dataset_name="icdcs_2026",
+            corpus_name="icdcs_2026",
             features_id="core_fee_dynamics",
             model=SimpleNamespace(id="lstm"),
             problem_id="current_row_nominal",
@@ -166,7 +168,7 @@ def _loaded_summary(config):
         ),
         runtime=SimpleNamespace(
             delay_seconds=config.delay_seconds,
-            evaluator_id=config.evaluation.id,
+            evaluator_id=config.evaluator.id,
             execution_provenance=SimpleNamespace(
                 execution_ref="slurm:57549",
                 job_id="57549",
@@ -194,10 +196,10 @@ def _loaded_summary(config):
 def _match_facts(config, selection) -> BenchmarkCollectionMatchFacts:
     return BenchmarkCollectionMatchFacts(
         artifact_id=selection.artifact_id,
-        artifact_dataset_id=selection.artifact_dataset_id,
-        evaluation_dataset_id=selection.evaluation_dataset_id,
+        artifact_corpus_id=selection.artifact_corpus_id,
+        evaluation_corpus_id=selection.evaluation_corpus_id,
         evaluation_storage_id="poisson_replay-36s-storage",
-        evaluator_id=config.evaluation.id,
+        evaluator_id=config.evaluator.id,
         delay_seconds=config.delay_seconds,
         evaluation_execution_ref=selection.execution_ref,
         evaluation_job_id=selection.job_id,
@@ -222,16 +224,16 @@ def test_benchmark_run_round_trips_plan_entry(tmp_path: Path) -> None:
         dimension_labels={"features": "core"},
         selection=BenchmarkSelectionLedger(
             surface="current_row_fee_dynamics",
-            evaluation=config.evaluation.id,
+            evaluator=config.evaluator.id,
         ),
         root_facts=_evaluate_root_facts(
             artifact_id=config.artifact_id,
-            dataset_id=config.dataset_id,
+            corpus_id=config.corpus_id,
         ),
         root_ledger=_evaluate_root_ledger(
             "case.evaluate",
             artifact_id=config.artifact_id,
-            dataset_id=config.dataset_id,
+            corpus_id=config.corpus_id,
         ),
         config=config,
     )
@@ -402,12 +404,12 @@ def test_benchmark_collect_reuses_transfer_transaction_for_same_storage_root(
         selection=BenchmarkSelectionLedger(),
         root_facts=_evaluate_root_facts(
             artifact_id=config.artifact_id,
-            dataset_id=config.dataset_id,
+            corpus_id=config.corpus_id,
         ),
         root_ledger=_evaluate_root_ledger(
             "case.evaluate_a",
             artifact_id=config.artifact_id,
-            dataset_id=config.dataset_id,
+            corpus_id=config.corpus_id,
         ),
         config=config,
     )
@@ -418,7 +420,7 @@ def test_benchmark_collect_reuses_transfer_transaction_for_same_storage_root(
             "root_ledger": _evaluate_root_ledger(
                 "case.evaluate_b",
                 artifact_id=config.artifact_id,
-                dataset_id=config.dataset_id,
+                corpus_id=config.corpus_id,
             ),
         }
     )

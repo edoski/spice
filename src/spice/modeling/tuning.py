@@ -56,18 +56,19 @@ def apply_tuned_parameters(
     if isinstance(config, TuneConfig):
         return TuneConfig(
             chain=config.chain,
-            dataset=config.dataset,
+            corpus=config.corpus,
             storage=config.storage,
-            dataset_id=config.dataset_id,
+            corpus_id=config.corpus_id,
             problem=problem,
             model=model,
             dataset_builder=config.dataset_builder,
             features=config.features,
             prediction=config.prediction,
             objective=config.objective,
-            evaluation=config.evaluation,
+            evaluator=config.evaluator,
             study=config.study,
             artifact=config.artifact,
+            training_cutoff_timestamp=config.training_cutoff_timestamp,
             training=training,
             split=config.split,
             tuning=config.tuning,
@@ -75,9 +76,9 @@ def apply_tuned_parameters(
         )
     return TrainConfig(
         chain=config.chain,
-        dataset=config.dataset,
+        corpus=config.corpus,
         storage=config.storage,
-        dataset_id=config.dataset_id,
+        corpus_id=config.corpus_id,
         study_id=config.study_id,
         problem=problem,
         model=model,
@@ -85,9 +86,10 @@ def apply_tuned_parameters(
         features=config.features,
         prediction=config.prediction,
         objective=config.objective,
-        evaluation=config.evaluation,
+        evaluator=config.evaluator,
         study=config.study,
         artifact=config.artifact,
+        training_cutoff_timestamp=config.training_cutoff_timestamp,
         training=training,
         split=config.split,
         tuning=config.tuning,
@@ -113,7 +115,7 @@ def apply_study_best_params(
         study_config,
         manifest=manifest,
         study_id=study.study_id,
-        dataset_id=corpus.dataset_id,
+        corpus_id=corpus.corpus_id,
     )
     params = load_best_params(study.state_db_path, study_name=manifest.study_name)
     tuned_config = apply_tuned_parameters(study_config, params)
@@ -123,9 +125,9 @@ def apply_study_best_params(
 def _with_manifest_study_name(config: TrainConfig, *, study_name: str) -> TrainConfig:
     return TrainConfig(
         chain=config.chain,
-        dataset=config.dataset,
+        corpus=config.corpus,
         storage=config.storage,
-        dataset_id=config.dataset_id,
+        corpus_id=config.corpus_id,
         study_id=config.study_id,
         problem=config.problem,
         model=config.model,
@@ -133,9 +135,10 @@ def _with_manifest_study_name(config: TrainConfig, *, study_name: str) -> TrainC
         features=config.features,
         prediction=config.prediction,
         objective=config.objective,
-        evaluation=config.evaluation,
+        evaluator=config.evaluator,
         study=StudyConfig(name=study_name),
         artifact=config.artifact,
+        training_cutoff_timestamp=config.training_cutoff_timestamp,
         training=config.training,
         split=config.split,
         tuning=config.tuning,
@@ -180,7 +183,6 @@ def _apply_problem_params(
     return ProblemSpec(
         id=problem.id,
         lookback_seconds=params.lookback_seconds,
-        sample_count=problem.sample_count,
         max_delay_seconds=problem.max_delay_seconds,
         compiler=problem.compiler,
         execution_policy=problem.execution_policy,

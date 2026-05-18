@@ -41,7 +41,7 @@ selector queries
 ## Table Shape
 
 ```text
-dataset_index   dataset_id, dataset_name, chain_name, timestamps
+corpus_index   corpus_id, corpus_name, chain_name, timestamps
 study_index     study_id, dataset/model/problem selectors, timestamps
 artifact_index  artifact_id, dataset/model/problem/variant selectors, timestamps
 ```

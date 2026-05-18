@@ -11,18 +11,18 @@ from typing import Literal
 from ..acquisition import AcquisitionPullController, BlockPullPlan, BlockSource
 from ..config.models import AcquireConfig
 from ..core.files import remove_path, write_path_atomic
-from ..storage.corpus import write_dataset_state
+from ..storage.corpus import write_corpus_state
 from ..storage.engine import RootKind
 from ..storage.transactions import commit_corpus_acquisition
 from ..storage.workflow_roots import AcquireWorkflowRoots
 from .metadata import (
     AcquireRunRecord,
-    DatasetManifest,
+    CorpusManifest,
     build_acquire_run_record,
     build_dataset_manifest,
     provider_metadata,
 )
-from .planning import CorpusCapabilityPlanningContext, CorpusHistoryMaterializationStep
+from .planning import CorpusAcquisitionPlanningContext
 from .split_materialization import (
     CorpusSplitIntent,
     CorpusSplitKind,
@@ -38,22 +38,17 @@ StatusCallback = Callable[[str], None]
 
 @dataclass(frozen=True, slots=True)
 class CorpusAcquisitionStageFulfillment:
-    history_result: CorpusSplitMaterializationResult
-    evaluation_result: CorpusSplitMaterializationResult
-    history_plan: BlockPullPlan
-    evaluation_plan: BlockPullPlan
-    requested_history_window_seconds: int
-    resolved_capability_samples: int
+    blocks_result: CorpusSplitMaterializationResult
+    blocks_plan: BlockPullPlan
+    requested_window_seconds: int
 
 
 @dataclass(frozen=True, slots=True)
 class CorpusAcquisitionPublication:
     mode: Literal["committed"]
-    history_plan: BlockPullPlan
-    evaluation_plan: BlockPullPlan
-    requested_history_window_seconds: int
-    resolved_capability_samples: int
-    manifest: DatasetManifest
+    blocks_plan: BlockPullPlan
+    requested_window_seconds: int
+    manifest: CorpusManifest
     acquire_run: AcquireRunRecord
     committed_root_kind: RootKind
 
@@ -62,7 +57,7 @@ class CorpusAcquisitionPublication:
 class CorpusAcquisitionStage:
     config: AcquireConfig
     roots: AcquireWorkflowRoots
-    planning_context: CorpusCapabilityPlanningContext
+    planning_context: CorpusAcquisitionPlanningContext
     materialization: CorpusSplitMaterializationSpec
     controller: AcquisitionPullController
     temp_root: Path
@@ -73,7 +68,7 @@ class CorpusAcquisitionStage:
         *,
         config: AcquireConfig,
         roots: AcquireWorkflowRoots,
-        planning_context: CorpusCapabilityPlanningContext,
+        planning_context: CorpusAcquisitionPlanningContext,
         materialization: CorpusSplitMaterializationSpec,
         controller: AcquisitionPullController,
     ) -> CorpusAcquisitionStage:
@@ -83,7 +78,7 @@ class CorpusAcquisitionStage:
         write_acquire_stage_record(
             temp_root / ".spice" / "acquire-stage.json",
             config=config,
-            corpus_id=roots.corpus.dataset_id,
+            corpus_id=roots.corpus.corpus_id,
         )
         return cls(
             config=config,
@@ -98,9 +93,8 @@ class CorpusAcquisitionStage:
         self,
         *,
         block_source: BlockSource,
-        initial_history_plan: BlockPullPlan,
-        evaluation_plan: BlockPullPlan,
-        requested_history_window_seconds: int,
+        blocks_plan: BlockPullPlan,
+        requested_window_seconds: int,
         status: StatusCallback,
     ) -> CorpusAcquisitionStageFulfillment:
         split_session = CorpusSplitMaterializationSession(
@@ -109,52 +103,18 @@ class CorpusAcquisitionStage:
             controller=self.controller,
             status=status,
         )
-        history_output_dir = self.roots.corpus.history_dir
-
-        async def materialize_history(
-            step: CorpusHistoryMaterializationStep,
-        ) -> CorpusSplitMaterializationResult:
-            nonlocal history_output_dir
-            working_dir = (
-                self.temp_root / "history-initial"
-                if step.refill_attempt is None
-                else self.temp_root / f"history-refill-{step.refill_attempt}"
-            )
-            result = await split_session.fulfill(
-                CorpusSplitIntent(
-                    kind=CorpusSplitKind.HISTORY,
-                    output_dir=history_output_dir,
-                    working_dir=working_dir,
-                    plan=step.plan,
-                )
-            )
-            history_output_dir = result.path
-            return result
-
-        history_fulfillment = await self.planning_context.fulfill_history_with_refills(
-            block_source=block_source,
-            initial_history_plan=initial_history_plan,
-            requested_history_window_seconds=requested_history_window_seconds,
-            materialize=materialize_history,
-            status=status,
-        )
-        evaluation_result = await split_session.fulfill(
+        blocks_result = await split_session.fulfill(
             CorpusSplitIntent(
-                kind=CorpusSplitKind.EVALUATION,
-                output_dir=self.roots.corpus.evaluation_dir,
+                kind=CorpusSplitKind.BLOCKS,
+                output_dir=self.roots.corpus.blocks_dir,
                 working_dir=self.temp_root,
-                plan=evaluation_plan,
+                plan=blocks_plan,
             )
         )
         return CorpusAcquisitionStageFulfillment(
-            history_result=history_fulfillment.history_result,
-            evaluation_result=evaluation_result,
-            history_plan=history_fulfillment.history_plan,
-            evaluation_plan=evaluation_plan,
-            requested_history_window_seconds=(
-                history_fulfillment.requested_history_window_seconds
-            ),
-            resolved_capability_samples=history_fulfillment.resolved_capability_samples,
+            blocks_result=blocks_result,
+            blocks_plan=blocks_plan,
+            requested_window_seconds=requested_window_seconds,
         )
 
     def publish(
@@ -164,50 +124,43 @@ class CorpusAcquisitionStage:
     ) -> CorpusAcquisitionPublication:
         manifest = build_dataset_manifest(
             config=self.config,
-            dataset_id=self.roots.corpus.dataset_id,
-            history_plan=fulfillment.history_plan,
-            evaluation_plan=fulfillment.evaluation_plan,
-            history_validation=fulfillment.history_result.validation,
-            evaluation_validation=fulfillment.evaluation_result.validation,
-            history_outcome=fulfillment.history_result.outcome.value,
-            evaluation_outcome=fulfillment.evaluation_result.outcome.value,
-            history_file_count=fulfillment.history_result.file_count,
-            evaluation_file_count=fulfillment.evaluation_result.file_count,
+            corpus_id=self.roots.corpus.corpus_id,
+            blocks_plan=fulfillment.blocks_plan,
+            blocks_validation=fulfillment.blocks_result.validation,
+            blocks_outcome=fulfillment.blocks_result.outcome.value,
+            blocks_file_count=fulfillment.blocks_result.file_count,
             source_requirements=self.planning_context.source_requirements,
         )
         acquire_run = build_acquire_run_record(
             config=self.config,
             provider=provider_metadata(self.config),
             acquisition_runtime=self.controller.snapshot(),
-            requested_history_window_seconds=fulfillment.requested_history_window_seconds,
-            resolved_capability_samples=fulfillment.resolved_capability_samples,
+            requested_window_seconds=fulfillment.requested_window_seconds,
         )
         temp_state_db = self.temp_root / ".spice" / "state.sqlite"
-        write_dataset_state(
+        write_corpus_state(
             temp_state_db,
             manifest=manifest,
             acquire_run=acquire_run,
         )
         committed_root_kind = commit_corpus_acquisition(
             self.roots.corpus,
-            history_dir=fulfillment.history_result.promote_dir,
-            evaluation_dir=fulfillment.evaluation_result.promote_dir,
+            blocks_dir=fulfillment.blocks_result.promote_dir,
             state_db=temp_state_db,
         ).root_kind
         remove_path(self.temp_root)
         return CorpusAcquisitionPublication(
             mode="committed",
-            history_plan=fulfillment.history_plan,
-            evaluation_plan=fulfillment.evaluation_plan,
-            requested_history_window_seconds=fulfillment.requested_history_window_seconds,
-            resolved_capability_samples=fulfillment.resolved_capability_samples,
+            blocks_plan=fulfillment.blocks_plan,
+            requested_window_seconds=fulfillment.requested_window_seconds,
             manifest=manifest,
             acquire_run=acquire_run,
             committed_root_kind=committed_root_kind,
         )
 
+
 def acquire_stage_root(roots: AcquireWorkflowRoots) -> Path:
-    return roots.corpus.root_path.parent / f".{roots.corpus.dataset_id}{ACQUIRE_STAGE_DIR_NAME}"
+    return roots.corpus.root_path.parent / f".{roots.corpus.corpus_id}{ACQUIRE_STAGE_DIR_NAME}"
 
 
 def write_acquire_stage_record(
@@ -219,8 +172,9 @@ def write_acquire_stage_record(
     record = {
         "chain": config.chain.name,
         "chain_id": config.chain.runtime.chain_id,
-        "dataset": config.dataset.name,
-        "evaluation_date": config.dataset.evaluation_date.isoformat(),
+        "corpus": config.corpus.name,
+        "window_start": config.corpus.window.start.isoformat(),
+        "window_end_timestamp": config.corpus.window.end_timestamp,
         "corpus_id": corpus_id,
     }
 

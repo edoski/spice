@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Model Families - Spice Beginner Guide</title>
+  <link rel="stylesheet" href="assets/guide.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="page">
+      <p class="eyebrow">Spice beginner guide</p>
+      <h1>Model Families</h1>
+      <p class="lede">Model families define neural-network architectures, their configs, tuning spaces, tuned parameter types, and construction logic.</p>
+      <div class="meta">
+        <span class="pill">src/spice/modeling/families</span>
+        <span class="pill">Docs: ARCHITECTURE.md, IMPLEMENTATIONS.md</span>
+      </div>
+    </div>
+  </header>
+  <div class="page layout">
+    <main>
+      <section id="where-it-fits">
+<h2>Where It Fits</h2>
+<p>They sit inside modeling and are selected by config. Prediction families define output contracts; model families build networks that produce the required output heads.</p>
+</section>
+      <section id="beginner-mental-model">
+<h2>Beginner Mental Model</h2>
+<p>A model family is a blueprint for a neural network. The current blueprints process sequences of fee features and emit named heads that the prediction family can train and decode.</p>
+</section>
+      <section id="main-source-files">
+<h2>Main Source Files</h2>
+<div class="file-table">
+<div><code>base.py</code></div><div>Defines common model config, tuning-space config, tuned params, and tunable-field validation.</div>
+<div><code>_heads.py</code></div><div>Builds reusable MLP and temporal output heads.</div>
+<div><code>_sequence.py</code></div><div>Handles sequence lengths and selecting the last valid timestep.</div>
+<div><code>_transformer_shared.py</code></div><div>Shares transformer positional encoding, encoder config, tuning validation, and encoder construction.</div>
+<div><code>lstm.py</code></div><div>Concrete LSTM baseline family, config, tuning space, tuned params, and build function.</div>
+<div><code>transformer.py</code></div><div>Concrete transformer baseline family and tuning behavior.</div>
+<div><code>transformer_lstm.py</code></div><div>Hybrid transformer-plus-LSTM baseline family.</div>
+<div><code>registry.py</code></div><div>Loads model specs, coerces configs, builds models, samples tuned params, and applies tuned params.</div>
+<div><code>__init__.py</code></div><div>Model-family package boundary.</div>
+</div>
+</section>
+      <section id="input-and-output-flow">
+<h2>Input And Output Flow</h2>
+<ul>
+<li>Config selects a model id and hyperparameters.</li>
+<li>Registry validates the concrete model config.</li>
+<li>The model builder receives input/output specs.</li>
+<li>Training runtime optimizes the resulting PyTorch module.</li>
+</ul>
+</section>
+      <section id="common-confusing-concepts">
+<h2>Common Confusing Concepts</h2>
+<h3>Architecture vs prediction task</h3><p>The architecture decides how features are processed. The prediction family decides what the outputs mean.</p>
+<h3>Head</h3><p>A final network branch with a named output, such as offset logits or fee regression.</p>
+<h3>Tuning space vs tuned params</h3><p>A tuning space lists candidates. Tuned params are one chosen set from an Optuna study.</p>
+</section>
+      <section id="related-guides">
+<h2>Related Guides</h2>
+<div class="links"><a href="spice-modeling.html">Modeling Runtime</a><a href="spice-prediction.html">Prediction</a><a href="spice-prediction-families-min-block-fee-multitask.html">Minimum Block Fee Multitask Prediction</a></div>
+</section>
+    </main>
+    <aside class="side">
+      <nav>
+        <h2>On This Page</h2>
+        <a href="#where-it-fits">Where it fits</a>
+        <a href="#beginner-mental-model">Beginner mental model</a>
+        <a href="#main-source-files">Main source files</a>
+        <a href="#input-and-output-flow">Input/output flow</a>
+        <a href="#common-confusing-concepts">Common concepts</a>
+      </nav>
+      <div class="box">
+        <h2>Guide</h2>
+        <a href="../../codebase-guide.html">Back to root guide</a>
+      </div>
+      <div class="box">
+        <h2>Source Docs</h2>
+        <p><a href="../../src/spice/modeling/families/ARCHITECTURE.md">ARCHITECTURE.md</a>, <a href="../../src/spice/modeling/families/IMPLEMENTATIONS.md">IMPLEMENTATIONS.md</a></p>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>

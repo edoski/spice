@@ -1,4 +1,4 @@
-"""Canonical block dataset contract shared by acquisition and consumers."""
+"""Canonical block corpus contract shared by acquisition and consumers."""
 
 from __future__ import annotations
 
@@ -171,19 +171,19 @@ def canonicalize_block_frame(frame: pl.DataFrame) -> pl.DataFrame:
 
 def validate_block_frame(frame: pl.DataFrame) -> None:
     if frame.height == 0:
-        raise ValueError("Block dataset is empty")
+        raise ValueError("Block corpus is empty")
     canonical = _select_canonical_columns(frame, strict_columns=True)
     null_required = [
         column for column in REQUIRED_BLOCK_COLUMNS if canonical[column].null_count() > 0
     ]
     if null_required:
         raise ValueError(
-            "Block dataset has null required columns: " + ", ".join(null_required)
+            "Block corpus has null required columns: " + ", ".join(null_required)
         )
     if canonical["block_number"].n_unique() != canonical.height:
-        raise ValueError("Block dataset must have unique block_number values")
+        raise ValueError("Block corpus must have unique block_number values")
     if canonical["chain_id"].n_unique() != 1:
-        raise ValueError("Block dataset must contain exactly one chain_id")
+        raise ValueError("Block corpus must contain exactly one chain_id")
 
 
 def _select_canonical_columns(
@@ -194,14 +194,14 @@ def _select_canonical_columns(
     missing = [column for column in BLOCK_COLUMNS if column not in frame.columns]
     if missing:
         raise ValueError(
-            "Block dataset is missing required columns for canonical output: "
+            "Block corpus is missing required columns for canonical output: "
             + ", ".join(missing)
         )
     if strict_columns:
         unexpected = [column for column in frame.columns if column not in BLOCK_COLUMNS]
         if unexpected:
             raise ValueError(
-                "Block dataset contains unexpected columns for canonical output: "
+                "Block corpus contains unexpected columns for canonical output: "
                 + ", ".join(unexpected)
             )
 

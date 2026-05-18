@@ -19,9 +19,8 @@ from spice.corpus.metadata import (
     CompactValidationReport,
     CorpusAcquisitionSourceRequirements,
     CorpusSplitManifest,
-    CorpusSplitManifests,
-    DatasetIdentity,
-    DatasetManifest,
+    CorpusIdentity,
+    CorpusManifest,
     SplitCoverageMetadata,
     SplitMaterializationMetadata,
     SplitRequestMetadata,
@@ -56,7 +55,7 @@ def _tune_config(tmp_path, *, surface: str, objective: str | None = None) -> Tun
         resolve_workflow_config(
             TuneWorkflowSelection(
                 surface=surface,
-                dataset_id=TEST_DATASET_ID,
+                corpus_id=TEST_DATASET_ID,
                 objective=objective,
                 storage_root=tmp_path / "outputs",
             ),
@@ -76,7 +75,7 @@ def _train_config(
         resolve_workflow_config(
             TrainWorkflowSelection(
                 surface=surface,
-                dataset_id=None if study_id is not None else TEST_DATASET_ID,
+                corpus_id=None if study_id is not None else TEST_DATASET_ID,
                 study_id=study_id,
                 variant="tuned" if study_id is not None else "baseline",
                 objective=objective,
@@ -86,9 +85,9 @@ def _train_config(
     )
 
 
-def _corpus_manifest(config: TuneConfig) -> DatasetManifest:
+def _corpus_manifest(config: TuneConfig) -> CorpusManifest:
     split = CorpusSplitManifest(
-        kind="history",
+        kind="blocks",
         request=SplitRequestMetadata(
             start_timestamp=1,
             end_timestamp=2,
@@ -107,10 +106,10 @@ def _corpus_manifest(config: TuneConfig) -> DatasetManifest:
         ),
         materialization=SplitMaterializationMetadata(outcome="reused", file_count=1),
     )
-    return DatasetManifest(
-        dataset=DatasetIdentity(id=TEST_DATASET_ID, name=config.dataset.name),
+    return CorpusManifest(
+        corpus=CorpusIdentity(id=TEST_DATASET_ID, name=config.corpus.name),
         chain=ChainMetadata(name=config.chain.name, runtime=config.chain.runtime),
-        splits=CorpusSplitManifests(history=split, evaluation=split),
+        blocks=split,
         source_requirements=CorpusAcquisitionSourceRequirements(
             required_columns=frozenset(
                 {"block_number", "timestamp", "chain_id", "base_fee_per_gas"}
@@ -141,17 +140,17 @@ def test_study_id_uses_resolved_identity_but_not_trial_limits(
         resolve_workflow_config(
             TuneWorkflowSelection(
                 surface="current_row_fee_dynamics",
-                dataset_id=TEST_DATASET_ID,
+                corpus_id=TEST_DATASET_ID,
                 trial_count=40,
                 storage_root=tmp_path / "outputs",
             ),
         ),
     )
-    evaluation_path = conf_root / "evaluation" / "poisson_replay.yaml"
-    evaluation_payload = load_named_group_payload("poisson_replay", "evaluation")
-    evaluation_payload["seed"] = 3030
-    evaluation_path.write_text(
-        yaml.safe_dump(evaluation_payload, sort_keys=False),
+    evaluator_path = conf_root / "evaluator" / "poisson_replay.yaml"
+    evaluator_payload = load_named_group_payload("poisson_replay", "evaluator")
+    evaluator_payload["seed"] = 3030
+    evaluator_path.write_text(
+        yaml.safe_dump(evaluator_payload, sort_keys=False),
         encoding="utf-8",
     )
     changed_evaluation = _tune_config(tmp_path, surface="current_row_fee_dynamics")
@@ -179,23 +178,23 @@ def test_artifact_id_uses_training_identity_and_selected_dataset(
         surface="current_row_fee_dynamics",
         objective="validation_total_loss",
     )
-    evaluation_path = conf_root / "evaluation" / "poisson_replay.yaml"
-    evaluation_payload = load_named_group_payload("poisson_replay", "evaluation")
-    evaluation_payload["seed"] = 3030
-    evaluation_path.write_text(
-        yaml.safe_dump(evaluation_payload, sort_keys=False),
+    evaluator_path = conf_root / "evaluator" / "poisson_replay.yaml"
+    evaluator_payload = load_named_group_payload("poisson_replay", "evaluator")
+    evaluator_payload["seed"] = 3030
+    evaluator_path.write_text(
+        yaml.safe_dump(evaluator_payload, sort_keys=False),
         encoding="utf-8",
     )
     changed_evaluation = _train_config(tmp_path, surface="current_row_fee_dynamics")
 
-    assert produced_artifact_id(changed_problem, dataset_id=TEST_DATASET_ID) != (
-        produced_artifact_id(base, dataset_id=TEST_DATASET_ID)
+    assert produced_artifact_id(changed_problem, corpus_id=TEST_DATASET_ID) != (
+        produced_artifact_id(base, corpus_id=TEST_DATASET_ID)
     )
-    assert produced_artifact_id(changed_objective, dataset_id=TEST_DATASET_ID) != (
-        produced_artifact_id(base, dataset_id=TEST_DATASET_ID)
+    assert produced_artifact_id(changed_objective, corpus_id=TEST_DATASET_ID) != (
+        produced_artifact_id(base, corpus_id=TEST_DATASET_ID)
     )
-    assert produced_artifact_id(changed_evaluation, dataset_id=TEST_DATASET_ID) != (
-        produced_artifact_id(base, dataset_id=TEST_DATASET_ID)
+    assert produced_artifact_id(changed_evaluation, corpus_id=TEST_DATASET_ID) != (
+        produced_artifact_id(base, corpus_id=TEST_DATASET_ID)
     )
 
 
@@ -204,8 +203,8 @@ def test_storage_root_does_not_affect_produced_ids(tmp_path, isolate_conf_root) 
     first = _train_config(tmp_path / "one", surface="current_row_fee_dynamics")
     second = _train_config(tmp_path / "two", surface="current_row_fee_dynamics")
 
-    assert produced_artifact_id(first, dataset_id=TEST_DATASET_ID) == (
-        produced_artifact_id(second, dataset_id=TEST_DATASET_ID)
+    assert produced_artifact_id(first, corpus_id=TEST_DATASET_ID) == (
+        produced_artifact_id(second, corpus_id=TEST_DATASET_ID)
     )
 
 
@@ -224,8 +223,8 @@ def test_tuned_definition_identity_matches_stored_study_manifest(
     corpus = corpus_handle(
         tune_config.storage.root,
         chain_name=tune_config.chain.name,
-        dataset_id=TEST_DATASET_ID,
-        dataset_name=tune_config.dataset.name,
+        corpus_id=TEST_DATASET_ID,
+        corpus_name=tune_config.corpus.name,
     )
     study = study_handle(
         tune_config.storage.root,
@@ -245,13 +244,13 @@ def test_tuned_definition_identity_matches_stored_study_manifest(
             train_config,
             study_id=study_id,
             chain_name=manifest.chain_name,
-            dataset_id=manifest.dataset_id,
-            dataset_name=manifest.dataset_name,
+            corpus_id=manifest.corpus_id,
+            corpus_name=manifest.corpus_name,
         )
     )
 
 
-def test_corpus_id_uses_dataset_evaluation_date(tmp_path, isolate_conf_root) -> None:
+def test_corpus_id_uses_corpus_window(tmp_path, isolate_conf_root) -> None:
     conf_root = isolate_conf_root()
     base = cast(
         AcquireConfig,
@@ -262,10 +261,13 @@ def test_corpus_id_uses_dataset_evaluation_date(tmp_path, isolate_conf_root) -> 
             ),
         ),
     )
-    changed_dataset = dict(load_named_group_payload("icdcs_2026", "dataset"))
-    changed_dataset["evaluation_date"] = "2025-11-10"
-    (conf_root / "dataset" / "icdcs_2026.yaml").write_text(
-        yaml.safe_dump(changed_dataset, sort_keys=False),
+    changed_corpus = dict(load_named_group_payload("icdcs_2026", "corpus"))
+    changed_corpus["window"] = {
+        "start": "2025-11-08T00:00:00Z",
+        "end": "2025-11-11T00:00:00Z",
+    }
+    (conf_root / "corpus" / "icdcs_2026.yaml").write_text(
+        yaml.safe_dump(changed_corpus, sort_keys=False),
         encoding="utf-8",
     )
     changed = cast(

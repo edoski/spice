@@ -19,7 +19,7 @@ A Concrete Owner Config is the concrete local-spec config selected by an owner i
 
 ## Local Specs
 
-Local specs are small named configs such as `model/lstm.yaml`, `problem/current_row_nominal.yaml`, `evaluation/poisson_replay.yaml`, or `evaluation/full_temporal_replay.yaml`.
+Local specs are small named configs such as `model/lstm.yaml`, `problem/current_row_nominal.yaml`, `evaluator/poisson_replay.yaml`, and reusable `evaluations/*.yaml` suites.
 
 Config Group Loading has two explicit paths:
 
@@ -53,9 +53,9 @@ overrides: model=lstm, delay_seconds=36
         surface YAML
              |
              v
-  chain/dataset/provider/problem
+  chain/corpus/provider/problem
   features/model/prediction
-  objective/evaluation/training/split
+  objective/evaluator/evaluations/training/split
              |
              v
       workflow config model
@@ -65,7 +65,7 @@ Fresh resolution applies acquire/train/tune selections to the Surface inside `re
 
 Surface resolution is a typed construction path. Once named groups and overrides have been resolved, `resolution.py` instantiates the workflow config from typed pieces. It does not round-trip through raw resolved snapshot hydration.
 
-Selection overrides are explicit: only `None` means “use the surface value.” Empty strings and other invalid refs are carried into typed loading and fail as bad references. Evaluation-backed objectives must select the evaluator they name; missing evaluation is rejected before workflow execution.
+Selection overrides are explicit: only `None` means “use the surface value.” Empty strings and other invalid refs are carried into typed loading and fail as bad references. Evaluation-backed objectives must select the evaluator they name; missing evaluator is rejected before workflow execution.
 
 Workflow Command Selection lives at the CLI edge. Workflow commands construct typed `WorkflowSelection` models from operator options, then call `resolve_workflow_config()` to produce concrete workflow configs. Benchmarks construct typed selections inside benchmark materialization before using the same fresh resolution path.
 
@@ -79,15 +79,15 @@ Acquire is excluded from snapshot hydration. Acquire configs contain provider/ac
 
 Tuned-parameter application is not snapshot hydration. It is a typed train/tune config transform that applies tuned params through owner-family validators and rebuilds the workflow config directly.
 
-Model workflow snapshots contain training/evaluation fields: chain, dataset, problem, model, dataset builder, features, prediction, objective, optional evaluation, storage, artifact, split, training, study, tuning, and tuning space depending on workflow.
+Model workflow snapshots contain training/evaluation fields: chain, corpus, problem, model, dataset builder, features, prediction, objective, evaluator, storage, artifact, split, training, study, tuning, and tuning space depending on workflow.
 
-Evaluation date expands into concrete UTC windows:
+Evaluation windows use UTC timestamp ranges:
 
 ```text
-dataset.evaluation_date
-  -> evaluation_start: midnight UTC
-  -> evaluation_end: next midnight UTC
-  -> history_end: evaluation_start
+evaluation.start
+  -> scored_start: UTC timestamp
+  -> scored_end: scored_start + duration_seconds
+  -> required context and outcome rows remain internal
 ```
 
 ## Objective And Evaluation Rules
@@ -104,7 +104,7 @@ evaluation objective
   -> optimize evaluator metric
 ```
 
-For train and tune, an evaluation objective must declare an `evaluator_id`, and the selected evaluation config id must match it. Evaluate workflow can run a diagnostic evaluator directly; the artifact still validates against the training semantics stored in its manifest.
+For train and tune, an evaluation objective must declare an `evaluator_id`, and the selected evaluator config id must match it. Evaluate workflow can run a diagnostic evaluator directly; the artifact still validates against the training semantics stored in its manifest.
 
 Runtime evaluator contracts carry typed evaluator configs. Persisted evaluation summaries carry immutable Evaluation Config Snapshots, and artifact storage codecs serialize and hydrate those snapshots at the persisted-state boundary.
 
