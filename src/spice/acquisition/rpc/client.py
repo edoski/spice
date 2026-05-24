@@ -208,9 +208,9 @@ class BlockRpcClient:
                 list(FEE_HISTORY_REWARD_PERCENTILES),
             )
         except Web3RPCError as exc:
-            if self._is_unsupported_fee_history_error(exc):
+            if self._is_unavailable_fee_history_error(exc):
                 self._fee_history_unsupported = True
-                raise self._unsupported_fee_history_error() from exc
+                return self._null_fee_history_rows(block_count)
             raise
         if not isinstance(response, Mapping):
             raise self._unsupported_fee_history_error(
@@ -282,7 +282,7 @@ class BlockRpcClient:
         ]
 
     @staticmethod
-    def _is_unsupported_fee_history_error(exc: Web3RPCError) -> bool:
+    def _is_unavailable_fee_history_error(exc: Web3RPCError) -> bool:
         parts = [str(exc).lower(), exc.message.lower()]
         if exc.rpc_response is not None:
             error = exc.rpc_response.get("error")
@@ -301,6 +301,7 @@ class BlockRpcClient:
                 "method not supported",
                 "unsupported method",
                 "-32601",
+                "request beyond historical limit",
             )
         )
 
@@ -336,6 +337,11 @@ class BlockRpcClient:
                 "service unavailable",
                 "bad gateway",
                 "gateway timeout",
+                "internal server error",
+                "errupstreamrequest",
+                "failed to make request to upstream",
+                "errendpointserversideexception",
+                "errjsonrpcexceptioninternal",
                 "connection reset",
                 "connection aborted",
                 "server disconnected",

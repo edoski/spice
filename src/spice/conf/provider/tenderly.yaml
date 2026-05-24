@@ -5,17 +5,15 @@ transport:
   backoff_factor: 0.25
 acquisition:
   dry_run: false
-  chunk_size: 32768
+  chunk_size: 8192
   rpc:
-    batch_size: 16
-    concurrency: 8
+    batch_size: 8
+    concurrency: 4
     min_batch_size: 1
     concurrency_rungs:
     - 1
     - 2
     - 4
-    - 6
-    - 8
 endpoints:
   ethereum:
     url: https://mainnet.gateway.tenderly.co/
