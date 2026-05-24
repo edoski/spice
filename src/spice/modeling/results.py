@@ -115,7 +115,6 @@ class TrainingArtifactManifest:
         return self.semantics.problem.lookback_seconds
 
     @property
-    @property
     def feature_prerequisites(self):
         return self.semantics.feature.feature_prerequisites
 
