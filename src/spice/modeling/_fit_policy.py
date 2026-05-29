@@ -159,6 +159,39 @@ class TrainingFitPolicy:
         )
         return self.best_epoch, self.best_state, best_value
 
+    def state_dict(self) -> dict[str, object]:
+        return {
+            "train_history": [_metric_payload(metrics) for metrics in self.train_history],
+            "validation_history": [
+                _metric_payload(metrics) for metrics in self.validation_history
+            ],
+            "objective_history": [
+                _metric_payload(metrics) for metrics in self.objective_history
+            ],
+            "best_state": self.best_state,
+            "best_epoch": self.best_epoch,
+            "epochs_without_improvement": self.epochs_without_improvement,
+        }
+
+    def load_state_dict(self, state: dict[str, object]) -> None:
+        self.train_history = [
+            MetricSet(dict(cast(dict[str, float], payload)))
+            for payload in cast(list[object], state["train_history"])
+        ]
+        self.validation_history = [
+            MetricSet(dict(cast(dict[str, float], payload)))
+            for payload in cast(list[object], state["validation_history"])
+        ]
+        self.objective_history = [
+            MetricSet(dict(cast(dict[str, float], payload)))
+            for payload in cast(list[object], state["objective_history"])
+        ]
+        self.best_state = cast(dict[str, torch.Tensor] | None, state["best_state"])
+        self.best_epoch = int(cast(int, state["best_epoch"]))
+        self.epochs_without_improvement = int(
+            cast(int, state["epochs_without_improvement"])
+        )
+
 
 def _unwrap_compiled_model(model: TemporalModel) -> TemporalModel:
     return cast(TemporalModel, getattr(model, "_orig_mod", model))
@@ -169,6 +202,10 @@ def _clone_cpu_state(model: TemporalModel) -> dict[str, torch.Tensor]:
         key: value.detach().cpu().clone()
         for key, value in model.state_dict().items()
     }
+
+
+def _metric_payload(metrics: MetricSet) -> dict[str, float]:
+    return dict(metrics.values)
 
 
 def _all_metrics_finite(metrics: MetricSet) -> bool:

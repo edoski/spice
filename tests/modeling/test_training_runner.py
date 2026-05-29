@@ -16,6 +16,7 @@ from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.modeling.scoring import EvaluationScoringRuntimePlan
 from spice.modeling.training_runner import (
     TrainingCallbacks,
+    TrainingCheckpoint,
     TrainingFitSpec,
     run_training_fit,
 )
@@ -28,6 +29,17 @@ class _TinyModel(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.weight = torch.nn.Parameter(torch.tensor(0.0))
+
+
+class _FakeOptimizer:
+    def __init__(self) -> None:
+        self.loaded_state: dict[str, object] | None = None
+
+    def state_dict(self) -> dict[str, object]:
+        return {"loaded": self.loaded_state is not None}
+
+    def load_state_dict(self, state: dict[str, object]) -> None:
+        self.loaded_state = state
 
 
 def _training_config(*, max_epochs: int = 2, patience: int = 2) -> TrainingConfig:
@@ -80,7 +92,7 @@ def _patch_training_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_prepare_training_runtime(model, **_kwargs):
         return PreparedTrainingRuntime(
             fit_model=model,
-            optimizer=cast(torch.optim.Optimizer, SimpleNamespace()),
+            optimizer=cast(torch.optim.Optimizer, _FakeOptimizer()),
             batch_plan=TrainingRuntimePlan(
                 runtime_plan=runtime_plan,
                 train_batch_plan=cast(Any, SimpleNamespace(source=[0])),
@@ -163,7 +175,7 @@ def test_training_fit_restores_best_state_and_calls_early_stop_callback(
     result = run_training_fit(
         _fit_spec(
             tmp_path,
-            model=model,
+            model=cast(Any, model),
             training_config=_training_config(max_epochs=2, patience=1),
         ),
         callbacks=TrainingCallbacks(
@@ -179,6 +191,54 @@ def test_training_fit_restores_best_state_and_calls_early_stop_callback(
     assert model.weight.item() == 1.0
     assert result.runtime_plan.seed == 0
     assert early_stop_calls == [(2, 1)]
+
+
+def test_training_fit_resumes_from_checkpoint(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    epoch_state = {"epoch": 1}
+    checkpoints: list[TrainingCheckpoint] = []
+
+    def fake_run_epoch(model, *, training, **_kwargs):
+        if training:
+            epoch_state["epoch"] += 1
+            model.weight.data.fill_(float(epoch_state["epoch"]))
+        return MetricSet({"score": float(epoch_state["epoch"])})
+
+    _patch_training_runtime(monkeypatch)
+    monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
+
+    model = _TinyModel()
+    checkpoint = TrainingCheckpoint(
+        completed_epoch=1,
+        model_state={"weight": torch.tensor(1.0)},
+        optimizer_state={"epoch": 1},
+        policy_state={
+            "train_history": [{"score": 1.0}],
+            "validation_history": [{"score": 1.0}],
+            "objective_history": [{"score": 1.0}],
+            "best_state": {"weight": torch.tensor(1.0)},
+            "best_epoch": 1,
+            "epochs_without_improvement": 0,
+        },
+    )
+
+    spec = _fit_spec(
+        tmp_path,
+        model=model,
+        training_config=_training_config(max_epochs=2, patience=2),
+    )
+    spec.checkpoint = checkpoint
+    result = run_training_fit(
+        spec,
+        callbacks=TrainingCallbacks(on_checkpoint=checkpoints.append),
+    )
+
+    assert result.best_epoch == 2
+    assert len(result.train_history) == 2
+    assert model.weight.item() == 2.0
+    assert [saved.completed_epoch for saved in checkpoints] == [2]
 
 
 def test_training_fit_delegates_scoring_plan_to_objective_runtime(
@@ -204,7 +264,7 @@ def test_training_fit_delegates_scoring_plan_to_objective_runtime(
 
     result = run_training_fit(
         TrainingFitSpec(
-            model=model,
+            model=cast(Any, model),
             prediction_contract=prediction_contract,
             representation_contract=representation_contract,
             objective_runtime=_objective_runtime(evaluate_metrics),

@@ -106,6 +106,7 @@ def commit_artifact_root(
     *,
     writer: Callable[[Path], EffectT],
 ) -> FullRootCommit[EffectT]:
+    resumable_stage = artifact.root_path.parent / f".{artifact.root_path.name}.staging"
     with staged_root(
         storage_root=artifact.storage_root,
         destination_root=artifact.root_path,
@@ -113,6 +114,9 @@ def commit_artifact_root(
         replace=True,
         purpose="staging",
         prune_stop_at=artifact.root_path.parent.parent,
+        staged_root_path_override=resumable_stage,
+        reuse_existing=True,
+        cleanup_on_failure=False,
     ) as stage:
         result = writer(stage.staged_root)
         reindexed = stage.promote()

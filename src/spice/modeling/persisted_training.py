@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import torch
+
+from ..core.constants import TRAINING_CHECKPOINT_FILENAME
+from ..core.files import write_path_atomic
 from ..metrics import MetricSet
 from ..storage.artifact import write_training_state
 from .artifacts import (
@@ -22,6 +26,7 @@ from .results import (
 )
 from .scoring import PredictionMetricScoringRuntimePlan, score_prediction_metrics
 from .training_run import TrainingRunResult
+from .training_runner import TrainingCheckpoint
 
 
 @dataclass(slots=True)
@@ -37,6 +42,52 @@ class TrialTrainingRun:
     training_run: TrainingRunResult
     manifest: TrainingArtifactManifest
     summary: LoadedTrainingSummary
+
+
+def _checkpoint_path(artifact_dir: Path) -> Path:
+    return artifact_dir / ".spice" / TRAINING_CHECKPOINT_FILENAME
+
+
+def _load_training_checkpoint(artifact_dir: Path) -> TrainingCheckpoint | None:
+    path = _checkpoint_path(artifact_dir)
+    if not path.is_file():
+        return None
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    return TrainingCheckpoint(
+        completed_epoch=int(payload["completed_epoch"]),
+        model_state=payload["model_state"],
+        optimizer_state=payload["optimizer_state"],
+        policy_state=payload["policy_state"],
+    )
+
+
+def _write_training_checkpoint(
+    artifact_dir: Path,
+    checkpoint: TrainingCheckpoint,
+) -> None:
+    payload = {
+        "completed_epoch": checkpoint.completed_epoch,
+        "model_state": checkpoint.model_state,
+        "optimizer_state": checkpoint.optimizer_state,
+        "policy_state": checkpoint.policy_state,
+    }
+
+    def _write(tmp_path: Path) -> None:
+        torch.save(payload, tmp_path)
+
+    write_path_atomic(_checkpoint_path(artifact_dir), _write)
+
+
+def _checkpoint_callback(
+    artifact_dir: Path,
+    callbacks: TrainingRunCallbacks,
+):
+    def _callback(checkpoint: TrainingCheckpoint) -> None:
+        _write_training_checkpoint(artifact_dir, checkpoint)
+        if callbacks.on_checkpoint is not None:
+            callbacks.on_checkpoint(checkpoint)
+
+    return _callback
 
 
 def _evaluate_split_metrics(
@@ -101,10 +152,19 @@ def run_persisted_training(
     artifact_dir: Path,
     callbacks: TrainingRunCallbacks | None = None,
 ) -> PersistedTrainingRun:
+    checkpoint = _load_training_checkpoint(artifact_dir)
+    active_callbacks = callbacks or TrainingRunCallbacks()
     training_run = run_training(
         history_block_path,
         spec=spec,
-        callbacks=callbacks,
+        callbacks=TrainingRunCallbacks(
+            on_prepare_complete=active_callbacks.on_prepare_complete,
+            on_fit_start=active_callbacks.on_fit_start,
+            on_epoch_end=active_callbacks.on_epoch_end,
+            on_early_stop=active_callbacks.on_early_stop,
+            on_checkpoint=_checkpoint_callback(artifact_dir, active_callbacks),
+        ),
+        checkpoint=checkpoint,
     )
     manifest = build_training_artifact_manifest(training_run.prepared, spec=spec)
     persist_training_artifact(
@@ -124,6 +184,7 @@ def run_persisted_training(
         summary=summary.runtime,
         training_run=training_run,
     )
+    _checkpoint_path(artifact_dir).unlink(missing_ok=True)
     return PersistedTrainingRun(
         training_run=training_run,
         manifest=manifest,

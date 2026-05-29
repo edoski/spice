@@ -46,8 +46,10 @@ from .representations import CompiledRepresentationContract, compile_representat
 from .results import TrainingSourceProvenance
 from .training_run import TrainingRunResult
 from .training_runner import (
+    CheckpointCallback,
     EarlyStopCallback,
     EpochEndCallback,
+    TrainingCheckpoint,
     TrainingCallbacks,
     TrainingFitSpec,
     run_training_fit,
@@ -92,6 +94,7 @@ class TrainingRunCallbacks:
     on_fit_start: Callable[[], None] | None = None
     on_epoch_end: EpochEndCallback | None = None
     on_early_stop: EarlyStopCallback | None = None
+    on_checkpoint: CheckpointCallback | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,6 +272,7 @@ def run_training(
     *,
     spec: TrainingSpec,
     callbacks: TrainingRunCallbacks | None = None,
+    checkpoint: TrainingCheckpoint | None = None,
 ) -> TrainingRunResult:
     active_callbacks = callbacks or TrainingRunCallbacks()
     blocks = load_block_frame(history_block_path)
@@ -301,10 +305,12 @@ def run_training(
             representation_contract=spec.representation_contract,
             prepared=prepared,
             training_config=spec.training,
+            checkpoint=checkpoint,
         ),
         callbacks=TrainingCallbacks(
             on_epoch_end=active_callbacks.on_epoch_end,
             on_early_stop=active_callbacks.on_early_stop,
+            on_checkpoint=active_callbacks.on_checkpoint,
         ),
     )
     return TrainingRunResult(

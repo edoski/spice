@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import torch
+
 from ..config.models import TrainingConfig
 from ..metrics import MetricSet
 from ..prediction import CompiledPredictionContract
@@ -36,14 +38,24 @@ class TrainingResult:
     runtime_plan: ModelingRuntimePlan
 
 
+@dataclass(frozen=True, slots=True)
+class TrainingCheckpoint:
+    completed_epoch: int
+    model_state: dict[str, torch.Tensor]
+    optimizer_state: dict[str, object]
+    policy_state: dict[str, object]
+
+
 EpochEndCallback = Callable[[TrainingEpochProgress], None]
 EarlyStopCallback = Callable[[int, int], None]
+CheckpointCallback = Callable[[TrainingCheckpoint], None]
 
 
 @dataclass(frozen=True, slots=True)
 class TrainingCallbacks:
     on_epoch_end: EpochEndCallback | None = None
     on_early_stop: EarlyStopCallback | None = None
+    on_checkpoint: CheckpointCallback | None = None
 
 
 @dataclass(slots=True)
@@ -54,6 +66,7 @@ class TrainingFitSpec:
     representation_contract: CompiledRepresentationContract
     prepared: PreparedTrainingDataset
     training_config: TrainingConfig
+    checkpoint: TrainingCheckpoint | None = None
 
 
 def _emit_early_stop(
@@ -98,6 +111,12 @@ def run_training_fit(
     runtime_plan = training_runtime_plan.runtime_plan
     prediction_training_state = training_runtime_plan.prediction_training_state
     optimizer = prepared_runtime.optimizer
+    start_epoch = 1
+    if spec.checkpoint is not None:
+        fit_model.load_state_dict(spec.checkpoint.model_state)
+        optimizer.load_state_dict(spec.checkpoint.optimizer_state)
+        policy.load_state_dict(spec.checkpoint.policy_state)
+        start_epoch = spec.checkpoint.completed_epoch + 1
     objective_scoring_plan = EvaluationScoringRuntimePlan(
         model=fit_model,
         prediction_contract=spec.prediction_contract,
@@ -108,7 +127,7 @@ def run_training_fit(
         runtime_plan=runtime_plan,
     )
     with modeling_backend_scope(runtime_plan):
-        for epoch in range(1, spec.training_config.max_epochs + 1):
+        for epoch in range(start_epoch, spec.training_config.max_epochs + 1):
             train_metrics = run_epoch(
                 fit_model,
                 loader=training_runtime_plan.train_batch_plan.source,
@@ -168,6 +187,18 @@ def run_training_fit(
             )
             if fit_decision.progress is not None and active_callbacks.on_epoch_end is not None:
                 active_callbacks.on_epoch_end(fit_decision.progress)
+            if active_callbacks.on_checkpoint is not None:
+                active_callbacks.on_checkpoint(
+                    TrainingCheckpoint(
+                        completed_epoch=epoch,
+                        model_state={
+                            key: value.detach().cpu().clone()
+                            for key, value in fit_model.state_dict().items()
+                        },
+                        optimizer_state=optimizer.state_dict(),
+                        policy_state=policy.state_dict(),
+                    )
+                )
 
             if fit_decision.should_stop:
                 _emit_early_stop(active_callbacks, fit_decision)

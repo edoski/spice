@@ -65,12 +65,14 @@ def prepare_root_stage(
     staged_root: Path | None = None,
     replace: bool,
     purpose: str = "staging",
+    reuse_existing: bool = False,
 ) -> Path:
     if destination_root.exists() and not replace:
         raise StateConflictError(f"Destination already exists: {destination_root}")
     resolved = staged_root or staged_root_path(destination_root, purpose=purpose)
     resolved.parent.mkdir(parents=True, exist_ok=True)
-    remove_path(resolved)
+    if resolved.exists() and not reuse_existing:
+        remove_path(resolved)
     resolved.mkdir(parents=True, exist_ok=True)
     return resolved
 
@@ -130,11 +132,16 @@ def staged_root(
     replace: bool = True,
     purpose: str = "staging",
     prune_stop_at: Path | None = None,
+    staged_root_path_override: Path | None = None,
+    reuse_existing: bool = False,
+    cleanup_on_failure: bool = True,
 ) -> Iterator[RootStage]:
     stage_path = prepare_root_stage(
         destination_root=destination_root,
+        staged_root=staged_root_path_override,
         replace=replace,
         purpose=purpose,
+        reuse_existing=reuse_existing,
     )
     stage = RootStage(
         storage_root=storage_root,
@@ -146,7 +153,7 @@ def staged_root(
     try:
         yield stage
     finally:
-        if not stage._promoted:
+        if not stage._promoted and cleanup_on_failure:
             cleanup_root_stage(stage_path, prune_stop_at=prune_stop_at)
 
 
