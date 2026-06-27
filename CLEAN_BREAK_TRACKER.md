@@ -28,13 +28,18 @@
 - A/B planned total-loss artifact: `art_956319e1b7a77b77dcfc`.
 - A/B training corpus/cutoff match baseline: `cor_2edb8f7b84a4edf95e2b`, cutoff `2025-12-08T00:00:11Z`.
 - A/B evaluation corpus/windows: `cor_7bea5a071afaf090c05a`, `ethereum_pectra_jun20_edge_case_recommended`.
+- A/B benchmark run dir: `outputs/benchmarks/runs/ethereum_pectra_jun20_edge_case_lstm_36s/20260627T204310Z`.
+- A/B submissions complete: 473 rows, git `d60a5fb546225dd5732fd6128153bb953083b470`.
+- A/B train job: `63334`, log `/scratch.hpc/edoardo.galli3/slurm/spice-train-63334.out`.
+- A/B total-loss evaluation jobs: `63335-63570`, each depends on `afterok:63334`.
+- A/B profit-baseline evaluation jobs: `63571-63807`.
+- SSH SLURM train request verified: `partition=l40`, `gres/gpu=1`, 8 CPUs, 48G memory.
 - `uv audit --locked --python-platform x86_64-unknown-linux-gnu` still fails on locked third-party advisories in `aiohttp`, `mako`, `torch`, and `urllib3`.
 
 ## In Progress
 
-- Commit and push the A/B benchmark config and tracker update.
-- Submit the 36s Ethereum LSTM `validation_total_loss` A/B training job.
-- Submit Pectra edge-case evaluation jobs for the current profit-objective baseline and the new total-loss artifact.
+- Wait for A/B jobs to complete.
+- Collect benchmark results when all evaluate jobs have completed.
 
 ## Still To Do
 
