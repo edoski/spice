@@ -61,7 +61,6 @@ def apply_tuned_parameters(
             corpus_id=config.corpus_id,
             problem=problem,
             model=model,
-            dataset_builder=config.dataset_builder,
             features=config.features,
             prediction=config.prediction,
             objective=config.objective,
@@ -82,7 +81,6 @@ def apply_tuned_parameters(
         study_id=config.study_id,
         problem=problem,
         model=model,
-        dataset_builder=config.dataset_builder,
         features=config.features,
         prediction=config.prediction,
         objective=config.objective,
@@ -131,7 +129,6 @@ def _with_manifest_study_name(config: TrainConfig, *, study_name: str) -> TrainC
         study_id=config.study_id,
         problem=config.problem,
         model=config.model,
-        dataset_builder=config.dataset_builder,
         features=config.features,
         prediction=config.prediction,
         objective=config.objective,
@@ -170,7 +167,7 @@ def _apply_training_params(
         seed=training.seed,
         deterministic=training.deterministic,
         log_every_n_steps=training.log_every_n_steps,
-        input_normalization=training.input_normalization,
+        sequence=training.sequence,
     )
 
 

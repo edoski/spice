@@ -1,16 +1,10 @@
-"""Dataset-builder seam."""
+"""Internal fixed-sequence dataset preparation."""
 
 from .base import (
-    BuilderRuntimeMetadata,
-    CompiledDatasetBuilderContract,
-    DatasetBuilderConfig,
-    FixedSequenceTemporalBuilderRuntimeMetadata,
-    FixedSequenceTemporalDatasetBuilderConfig,
-    coerce_builder_runtime_metadata,
-    coerce_dataset_builder_config,
-    compile_dataset_builder_contract,
-    fixed_sequence_temporal_runtime_metadata,
+    SequenceRuntimeMetadata,
+    sequence_runtime_metadata,
 )
+from .fixed_sequence_temporal import prepare_inference_dataset, prepare_training_dataset
 from .preparation import (
     ArtifactInferenceDatasetPreparationContext,
     ArtifactInferenceDatasetPreparationFacts,
@@ -29,23 +23,18 @@ from .preparation import (
 __all__ = [
     "ArtifactInferenceDatasetPreparationContext",
     "ArtifactInferenceDatasetPreparationFacts",
-    "BuilderRuntimeMetadata",
     "CompiledInferenceDatasetPreparationRequest",
-    "CompiledDatasetBuilderContract",
-    "DatasetBuilderConfig",
     "EvaluationCoverageWindow",
-    "FixedSequenceTemporalBuilderRuntimeMetadata",
-    "FixedSequenceTemporalDatasetBuilderConfig",
     "PreparedInferenceSampleSelection",
     "PreparedInferenceDataset",
     "PreparedTrainingSampleRoles",
     "PreparedTrainingSampleSelection",
     "PreparedTrainingDataset",
     "SampleTimestampWindow",
+    "SequenceRuntimeMetadata",
     "TrainingDatasetPreparationContext",
     "TrainingDatasetPreparationFacts",
-    "coerce_builder_runtime_metadata",
-    "coerce_dataset_builder_config",
-    "compile_dataset_builder_contract",
-    "fixed_sequence_temporal_runtime_metadata",
+    "prepare_inference_dataset",
+    "prepare_training_dataset",
+    "sequence_runtime_metadata",
 ]

@@ -12,18 +12,10 @@ from ..core.files import write_path_atomic
 from ..prediction import compile_prediction_contract
 from ..semantics import ArtifactSemantics
 from ..storage.artifact import load_artifact_manifest, write_artifact_manifest
-from .dataset_builders import (
-    CompiledDatasetBuilderContract,
-    PreparedTrainingDataset,
-    compile_dataset_builder_contract,
-)
+from .dataset_builders import PreparedTrainingDataset
 from .families.registry import build_model
 from .models import TemporalModel
 from .pipeline import TrainingSpec
-from .representations import (
-    CompiledRepresentationContract,
-    compile_representation_contract,
-)
 from .results import TrainingArtifactManifest
 
 
@@ -31,8 +23,6 @@ from .results import TrainingArtifactManifest
 class LoadedTrainingArtifact:
     manifest: TrainingArtifactManifest
     model: TemporalModel
-    representation_contract: CompiledRepresentationContract
-    dataset_builder_contract: CompiledDatasetBuilderContract
 
 
 def build_training_artifact_manifest(
@@ -42,7 +32,7 @@ def build_training_artifact_manifest(
 ) -> TrainingArtifactManifest:
     return TrainingArtifactManifest(
         artifact_id=spec.artifact_id,
-        dataset_builder=spec.dataset_builder,
+        sequence=spec.training.sequence,
         prediction=spec.prediction,
         objective=spec.objective,
         evaluator=spec.evaluator,
@@ -59,7 +49,7 @@ def build_training_artifact_manifest(
         split=spec.split,
         training=spec.training,
         scaler=prepared.scaler,
-        builder_runtime_metadata=prepared.builder_runtime_metadata,
+        sequence_runtime_metadata=prepared.sequence_runtime_metadata,
         temporal_capability=prepared.temporal_capability,
         semantics=ArtifactSemantics(
             problem=spec.problem_contract.semantics,
@@ -67,9 +57,6 @@ def build_training_artifact_manifest(
             objective=spec.objective_runtime.contract.semantics,
             feature=spec.feature_contract.semantics,
             prediction=spec.prediction_contract.semantics,
-            input_normalization=spec.input_normalization_contract.semantics,
-            representation=spec.representation_contract.semantics,
-            dataset_builder=spec.dataset_builder_contract.semantics,
             temporal_capability=prepared.temporal_capability.semantics,
         ),
     )
@@ -96,8 +83,6 @@ def load_training_artifact(artifact_dir: Path) -> LoadedTrainingArtifact:
     return LoadedTrainingArtifact(
         manifest=manifest,
         model=model,
-        representation_contract=compile_representation_contract(manifest.representation_id),
-        dataset_builder_contract=compile_dataset_builder_contract(manifest.dataset_builder),
     )
 
 

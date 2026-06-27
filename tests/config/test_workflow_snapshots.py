@@ -106,7 +106,7 @@ def test_workflow_snapshot_preserves_owner_config_types() -> None:
     )
 
     assert type(restored_train.model) is type(train.model)
-    assert type(restored_train.dataset_builder) is type(train.dataset_builder)
+    assert type(restored_train.training.sequence) is type(train.training.sequence)
     assert type(restored_train.problem.compiler) is type(train.problem.compiler)
     assert type(restored_train.objective) is type(train.objective)
     assert type(restored_tune.tuning_space.model) is type(tune.tuning_space.model)

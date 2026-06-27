@@ -55,7 +55,7 @@ def manifest_from_tune_config(
     )
     return StudyManifest(
         study_id=study.study_id,
-        dataset_builder=config.dataset_builder,
+        sequence=config.training.sequence,
         prediction=config.prediction,
         objective=config.objective,
         evaluator=config.evaluator,
@@ -85,9 +85,6 @@ def manifest_from_tune_config(
             objective=context.objective_runtime.contract.semantics,
             feature=context.feature_contract.semantics,
             prediction=context.prediction_contract.semantics,
-            input_normalization=context.input_normalization_contract.semantics,
-            representation=context.representation_contract.semantics,
-            dataset_builder=context.dataset_builder_contract.semantics,
         ),
     )
 

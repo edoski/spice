@@ -221,7 +221,6 @@ def _resolve_model_workflow_fields(
         _required_value(_selected(selection.problem, frame.problem), "problem")
     )
     model = typed.load(typed.MODEL, _required(_selected(selection.model, frame.model), "model"))
-    dataset_builder = typed.load(typed.DATASET_BUILDER, frame.dataset_builder)
     features = typed.load(
         typed.FEATURES,
         _required(_selected(selection.features, frame.features), "features"),
@@ -262,7 +261,6 @@ def _resolve_model_workflow_fields(
         storage=storage,
         problem=problem,
         model=model,
-        dataset_builder=dataset_builder,
         features=features,
         prediction=prediction,
         objective=objective,
@@ -278,7 +276,10 @@ def _resolve_model_workflow_fields(
 
 def _resolve_acquire_config(selection: AcquireWorkflowSelection) -> AcquireConfig:
     frame = _load_surface(selection)
-    corpus = typed.load(typed.CORPUS, _required(_selected(selection.corpus, frame.corpus), "corpus"))
+    corpus = typed.load(
+        typed.CORPUS,
+        _required(_selected(selection.corpus, frame.corpus), "corpus"),
+    )
     chain = typed.load(
         typed.CHAIN,
         _required_value(_selected(selection.chain, frame.chain), "chain"),

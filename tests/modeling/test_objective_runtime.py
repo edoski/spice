@@ -86,7 +86,6 @@ def test_evaluation_objective_runtime_scores_with_same_runtime_facts(
     scoring_plan = EvaluationScoringRuntimePlan(
         model=cast(Any, SimpleNamespace(name="model")),
         prediction_contract=cast(Any, SimpleNamespace(name="prediction")),
-        representation_contract=cast(Any, SimpleNamespace(name="representation")),
         execution_policy=cast(Any, SimpleNamespace(name="policy")),
         store=cast(Any, SimpleNamespace(name="store")),
         action_space=cast(Any, SimpleNamespace(name="action_space")),

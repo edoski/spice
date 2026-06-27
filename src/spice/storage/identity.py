@@ -9,6 +9,7 @@ from ..config.models import (
     FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
+    SequenceConfig,
     SplitConfig,
     StudyConfig,
     TrainConfig,
@@ -20,7 +21,6 @@ from ..config.models import (
 )
 from ..core.errors import ConfigResolutionError
 from ..evaluation import EvaluatorConfig
-from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import ModelConfig
 from ..objectives import ObjectiveConfig
 from .study_models import StudyManifest
@@ -33,7 +33,6 @@ class IdentityModel(BaseModel):
 class StudyStorageIdentity(IdentityModel):
     corpus_id: str
     training_cutoff_timestamp: int | None
-    dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     features: FeaturesConfig
     model: SerializeAsAny[ModelConfig]
     problem: ProblemSpec
@@ -50,7 +49,6 @@ class StudyStorageIdentity(IdentityModel):
 class ArtifactStorageIdentity(IdentityModel):
     corpus_id: str
     training_cutoff_timestamp: int | None
-    dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     features: FeaturesConfig
     model: SerializeAsAny[ModelConfig]
     problem: ProblemSpec
@@ -71,7 +69,7 @@ class StudyDefinitionIdentity(IdentityModel):
     corpus_id: str
     corpus_name: str
     training_cutoff_timestamp: int | None
-    dataset_builder: SerializeAsAny[DatasetBuilderConfig]
+    sequence: SequenceConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
     evaluator: SerializeAsAny[EvaluatorConfig] | None
@@ -103,7 +101,6 @@ def study_storage_identity(
     *,
     corpus_id: str,
     training_cutoff_timestamp: int | None,
-    dataset_builder: DatasetBuilderConfig,
     features: FeaturesConfig,
     model: ModelConfig,
     problem: ProblemSpec,
@@ -119,7 +116,6 @@ def study_storage_identity(
     return StudyStorageIdentity(
         corpus_id=corpus_id,
         training_cutoff_timestamp=training_cutoff_timestamp,
-        dataset_builder=dataset_builder,
         features=features,
         model=model,
         problem=problem,
@@ -143,7 +139,6 @@ def study_storage_identity_from_config(
     return study_storage_identity(
         corpus_id=corpus_id,
         training_cutoff_timestamp=config.training_cutoff_timestamp,
-        dataset_builder=config.dataset_builder,
         features=config.features,
         model=config.model,
         problem=config.problem,
@@ -169,7 +164,6 @@ def artifact_storage_identity_from_config(
     return ArtifactStorageIdentity(
         corpus_id=corpus_id,
         training_cutoff_timestamp=config.training_cutoff_timestamp,
-        dataset_builder=config.dataset_builder,
         features=config.features,
         model=config.model,
         problem=config.problem,
@@ -192,7 +186,7 @@ def study_definition_identity(
     corpus_id: str,
     corpus_name: str,
     training_cutoff_timestamp: int | None,
-    dataset_builder: DatasetBuilderConfig,
+    sequence: SequenceConfig,
     prediction: PredictionConfig,
     objective: ObjectiveConfig,
     evaluator: EvaluatorConfig | None,
@@ -211,7 +205,7 @@ def study_definition_identity(
         corpus_id=corpus_id,
         corpus_name=corpus_name,
         training_cutoff_timestamp=training_cutoff_timestamp,
-        dataset_builder=dataset_builder,
+        sequence=sequence,
         prediction=prediction,
         objective=objective,
         evaluator=evaluator,
@@ -233,7 +227,7 @@ def study_definition_identity_from_manifest(manifest: StudyManifest) -> StudyDef
         corpus_id=manifest.corpus_id,
         corpus_name=manifest.corpus_name,
         training_cutoff_timestamp=manifest.training_source.training_cutoff_timestamp,
-        dataset_builder=manifest.dataset_builder,
+        sequence=manifest.sequence,
         prediction=manifest.prediction,
         objective=manifest.objective,
         evaluator=manifest.evaluator,
@@ -266,7 +260,7 @@ def study_definition_identity_from_tuned_config(
         corpus_id=corpus_id,
         corpus_name=corpus_name,
         training_cutoff_timestamp=config.training_cutoff_timestamp,
-        dataset_builder=config.dataset_builder,
+        sequence=config.training.sequence,
         prediction=config.prediction,
         objective=config.objective,
         evaluator=config.evaluator,

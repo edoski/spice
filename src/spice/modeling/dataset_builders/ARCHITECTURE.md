@@ -1,18 +1,18 @@
-# Dataset Builders Architecture
+# Sequence Preparation Architecture
 
 ## Purpose
 
-`modeling.dataset_builders` turns canonical block frames plus domain facts and compiled/trusted context into prepared datasets for training and inference. This is the Temporal Dataset Preparation Interface.
+`modeling.dataset_builders` prepares canonical block frames for training and
+inference. The name remains historical, but the public builder abstraction is gone:
+there is one internal fixed-sequence path.
 
-Tensorization matters because the same temporal problem can be represented as independent rows, fixed-sequence sequences, or another model input shape without changing feature semantics or evaluator behavior.
-
-## Generic Flow
+## Flow
 
 ```text
 blocks
   |
   v
-builder-local frame preparation
+sort and deduplicate by block
   |
   v
 feature_contract.build_table()
@@ -22,7 +22,10 @@ problem_contract.build_capability_store()  train
 problem_contract.build_delay_store()       evaluate
   |
   v
-input normalization fit/transform
+derive fixed sequence length from training cadence
+  |
+  v
+fit row-standard scaler on train rows
   |
   v
 execution policy prepares selected sample facts
@@ -31,67 +34,17 @@ execution policy prepares selected sample facts
 PreparedTrainingDataset / PreparedInferenceDataset
 ```
 
-Frame preparation is intentionally local to each builder. A generic helper with flags can hide policy differences such as sort key, deduplication, or whether an empty evaluation frame is allowed. Those choices affect examples and therefore model behavior.
+Training derives one `SequenceRuntimeMetadata` value from training samples:
+sequence length, median cadence, and configured min/max bounds. The artifact
+manifest persists that metadata so inference reconstructs the same context length.
 
-## Registry Dispatch
-
-```text
-dataset builder payload
-  -> dataset_builder.id
-  -> local spec config_type
-  -> concrete DatasetBuilderConfig
-
-compile_dataset_builder_contract(config)
-  -> local spec
-  -> require_spec_config(config, spec.config_type)
-  -> concrete compile_dataset_builder(config)
-```
-
-The local table owns dataset-builder ids, concrete config types, runtime metadata types, and compile hooks. `core.specs` supplies only the mechanical owner-spec helper used for payload coercion and compile-time type assertions.
-
-The registry does not serialize and revalidate a concrete config during compile. Coercion validates. Compile dispatch asserts the invariant.
-
-Config-facing dataset-builder and builder-runtime-metadata envelope failures use `ConfigResolutionError`. Already typed configs are returned unchanged.
-
-## Runtime Metadata
-
-Runtime metadata exists because some builders learn non-model assumptions during training. Examples include sequence length and calibrated timing assumptions.
-
-```text
-training prepare
-  -> builder runtime metadata
-  -> Temporal Capability
-  -> artifact manifest
-  -> Artifact Inference Context validation
-  -> evaluation prepare
-  -> reconstruct same assumptions
-```
-
-Artifact Inference Context validates artifact and corpus compatibility, then passes observed evaluation coverage plus compiled context into the dataset-builder contract. The contract coerces builder runtime metadata, passes the artifact Temporal Capability through, and converts inclusive coverage facts into a half-open sample timestamp window before the concrete builder prepares inference data.
-
-Builder runtime metadata is builder-local. Compiler runtime metadata is not hidden inside it; compiler metadata travels with Temporal Capability so artifact action width and compiler assumptions stay one typed value.
-
-## Preparation Types
-
-`preparation.py` contains the public facts/context records, split-bound selected-sample records, and prepared corpus results. `base.py` contains registry/config dispatch and `CompiledDatasetBuilderContract`. Concrete builders depend on the preparation Interface instead of importing orchestration types from `pipeline.py`.
-
-Prepared training datasets own split-bound selected samples: train, validation, and test each carry prepared temporal facts from the execution policy. Prepared inference datasets own one inference sample selection carrying the prepared Action Space. Runtime paths consume those facts; they do not rebuild split alignment from raw arrays.
+Prepared training datasets own train, validation, and test selected samples. Each
+role carries prepared temporal facts from the execution policy. Prepared inference
+datasets own one selected action space. Runtime paths consume those prepared facts;
+they do not rebuild split alignment from raw arrays.
 
 ## Invariants
 
-Builders must preserve:
-
-```text
-sample ordering
-split assignment
-candidate-window alignment
-feature prerequisite validation
-training/inference scaler ownership
-runtime metadata round-trip
-```
-
-Sampling and split behavior are builder-owned invariants.
-
-## Extension Points
-
-Add a builder when sample-selection, split, scaler, or builder-runtime metadata policy changes. Add a Representation Adapter when prepared problem/action facts must become a distinct model-input batch contract. Keep builders behind `DatasetBuilderConfig`, `CompiledDatasetBuilderContract`, preparation facts/context records, and a local spec entry. Avoid workflow branches on builder ids.
+Sequence preparation must preserve sample ordering, split assignment,
+candidate-window alignment, feature-prerequisite validation, training-only scaler
+fitting, and runtime metadata round-trip.

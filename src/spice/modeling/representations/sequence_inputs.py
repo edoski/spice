@@ -1,22 +1,19 @@
-"""sequence_inputs Representation Adapter."""
+"""Fixed sequence model-input tensorization."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, NamedTuple
+from typing import NamedTuple
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
 
 from ...prediction import ModelInputBatch
-from ...temporal.execution_policy import CompiledExecutionPolicyContract, PreparedActionSpace
+from ...temporal.execution_policy import PreparedActionSpace
 from ...temporal.problem_store import CompiledProblemStore
-from .base import IntVector, PreparedRepresentation, RepresentationRuntimeContext
 
-_MAX_AUTOMATIC_MATERIALIZATION_BYTES = 8 * 1024**3
-_CUDA_DEVICE_MATERIALIZATION_STAGING_BYTES = 256 * 1024**2
-SEQUENCE_INPUT_REPRESENTATION_ID = "sequence_inputs"
+IntVector = NDArray[np.int64]
 
 
 class SequenceInputBatch(NamedTuple):
@@ -116,7 +113,7 @@ class _SequenceInputLayout:
 
 
 @dataclass(slots=True)
-class _StreamingSequenceInputRepresentation:
+class PreparedSequenceInputBatches:
     store: CompiledProblemStore
     action_space: PreparedActionSpace
     layout: _SequenceInputLayout
@@ -129,18 +126,6 @@ class _StreamingSequenceInputRepresentation:
     def batch_signatures(self) -> IntVector:
         return self.layout.context_lengths
 
-    @property
-    def estimated_storage_bytes(self) -> int:
-        return _dense_sequence_input_storage_bytes(
-            self.layout,
-            n_features=self.store.n_features,
-            max_candidate_slots=self.store.max_candidate_slots,
-        )
-
-    @property
-    def host_storage_mode(self) -> Literal["host_streaming"]:
-        return "host_streaming"
-
     def build_batch(self, sample_positions: torch.Tensor) -> ModelInputBatch:
         positions = sample_positions.detach().cpu().numpy().astype(np.int64, copy=False)
         batch_sample_indices = self.layout.sample_indices[positions]
@@ -152,102 +137,13 @@ class _StreamingSequenceInputRepresentation:
             max_context_length=self.layout.max_context_length,
         )
 
-    def to_device_storage(
-        self,
-        device: torch.device,
-    ) -> PreparedRepresentation[ModelInputBatch]:
-        _require_cuda_storage_device(device)
-        return _materialize_sequence_input_to_device(
-            self.store,
-            self.action_space,
-            self.layout,
-            device=device,
-        )
-
-
-@dataclass(slots=True)
-class _MaterializedSequenceInputRepresentation:
-    inputs: torch.Tensor
-    input_mask: torch.Tensor
-    action_mask: torch.Tensor
-    layout: _SequenceInputLayout
-
-    @property
-    def sample_count(self) -> int:
-        return int(self.layout.sample_indices.shape[0])
-
-    @property
-    def batch_signatures(self) -> IntVector:
-        return self.layout.context_lengths
-
-    @property
-    def estimated_storage_bytes(self) -> int:
-        return (
-            self.inputs.element_size() * self.inputs.numel()
-            + self.input_mask.element_size() * self.input_mask.numel()
-            + self.action_mask.element_size() * self.action_mask.numel()
-        )
-
-    @property
-    def host_storage_mode(self) -> Literal["host_materialized"]:
-        return "host_materialized"
-
-    def build_batch(self, sample_positions: torch.Tensor) -> ModelInputBatch:
-        positions = sample_positions.detach().cpu().to(dtype=torch.int64, copy=False)
-        index = positions.to(device=self.inputs.device)
-        return SequenceInputBatch(
-            sample_positions=positions,
-            inputs=self.inputs.index_select(0, index),
-            input_mask=self.input_mask.index_select(0, index),
-            action_mask=self.action_mask.index_select(0, index),
-        )
-
-    def to_device_storage(
-        self,
-        device: torch.device,
-    ) -> PreparedRepresentation[ModelInputBatch]:
-        if (
-            self.inputs.device == device
-            and self.input_mask.device == device
-            and self.action_mask.device == device
-        ):
-            return self
-        _require_cuda_storage_device(device)
-        return _MaterializedSequenceInputRepresentation(
-            inputs=self.inputs.to(device, non_blocking=True),
-            input_mask=self.input_mask.to(device, non_blocking=True),
-            action_mask=self.action_mask.to(device, non_blocking=True),
-            layout=self.layout,
-        )
-
-
 def prepare_sequence_input(
     store: CompiledProblemStore,
     *,
-    execution_policy: CompiledExecutionPolicyContract,
     action_space: PreparedActionSpace,
-    runtime_context: RepresentationRuntimeContext,
-) -> PreparedRepresentation[ModelInputBatch]:
-    del execution_policy
-    if runtime_context.batch_size <= 0:
-        raise ValueError("runtime_context.batch_size must be positive")
+) -> PreparedSequenceInputBatches:
     layout = _sequence_input_layout(store, action_space)
-    dense_storage_bytes = _dense_sequence_input_storage_bytes(
-        layout,
-        n_features=store.n_features,
-        max_candidate_slots=store.max_candidate_slots,
-    )
-    materialization_budget = min(
-        _MAX_AUTOMATIC_MATERIALIZATION_BYTES,
-        max(0, runtime_context.available_host_memory_bytes // 5),
-    )
-    if dense_storage_bytes <= materialization_budget:
-        return _materialize_sequence_input(
-            store,
-            action_space,
-            layout,
-        )
-    return _StreamingSequenceInputRepresentation(
+    return PreparedSequenceInputBatches(
         store=store,
         action_space=action_space,
         layout=layout,
@@ -260,7 +156,7 @@ def _sequence_input_layout(
     return _sequence_input_layout_for_samples(
         store,
         action_space.sample_indices,
-        empty_error="Prepared representations require at least one sample",
+        empty_error="prepared sequence inputs require at least one sample",
     )
 
 
@@ -299,131 +195,6 @@ def _validated_action_mask(
     if resolved.shape != (sample_count, max_candidate_slots):
         raise ValueError("action_mask must match sample count and action width")
     return resolved
-
-
-def _dense_sequence_input_storage_bytes(
-    layout: _SequenceInputLayout,
-    *,
-    n_features: int,
-    max_candidate_slots: int,
-) -> int:
-    sample_count = int(layout.sample_indices.shape[0])
-    inputs_bytes = (
-        sample_count * layout.max_context_length * n_features * np.dtype(np.float32).itemsize
-    )
-    input_mask_bytes = sample_count * layout.max_context_length * np.dtype(np.bool_).itemsize
-    action_mask_bytes = sample_count * max_candidate_slots * np.dtype(np.bool_).itemsize
-    return inputs_bytes + input_mask_bytes + action_mask_bytes
-
-
-def _materialize_sequence_input(
-    store: CompiledProblemStore,
-    action_space: PreparedActionSpace,
-    layout: _SequenceInputLayout,
-) -> _MaterializedSequenceInputRepresentation:
-    sample_count = int(layout.sample_indices.shape[0])
-    inputs = np.zeros(
-        (sample_count, layout.max_context_length, store.n_features),
-        dtype=np.float32,
-    )
-    input_mask = np.zeros((sample_count, layout.max_context_length), dtype=np.bool_)
-    action_mask = np.zeros((sample_count, store.max_candidate_slots), dtype=np.bool_)
-    _fill_dense_sequence_input_rows(
-        store,
-        source_action_mask=action_space.action_mask,
-        layout=layout,
-        row_start=0,
-        row_stop=sample_count,
-        inputs=inputs,
-        input_mask=input_mask,
-        output_action_mask=action_mask,
-    )
-
-    return _MaterializedSequenceInputRepresentation(
-        inputs=torch.from_numpy(inputs),
-        input_mask=torch.from_numpy(input_mask),
-        action_mask=torch.from_numpy(action_mask),
-        layout=layout,
-    )
-
-
-def _materialize_sequence_input_to_device(
-    store: CompiledProblemStore,
-    action_space: PreparedActionSpace,
-    layout: _SequenceInputLayout,
-    *,
-    device: torch.device,
-) -> _MaterializedSequenceInputRepresentation:
-    _require_cuda_storage_device(device)
-    sample_count = int(layout.sample_indices.shape[0])
-    inputs = torch.zeros(
-        (sample_count, layout.max_context_length, store.n_features),
-        dtype=torch.float32,
-        device=device,
-    )
-    input_mask = torch.zeros(
-        (sample_count, layout.max_context_length),
-        dtype=torch.bool,
-        device=device,
-    )
-    action_mask = torch.zeros(
-        (sample_count, store.max_candidate_slots),
-        dtype=torch.bool,
-        device=device,
-    )
-    row_bytes = (
-        layout.max_context_length * store.n_features * np.dtype(np.float32).itemsize
-        + layout.max_context_length * np.dtype(np.bool_).itemsize
-        + store.max_candidate_slots * np.dtype(np.bool_).itemsize
-    )
-    chunk_rows = max(
-        1,
-        min(
-            sample_count,
-            _CUDA_DEVICE_MATERIALIZATION_STAGING_BYTES // max(1, row_bytes),
-        ),
-    )
-    for row_start in range(0, sample_count, chunk_rows):
-        row_stop = min(sample_count, row_start + chunk_rows)
-        chunk_inputs = np.zeros(
-            (row_stop - row_start, layout.max_context_length, store.n_features),
-            dtype=np.float32,
-        )
-        chunk_input_mask = np.zeros(
-            (row_stop - row_start, layout.max_context_length),
-            dtype=np.bool_,
-        )
-        chunk_action_mask = np.zeros(
-            (row_stop - row_start, store.max_candidate_slots),
-            dtype=np.bool_,
-        )
-        _fill_dense_sequence_input_rows(
-            store,
-            source_action_mask=action_space.action_mask,
-            layout=layout,
-            row_start=row_start,
-            row_stop=row_stop,
-            inputs=chunk_inputs,
-            input_mask=chunk_input_mask,
-            output_action_mask=chunk_action_mask,
-        )
-        chunk_inputs_tensor = torch.from_numpy(chunk_inputs).pin_memory()
-        chunk_mask_tensor = torch.from_numpy(chunk_input_mask).pin_memory()
-        chunk_action_mask_tensor = torch.from_numpy(chunk_action_mask).pin_memory()
-        inputs[row_start:row_stop].copy_(chunk_inputs_tensor, non_blocking=True)
-        input_mask[row_start:row_stop].copy_(chunk_mask_tensor, non_blocking=True)
-        action_mask[row_start:row_stop].copy_(chunk_action_mask_tensor, non_blocking=True)
-    return _MaterializedSequenceInputRepresentation(
-        inputs=inputs,
-        input_mask=input_mask,
-        action_mask=action_mask,
-        layout=layout,
-    )
-
-
-def _require_cuda_storage_device(device: torch.device) -> None:
-    if device.type != "cuda":
-        raise ValueError("prepared representation storage migration requires CUDA")
 
 
 def _fill_dense_sequence_input_rows(

@@ -21,7 +21,6 @@ from ..core.specs import owner_payload, validate_owner_config
 from ..core.validation import validate_path_segment
 from ..evaluation import EvaluatorConfig
 from ..features import validate_feature_selection
-from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import (
     ModelConfig,
     ModelTuningSpaceConfig,
@@ -31,7 +30,6 @@ from ..objectives import ObjectiveConfig
 from ..prediction import validate_prediction_family_id
 from ..temporal.compilers import ProblemCompilerConfig
 from ..temporal.execution_policy import ExecutionPolicyConfig
-from ..temporal.input_normalization import InputNormalizationConfig
 
 
 class WorkflowTask(StrEnum):
@@ -221,6 +219,17 @@ class EarlyStoppingConfig(_ConfigModel):
     min_delta: float = Field(ge=0.0)
 
 
+class SequenceConfig(_ConfigModel):
+    min_length: int = Field(gt=0)
+    max_length: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> Self:
+        if self.max_length < self.min_length:
+            raise ValueError("training.sequence.max_length must be >= min_length")
+        return self
+
+
 class TrainingConfig(_ConfigModel):
     learning_rate: float = Field(gt=0.0)
     weight_decay: float = Field(ge=0.0)
@@ -231,27 +240,7 @@ class TrainingConfig(_ConfigModel):
     seed: int = Field(ge=0)
     deterministic: bool
     log_every_n_steps: int = Field(gt=0)
-    input_normalization: SerializeAsAny[InputNormalizationConfig] = Field(
-        default_factory=lambda: _default_input_normalization_config()
-    )
-
-    @field_validator("input_normalization", mode="before")
-    @classmethod
-    def validate_input_normalization(
-        cls,
-        value: object,
-    ) -> InputNormalizationConfig:
-        from ..temporal.input_normalization import coerce_input_normalization_config
-
-        if value is None:
-            return _default_input_normalization_config()
-        return coerce_input_normalization_config(value)
-
-
-def _default_input_normalization_config() -> InputNormalizationConfig:
-    from ..temporal.input_normalization import coerce_input_normalization_config
-
-    return coerce_input_normalization_config({"id": "row_standard"})
+    sequence: SequenceConfig
 
 
 class AcquisitionRpcConfig(_ConfigModel):
@@ -563,7 +552,6 @@ class AcquireConfig(WorkflowConfig):
 class ModelWorkflowConfig(WorkflowConfig):
     problem: ProblemSpec
     model: SerializeAsAny[ModelConfig]
-    dataset_builder: SerializeAsAny[DatasetBuilderConfig]
     features: FeaturesConfig
     prediction: PredictionConfig
     study: StudyConfig = Field(default_factory=StudyConfig)

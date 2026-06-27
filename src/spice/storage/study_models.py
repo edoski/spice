@@ -13,6 +13,7 @@ from ..config.models import (
     FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
+    SequenceConfig,
     SplitConfig,
     TrainingConfig,
     TunedParameterSet,
@@ -21,7 +22,6 @@ from ..config.models import (
 )
 from ..core.errors import ConfigResolutionError, StateLayoutError
 from ..evaluation import EvaluatorConfig
-from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import ModelConfig
 from ..modeling.results import TrainingSourceProvenance
 from ..modeling.tuned_config import coerce_tuned_parameter_set
@@ -43,7 +43,7 @@ class StudyTrialState(StrEnum):
 @dataclass(frozen=True, slots=True)
 class StudyManifest:
     study_id: str
-    dataset_builder: DatasetBuilderConfig
+    sequence: SequenceConfig
     prediction: PredictionConfig
     study_name: str
     chain_name: str
@@ -74,10 +74,6 @@ class StudyManifest:
         return self.semantics.feature.features_id
 
     @property
-    def dataset_builder_id(self) -> str:
-        return self.semantics.dataset_builder.dataset_builder_id
-
-    @property
     def execution_policy_id(self) -> str:
         return self.semantics.execution_policy.execution_policy_id
 
@@ -92,14 +88,6 @@ class StudyManifest:
     @property
     def model_id(self) -> str:
         return self.model.id
-
-    @property
-    def representation_id(self) -> str:
-        return self.semantics.representation.representation_id
-
-    @property
-    def input_normalization_id(self) -> str:
-        return self.semantics.input_normalization.input_normalization_id
 
 
 @dataclass(frozen=True, slots=True)

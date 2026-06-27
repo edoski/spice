@@ -28,7 +28,6 @@ class SurfaceFrame(ConfigModel):
     chain: str
     corpus: str
     problem: str | ProblemSpec
-    dataset_builder: str
     features: str | None = None
     prediction: str
     objective: str | None = None

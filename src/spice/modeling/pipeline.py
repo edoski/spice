@@ -27,32 +27,27 @@ from ..features import CompiledFeatureContract, compile_feature_contract
 from ..objectives import ObjectiveConfig
 from ..prediction import CompiledPredictionContract, compile_prediction_contract
 from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
-from ..temporal.input_normalization import (
-    CompiledInputNormalizationContract,
-    compile_input_normalization_contract,
-)
 from .dataset_builders import (
-    CompiledDatasetBuilderContract,
-    DatasetBuilderConfig,
     PreparedTrainingDataset,
     TrainingDatasetPreparationContext,
     TrainingDatasetPreparationFacts,
-    compile_dataset_builder_contract,
+    prepare_training_dataset,
 )
 from .families.base import ModelConfig
 from .families.registry import build_model
 from .objective_runtime import CompiledObjectiveRuntime, compile_objective_runtime
-from .representations import CompiledRepresentationContract, compile_representation_contract
 from .results import TrainingSourceProvenance
 from .training_run import TrainingRunResult
 from .training_runner import (
+    TrainingFitSpec,
+    run_training_fit,
+)
+from .training_runner_types import (
     CheckpointCallback,
     EarlyStopCallback,
     EpochEndCallback,
-    TrainingCheckpoint,
     TrainingCallbacks,
-    TrainingFitSpec,
-    run_training_fit,
+    TrainingCheckpoint,
 )
 
 if TYPE_CHECKING:
@@ -68,8 +63,6 @@ class TrainingSpec:
     training_cutoff_timestamp: int | None
     artifact_id: str
     problem: ProblemSpec
-    dataset_builder: DatasetBuilderConfig
-    dataset_builder_contract: CompiledDatasetBuilderContract
     feature_contract: CompiledFeatureContract
     problem_contract: CompiledProblemContract
     features: FeaturesConfig
@@ -78,8 +71,6 @@ class TrainingSpec:
     evaluator: EvaluatorConfig | None
     prediction_contract: CompiledPredictionContract
     objective_runtime: CompiledObjectiveRuntime
-    input_normalization_contract: CompiledInputNormalizationContract
-    representation_contract: CompiledRepresentationContract
     model: ModelConfig
     split: SplitConfig
     training: TrainingConfig
@@ -104,9 +95,6 @@ class CompiledTrainingContext:
     prediction_contract: CompiledPredictionContract
     objective_runtime: CompiledObjectiveRuntime
     evaluator_contract: CompiledEvaluatorContract | None
-    dataset_builder_contract: CompiledDatasetBuilderContract
-    input_normalization_contract: CompiledInputNormalizationContract
-    representation_contract: CompiledRepresentationContract
 
 
 def build_artifact_training_spec(
@@ -178,8 +166,6 @@ def _build_training_spec(
         training_cutoff_timestamp=config.training_cutoff_timestamp,
         artifact_id=artifact_id,
         problem=config.problem,
-        dataset_builder=config.dataset_builder,
-        dataset_builder_contract=context.dataset_builder_contract,
         feature_contract=context.feature_contract,
         problem_contract=context.problem_contract,
         features=config.features,
@@ -188,8 +174,6 @@ def _build_training_spec(
         evaluator=config.evaluator,
         prediction_contract=context.prediction_contract,
         objective_runtime=context.objective_runtime,
-        input_normalization_contract=context.input_normalization_contract,
-        representation_contract=context.representation_contract,
         model=config.model,
         variant=variant,
         study=study if variant is ArtifactVariant.TUNED else None,
@@ -259,11 +243,6 @@ def compile_training_context(
         prediction_contract=prediction_contract,
         objective_runtime=objective_runtime,
         evaluator_contract=evaluator_contract,
-        dataset_builder_contract=compile_dataset_builder_contract(config.dataset_builder),
-        input_normalization_contract=compile_input_normalization_contract(
-            config.training.input_normalization
-        ),
-        representation_contract=compile_representation_contract(),
     )
 
 
@@ -276,7 +255,7 @@ def run_training(
 ) -> TrainingRunResult:
     active_callbacks = callbacks or TrainingRunCallbacks()
     blocks = load_block_frame(history_block_path)
-    prepared = spec.dataset_builder_contract.prepare_training_dataset(
+    prepared = prepare_training_dataset(
         blocks,
         facts=TrainingDatasetPreparationFacts(
             split=spec.split,
@@ -285,8 +264,8 @@ def run_training(
         context=TrainingDatasetPreparationContext(
             feature_contract=spec.feature_contract,
             problem_contract=spec.problem_contract,
-            input_normalization_contract=spec.input_normalization_contract,
         ),
+        sequence=spec.training.sequence,
     )
     if active_callbacks.on_prepare_complete is not None:
         active_callbacks.on_prepare_complete(prepared)
@@ -302,7 +281,6 @@ def run_training(
             model=model,
             prediction_contract=spec.prediction_contract,
             objective_runtime=spec.objective_runtime,
-            representation_contract=spec.representation_contract,
             prepared=prepared,
             training_config=spec.training,
             checkpoint=checkpoint,

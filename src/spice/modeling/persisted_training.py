@@ -26,7 +26,7 @@ from .results import (
 )
 from .scoring import PredictionMetricScoringRuntimePlan, score_prediction_metrics
 from .training_run import TrainingRunResult
-from .training_runner import TrainingCheckpoint
+from .training_runner_types import TrainingCheckpoint
 
 
 @dataclass(slots=True)
@@ -101,7 +101,6 @@ def _evaluate_split_metrics(
         PredictionMetricScoringRuntimePlan(
             model=model,
             prediction_contract=spec.prediction_contract,
-            representation_contract=spec.representation_contract,
             execution_policy=prepared.execution_policy,
             store=prepared.store,
             temporal_facts=prepared.samples.validation.temporal_facts,
@@ -113,7 +112,6 @@ def _evaluate_split_metrics(
         PredictionMetricScoringRuntimePlan(
             model=model,
             prediction_contract=spec.prediction_contract,
-            representation_contract=spec.representation_contract,
             execution_policy=prepared.execution_policy,
             store=prepared.store,
             temporal_facts=prepared.samples.test.temporal_facts,

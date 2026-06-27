@@ -11,7 +11,6 @@ chain: ethereum
 corpus: icdcs_2026
 features: core_fee_dynamics
 problem: current_row_nominal
-dataset_builder: fixed_sequence_temporal
 model: lstm
 prediction: icdcs_2026
 objective: profit_poisson_replay
@@ -32,7 +31,6 @@ The surface YAML uses targeted nesting where the nesting matches ownership:
 | `corpus` | Acquired block-range spec. |
 | `features` | Feature catalog/output spec. |
 | `problem` | Temporal problem spec. |
-| `dataset_builder` | Training/evaluation dataset builder. |
 | `model` | Model family config. |
 | `prediction` | Prediction head/decoder semantics. |
 | `objective` | Training/tuning objective. |
@@ -63,9 +61,8 @@ Problems:
 - `current_row_nominal`: `observed_time_window` with `slot_spacing.id: nominal`.
 - `current_row_recent_median`: same compiler with `slot_spacing.id: recent_median`.
 
-Dataset builders:
-
-- `fixed_sequence_temporal`: derives and persists one fixed context length from training data.
+Training uses fixed internal sequence preparation. `training.sequence.min_length` and
+`training.sequence.max_length` bound the derived context length.
 
 Evaluators: `poisson_replay`. The default surface uses `poisson_replay`.
 

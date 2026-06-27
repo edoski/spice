@@ -1,23 +1,17 @@
-"""Training runtime planning and CUDA memory probing."""
+"""Training runtime planning."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
-
-import torch
 
 from ..config.models import TrainingConfig
 from ..prediction import CompiledPredictionContract
 from ..prediction.contracts import PredictionBatch
 from ..temporal.execution_policy import CompiledExecutionPolicyContract
 from ..temporal.problem_store import CompiledProblemStore
-from ._epoch_execution import execute_training_batch
-from ._runtime_probe import build_measured_modeling_runtime_plan, measure_device_resident_budget
 from .batch_plan import BatchPlan, build_prediction_batch_plan
 from .dataset_builders import PreparedTrainingSampleSelection
 from .models import TemporalModel
-from .representations import CompiledRepresentationContract
 from .runtime_planning import (
     ModelingRuntimePlan,
     build_training_modeling_runtime_plan,
@@ -37,75 +31,38 @@ class TrainingRuntimePlan:
 @dataclass(frozen=True, slots=True)
 class PreparedTrainingRuntime:
     fit_model: TemporalModel
-    optimizer: torch.optim.Optimizer
     batch_plan: TrainingRuntimePlan
-
-
-def _unwrap_compiled_model(model: TemporalModel) -> TemporalModel:
-    return cast(TemporalModel, getattr(model, "_orig_mod", model))
-
-
-def _clone_cpu_state(model: TemporalModel) -> dict[str, torch.Tensor]:
-    return {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
-
 
 def plan_training_runtime(
     model: TemporalModel,
     *,
     prediction_contract: CompiledPredictionContract,
     execution_policy: CompiledExecutionPolicyContract,
-    representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
     train_samples: PreparedTrainingSampleSelection,
     validation_samples: PreparedTrainingSampleSelection,
     runtime_plan: ModelingRuntimePlan,
-    training_config: TrainingConfig,
 ) -> TrainingRuntimePlan:
+    del model, execution_policy
     prediction_training_state = prediction_contract.fit_training_state(
         temporal_facts=train_samples.temporal_facts,
-    )
-    planned_runtime_plan = build_measured_modeling_runtime_plan(
-        runtime_plan,
-        build_warmup_plan=lambda warmup_runtime_plan: build_prediction_batch_plan(
-            store,
-            temporal_facts=train_samples.temporal_facts,
-            representation_contract=representation_contract,
-            prediction_contract=prediction_contract,
-            execution_policy=execution_policy,
-            runtime_plan=warmup_runtime_plan,
-            shuffle=False,
-        ),
-        measure_warmup_budget=lambda warmup_plan, warmup_runtime_plan: (
-            _measure_training_batch_budget(
-                model,
-                warmup_plan=warmup_plan,
-                prediction_contract=prediction_contract,
-                prediction_training_state=prediction_training_state,
-                training_config=training_config,
-                runtime_plan=warmup_runtime_plan,
-            )
-        ),
     )
     train_batch_plan = build_prediction_batch_plan(
         store,
         temporal_facts=train_samples.temporal_facts,
-        representation_contract=representation_contract,
         prediction_contract=prediction_contract,
-        execution_policy=execution_policy,
-        runtime_plan=planned_runtime_plan,
+        runtime_plan=runtime_plan,
         shuffle=True,
     )
     validation_batch_plan = build_prediction_batch_plan(
         store,
         temporal_facts=validation_samples.temporal_facts,
-        representation_contract=representation_contract,
         prediction_contract=prediction_contract,
-        execution_policy=execution_policy,
-        runtime_plan=planned_runtime_plan,
+        runtime_plan=runtime_plan,
         shuffle=False,
     )
     return TrainingRuntimePlan(
-        runtime_plan=planned_runtime_plan,
+        runtime_plan=runtime_plan,
         train_batch_plan=train_batch_plan,
         validation_batch_plan=validation_batch_plan,
         prediction_training_state=prediction_training_state,
@@ -117,7 +74,6 @@ def prepare_training_runtime(
     *,
     prediction_contract: CompiledPredictionContract,
     execution_policy: CompiledExecutionPolicyContract,
-    representation_contract: CompiledRepresentationContract,
     store: CompiledProblemStore,
     train_samples: PreparedTrainingSampleSelection,
     validation_samples: PreparedTrainingSampleSelection,
@@ -132,59 +88,12 @@ def prepare_training_runtime(
             fit_model,
             prediction_contract=prediction_contract,
             execution_policy=execution_policy,
-            representation_contract=representation_contract,
             store=store,
             train_samples=train_samples,
             validation_samples=validation_samples,
             runtime_plan=runtime_plan,
-            training_config=training_config,
         )
-    optimizer = torch.optim.AdamW(
-        fit_model.parameters(),
-        lr=training_config.learning_rate,
-        weight_decay=training_config.weight_decay,
-    )
     return PreparedTrainingRuntime(
         fit_model=fit_model,
-        optimizer=optimizer,
         batch_plan=batch_plan,
     )
-
-
-def _measure_training_batch_budget(
-    model: TemporalModel,
-    *,
-    warmup_plan: BatchPlan[PredictionBatch],
-    prediction_contract: CompiledPredictionContract,
-    prediction_training_state: object | None,
-    training_config: TrainingConfig,
-    runtime_plan: ModelingRuntimePlan,
-) -> int:
-    warmup_state = _clone_cpu_state(_unwrap_compiled_model(model))
-    warmup_optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=training_config.learning_rate,
-        weight_decay=training_config.weight_decay,
-    )
-
-    def _run_training_probe() -> None:
-        batch = next(iter(warmup_plan.source))
-        execute_training_batch(
-            model,
-            batch,
-            runtime_plan=runtime_plan,
-            prediction_contract=prediction_contract,
-            prediction_training_state=prediction_training_state,
-            optimizer=warmup_optimizer,
-            gradient_clip_norm=training_config.gradient_clip_norm,
-            zero_after_step=True,
-        )
-
-    try:
-        return measure_device_resident_budget(
-            resolved_device=runtime_plan.resolved_device,
-            run_probe=_run_training_probe,
-        )
-    finally:
-        _unwrap_compiled_model(model).load_state_dict(warmup_state)
-        torch.cuda.empty_cache()

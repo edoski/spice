@@ -6,10 +6,10 @@ from ..config.models import AcquireConfig, EvaluateConfig, TrainConfig, TuneConf
 from ..core.rendering import metric_string
 from ..core.reporting import Reporter
 from ..corpus.assembly import CorpusAssemblyResult
+from ..modeling._fit_policy import TrainingEpochProgress
 from ..modeling.pipeline import TrainingRunCallbacks, TrainingSpec
 from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary
 from ..modeling.summary import training_result_fields
-from ..modeling.training_runner import TrainingEpochProgress
 from ..modeling.tuning_execution import (
     TuningBestProgress,
     TuningExecutionCallbacks,

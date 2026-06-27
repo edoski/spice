@@ -16,24 +16,17 @@ from torch.utils.data import DataLoader, Sampler
 from ..prediction import CompiledPredictionContract
 from ..prediction.contracts import ModelInputBatch, PredictionBatch, PreparedPredictionTargets
 from ..temporal.execution_policy import (
-    CompiledExecutionPolicyContract,
     PreparedActionSpace,
     PreparedTemporalFacts,
 )
 from ..temporal.problem_store import CompiledProblemStore
-from .representations import (
-    CompiledRepresentationContract,
-    PreparedRepresentation,
-    RepresentationRuntimeContext,
-)
+from .representations import PreparedSequenceInputBatches, prepare_sequence_input
 
 if TYPE_CHECKING:
     from .runtime_planning import ModelingRuntimePlan
 
 IntVector = NDArray[np.int64]
 BatchT = TypeVar("BatchT", covariant=True)
-StorageMode = Literal["host_streaming", "host_materialized", "cuda_materialized"]
-HostStorageMode = Literal["host_streaming", "host_materialized"]
 HostLoaderPolicy = Literal["automatic", "single_process_unpinned"]
 
 
@@ -46,57 +39,14 @@ class BatchSource(Protocol[BatchT]):
 @dataclass(frozen=True, slots=True)
 class BatchPlan(Generic[BatchT]):
     source: BatchSource[BatchT]
-    storage_mode: StorageMode
     sample_count: int
     batch_count: int
-    estimated_storage_bytes: int
-
-
-@dataclass(frozen=True, slots=True)
-class DeviceStorageBudget:
-    phase: Literal["disabled", "coarse", "measured"]
-    bytes: int | None
-
-    @classmethod
-    def disabled(cls) -> DeviceStorageBudget:
-        return cls(phase="disabled", bytes=0)
-
-    @classmethod
-    def coarse(cls, bytes: int | None) -> DeviceStorageBudget:
-        return cls(phase="coarse", bytes=bytes)
-
-    @classmethod
-    def measured(cls, bytes: int) -> DeviceStorageBudget:
-        return cls(phase="measured", bytes=bytes)
-
-    def __post_init__(self) -> None:
-        if self.phase not in ("disabled", "coarse", "measured"):
-            raise ValueError("device storage budget phase is unsupported")
-        if self.bytes is not None and self.bytes < 0:
-            raise ValueError("device storage budget bytes must be non-negative")
-        if self.phase == "disabled" and self.bytes not in (0, None):
-            raise ValueError("disabled device storage budget must not carry positive bytes")
-        if self.phase == "measured" and self.bytes is None:
-            raise ValueError("measured device storage budget requires bytes")
 
 
 @dataclass(frozen=True, slots=True)
 class BatchRuntimeContext:
     batch_size: int
-    available_host_memory_bytes: int
-    device_storage_budget: DeviceStorageBudget
     host_loader_policy: HostLoaderPolicy = "automatic"
-
-    def with_device_storage_budget(
-        self,
-        device_storage_budget: DeviceStorageBudget,
-    ) -> BatchRuntimeContext:
-        return BatchRuntimeContext(
-            batch_size=self.batch_size,
-            available_host_memory_bytes=self.available_host_memory_bytes,
-            device_storage_budget=device_storage_budget,
-            host_loader_policy=self.host_loader_policy,
-        )
 
     def with_host_loader_policy(
         self,
@@ -104,15 +54,7 @@ class BatchRuntimeContext:
     ) -> BatchRuntimeContext:
         return BatchRuntimeContext(
             batch_size=self.batch_size,
-            available_host_memory_bytes=self.available_host_memory_bytes,
-            device_storage_budget=self.device_storage_budget,
             host_loader_policy=host_loader_policy,
-        )
-
-    def representation_context(self) -> RepresentationRuntimeContext:
-        return RepresentationRuntimeContext(
-            batch_size=self.batch_size,
-            available_host_memory_bytes=self.available_host_memory_bytes,
         )
 
 
@@ -123,18 +65,7 @@ class PreparedBatchPayload(Protocol[BatchT]):
     @property
     def batch_signatures(self) -> IntVector: ...
 
-    @property
-    def estimated_storage_bytes(self) -> int: ...
-
-    @property
-    def host_storage_mode(self) -> HostStorageMode: ...
-
     def build_batch(self, sample_positions: torch.Tensor) -> BatchT: ...
-
-    def to_device_storage(
-        self,
-        device: torch.device,
-    ) -> PreparedBatchPayload[BatchT]: ...
 
 
 class _PositionBatchSampler(Sampler[list[int]]):
@@ -209,27 +140,9 @@ class _HostLoaderWorkerSettings:
     prefetch_factor: int | None
 
 
-class _DeviceResidentBatchSource(Generic[BatchT]):
-    def __init__(
-        self,
-        *,
-        prepared: PreparedBatchPayload[BatchT],
-        batch_sampler: _PositionBatchSampler,
-    ) -> None:
-        self.prepared = prepared
-        self.batch_sampler = batch_sampler
-
-    def __len__(self) -> int:
-        return len(self.batch_sampler)
-
-    def __iter__(self) -> Iterator[BatchT]:
-        for sample_positions in self.batch_sampler:
-            yield self.prepared.build_batch(torch.as_tensor(sample_positions, dtype=torch.int64))
-
-
 @dataclass(slots=True)
 class _PreparedPredictionBatches:
-    prepared: PreparedRepresentation
+    prepared: PreparedSequenceInputBatches
     targets: PreparedPredictionTargets
 
     @property
@@ -240,25 +153,11 @@ class _PreparedPredictionBatches:
     def batch_signatures(self) -> IntVector:
         return self.prepared.batch_signatures
 
-    @property
-    def estimated_storage_bytes(self) -> int:
-        return self.prepared.estimated_storage_bytes + self.targets.estimated_storage_bytes
-
-    @property
-    def host_storage_mode(self) -> HostStorageMode:
-        return self.prepared.host_storage_mode
-
     def build_batch(self, sample_positions: torch.Tensor) -> PredictionBatch:
         input_batch = self.prepared.build_batch(sample_positions)
         return PredictionBatch(
             inputs=input_batch,
             targets=self.targets.build_batch(input_batch.sample_positions),
-        )
-
-    def to_device_storage(self, device: torch.device) -> _PreparedPredictionBatches:
-        return _PreparedPredictionBatches(
-            prepared=self.prepared.to_device_storage(device),
-            targets=self.targets.to_device_storage(device),
         )
 
 
@@ -268,33 +167,29 @@ def _build_plan(
     runtime_plan: ModelingRuntimePlan,
     shuffle: bool,
 ) -> BatchPlan[BatchT]:
-    source, storage_mode = _build_batch_source(
+    source = _build_batch_source(
         prepared,
         runtime_plan=runtime_plan,
         shuffle=shuffle,
     )
     return BatchPlan(
         source=cast(BatchSource[BatchT], source),
-        storage_mode=storage_mode,
         sample_count=prepared.sample_count,
         batch_count=len(source),
-        estimated_storage_bytes=prepared.estimated_storage_bytes,
     )
 
 
-def _prepare_model_representation(
+def _prepare_model_inputs(
     store: CompiledProblemStore,
     *,
-    representation_contract: CompiledRepresentationContract,
-    execution_policy: CompiledExecutionPolicyContract,
     action_space: PreparedActionSpace,
     runtime_plan: ModelingRuntimePlan,
-) -> PreparedRepresentation:
-    return representation_contract.prepare(
+) -> PreparedSequenceInputBatches:
+    if runtime_plan.batch_runtime_context.batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    return prepare_sequence_input(
         store,
-        execution_policy=execution_policy,
         action_space=action_space,
-        runtime_context=runtime_plan.batch_runtime_context.representation_context(),
     )
 
 
@@ -302,16 +197,12 @@ def build_prediction_batch_plan(
     store: CompiledProblemStore,
     *,
     temporal_facts: PreparedTemporalFacts,
-    representation_contract: CompiledRepresentationContract,
     prediction_contract: CompiledPredictionContract,
-    execution_policy: CompiledExecutionPolicyContract,
     runtime_plan: ModelingRuntimePlan,
     shuffle: bool = False,
 ) -> BatchPlan[PredictionBatch]:
-    prepared = _prepare_model_representation(
+    prepared = _prepare_model_inputs(
         store,
-        representation_contract=representation_contract,
-        execution_policy=execution_policy,
         action_space=temporal_facts.action_space,
         runtime_plan=runtime_plan,
     )
@@ -329,14 +220,10 @@ def build_model_input_batch_plan(
     store: CompiledProblemStore,
     *,
     action_space: PreparedActionSpace,
-    representation_contract: CompiledRepresentationContract,
-    execution_policy: CompiledExecutionPolicyContract,
     runtime_plan: ModelingRuntimePlan,
 ) -> BatchPlan[ModelInputBatch]:
-    prepared = _prepare_model_representation(
+    prepared = _prepare_model_inputs(
         store,
-        representation_contract=representation_contract,
-        execution_policy=execution_policy,
         action_space=action_space,
         runtime_plan=runtime_plan,
     )
@@ -352,39 +239,18 @@ def _build_batch_source(
     *,
     runtime_plan: ModelingRuntimePlan,
     shuffle: bool,
-) -> tuple[
-    DataLoader[BatchT] | _DeviceResidentBatchSource[BatchT],
-    StorageMode,
-]:
+) -> DataLoader[BatchT]:
     batch_sampler = _PositionBatchSampler(
         batch_signatures=prepared.batch_signatures,
         batch_size=runtime_plan.batch_runtime_context.batch_size,
         seed=runtime_plan.seed,
         shuffle=shuffle,
     )
-    if _should_use_device_resident(
-        required_bytes=prepared.estimated_storage_bytes,
+    return _build_host_dataloader_source(
+        prepared,
+        batch_sampler=batch_sampler,
         runtime_context=runtime_plan.batch_runtime_context,
         resolved_device=runtime_plan.resolved_device,
-    ):
-        try:
-            return (
-                _DeviceResidentBatchSource(
-                    prepared=prepared.to_device_storage(runtime_plan.resolved_device),
-                    batch_sampler=batch_sampler,
-                ),
-                "cuda_materialized",
-            )
-        except torch.cuda.OutOfMemoryError:
-            torch.cuda.empty_cache()
-    return (
-        _build_host_dataloader_source(
-            prepared,
-            batch_sampler=batch_sampler,
-            runtime_context=runtime_plan.batch_runtime_context,
-            resolved_device=runtime_plan.resolved_device,
-        ),
-        prepared.host_storage_mode,
     )
 
 
@@ -470,19 +336,3 @@ def _should_pin_host_memory(
     if runtime_context.host_loader_policy == "single_process_unpinned":
         return False
     return resolved_device.type == "cuda" and torch.cuda.is_available()
-
-
-def _should_use_device_resident(
-    *,
-    required_bytes: int,
-    runtime_context: BatchRuntimeContext,
-    resolved_device: torch.device,
-) -> bool:
-    if resolved_device.type != "cuda":
-        return False
-    device_budget = runtime_context.device_storage_budget
-    if device_budget.phase == "disabled":
-        return False
-    if device_budget.bytes is None or device_budget.bytes <= 0:
-        return False
-    return required_bytes <= device_budget.bytes

@@ -7,15 +7,12 @@ from dataclasses import replace
 import numpy as np
 import polars as pl
 
-from ...core.errors import ConfigResolutionError
+from ...config.models import SequenceConfig
 from ...temporal.contracts import TemporalCapabilityStore
 from ...temporal.input_normalization import transform_problem_store_features
 from ...temporal.problem_store import CompiledProblemStore
 from .base import (
-    CompiledDatasetBuilderContract,
-    FixedSequenceTemporalBuilderRuntimeMetadata,
-    FixedSequenceTemporalDatasetBuilderConfig,
-    fixed_sequence_temporal_runtime_metadata,
+    sequence_runtime_metadata,
     validate_feature_prerequisites,
 )
 from .preparation import (
@@ -88,10 +85,11 @@ def _training_calibration_timestamps(
 def _train_scaler(
     store: CompiledProblemStore,
     *,
-    context: TrainingDatasetPreparationContext,
     train_sample_indices: np.ndarray,
 ):
-    return context.input_normalization_contract.fit_scaler(
+    from ...temporal.input_normalization import fit_row_standard_scaler
+
+    return fit_row_standard_scaler(
         store,
         sample_indices=train_sample_indices.astype(np.int64, copy=False),
     )
@@ -220,7 +218,7 @@ def prepare_training_dataset(
     blocks: pl.DataFrame,
     facts: TrainingDatasetPreparationFacts,
     context: TrainingDatasetPreparationContext,
-    config: FixedSequenceTemporalDatasetBuilderConfig,
+    sequence: SequenceConfig,
 ) -> PreparedTrainingDataset:
     sorted_blocks = _prepare_blocks(blocks)
     capability_store = _build_selected_store(sorted_blocks, context=context)
@@ -236,8 +234,8 @@ def prepare_training_dataset(
     seq_len, median_dt_seconds = _compute_seq_len(
         _training_calibration_timestamps(store_raw, raw_split_indices.train),
         lookback_seconds=context.problem_contract.lookback_seconds,
-        min_sequence_length=config.min_sequence_length,
-        max_sequence_length=config.max_sequence_length,
+        min_sequence_length=sequence.min_length,
+        max_sequence_length=sequence.max_length,
     )
     history_seconds = context.problem_contract.feature_prerequisites.history_seconds
     warmup_rows = context.problem_contract.feature_prerequisites.warmup_rows
@@ -257,7 +255,6 @@ def prepare_training_dataset(
     )
     scaler = _train_scaler(
         store,
-        context=context,
         train_sample_indices=split_indices.train,
     )
     scaled_store = _scale_store(store, scaler=scaler)
@@ -288,11 +285,11 @@ def prepare_training_dataset(
         store=scaled_store,
         samples=samples,
         scaler=scaler,
-        builder_runtime_metadata=fixed_sequence_temporal_runtime_metadata(
+        sequence_runtime_metadata=sequence_runtime_metadata(
             sequence_length=int(seq_len),
             median_dt_seconds=float(median_dt_seconds),
-            min_sequence_length=config.min_sequence_length,
-            max_sequence_length=config.max_sequence_length,
+            min_length=sequence.min_length,
+            max_length=sequence.max_length,
         ),
         temporal_capability=capability_store.capability,
     )
@@ -304,11 +301,7 @@ def prepare_inference_dataset(
     spec: CompiledInferenceDatasetPreparationRequest,
 ) -> PreparedInferenceDataset:
     combined_blocks = _prepare_blocks(pl.concat([history_blocks, evaluation_blocks]))
-    if not isinstance(spec.builder_runtime_metadata, FixedSequenceTemporalBuilderRuntimeMetadata):
-        raise ConfigResolutionError(
-            "fixed_sequence_temporal builder requires fixed_sequence_temporal runtime metadata"
-        )
-    runtime_metadata = spec.builder_runtime_metadata
+    runtime_metadata = spec.sequence_runtime_metadata
     feature_table = spec.feature_contract.build_table(combined_blocks)
     store = spec.problem_contract.build_delay_store(
         feature_table,
@@ -344,21 +337,4 @@ def prepare_inference_dataset(
                 sample_indices,
             ),
         ),
-    )
-
-
-def compile_dataset_builder(
-    config: FixedSequenceTemporalDatasetBuilderConfig,
-) -> CompiledDatasetBuilderContract:
-    if config.id != "fixed_sequence_temporal":
-        raise ConfigResolutionError("dataset_builder.id must be fixed_sequence_temporal")
-    return CompiledDatasetBuilderContract(
-        dataset_builder_id="fixed_sequence_temporal",
-        prepare_training_fn=lambda blocks, facts, context: prepare_training_dataset(
-            blocks,
-            facts,
-            context,
-            config,
-        ),
-        prepare_inference_fn=prepare_inference_dataset,
     )

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import cast
 
 import torch
 
@@ -21,7 +20,6 @@ class ModelingRuntimePlan:
     batch_runtime_context: BatchRuntimeContext
     deterministic: bool | None
     seed: int
-    compile_enabled: bool = False
 
 
 def with_batch_runtime_context(
@@ -34,7 +32,6 @@ def with_batch_runtime_context(
         batch_runtime_context=runtime_context,
         deterministic=plan.deterministic,
         seed=plan.seed,
-        compile_enabled=plan.compile_enabled,
     )
 
 
@@ -51,7 +48,25 @@ def build_cuda_modeling_runtime_plan(
         batch_runtime_context=runtime.batch_runtime_context,
         deterministic=deterministic,
         seed=seed,
-        compile_enabled=False,
+    )
+
+
+def build_cpu_modeling_runtime_plan(
+    *,
+    batch_size: int,
+    deterministic: bool | None = None,
+    seed: int = 0,
+) -> ModelingRuntimePlan:
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    return ModelingRuntimePlan(
+        resolved_device=torch.device("cpu"),
+        precision="32-true",
+        batch_runtime_context=BatchRuntimeContext(
+            batch_size=batch_size,
+        ),
+        deterministic=deterministic,
+        seed=seed,
     )
 
 
@@ -72,8 +87,6 @@ def prepare_model_for_runtime(
     plan: ModelingRuntimePlan,
 ) -> TemporalModel:
     model.to(plan.resolved_device)
-    if plan.compile_enabled:
-        return cast(TemporalModel, torch.compile(model))
     return model
 
 

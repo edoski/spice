@@ -12,7 +12,7 @@ from spice.config.models import ChainRuntimeSpec
 from spice.core.errors import ConfigResolutionError
 from spice.evaluation import coerce_evaluator_config
 from spice.modeling.artifact_inference import prepare_artifact_inference_context
-from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
+from spice.modeling.batch_plan import BatchRuntimeContext
 from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.storage.workflow_roots import CorpusRootHandle, EvaluateWorkflowRoots
 from spice.temporal import TemporalCapability
@@ -65,8 +65,7 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
     loaded_artifact = SimpleNamespace(
         manifest=SimpleNamespace(
             chain_name="ethereum",
-            dataset_builder=SimpleNamespace(id="fixed_sequence_temporal"),
-            builder_runtime_metadata=runtime_metadata,
+            sequence_runtime_metadata=runtime_metadata,
             scaler=object(),
             temporal_capability=temporal_capability,
             training_source=SimpleNamespace(
@@ -82,8 +81,6 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
             training=SimpleNamespace(deterministic=True, seed=17),
         ),
         model=object(),
-        dataset_builder_contract=None,
-        representation_contract=object(),
     )
     feature_contract = SimpleNamespace(
         feature_graph_fingerprint="feature-fp",
@@ -184,28 +181,25 @@ def _install_artifact_context_fakes(monkeypatch, config: EvaluateConfig, *, max_
         or ModelingRuntimePlan(
             resolved_device=torch.device("cpu"),
             precision="32-true",
-            batch_runtime_context=BatchRuntimeContext(
-                batch_size=kwargs["batch_size"],
-                available_host_memory_bytes=1024,
-                device_storage_budget=DeviceStorageBudget.disabled(),
-            ),
+            batch_runtime_context=BatchRuntimeContext(batch_size=kwargs["batch_size"]),
             deterministic=None,
             seed=0,
         ),
     )
 
-    def fake_prepare_inference_dataset(*_args, facts, context):
+    def fake_prepare_inference_dataset(_history_blocks, _evaluation_blocks, spec):
         calls.append("prepare_inference")
-        assert facts.delay_seconds == (
+        assert spec.delay_seconds == (
             config.delay_seconds
             or loaded_artifact.manifest.temporal_capability.max_delay_seconds
         )
-        assert context.builder_runtime_metadata is runtime_metadata
-        assert context.temporal_capability is temporal_capability
+        assert spec.sequence_runtime_metadata is runtime_metadata
+        assert spec.temporal_capability is temporal_capability
         return prepared
 
-    loaded_artifact.dataset_builder_contract = SimpleNamespace(
-        prepare_inference_dataset=fake_prepare_inference_dataset,
+    monkeypatch.setattr(
+        "spice.modeling.artifact_inference.prepare_inference_dataset",
+        fake_prepare_inference_dataset,
     )
     return calls, loaded_artifact, prepared, evaluator_contract, prediction_contract
 
@@ -251,10 +245,13 @@ def test_artifact_inference_passes_observed_evaluation_coverage(
     roots = _roots(config)
     captured: dict[str, int] = {}
 
-    def fake_prepare_inference_dataset(*_args, facts, context):
-        del context
-        captured["evaluation_first_timestamp"] = facts.evaluation_coverage.first_timestamp
-        captured["evaluation_last_timestamp"] = facts.evaluation_coverage.last_timestamp
+    def fake_prepare_inference_dataset(_history_blocks, _evaluation_blocks, spec):
+        captured["evaluation_first_timestamp"] = (
+            spec.sample_timestamp_window.start_timestamp_inclusive
+        )
+        captured["evaluation_last_timestamp"] = (
+            spec.sample_timestamp_window.end_timestamp_exclusive - 1
+        )
         action_space = PreparedActionSpace(
             sample_indices=np.array([0], dtype=np.int64),
             max_candidate_slots=1,
@@ -272,9 +269,10 @@ def test_artifact_inference_passes_observed_evaluation_coverage(
             ),
         )
 
-    loaded_artifact = _install_artifact_context_fakes(monkeypatch, config)[1]
-    loaded_artifact.dataset_builder_contract = SimpleNamespace(
-        prepare_inference_dataset=fake_prepare_inference_dataset,
+    _install_artifact_context_fakes(monkeypatch, config)
+    monkeypatch.setattr(
+        "spice.modeling.artifact_inference.prepare_inference_dataset",
+        fake_prepare_inference_dataset,
     )
 
     prepare_artifact_inference_context(

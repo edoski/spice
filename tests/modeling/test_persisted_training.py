@@ -9,11 +9,12 @@ import pytest
 import torch
 
 from spice.metrics import MetricSet
-from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
+from spice.modeling.batch_plan import BatchRuntimeContext
 from spice.modeling.persisted_training import run_persisted_training, run_trial_training
 from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.modeling.training_run import TrainingRunResult
-from spice.modeling.training_runner import TrainingCheckpoint, TrainingResult
+from spice.modeling.training_runner import TrainingResult
+from spice.modeling.training_runner_types import TrainingCheckpoint
 from spice.temporal.execution_policy import PreparedActionSpace
 
 
@@ -35,11 +36,7 @@ def _training_run(*, model: object) -> TrainingRunResult:
     runtime_plan = ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        batch_runtime_context=BatchRuntimeContext(
-            batch_size=1,
-            available_host_memory_bytes=1024,
-            device_storage_budget=DeviceStorageBudget.disabled(),
-        ),
+        batch_runtime_context=BatchRuntimeContext(batch_size=1),
         deterministic=None,
         seed=0,
     )
@@ -71,7 +68,6 @@ def _spec() -> SimpleNamespace:
     return SimpleNamespace(
         model=SimpleNamespace(),
         prediction_contract=SimpleNamespace(),
-        representation_contract=SimpleNamespace(),
         training=SimpleNamespace(),
     )
 

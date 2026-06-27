@@ -24,7 +24,6 @@ from .forward_runtime import (
     run_planned_prediction_forward,
 )
 from .models import TemporalModel
-from .representations import CompiledRepresentationContract
 from .runtime_planning import (
     ModelingRuntimePlan,
     modeling_backend_scope,
@@ -36,7 +35,6 @@ from .runtime_planning import (
 class EvaluationScoringRuntimePlan:
     model: TemporalModel
     prediction_contract: CompiledPredictionContract
-    representation_contract: CompiledRepresentationContract
     execution_policy: CompiledExecutionPolicyContract
     store: CompiledProblemStore
     action_space: PreparedActionSpace
@@ -47,7 +45,6 @@ class EvaluationScoringRuntimePlan:
 class PredictionMetricScoringRuntimePlan:
     model: TemporalModel
     prediction_contract: CompiledPredictionContract
-    representation_contract: CompiledRepresentationContract
     execution_policy: CompiledExecutionPolicyContract
     store: CompiledProblemStore
     temporal_facts: PreparedTemporalFacts
@@ -61,10 +58,9 @@ def score_evaluation(
     evaluator_contract: CompiledEvaluatorContract,
 ) -> EvaluationSummary:
     evaluator_contract.validate_prediction_contract(scoring_plan.prediction_contract)
-    decoded_result = _predict_decoded_result(
+    decoded_result = predict_decoded_result(
         scoring_plan.model,
         prediction_contract=scoring_plan.prediction_contract,
-        representation_contract=scoring_plan.representation_contract,
         execution_policy=scoring_plan.execution_policy,
         store=scoring_plan.store,
         action_space=scoring_plan.action_space,
@@ -113,20 +109,17 @@ def score_prediction_metrics(
             runtime_model,
             store=scoring_plan.store,
             temporal_facts=scoring_plan.temporal_facts,
-            representation_contract=scoring_plan.representation_contract,
             prediction_contract=scoring_plan.prediction_contract,
-            execution_policy=scoring_plan.execution_policy,
             runtime_plan=scoring_plan.runtime_plan,
             on_outputs=_accumulate,
         )
     return accumulator.finalize()
 
 
-def _predict_decoded_result(
+def predict_decoded_result(
     model: TemporalModel,
     *,
     prediction_contract: CompiledPredictionContract,
-    representation_contract: CompiledRepresentationContract,
     execution_policy: CompiledExecutionPolicyContract,
     store: CompiledProblemStore,
     action_space: PreparedActionSpace,
@@ -153,8 +146,6 @@ def _predict_decoded_result(
             runtime_model,
             store=store,
             action_space=action_space,
-            representation_contract=representation_contract,
-            execution_policy=execution_policy,
             runtime_plan=runtime_plan,
             on_outputs=_decode_batch,
         )

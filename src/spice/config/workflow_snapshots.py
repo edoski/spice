@@ -12,14 +12,12 @@ from pydantic import ValidationError
 from ..core.config_model import ConfigModel
 from ..core.errors import ConfigResolutionError
 from ..evaluation import EvaluatorConfig, coerce_evaluator_config
-from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.registry import coerce_model_config
 from ..modeling.tuned_config import coerce_tuning_space_config
 from ..objectives import ObjectiveConfig, coerce_objective_config
 from .models import (
     ArtifactConfig,
     ChainSpec,
-    DatasetBuilderConfig,
     CorpusSpec,
     FeaturesConfig,
     ModelConfig,
@@ -28,10 +26,10 @@ from .models import (
     SplitConfig,
     StorageSpec,
     StudyConfig,
+    TimestampWindowSpec,
     TrainingConfig,
     TuningConfig,
     TuningSpaceConfig,
-    TimestampWindowSpec,
     WorkflowTask,
     coerce_features_config,
     coerce_problem_spec,
@@ -220,9 +218,6 @@ def _hydrate_model_workflow_fields(
         storage=_model_field(raw, "storage", StorageSpec),
         problem=problem,
         model=model,
-        dataset_builder=coerce_dataset_builder_config(
-            _owner_field(raw, "dataset_builder", DatasetBuilderConfig)
-        ),
         features=coerce_features_config(_owner_field(raw, "features", FeaturesConfig)),
         prediction=_model_field(raw, "prediction", PredictionConfig),
         objective=coerce_objective_config(

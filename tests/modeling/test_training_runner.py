@@ -10,15 +10,17 @@ import torch
 
 from spice.config.models import TrainingConfig
 from spice.metrics import MetricSet
-from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
+from spice.modeling._fit_policy import CompletedEpoch
+from spice.modeling.batch_plan import BatchRuntimeContext
 from spice.modeling.objective_runtime import CompiledObjectiveRuntime
 from spice.modeling.runtime_planning import ModelingRuntimePlan
-from spice.modeling.scoring import EvaluationScoringRuntimePlan
 from spice.modeling.training_runner import (
-    TrainingCallbacks,
-    TrainingCheckpoint,
     TrainingFitSpec,
     run_training_fit,
+)
+from spice.modeling.training_runner_types import (
+    TrainingCallbacks,
+    TrainingCheckpoint,
 )
 from spice.modeling.training_runtime import PreparedTrainingRuntime, TrainingRuntimePlan
 from spice.objectives import CompiledObjectiveContract
@@ -29,17 +31,6 @@ class _TinyModel(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.weight = torch.nn.Parameter(torch.tensor(0.0))
-
-
-class _FakeOptimizer:
-    def __init__(self) -> None:
-        self.loaded_state: dict[str, object] | None = None
-
-    def state_dict(self) -> dict[str, object]:
-        return {"loaded": self.loaded_state is not None}
-
-    def load_state_dict(self, state: dict[str, object]) -> None:
-        self.loaded_state = state
 
 
 def _training_config(*, max_epochs: int = 2, patience: int = 2) -> TrainingConfig:
@@ -54,6 +45,7 @@ def _training_config(*, max_epochs: int = 2, patience: int = 2) -> TrainingConfi
             "seed": 1,
             "deterministic": True,
             "log_every_n_steps": 1,
+            "sequence": {"min_length": 4, "max_length": 64},
         }
     )
 
@@ -75,28 +67,26 @@ def _objective_runtime(evaluate_metrics_fn=None) -> CompiledObjectiveRuntime:
     )
 
 
-def _patch_training_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    runtime_context = BatchRuntimeContext(
-        batch_size=1,
-        available_host_memory_bytes=1024,
-        device_storage_budget=DeviceStorageBudget.disabled(),
-    )
-    runtime_plan = ModelingRuntimePlan(
+def _runtime_plan() -> ModelingRuntimePlan:
+    return ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        batch_runtime_context=runtime_context,
+        batch_runtime_context=BatchRuntimeContext(batch_size=1),
         deterministic=None,
         seed=0,
     )
 
+
+def _patch_training_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime_plan = _runtime_plan()
+
     def fake_prepare_training_runtime(model, **_kwargs):
         return PreparedTrainingRuntime(
             fit_model=model,
-            optimizer=cast(torch.optim.Optimizer, _FakeOptimizer()),
             batch_plan=TrainingRuntimePlan(
                 runtime_plan=runtime_plan,
-                train_batch_plan=cast(Any, SimpleNamespace(source=[0])),
-                validation_batch_plan=cast(Any, SimpleNamespace(source=[0])),
+                train_batch_plan=cast(Any, SimpleNamespace(source=["train"])),
+                validation_batch_plan=cast(Any, SimpleNamespace(source=["validation"])),
                 prediction_training_state=None,
             ),
         )
@@ -127,8 +117,8 @@ def _sample_role(indices: list[int]):
 
 def _prepared(*, train: list[int] | None = None, validation: list[int] | None = None):
     return SimpleNamespace(
-        execution_policy=SimpleNamespace(),
-        store=SimpleNamespace(),
+        execution_policy=SimpleNamespace(name="policy"),
+        store=SimpleNamespace(name="store"),
         samples=SimpleNamespace(
             train=_sample_role([0] if train is None else train),
             validation=_sample_role([1] if validation is None else validation),
@@ -138,7 +128,6 @@ def _prepared(*, train: list[int] | None = None, validation: list[int] | None = 
 
 
 def _fit_spec(
-    tmp_path,
     *,
     model,
     training_config,
@@ -146,43 +135,108 @@ def _fit_spec(
 ) -> TrainingFitSpec:
     return TrainingFitSpec(
         model=model,
-        prediction_contract=cast(Any, SimpleNamespace(fit_training_state=lambda *_, **__: None)),
-        representation_contract=cast(Any, SimpleNamespace()),
+        prediction_contract=cast(Any, SimpleNamespace()),
         objective_runtime=objective_runtime or _objective_runtime(),
         prepared=cast(Any, _prepared(train=[0], validation=[0])),
         training_config=training_config,
     )
 
 
-def test_training_fit_restores_best_state_and_calls_early_stop_callback(
-    tmp_path,
+class _FakeLightningModule:
+    instances: list[_FakeLightningModule] = []
+
+    def __init__(self, **kwargs) -> None:
+        self.__dict__.update(kwargs)
+        self.fit_calls: list[tuple[object, object]] = []
+        type(self).instances.append(self)
+
+    def finalized_best(self):
+        best_epoch, best_state, best_value = self.policy.finalized_best(model=self.model)
+        return SimpleNamespace(
+            best_epoch=best_epoch,
+            best_state=best_state,
+            best_objective_value=best_value,
+        )
+
+
+class _FakeTrainer:
+    instances: list[_FakeTrainer] = []
+
+    def __init__(self, **kwargs) -> None:
+        self.kwargs = kwargs
+        type(self).instances.append(self)
+
+    def fit(self, module, *, train_dataloaders, val_dataloaders) -> None:
+        module.fit_calls.append((train_dataloaders, val_dataloaders))
+        first_score = 2.0 if module.start_epoch > 1 else 1.0
+        module.model.weight.data.fill_(first_score)
+        validation_metrics = MetricSet({"score": first_score})
+        objective_metrics = module.objective_runtime.evaluate_metrics(
+            validation_metrics,
+            scoring_plan=module.objective_scoring_plan,
+        )
+        module.policy.record_completed_epoch(
+            CompletedEpoch(
+                epoch=module.start_epoch,
+                train_metrics=MetricSet({"score": first_score}),
+                validation_metrics=validation_metrics,
+                objective_metrics=objective_metrics,
+            ),
+            model=module.model,
+        )
+        if module.training_config.max_epochs > module.start_epoch:
+            module.model.weight.data.fill_(2.0)
+            validation_metrics = MetricSet({"score": 1.005})
+            objective_metrics = module.objective_runtime.evaluate_metrics(
+                validation_metrics,
+                scoring_plan=module.objective_scoring_plan,
+            )
+            module.policy.record_completed_epoch(
+                CompletedEpoch(
+                    epoch=module.start_epoch + 1,
+                    train_metrics=MetricSet({"score": 1.005}),
+                    validation_metrics=validation_metrics,
+                    objective_metrics=objective_metrics,
+                ),
+                model=module.model,
+            )
+
+
+def _patch_lightning(monkeypatch: pytest.MonkeyPatch) -> None:
+    _FakeLightningModule.instances.clear()
+    _FakeTrainer.instances.clear()
+    monkeypatch.setattr("spice.modeling.training_runner.SpiceLightningModule", _FakeLightningModule)
+    monkeypatch.setattr("spice.modeling.training_runner.pl.Trainer", _FakeTrainer)
+
+
+def test_training_fit_uses_lightning_trainer_and_restores_best_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    epoch_state = {"epoch": 0}
-    early_stop_calls: list[tuple[int, int]] = []
-    objective_values = [1.0, 1.005]
-
-    def fake_run_epoch(model, *, training, **_kwargs):
-        if training:
-            epoch_state["epoch"] += 1
-            model.weight.data.fill_(float(epoch_state["epoch"]))
-        return MetricSet({"score": objective_values[epoch_state["epoch"] - 1]})
-
     _patch_training_runtime(monkeypatch)
-    monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
-
+    _patch_lightning(monkeypatch)
     model = _TinyModel()
+
     result = run_training_fit(
         _fit_spec(
-            tmp_path,
             model=cast(Any, model),
             training_config=_training_config(max_epochs=2, patience=1),
-        ),
-        callbacks=TrainingCallbacks(
-            on_early_stop=lambda epoch, best_epoch: early_stop_calls.append((epoch, best_epoch)),
-        ),
+        )
     )
 
+    assert _FakeTrainer.instances[0].kwargs == {
+        "accelerator": "gpu",
+        "devices": 1,
+        "precision": "32-true",
+        "max_epochs": 2,
+        "num_sanity_val_steps": 0,
+        "use_distributed_sampler": False,
+        "logger": False,
+        "enable_checkpointing": False,
+        "enable_progress_bar": False,
+        "deterministic": True,
+        "log_every_n_steps": 1,
+    }
+    assert _FakeLightningModule.instances[0].fit_calls == [(["train"], ["validation"])]
     assert result.best_epoch == 1
     assert result.best_objective_value == 1.0
     assert len(result.train_history) == 2
@@ -190,25 +244,13 @@ def test_training_fit_restores_best_state_and_calls_early_stop_callback(
     assert len(result.objective_history) == 2
     assert model.weight.item() == 1.0
     assert result.runtime_plan.seed == 0
-    assert early_stop_calls == [(2, 1)]
 
 
 def test_training_fit_resumes_from_checkpoint(
-    tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    epoch_state = {"epoch": 1}
-    checkpoints: list[TrainingCheckpoint] = []
-
-    def fake_run_epoch(model, *, training, **_kwargs):
-        if training:
-            epoch_state["epoch"] += 1
-            model.weight.data.fill_(float(epoch_state["epoch"]))
-        return MetricSet({"score": float(epoch_state["epoch"])})
-
     _patch_training_runtime(monkeypatch)
-    monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
-
+    _patch_lightning(monkeypatch)
     model = _TinyModel()
     checkpoint = TrainingCheckpoint(
         completed_epoch=1,
@@ -223,67 +265,73 @@ def test_training_fit_resumes_from_checkpoint(
             "epochs_without_improvement": 0,
         },
     )
-
     spec = _fit_spec(
-        tmp_path,
         model=model,
         training_config=_training_config(max_epochs=2, patience=2),
     )
     spec.checkpoint = checkpoint
+
     result = run_training_fit(
         spec,
-        callbacks=TrainingCallbacks(on_checkpoint=checkpoints.append),
+        callbacks=TrainingCallbacks(),
     )
 
+    module = _FakeLightningModule.instances[0]
+    assert module.start_epoch == 2
+    assert module.optimizer_state == {"epoch": 1}
+    assert _FakeTrainer.instances[0].kwargs["max_epochs"] == 1
     assert result.best_epoch == 2
     assert len(result.train_history) == 2
     assert model.weight.item() == 2.0
-    assert [saved.completed_epoch for saved in checkpoints] == [2]
 
 
 def test_training_fit_delegates_scoring_plan_to_objective_runtime(
-    tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    seen_scoring_plans: list[EvaluationScoringRuntimePlan | None] = []
-
-    def fake_run_epoch(_model, *, training, **_kwargs):
-        return MetricSet({"score": 1.0 if training else 2.0})
+    _patch_training_runtime(monkeypatch)
+    _patch_lightning(monkeypatch)
+    seen_scoring_plans: list[object] = []
 
     def evaluate_metrics(validation_metrics, scoring_plan):
-        assert validation_metrics == MetricSet({"score": 2.0})
+        assert validation_metrics == MetricSet({"score": 1.0})
         seen_scoring_plans.append(scoring_plan)
-        return MetricSet({"score": 3.0})
+        return MetricSet({"score": 1.0})
 
-    _patch_training_runtime(monkeypatch)
-    monkeypatch.setattr("spice.modeling.training_runner.run_epoch", fake_run_epoch)
     model = _TinyModel()
-    prediction_contract = cast(Any, SimpleNamespace(fit_training_state=lambda *_, **__: None))
-    representation_contract = cast(Any, SimpleNamespace())
+    prediction_contract = cast(Any, SimpleNamespace(name="prediction"))
     prepared = _prepared(train=[0], validation=[1])
 
-    result = run_training_fit(
+    run_training_fit(
         TrainingFitSpec(
             model=cast(Any, model),
             prediction_contract=prediction_contract,
-            representation_contract=representation_contract,
             objective_runtime=_objective_runtime(evaluate_metrics),
             prepared=cast(Any, prepared),
             training_config=_training_config(max_epochs=1),
         )
     )
 
-    assert result.best_objective_value == 3.0
-    assert len(seen_scoring_plans) == 1
-    scoring_plan = seen_scoring_plans[0]
-    assert scoring_plan is not None
+    module = _FakeLightningModule.instances[0]
+    scoring_plan = module.objective_scoring_plan
     assert scoring_plan.model is model
     assert scoring_plan.prediction_contract is prediction_contract
-    assert scoring_plan.representation_contract is representation_contract
     assert scoring_plan.execution_policy is prepared.execution_policy
     assert scoring_plan.store is prepared.store
-    assert scoring_plan.runtime_plan is not None
+    assert seen_scoring_plans == [scoring_plan]
     np.testing.assert_array_equal(
         scoring_plan.action_space.sample_indices,
         np.array([1], dtype=np.int64),
     )
+
+
+def test_training_fit_rejects_empty_train_or_validation_samples() -> None:
+    with pytest.raises(ValueError, match="Train and validation sample selections"):
+        run_training_fit(
+            TrainingFitSpec(
+                model=cast(Any, _TinyModel()),
+                prediction_contract=cast(Any, SimpleNamespace()),
+                objective_runtime=_objective_runtime(),
+                prepared=cast(Any, _prepared(train=[], validation=[0])),
+                training_config=_training_config(max_epochs=1),
+            )
+        )

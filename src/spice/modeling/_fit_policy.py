@@ -115,7 +115,7 @@ class TrainingFitPolicy:
             metric_id=self.objective_contract.metric_id,
             min_delta=self.min_delta,
         ):
-            self.best_state = _clone_cpu_state(_unwrap_compiled_model(model))
+            self.best_state = _clone_cpu_state(model)
             self.best_epoch = completed.epoch
             self.epochs_without_improvement = 0
         else:
@@ -153,7 +153,7 @@ class TrainingFitPolicy:
                 self.objective_history,
                 objective_contract=self.objective_contract,
             )
-            self.best_state = _clone_cpu_state(_unwrap_compiled_model(model))
+            self.best_state = _clone_cpu_state(model)
         best_value = self.objective_contract.value(
             self.objective_history[self.best_epoch - 1]
         )
@@ -191,10 +191,6 @@ class TrainingFitPolicy:
         self.epochs_without_improvement = int(
             cast(int, state["epochs_without_improvement"])
         )
-
-
-def _unwrap_compiled_model(model: TemporalModel) -> TemporalModel:
-    return cast(TemporalModel, getattr(model, "_orig_mod", model))
 
 
 def _clone_cpu_state(model: TemporalModel) -> dict[str, torch.Tensor]:

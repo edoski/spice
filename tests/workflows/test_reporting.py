@@ -8,7 +8,7 @@ from spice.config import EvaluateConfig, TrainConfig, TuneConfig, WorkflowTask
 from spice.core.reporting import Reporter
 from spice.evaluation import EvaluationSummary, coerce_evaluator_config
 from spice.metrics import MetricDescriptor, MetricSet
-from spice.modeling.training_runner import TrainingEpochProgress
+from spice.modeling._fit_policy import TrainingEpochProgress
 from spice.modeling.tuning_execution import TuningTrialProgress
 from spice.workflows import evaluate as evaluate_workflow
 from spice.workflows import reporting as workflow_reporting

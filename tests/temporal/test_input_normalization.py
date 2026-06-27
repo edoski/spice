@@ -4,8 +4,7 @@ import numpy as np
 
 from spice.temporal.input_normalization import (
     ScalerStats,
-    coerce_input_normalization_config,
-    compile_input_normalization_contract,
+    fit_row_standard_scaler,
     transform_feature_matrix,
 )
 from spice.temporal.problem_store import CompiledProblemStore
@@ -24,30 +23,14 @@ def _store() -> CompiledProblemStore:
     )
 
 
-def test_row_standard_and_window_weighted_standard_fit_different_statistics() -> None:
-    store = _store()
-    sample_indices = np.array([0, 1], dtype=np.int64)
-
-    row_contract = compile_input_normalization_contract(
-        coerce_input_normalization_config({"id": "row_standard"})
-    )
-    weighted_contract = compile_input_normalization_contract(
-        coerce_input_normalization_config({"id": "window_weighted_standard"})
+def test_row_standard_scaler_fits_over_all_feature_rows() -> None:
+    scaler = fit_row_standard_scaler(
+        _store(),
+        sample_indices=np.array([0, 1], dtype=np.int64),
     )
 
-    row_scaler = row_contract.fit_scaler(
-        store,
-        sample_indices=sample_indices,
-    )
-    weighted_scaler = weighted_contract.fit_scaler(
-        store,
-        sample_indices=sample_indices,
-    )
-
-    assert row_scaler.means == [1.0]
-    assert weighted_scaler.means == [0.75]
-    np.testing.assert_allclose(row_scaler.scales, [np.sqrt(2.0 / 3.0)])
-    np.testing.assert_allclose(weighted_scaler.scales, [np.sqrt(0.6875)])
+    assert scaler.means == [1.0]
+    np.testing.assert_allclose(scaler.scales, [np.sqrt(2.0 / 3.0)])
 
 
 def test_standard_scaler_stats_use_unit_scale_for_constant_features() -> None:
@@ -62,11 +45,8 @@ def test_standard_scaler_stats_use_unit_scale_for_constant_features() -> None:
         candidate_end_rows=store.candidate_end_rows,
         max_candidate_slots=store.max_candidate_slots,
     )
-    row_contract = compile_input_normalization_contract(
-        coerce_input_normalization_config({"id": "row_standard"})
-    )
 
-    scaler = row_contract.fit_scaler(
+    scaler = fit_row_standard_scaler(
         constant_store,
         sample_indices=np.array([0, 1], dtype=np.int64),
     )

@@ -15,19 +15,18 @@ if TYPE_CHECKING:
         PreparedActionSpace,
         PreparedTemporalFacts,
     )
-    from ...temporal.input_normalization import CompiledInputNormalizationContract, ScalerStats
+    from ...temporal.input_normalization import ScalerStats
     from ...temporal.problem_store import (
         CompiledProblemStore,
         IntVector,
     )
-    from .base import BuilderRuntimeMetadata
+    from .base import SequenceRuntimeMetadata
 
 
 @dataclass(slots=True)
 class TrainingDatasetPreparationContext:
     feature_contract: CompiledFeatureContract
     problem_contract: CompiledProblemContract
-    input_normalization_contract: CompiledInputNormalizationContract
 
 
 @dataclass(slots=True)
@@ -135,7 +134,7 @@ class ArtifactInferenceDatasetPreparationFacts:
 class ArtifactInferenceDatasetPreparationContext:
     feature_contract: CompiledFeatureContract
     problem_contract: CompiledProblemContract
-    builder_runtime_metadata: BuilderRuntimeMetadata
+    sequence_runtime_metadata: SequenceRuntimeMetadata
     scaler: ScalerStats
     temporal_capability: TemporalCapability
 
@@ -145,7 +144,7 @@ class CompiledInferenceDatasetPreparationRequest:
     feature_contract: CompiledFeatureContract
     problem_contract: CompiledProblemContract
     delay_seconds: int
-    builder_runtime_metadata: BuilderRuntimeMetadata
+    sequence_runtime_metadata: SequenceRuntimeMetadata
     scaler: ScalerStats
     temporal_capability: TemporalCapability
     sample_timestamp_window: SampleTimestampWindow
@@ -160,7 +159,7 @@ class PreparedTrainingDataset:
     store: CompiledProblemStore
     samples: PreparedTrainingSampleRoles
     scaler: ScalerStats
-    builder_runtime_metadata: BuilderRuntimeMetadata
+    sequence_runtime_metadata: SequenceRuntimeMetadata
     temporal_capability: TemporalCapability
 
     @property

@@ -109,7 +109,7 @@ def model_workflow_override():
                 "seed": 2026,
                 "deterministic": True,
                 "log_every_n_steps": 1,
-                "input_normalization": {"id": "row_standard"},
+                "sequence": {"min_length": 64, "max_length": 4096},
             },
             "evaluator": {
                 "id": "poisson_replay",

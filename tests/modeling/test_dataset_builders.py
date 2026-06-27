@@ -5,7 +5,7 @@ from typing import cast
 import numpy as np
 import polars as pl
 
-from spice.config import TrainConfig, WorkflowTask
+from spice.config import SequenceConfig, TrainConfig, WorkflowTask
 from spice.corpus.metadata import (
     ChainMetadata,
     CompactValidationReport,
@@ -18,12 +18,13 @@ from spice.corpus.metadata import (
     SplitRequestMetadata,
 )
 from spice.modeling.dataset_builders import (
-    ArtifactInferenceDatasetPreparationContext,
-    ArtifactInferenceDatasetPreparationFacts,
+    CompiledInferenceDatasetPreparationRequest,
     EvaluationCoverageWindow,
-    FixedSequenceTemporalBuilderRuntimeMetadata,
+    SequenceRuntimeMetadata,
     TrainingDatasetPreparationContext,
     TrainingDatasetPreparationFacts,
+    prepare_inference_dataset,
+    prepare_training_dataset,
 )
 from spice.modeling.pipeline import build_artifact_training_spec
 from tests.dataset_helpers import (
@@ -126,8 +127,23 @@ def _corpus_manifest(config: TrainConfig) -> CorpusManifest:
     )
 
 
+def _with_sequence(config: TrainConfig, *, min_length: int, max_length: int) -> TrainConfig:
+    return config.model_copy(
+        update={
+            "training": config.training.model_copy(
+                update={
+                    "sequence": SequenceConfig(
+                        min_length=min_length,
+                        max_length=max_length,
+                    )
+                }
+            )
+        }
+    )
+
+
 def _prepare_training_dataset(rows, *, spec):
-    return spec.dataset_builder_contract.prepare_training_dataset(
+    return prepare_training_dataset(
         pl.DataFrame(rows),
         facts=TrainingDatasetPreparationFacts(
             split=spec.split,
@@ -136,8 +152,8 @@ def _prepare_training_dataset(rows, *, spec):
         context=TrainingDatasetPreparationContext(
             feature_contract=spec.feature_contract,
             problem_contract=spec.problem_contract,
-            input_normalization_contract=spec.input_normalization_contract,
         ),
+        sequence=spec.training.sequence,
     )
 
 
@@ -170,17 +186,13 @@ def test_fixed_context_dataset_builder_prepares_seq_len_without_builder_owned_cl
     spec = _spec(config)
     prepared = _prepare_training_dataset(_make_history_rows_with_margin(config), spec=spec)
 
-    assert config.dataset_builder.id == "fixed_sequence_temporal"
     assert isinstance(
-        prepared.builder_runtime_metadata,
-        FixedSequenceTemporalBuilderRuntimeMetadata,
+        prepared.sequence_runtime_metadata,
+        SequenceRuntimeMetadata,
     )
-    builder_metadata = cast(
-        FixedSequenceTemporalBuilderRuntimeMetadata,
-        prepared.builder_runtime_metadata,
-    )
-    assert builder_metadata.sequence_length >= 64
-    assert builder_metadata.median_dt_seconds > 0.0
+    sequence_metadata = prepared.sequence_runtime_metadata
+    assert sequence_metadata.sequence_length >= 64
+    assert sequence_metadata.median_dt_seconds > 0.0
     assert prepared.temporal_capability.action_width == prepared.store.max_candidate_slots
     assert prepared.sample_count == prepared.store.n_samples
     assert prepared.samples.train.sample_indices.size > 0
@@ -190,7 +202,7 @@ def test_fixed_context_dataset_builder_prepares_seq_len_without_builder_owned_cl
         prepared.samples.train.temporal_facts.outcome_facts.baseline_rows.shape
     )
     train_context = prepared.store.context_windows(prepared.samples.train.sample_indices)
-    assert set(train_context.context_lengths.tolist()) == {builder_metadata.sequence_length}
+    assert set(train_context.context_lengths.tolist()) == {sequence_metadata.sequence_length}
 
 
 def test_fixed_sequence_length_calibration_uses_train_sample_rows_only(
@@ -204,11 +216,6 @@ def test_fixed_sequence_length_calibration_uses_train_sample_rows_only(
             workspace=tmp_path,
             surface="current_row_fee_dynamics",
             override={
-                "dataset_builder": {
-                    "id": "fixed_sequence_temporal",
-                    "min_sequence_length": 1,
-                    "max_sequence_length": 200,
-                },
                 "features": {
                     "id": "core_fee_dynamics",
                     "outputs": ["log_base_fee_per_gas"],
@@ -228,6 +235,7 @@ def test_fixed_sequence_length_calibration_uses_train_sample_rows_only(
             },
         ),
     )
+    config = _with_sequence(config, min_length=1, max_length=200)
     rows = _make_rows_with_tail_cadence_shift(
         420,
         fast_start_offset=320,
@@ -237,8 +245,8 @@ def test_fixed_sequence_length_calibration_uses_train_sample_rows_only(
     spec = _spec(config)
     prepared = _prepare_training_dataset(rows, spec=spec)
 
-    assert prepared.builder_runtime_metadata.median_dt_seconds == 12.0
-    assert prepared.builder_runtime_metadata.sequence_length == 10
+    assert prepared.sequence_runtime_metadata.median_dt_seconds == 12.0
+    assert prepared.sequence_runtime_metadata.sequence_length == 10
 
 
 def test_training_cutoff_excludes_samples_whose_outcome_horizon_reaches_cutoff(
@@ -252,11 +260,6 @@ def test_training_cutoff_excludes_samples_whose_outcome_horizon_reaches_cutoff(
             workspace=tmp_path,
             surface="current_row_fee_dynamics",
             override={
-                "dataset_builder": {
-                    "id": "fixed_sequence_temporal",
-                    "min_sequence_length": 4,
-                    "max_sequence_length": 64,
-                },
                 "problem": {
                     "id": "test_fixed_context_problem",
                     "lookback_seconds": 120,
@@ -272,6 +275,7 @@ def test_training_cutoff_excludes_samples_whose_outcome_horizon_reaches_cutoff(
             },
         ),
     )
+    config = _with_sequence(config, min_length=4, max_length=64)
     cutoff = 3_600
     config = config.model_copy(update={"training_cutoff_timestamp": cutoff})
     spec = _spec(config)
@@ -310,11 +314,6 @@ def test_fixed_sequence_inference_prep_reconstructs_artifact_runtime_state(
             workspace=tmp_path,
             surface="current_row_fee_dynamics",
             override={
-                "dataset_builder": {
-                    "id": "fixed_sequence_temporal",
-                    "min_sequence_length": 4,
-                    "max_sequence_length": 64,
-                },
                 "features": {
                     "id": "core_fee_dynamics",
                     "outputs": ["log_base_fee_per_gas"],
@@ -334,6 +333,7 @@ def test_fixed_sequence_inference_prep_reconstructs_artifact_runtime_state(
             },
         ),
     )
+    config = _with_sequence(config, min_length=4, max_length=64)
     spec = _spec(config)
     history_rows = make_block_rows(
         240,
@@ -354,22 +354,21 @@ def test_fixed_sequence_inference_prep_reconstructs_artifact_runtime_state(
     evaluation_end = evaluation_rows[39]["timestamp"]
     first_post_window_timestamp = evaluation_rows[40]["timestamp"]
 
-    prepared = spec.dataset_builder_contract.prepare_inference_dataset(
+    evaluation_coverage = EvaluationCoverageWindow(
+        first_timestamp=evaluation_start,
+        last_timestamp=evaluation_end,
+    )
+    prepared = prepare_inference_dataset(
         pl.DataFrame(history_rows),
         pl.DataFrame(evaluation_rows),
-        facts=ArtifactInferenceDatasetPreparationFacts(
-            delay_seconds=12,
-            evaluation_coverage=EvaluationCoverageWindow(
-                first_timestamp=evaluation_start,
-                last_timestamp=evaluation_end,
-            ),
-        ),
-        context=ArtifactInferenceDatasetPreparationContext(
+        CompiledInferenceDatasetPreparationRequest(
             feature_contract=spec.feature_contract,
             problem_contract=spec.problem_contract,
-            builder_runtime_metadata=trained.builder_runtime_metadata,
+            delay_seconds=12,
+            sequence_runtime_metadata=trained.sequence_runtime_metadata,
             scaler=trained.scaler,
             temporal_capability=trained.temporal_capability,
+            sample_timestamp_window=evaluation_coverage.to_sample_timestamp_window(),
         ),
     )
 

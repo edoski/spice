@@ -43,15 +43,7 @@ class PredictionTargetBatch(Protocol):
 
 
 class PreparedPredictionTargets(Protocol):
-    @property
-    def estimated_storage_bytes(self) -> int: ...
-
     def build_batch(self, sample_positions: torch.Tensor) -> PredictionTargetBatch: ...
-
-    def to_device_storage(
-        self,
-        device: torch.device,
-    ) -> PreparedPredictionTargets: ...
 
 
 class EpochMetricAccumulator(Protocol):

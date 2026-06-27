@@ -27,7 +27,6 @@ conf/
   provider/         RPC endpoint/provider specs
   features/         feature-composition specs
   problem/          temporal problem specs
-  dataset_builder/  tensorization strategy specs
   prediction/       prediction-family configs
   model/            model-family configs
   objective/        optimization objective configs

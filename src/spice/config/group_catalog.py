@@ -14,7 +14,6 @@ from pydantic import BaseModel, ValidationError
 from ..core.errors import ConfigResolutionError
 from ..evaluation import coerce_evaluator_config
 from ..execution.models import ExecutionSpec
-from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.registry import coerce_model_config
 from ..objectives import coerce_objective_config
 from .models import (
@@ -38,7 +37,6 @@ class ConfigGroup(StrEnum):
     BENCHMARK = "benchmark"
     CHAIN = "chain"
     CORPUS = "corpus"
-    DATASET_BUILDER = "dataset_builder"
     EVALUATOR = "evaluator"
     EVALUATIONS = "evaluations"
     EXECUTION = "execution"
@@ -143,14 +141,6 @@ GROUP_SPECS: tuple[GroupSpec[object], ...] = (
         seed_name="publicnode",
         validate=ProviderSpec.model_validate,
         identity_field="name",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    GroupSpec(
-        group=ConfigGroup.DATASET_BUILDER,
-        seed_name="fixed_sequence_temporal",
-        validate=coerce_dataset_builder_config,
-        identity_field="id",
         seed_from_requested_name=True,
         public=True,
     ),

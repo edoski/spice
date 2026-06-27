@@ -63,11 +63,9 @@ Generic Pydantic validation cannot always reconstruct concrete nested types. The
 
 ```text
 evaluator.id             -> evaluator config type
-dataset_builder.id       -> dataset-builder config type
 model.id                 -> model-family config type
 problem.compiler.id      -> problem compiler config type
 problem.execution_policy.id   -> execution-policy config type
-training.input_normalization.id -> input-normalization config type
 objective.id             -> objective config shape
 ```
 
@@ -112,8 +110,6 @@ Tuned-parameter application is a typed transform. It rebuilds `TrainConfig` or `
 `spice.config` exports resolved config types, workflow selection types, `resolve_workflow_config()`, workflow snapshot codecs, and config-owned coercers such as `coerce_problem_spec()` and `coerce_features_config()`.
 
 The generic `ConfigModel` base is intentionally not a public `spice.config` export. Modules that define config models import it from `spice.core.config_model`.
-
-It does not re-export dataset-builder coercion. Dataset-builder config coercion belongs to `spice.modeling.dataset_builders`.
 
 ## Default Remote Target
 

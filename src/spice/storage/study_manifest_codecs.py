@@ -7,6 +7,7 @@ from typing import cast
 from ..config.models import (
     PredictionConfig,
     ProblemSpec,
+    SequenceConfig,
     SplitConfig,
     TrainingConfig,
     TuningSearchConfig,
@@ -16,21 +17,20 @@ from ..config.models import (
 )
 from ..core.errors import StateLayoutError
 from ..evaluation import coerce_evaluator_config
-from ..modeling.dataset_builders import coerce_dataset_builder_config
 from ..modeling.families.base import ModelConfig
 from ..modeling.families.registry import coerce_model_config
 from ..modeling.tuned_config import coerce_tuning_space_config
 from ..objectives import coerce_objective_config
+from .artifact_codecs import TrainingSourcePayload
 from .identity import identity_payload, study_manifest_identity
 from .payloads import PayloadCodec, PayloadRecord, decode_payload_record
 from .semantics_codecs import STUDY_SEMANTICS_CODEC
-from .artifact_codecs import TrainingSourcePayload
 from .study_models import StudyManifest
 
 
 class StudyDefinitionPayload(PayloadRecord):
     study_id: str
-    dataset_builder: dict[str, object]
+    sequence: dict[str, object]
     prediction: dict[str, object]
     objective: dict[str, object]
     evaluator: dict[str, object] | None = None
@@ -38,6 +38,7 @@ class StudyDefinitionPayload(PayloadRecord):
     chain_name: str
     corpus_id: str
     corpus_name: str
+    training_cutoff_timestamp: int | None = None
     training_source: dict[str, object]
     problem: dict[str, object]
     features: dict[str, object]
@@ -77,7 +78,7 @@ class StudyManifestPayload(PayloadRecord):
         prediction = PredictionConfig.model_validate(definition.prediction)
         return StudyManifest(
             study_id=definition.study_id,
-            dataset_builder=coerce_dataset_builder_config(definition.dataset_builder),
+            sequence=SequenceConfig.model_validate(definition.sequence),
             prediction=prediction,
             objective=coerce_objective_config(definition.objective),
             evaluator=(

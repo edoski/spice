@@ -9,7 +9,7 @@ import torch
 
 from spice.evaluation import EvaluationRun, EvaluationSummary
 from spice.metrics import MetricSet
-from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
+from spice.modeling.batch_plan import BatchRuntimeContext
 from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.modeling.scoring import (
     EvaluationScoringRuntimePlan,
@@ -32,11 +32,7 @@ def test_score_evaluation_validates_predicts_and_runs_evaluator(monkeypatch) -> 
     runtime_plan = ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        batch_runtime_context=BatchRuntimeContext(
-            batch_size=8,
-            available_host_memory_bytes=1024,
-            device_storage_budget=DeviceStorageBudget.disabled(),
-        ),
+        batch_runtime_context=BatchRuntimeContext(batch_size=8),
         deterministic=None,
         seed=0,
     )
@@ -62,7 +58,7 @@ def test_score_evaluation_validates_predicts_and_runs_evaluator(monkeypatch) -> 
             return summary
 
     monkeypatch.setattr(
-        "spice.modeling.scoring._predict_decoded_result",
+        "spice.modeling.scoring.predict_decoded_result",
         fake_predict_decoded_result,
     )
 
@@ -70,7 +66,6 @@ def test_score_evaluation_validates_predicts_and_runs_evaluator(monkeypatch) -> 
         scoring_plan=EvaluationScoringRuntimePlan(
             model=cast(Any, SimpleNamespace()),
             prediction_contract=cast(Any, SimpleNamespace(decoded_result_id="ranked_actions")),
-            representation_contract=cast(Any, SimpleNamespace()),
             execution_policy=cast(Any, SimpleNamespace(name="policy")),
             store=cast(Any, SimpleNamespace()),
             action_space=PreparedActionSpace(
@@ -97,11 +92,7 @@ def test_score_prediction_metrics_uses_runtime_plan_and_prediction_training_stat
     runtime_plan = ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        batch_runtime_context=BatchRuntimeContext(
-            batch_size=1,
-            available_host_memory_bytes=1024,
-            device_storage_budget=DeviceStorageBudget.disabled(),
-        ),
+        batch_runtime_context=BatchRuntimeContext(batch_size=1),
         deterministic=True,
         seed=1,
     )
@@ -151,7 +142,6 @@ def test_score_prediction_metrics_uses_runtime_plan_and_prediction_training_stat
         PredictionMetricScoringRuntimePlan(
             model=cast(Any, torch.nn.Linear(1, 1)),
             prediction_contract=cast(Any, prediction_contract),
-            representation_contract=cast(Any, SimpleNamespace()),
             execution_policy=cast(Any, SimpleNamespace()),
             store=cast(Any, SimpleNamespace()),
             temporal_facts=temporal_facts,

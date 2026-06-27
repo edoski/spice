@@ -2,27 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 
-import torch
+import lightning.pytorch as pl
 
 from ..config.models import TrainingConfig
 from ..metrics import MetricSet
 from ..prediction import CompiledPredictionContract
-from ._epoch_execution import run_epoch
-from ._fit_policy import (
-    CompletedEpoch,
-    FitPolicyDecision,
-    TrainingEpochProgress,
-    TrainingFitPolicy,
-)
+from ._fit_policy import TrainingFitPolicy
 from .dataset_builders import PreparedTrainingDataset
+from .lightning_module import SpiceLightningModule
 from .models import TemporalModel
 from .objective_runtime import CompiledObjectiveRuntime
-from .representations import CompiledRepresentationContract
 from .runtime_planning import ModelingRuntimePlan, modeling_backend_scope
 from .scoring import EvaluationScoringRuntimePlan
+from .training_runner_types import (
+    TrainingCallbacks,
+    TrainingCheckpoint,
+)
 from .training_runtime import prepare_training_runtime
 
 
@@ -38,43 +35,14 @@ class TrainingResult:
     runtime_plan: ModelingRuntimePlan
 
 
-@dataclass(frozen=True, slots=True)
-class TrainingCheckpoint:
-    completed_epoch: int
-    model_state: dict[str, torch.Tensor]
-    optimizer_state: dict[str, object]
-    policy_state: dict[str, object]
-
-
-EpochEndCallback = Callable[[TrainingEpochProgress], None]
-EarlyStopCallback = Callable[[int, int], None]
-CheckpointCallback = Callable[[TrainingCheckpoint], None]
-
-
-@dataclass(frozen=True, slots=True)
-class TrainingCallbacks:
-    on_epoch_end: EpochEndCallback | None = None
-    on_early_stop: EarlyStopCallback | None = None
-    on_checkpoint: CheckpointCallback | None = None
-
-
 @dataclass(slots=True)
 class TrainingFitSpec:
     model: TemporalModel
     prediction_contract: CompiledPredictionContract
     objective_runtime: CompiledObjectiveRuntime
-    representation_contract: CompiledRepresentationContract
     prepared: PreparedTrainingDataset
     training_config: TrainingConfig
     checkpoint: TrainingCheckpoint | None = None
-
-
-def _emit_early_stop(
-    callbacks: TrainingCallbacks,
-    decision: FitPolicyDecision,
-) -> None:
-    if decision.early_stop is not None and callbacks.on_early_stop is not None:
-        callbacks.on_early_stop(*decision.early_stop)
 
 
 def run_training_fit(
@@ -100,7 +68,6 @@ def run_training_fit(
         spec.model,
         prediction_contract=spec.prediction_contract,
         execution_policy=spec.prepared.execution_policy,
-        representation_contract=spec.representation_contract,
         store=spec.prepared.store,
         train_samples=spec.prepared.samples.train,
         validation_samples=spec.prepared.samples.validation,
@@ -110,101 +77,59 @@ def run_training_fit(
     training_runtime_plan = prepared_runtime.batch_plan
     runtime_plan = training_runtime_plan.runtime_plan
     prediction_training_state = training_runtime_plan.prediction_training_state
-    optimizer = prepared_runtime.optimizer
     start_epoch = 1
+    optimizer_state = None
     if spec.checkpoint is not None:
         fit_model.load_state_dict(spec.checkpoint.model_state)
-        optimizer.load_state_dict(spec.checkpoint.optimizer_state)
         policy.load_state_dict(spec.checkpoint.policy_state)
+        optimizer_state = spec.checkpoint.optimizer_state
         start_epoch = spec.checkpoint.completed_epoch + 1
     objective_scoring_plan = EvaluationScoringRuntimePlan(
         model=fit_model,
         prediction_contract=spec.prediction_contract,
-        representation_contract=spec.representation_contract,
         execution_policy=spec.prepared.execution_policy,
         store=spec.prepared.store,
         action_space=spec.prepared.samples.validation.action_space,
         runtime_plan=runtime_plan,
     )
-    with modeling_backend_scope(runtime_plan):
-        for epoch in range(start_epoch, spec.training_config.max_epochs + 1):
-            train_metrics = run_epoch(
-                fit_model,
-                loader=training_runtime_plan.train_batch_plan.source,
-                runtime_plan=runtime_plan,
-                prediction_contract=spec.prediction_contract,
-                prediction_training_state=prediction_training_state,
-                optimizer=optimizer,
-                gradient_clip_norm=spec.training_config.gradient_clip_norm,
-                training=True,
+    module = SpiceLightningModule(
+        model=fit_model,
+        prediction_contract=spec.prediction_contract,
+        objective_runtime=spec.objective_runtime,
+        objective_scoring_plan=objective_scoring_plan,
+        prediction_training_state=prediction_training_state,
+        training_config=spec.training_config,
+        policy=policy,
+        callbacks=active_callbacks,
+        start_epoch=start_epoch,
+        optimizer_state=optimizer_state,
+    )
+    remaining_epochs = max(0, spec.training_config.max_epochs - start_epoch + 1)
+    if remaining_epochs > 0:
+        trainer = pl.Trainer(
+            accelerator="gpu",
+            devices=1,
+            precision="32-true",
+            max_epochs=remaining_epochs,
+            num_sanity_val_steps=0,
+            use_distributed_sampler=False,
+            logger=False,
+            enable_checkpointing=False,
+            enable_progress_bar=False,
+            deterministic=spec.training_config.deterministic,
+            log_every_n_steps=spec.training_config.log_every_n_steps,
+        )
+        with modeling_backend_scope(runtime_plan):
+            trainer.fit(
+                module,
+                train_dataloaders=training_runtime_plan.train_batch_plan.source,
+                val_dataloaders=training_runtime_plan.validation_batch_plan.source,
             )
-            train_decision = policy.handle_nonfinite_metrics(
-                epoch=epoch,
-                phase="train",
-                metrics=train_metrics,
-            )
-            if train_decision is not None:
-                _emit_early_stop(active_callbacks, train_decision)
-                break
-            validation_metrics = run_epoch(
-                fit_model,
-                loader=training_runtime_plan.validation_batch_plan.source,
-                runtime_plan=runtime_plan,
-                prediction_contract=spec.prediction_contract,
-                prediction_training_state=prediction_training_state,
-                optimizer=None,
-                gradient_clip_norm=None,
-                training=False,
-            )
-            validation_decision = policy.handle_nonfinite_metrics(
-                epoch=epoch,
-                phase="validation",
-                metrics=validation_metrics,
-            )
-            if validation_decision is not None:
-                _emit_early_stop(active_callbacks, validation_decision)
-                break
-            objective_metrics = spec.objective_runtime.evaluate_metrics(
-                validation_metrics,
-                scoring_plan=objective_scoring_plan,
-            )
-            objective_decision = policy.handle_nonfinite_metrics(
-                epoch=epoch,
-                phase="objective",
-                metrics=objective_metrics,
-            )
-            if objective_decision is not None:
-                _emit_early_stop(active_callbacks, objective_decision)
-                break
-            fit_decision = policy.record_completed_epoch(
-                CompletedEpoch(
-                    epoch=epoch,
-                    train_metrics=train_metrics,
-                    validation_metrics=validation_metrics,
-                    objective_metrics=objective_metrics,
-                ),
-                model=fit_model,
-            )
-            if fit_decision.progress is not None and active_callbacks.on_epoch_end is not None:
-                active_callbacks.on_epoch_end(fit_decision.progress)
-            if active_callbacks.on_checkpoint is not None:
-                active_callbacks.on_checkpoint(
-                    TrainingCheckpoint(
-                        completed_epoch=epoch,
-                        model_state={
-                            key: value.detach().cpu().clone()
-                            for key, value in fit_model.state_dict().items()
-                        },
-                        optimizer_state=optimizer.state_dict(),
-                        policy_state=policy.state_dict(),
-                    )
-                )
 
-            if fit_decision.should_stop:
-                _emit_early_stop(active_callbacks, fit_decision)
-                break
-
-    best_epoch, best_state, best_value = policy.finalized_best(model=fit_model)
+    best = module.finalized_best()
+    best_epoch = best.best_epoch
+    best_state = best.best_state
+    best_value = best.best_objective_value
     spec.model.load_state_dict(best_state)
 
     return TrainingResult(

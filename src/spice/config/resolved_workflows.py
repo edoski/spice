@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import TypeAlias, cast, overload
 
 from ..evaluation import EvaluatorConfig
-from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import ModelConfig
 from ..objectives import ObjectiveConfig
 from .models import (
@@ -20,12 +19,12 @@ from .models import (
     SplitConfig,
     StorageSpec,
     StudyConfig,
+    TimestampWindowSpec,
     TrainConfig,
     TrainingConfig,
     TuneConfig,
     TuningConfig,
     TuningSpaceConfig,
-    TimestampWindowSpec,
     WorkflowTask,
 )
 
@@ -45,7 +44,6 @@ class ResolvedModelWorkflowFields:
     storage: StorageSpec
     problem: ProblemSpec
     model: ModelConfig[str]
-    dataset_builder: DatasetBuilderConfig
     features: FeaturesConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
@@ -145,7 +143,6 @@ def _assemble_train_config(fields: ResolvedTrainWorkflowFields) -> TrainConfig:
         training_cutoff_timestamp=fields.training_cutoff_timestamp,
         problem=model_fields.problem,
         model=model_fields.model,
-        dataset_builder=model_fields.dataset_builder,
         features=model_fields.features,
         prediction=model_fields.prediction,
         objective=model_fields.objective,
@@ -171,7 +168,6 @@ def _assemble_tune_config(fields: ResolvedTuneWorkflowFields) -> TuneConfig:
         training_cutoff_timestamp=fields.training_cutoff_timestamp,
         problem=model_fields.problem,
         model=model_fields.model,
-        dataset_builder=model_fields.dataset_builder,
         features=model_fields.features,
         prediction=model_fields.prediction,
         objective=model_fields.objective,

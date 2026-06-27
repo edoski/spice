@@ -62,27 +62,6 @@ class PredictionSemantics:
 
 
 @dataclass(frozen=True, slots=True)
-class InputNormalizationSemantics:
-    """Resolved input-normalization identity for persisted provenance."""
-
-    input_normalization_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class RepresentationSemantics:
-    """Resolved model-input representation identity for persisted provenance."""
-
-    representation_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class DatasetBuilderSemantics:
-    """Resolved dataset-builder identity for persisted provenance."""
-
-    dataset_builder_id: str
-
-
-@dataclass(frozen=True, slots=True)
 class TemporalCapabilitySemantics:
     """Stable semantic projection of a trained artifact's temporal capability."""
 
@@ -100,9 +79,6 @@ class StudySemantics:
     objective: ObjectiveSemantics
     feature: FeatureSemantics
     prediction: PredictionSemantics
-    input_normalization: InputNormalizationSemantics
-    representation: RepresentationSemantics
-    dataset_builder: DatasetBuilderSemantics
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +90,4 @@ class ArtifactSemantics:
     objective: ObjectiveSemantics
     feature: FeatureSemantics
     prediction: PredictionSemantics
-    input_normalization: InputNormalizationSemantics
-    representation: RepresentationSemantics
-    dataset_builder: DatasetBuilderSemantics
     temporal_capability: TemporalCapabilitySemantics

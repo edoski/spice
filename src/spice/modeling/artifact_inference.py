@@ -17,10 +17,10 @@ from ..storage.workflow_roots import ArtifactRootHandle, CorpusRootHandle
 from ..temporal.contracts import compile_problem_contract
 from .artifacts import load_training_artifact
 from .dataset_builders import (
-    ArtifactInferenceDatasetPreparationContext,
-    ArtifactInferenceDatasetPreparationFacts,
+    CompiledInferenceDatasetPreparationRequest,
     EvaluationCoverageWindow,
     PreparedInferenceDataset,
+    prepare_inference_dataset,
 )
 from .results import (
     EvaluationExecutionProvenance,
@@ -139,22 +139,21 @@ def prepare_artifact_inference_context(
         required_end_timestamp=required_end,
     )
     blocks = load_block_frame(corpus.blocks_dir)
-    prepared = loaded_artifact.dataset_builder_contract.prepare_inference_dataset(
+    coverage = EvaluationCoverageWindow(
+        first_timestamp=scenario_start,
+        last_timestamp=scenario_end - 1,
+    )
+    prepared = prepare_inference_dataset(
         blocks.head(0),
         blocks,
-        facts=ArtifactInferenceDatasetPreparationFacts(
-            delay_seconds=delay_seconds,
-            evaluation_coverage=EvaluationCoverageWindow(
-                first_timestamp=scenario_start,
-                last_timestamp=scenario_end - 1,
-            ),
-        ),
-        context=ArtifactInferenceDatasetPreparationContext(
+        CompiledInferenceDatasetPreparationRequest(
             feature_contract=feature_contract,
             problem_contract=problem_contract,
-            builder_runtime_metadata=manifest.builder_runtime_metadata,
+            delay_seconds=delay_seconds,
+            sequence_runtime_metadata=manifest.sequence_runtime_metadata,
             scaler=manifest.scaler,
             temporal_capability=manifest.temporal_capability,
+            sample_timestamp_window=coverage.to_sample_timestamp_window(),
         ),
     )
     runtime_plan = build_cuda_modeling_runtime_plan(
@@ -165,7 +164,6 @@ def prepare_artifact_inference_context(
     scoring_plan = EvaluationScoringRuntimePlan(
         model=loaded_artifact.model,
         prediction_contract=prediction_contract,
-        representation_contract=loaded_artifact.representation_contract,
         execution_policy=prepared.execution_policy,
         store=prepared.store,
         action_space=prepared.samples.action_space,

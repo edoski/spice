@@ -117,7 +117,7 @@ def artifact_sections(
                 ("chain", manifest.chain_name),
                 ("problem", manifest.problem_id),
                 ("execution policy", manifest.semantics.execution_policy.execution_policy_id),
-                ("dataset builder", manifest.dataset_builder_id),
+                ("sequence length", str(manifest.sequence_runtime_metadata.sequence_length)),
                 ("features", manifest.features_id),
                 ("model", manifest.model.id),
                 ("variant", manifest.variant.value),

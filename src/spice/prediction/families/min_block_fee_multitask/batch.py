@@ -71,14 +71,6 @@ class PreparedMinBlockFeeTargets:
     min_block_offsets: torch.Tensor
     min_block_log_fees: torch.Tensor
 
-    @property
-    def estimated_storage_bytes(self) -> int:
-        return (
-            self.action_mask.element_size() * self.action_mask.numel()
-            + self.min_block_offsets.element_size() * self.min_block_offsets.numel()
-            + self.min_block_log_fees.element_size() * self.min_block_log_fees.numel()
-        )
-
     def build_batch(self, sample_positions: torch.Tensor) -> MinBlockFeeTargetBatch:
         positions = sample_positions.detach().cpu().to(dtype=torch.int64, copy=False)
         index = positions.to(device=self.action_mask.device)
@@ -86,26 +78,6 @@ class PreparedMinBlockFeeTargets:
             action_mask=self.action_mask.index_select(0, index),
             min_block_offsets=self.min_block_offsets.index_select(0, index),
             min_block_log_fees=self.min_block_log_fees.index_select(0, index),
-        )
-
-    def to_device_storage(
-        self,
-        device: torch.device,
-    ) -> PreparedMinBlockFeeTargets:
-        if (
-            self.action_mask.device == device
-            and self.min_block_offsets.device == device
-            and self.min_block_log_fees.device == device
-        ):
-            return self
-        non_blocking = device.type == "cuda"
-        return PreparedMinBlockFeeTargets(
-            action_mask=self.action_mask.to(device, non_blocking=non_blocking),
-            min_block_offsets=self.min_block_offsets.to(device, non_blocking=non_blocking),
-            min_block_log_fees=self.min_block_log_fees.to(
-                device,
-                non_blocking=non_blocking,
-            ),
         )
 
 

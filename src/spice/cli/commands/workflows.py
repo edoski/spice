@@ -10,6 +10,7 @@ from ...config import (
     TrainWorkflowSelection,
     TuneWorkflowSelection,
 )
+from ...config.models import TimestampWindowSpec
 from ...config.resolution import resolve_workflow_config
 from ...config.resolved_workflows import ResolvedWorkflowConfig
 from ...core.reporting import Reporter
@@ -20,8 +21,8 @@ from ..options import (
     WorkflowArtifactConsumerOption,
     WorkflowBatchSizeOption,
     WorkflowChainOption,
-    WorkflowCorpusOption,
     WorkflowCorpusConsumerOption,
+    WorkflowCorpusOption,
     WorkflowDelaySecondsOption,
     WorkflowDependencyOption,
     WorkflowDetachOption,
@@ -213,13 +214,9 @@ def evaluate_command(
             artifact_id=artifact_id,
             corpus_id=corpus_id,
             evaluator=evaluator,
-            evaluation_window=(
-                None
-                if evaluation_start is None and evaluation_duration_seconds is None
-                else {
-                    "start": evaluation_start,
-                    "duration_seconds": evaluation_duration_seconds,
-                }
+            evaluation_window=_evaluation_window(
+                evaluation_start,
+                evaluation_duration_seconds,
             ),
             delay_seconds=delay_seconds,
             batch_size=batch_size,
@@ -230,6 +227,24 @@ def evaluate_command(
         target=target,
         dependency=dependency,
         detach=detach,
+    )
+
+
+def _evaluation_window(
+    evaluation_start: WorkflowEvaluationWindowStartOption,
+    evaluation_duration_seconds: WorkflowEvaluationWindowDurationOption,
+) -> TimestampWindowSpec | None:
+    if evaluation_start is None and evaluation_duration_seconds is None:
+        return None
+    if evaluation_start is None or evaluation_duration_seconds is None:
+        raise ValueError(
+            "--evaluation-start and --evaluation-duration-seconds must be provided together"
+        )
+    return TimestampWindowSpec.model_validate(
+        {
+            "start": evaluation_start,
+            "duration_seconds": evaluation_duration_seconds,
+        }
     )
 
 

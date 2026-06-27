@@ -3,26 +3,22 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypeVar, cast
+from typing import TypeVar
 
 from ..prediction import CompiledPredictionContract
 from ..prediction.contracts import ModelInputBatch, PredictionBatch
 from ..temporal.execution_policy import (
-    CompiledExecutionPolicyContract,
     PreparedActionSpace,
     PreparedTemporalFacts,
 )
 from ..temporal.problem_store import CompiledProblemStore, IntVector
-from ._runtime import ForwardBatch, run_model_forward_pass
-from ._runtime_probe import build_measured_modeling_runtime_plan, measure_device_resident_budget
+from ._runtime import run_model_forward_pass
 from .batch_plan import (
     BatchPlan,
-    BatchSource,
     build_model_input_batch_plan,
     build_prediction_batch_plan,
 )
 from .models import ModelOutputs, TemporalModel
-from .representations import CompiledRepresentationContract
 from .runtime_planning import ModelingRuntimePlan
 
 ForwardBatchT = TypeVar("ForwardBatchT", ModelInputBatch, PredictionBatch)
@@ -40,44 +36,12 @@ def _run_planned_forward(
     runtime_plan: ModelingRuntimePlan,
     on_outputs: Callable[[ForwardBatchT, ModelOutputs], None],
 ) -> None:
-    planned_runtime_plan = build_measured_modeling_runtime_plan(
-        runtime_plan,
-        build_warmup_plan=build_plan,
-        measure_warmup_budget=lambda warmup_plan, warmup_runtime_plan: (
-            _measure_forward_batch_budget(
-                model,
-                loader=warmup_plan.source,
-                runtime_plan=warmup_runtime_plan,
-            )
-        ),
-    )
-    batch_plan = build_plan(planned_runtime_plan)
+    batch_plan = build_plan(runtime_plan)
     run_model_forward_pass(
         model,
         loader=batch_plan.source,
-        runtime_plan=planned_runtime_plan,
+        runtime_plan=runtime_plan,
         on_outputs=on_outputs,
-    )
-
-
-def _measure_forward_batch_budget(
-    model: TemporalModel,
-    *,
-    loader: BatchSource[ForwardBatch],
-    runtime_plan: ModelingRuntimePlan,
-) -> int:
-    def _run_forward_probe() -> None:
-        batch = next(iter(loader))
-        run_model_forward_pass(
-            model,
-            loader=cast(BatchSource[ForwardBatch], (batch,)),
-            runtime_plan=runtime_plan,
-            on_outputs=lambda _batch, _outputs: None,
-        )
-
-    return measure_device_resident_budget(
-        resolved_device=runtime_plan.resolved_device,
-        run_probe=_run_forward_probe,
     )
 
 
@@ -86,8 +50,6 @@ def run_planned_model_input_forward(
     *,
     store: CompiledProblemStore,
     action_space: PreparedActionSpace,
-    representation_contract: CompiledRepresentationContract,
-    execution_policy: CompiledExecutionPolicyContract,
     runtime_plan: ModelingRuntimePlan,
     on_outputs: Callable[[ModelInputBatch, ModelOutputs], None],
 ) -> None:
@@ -97,8 +59,6 @@ def run_planned_model_input_forward(
         return build_model_input_batch_plan(
             store,
             action_space=action_space,
-            representation_contract=representation_contract,
-            execution_policy=execution_policy,
             runtime_plan=plan,
         )
 
@@ -115,9 +75,7 @@ def run_planned_prediction_forward(
     *,
     store: CompiledProblemStore,
     temporal_facts: PreparedTemporalFacts,
-    representation_contract: CompiledRepresentationContract,
     prediction_contract: CompiledPredictionContract,
-    execution_policy: CompiledExecutionPolicyContract,
     runtime_plan: ModelingRuntimePlan,
     on_outputs: Callable[[PredictionBatch, ModelOutputs], None],
 ) -> None:
@@ -127,9 +85,7 @@ def run_planned_prediction_forward(
         return build_prediction_batch_plan(
             store,
             temporal_facts=temporal_facts,
-            representation_contract=representation_contract,
             prediction_contract=prediction_contract,
-            execution_policy=execution_policy,
             runtime_plan=plan,
             shuffle=False,
         )

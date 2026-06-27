@@ -13,6 +13,7 @@ from ..config.models import (
     FeaturesConfig,
     PredictionConfig,
     ProblemSpec,
+    SequenceConfig,
     SplitConfig,
     StudyConfig,
     TrainingConfig,
@@ -20,10 +21,9 @@ from ..config.models import (
 from ..evaluation import EvaluationRun, EvaluationSummary, EvaluatorConfig
 from ..metrics import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..modeling.dataset_builders import (
-    BuilderRuntimeMetadata,
-    DatasetBuilderConfig,
     PreparedInferenceDataset,
     PreparedTrainingDataset,
+    SequenceRuntimeMetadata,
 )
 from ..modeling.families.base import ModelConfig
 from ..objectives import ObjectiveConfig
@@ -69,7 +69,7 @@ class TrainingArtifactManifest:
     """Single-source persisted artifact provenance plus exact authored config payloads."""
 
     artifact_id: str
-    dataset_builder: DatasetBuilderConfig
+    sequence: SequenceConfig
     prediction: PredictionConfig
     objective: ObjectiveConfig
     evaluator: EvaluatorConfig | None
@@ -86,7 +86,7 @@ class TrainingArtifactManifest:
     split: SplitConfig
     training: TrainingConfig
     scaler: ScalerStats
-    builder_runtime_metadata: BuilderRuntimeMetadata
+    sequence_runtime_metadata: SequenceRuntimeMetadata
     temporal_capability: TemporalCapability
     semantics: ArtifactSemantics
 
@@ -129,18 +129,6 @@ class TrainingArtifactManifest:
     @property
     def training_metric_descriptors(self):
         return self.semantics.prediction.training_metric_descriptors
-
-    @property
-    def representation_id(self) -> str:
-        return self.semantics.representation.representation_id
-
-    @property
-    def dataset_builder_id(self) -> str:
-        return self.semantics.dataset_builder.dataset_builder_id
-
-    @property
-    def input_normalization_id(self) -> str:
-        return self.semantics.input_normalization.input_normalization_id
 
     @property
     def n_features(self) -> int:

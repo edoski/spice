@@ -8,7 +8,6 @@ from typing import TypeVar, cast
 
 from ..evaluation import EvaluatorConfig
 from ..execution.models import ExecutionSpec
-from ..modeling.dataset_builders import DatasetBuilderConfig
 from ..modeling.families.base import ModelConfig
 from ..objectives import ObjectiveConfig
 from .group_catalog import ConfigGroup, GroupSpec, group_spec, validate_named_group_payload
@@ -31,10 +30,6 @@ ConfigT = TypeVar("ConfigT")
 
 CHAIN = cast(GroupSpec[ChainSpec], group_spec(ConfigGroup.CHAIN))
 CORPUS = cast(GroupSpec[CorpusSpec], group_spec(ConfigGroup.CORPUS))
-DATASET_BUILDER = cast(
-    GroupSpec[DatasetBuilderConfig],
-    group_spec(ConfigGroup.DATASET_BUILDER),
-)
 EVALUATOR = cast(GroupSpec[EvaluatorConfig], group_spec(ConfigGroup.EVALUATOR))
 EVALUATIONS = cast(GroupSpec[EvaluationsSpec], group_spec(ConfigGroup.EVALUATIONS))
 EXECUTION = cast(GroupSpec[ExecutionSpec], group_spec(ConfigGroup.EXECUTION))

@@ -1,19 +1,15 @@
-"""Registry-backed input-normalization seam."""
+"""Fixed row-standard input normalization utilities."""
 
-from .base import (
-    CompiledInputNormalizationContract,
-    InputNormalizationConfig,
-    coerce_input_normalization_config,
-    compile_input_normalization_contract,
+from .scaling import (
+    ScalerStats,
+    fit_row_standard_scaler,
+    transform_feature_matrix,
+    transform_problem_store_features,
 )
-from .scaling import ScalerStats, transform_feature_matrix, transform_problem_store_features
 
 __all__ = [
-    "CompiledInputNormalizationContract",
-    "InputNormalizationConfig",
     "ScalerStats",
-    "coerce_input_normalization_config",
-    "compile_input_normalization_contract",
+    "fit_row_standard_scaler",
     "transform_feature_matrix",
     "transform_problem_store_features",
 ]

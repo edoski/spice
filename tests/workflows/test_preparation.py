@@ -36,7 +36,7 @@ def test_acquire_preparation_materializes_roots_and_corpus_assembly_request(
 
     def fake_prepare_corpus_assembly_request(*, config, roots):
         captured["corpus"] = config.corpus.name
-        captured["corpus"] = roots.corpus.corpus_id
+        captured["corpus_id"] = roots.corpus.corpus_id
         return assembly_request
 
     monkeypatch.setattr(preparation, "materialize_acquire_roots", lambda _config: roots)
@@ -52,7 +52,7 @@ def test_acquire_preparation_materializes_roots_and_corpus_assembly_request(
     assert prepared.assembly_request is cast(Any, assembly_request)
     assert captured == {
         "corpus": config.corpus.name,
-        "corpus": roots.corpus.corpus_id,
+        "corpus_id": roots.corpus.corpus_id,
     }
 
 

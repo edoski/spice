@@ -4,6 +4,7 @@ from spice.config import (
     ArtifactVariant,
     ChainSpec,
     PredictionConfig,
+    SequenceConfig,
     SplitConfig,
     StudyConfig,
     TrainingConfig,
@@ -12,18 +13,14 @@ from spice.config import (
 )
 from spice.features import compile_feature_contract
 from spice.modeling.dataset_builders import (
-    coerce_dataset_builder_config,
-    fixed_sequence_temporal_runtime_metadata,
+    sequence_runtime_metadata,
 )
 from spice.modeling.families.lstm import LstmModelConfig
-from spice.modeling.representations import compile_representation_contract
 from spice.modeling.results import TrainingArtifactManifest, TrainingSourceProvenance
 from spice.objectives import coerce_objective_config
 from spice.prediction import compile_prediction_contract
 from spice.semantics import (
     ArtifactSemantics,
-    DatasetBuilderSemantics,
-    InputNormalizationSemantics,
     ObjectiveSemantics,
 )
 from spice.temporal import TemporalCapability
@@ -59,10 +56,6 @@ def _features_config():
             ],
         }
     )
-
-
-def _dataset_builder_config():
-    return coerce_dataset_builder_config({"id": "fixed_sequence_temporal"})
 
 
 def _objective_config():
@@ -116,7 +109,7 @@ def _training_config():
             "seed": 2026,
             "deterministic": True,
             "log_every_n_steps": 1,
-            "input_normalization": {"id": "window_weighted_standard"},
+            "sequence": {"min_length": 8, "max_length": 64},
         }
     )
 
@@ -146,7 +139,6 @@ def manifest(
         ).runtime,
     )
     model = _model_config()
-    representation_contract = compile_representation_contract()
     temporal_capability = TemporalCapability(
         compiler_id=problem_contract.compiler_id,
         max_delay_seconds=36,
@@ -156,9 +148,10 @@ def manifest(
             slot_spacing_seconds=12.0,
         ),
     )
+    sequence = SequenceConfig(min_length=8, max_length=64)
     return TrainingArtifactManifest(
         artifact_id="artifact-1",
-        dataset_builder=_dataset_builder_config(),
+        sequence=sequence,
         prediction=prediction,
         objective=_objective_config(),
         evaluator=None,
@@ -185,11 +178,11 @@ def manifest(
         split=_split_config(),
         training=_training_config(),
         scaler=ScalerStats(means=[0.0, 1.0], scales=[1.0, 1.0]),
-        builder_runtime_metadata=fixed_sequence_temporal_runtime_metadata(
+        sequence_runtime_metadata=sequence_runtime_metadata(
             sequence_length=16,
             median_dt_seconds=12.0,
-            min_sequence_length=8,
-            max_sequence_length=64,
+            min_length=sequence.min_length,
+            max_length=sequence.max_length,
         ),
         temporal_capability=temporal_capability,
         semantics=ArtifactSemantics(
@@ -203,11 +196,6 @@ def manifest(
             ),
             feature=feature_contract.semantics,
             prediction=prediction_contract.semantics,
-            input_normalization=InputNormalizationSemantics(
-                input_normalization_id="window_weighted_standard"
-            ),
-            representation=representation_contract.semantics,
-            dataset_builder=DatasetBuilderSemantics(dataset_builder_id="fixed_sequence_temporal"),
             temporal_capability=temporal_capability.semantics,
         ),
     )

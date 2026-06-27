@@ -48,21 +48,6 @@ def _fit_standard_scaler_stats(
     )
 
 
-def fit_window_weighted_standard_scaler(
-    store: CompiledProblemStore,
-    *,
-    sample_indices: IntVector,
-) -> ScalerStats:
-    if store.feature_matrix.size == 0:
-        raise ValueError("feature_matrix must be non-empty")
-    multiplicities = store.context_row_multiplicities(sample_indices)
-    weights = multiplicities.astype(np.float64, copy=False)
-    if float(weights.sum()) <= 0.0:
-        raise ValueError("training windows did not cover any feature rows")
-    features = store.feature_matrix.astype(np.float64, copy=False)
-    return _fit_standard_scaler_stats(features, sample_weight=weights)
-
-
 def fit_row_standard_scaler(
     store: CompiledProblemStore,
     *,

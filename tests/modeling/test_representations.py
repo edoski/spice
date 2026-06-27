@@ -1,20 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
 import numpy as np
 import torch
 
-from spice.modeling.representations import (
-    RepresentationRuntimeContext,
-    compile_representation_contract,
-)
-from spice.temporal import (
-    CompiledExecutionPolicyContract,
-    PreparedActionSpace,
-    coerce_execution_policy_config,
-    compile_execution_policy_contract,
-)
+from spice.modeling.representations import prepare_sequence_input
+from spice.temporal import PreparedActionSpace
 from spice.temporal.problem_store import CompiledProblemStore
 
 
@@ -49,89 +39,45 @@ def _test_store() -> CompiledProblemStore:
     )
 
 
-def _execution_policy():
-    return compile_execution_policy_contract(
-        coerce_execution_policy_config({"id": "strict_deadline_miss"})
+def _action_space(sample_indices: np.ndarray) -> PreparedActionSpace:
+    mask = np.ones((sample_indices.shape[0], 3), dtype=np.bool_)
+    mask[:, -1] = False
+    return PreparedActionSpace(
+        sample_indices=sample_indices,
+        max_candidate_slots=3,
+        action_mask=mask,
     )
 
 
-def _masking_policy() -> CompiledExecutionPolicyContract:
-    def prepare_action_space(store, sample_indices):
-        mask = np.ones((sample_indices.shape[0], store.max_candidate_slots), dtype=np.bool_)
-        mask[:, -1] = False
-        return PreparedActionSpace(
-            sample_indices=sample_indices,
-            max_candidate_slots=store.max_candidate_slots,
-            action_mask=mask,
-        )
-
-    return replace(_execution_policy(), prepare_action_space_fn=prepare_action_space)
-
-
-def _action_space(
-    policy: CompiledExecutionPolicyContract,
-    store: CompiledProblemStore,
-    sample_indices: np.ndarray,
-) -> PreparedActionSpace:
-    return policy.prepare_action_space(store, sample_indices)
-
-
-def test_sequence_input_storage_modes_yield_identical_batches() -> None:
+def test_sequence_input_batches_preserve_positions_contexts_and_masks() -> None:
     store = _test_store()
     sample_indices = np.array([3, 0, 2, 1], dtype=np.int64)
-    contract = compile_representation_contract()
-    policy = _execution_policy()
-    action_space = _action_space(policy, store, sample_indices)
-    streaming = contract.prepare(
+    prepared = prepare_sequence_input(
         store,
-        execution_policy=policy,
-        action_space=action_space,
-        runtime_context=RepresentationRuntimeContext(
-            batch_size=2,
-            available_host_memory_bytes=1,
-        ),
-    )
-    materialized = contract.prepare(
-        store,
-        execution_policy=policy,
-        action_space=action_space,
-        runtime_context=RepresentationRuntimeContext(
-            batch_size=2,
-            available_host_memory_bytes=10**12,
-        ),
-    )
-    sample_positions = (
-        torch.as_tensor([0, 2], dtype=torch.int64),
-        torch.as_tensor([1, 3], dtype=torch.int64),
+        action_space=_action_space(sample_indices),
     )
 
-    assert streaming.sample_count == materialized.sample_count == 4
-    for positions in sample_positions:
-        left = streaming.build_batch(positions)
-        right = materialized.build_batch(positions)
-        assert torch.equal(left.sample_positions, right.sample_positions)
-        assert torch.equal(left.inputs, right.inputs)
-        assert torch.equal(left.input_mask, right.input_mask)
-        assert torch.equal(left.action_mask, right.action_mask)
+    batch = prepared.build_batch(torch.as_tensor([0, 2], dtype=torch.int64))
 
-
-def test_sequence_input_batches_use_execution_policy_action_mask() -> None:
-    store = _test_store()
-    sample_indices = np.array([0, 1], dtype=np.int64)
-    policy = _masking_policy()
-    prepared = compile_representation_contract().prepare(
-        store,
-        execution_policy=policy,
-        action_space=_action_space(policy, store, sample_indices),
-        runtime_context=RepresentationRuntimeContext(
-            batch_size=2,
-            available_host_memory_bytes=10**12,
-        ),
-    )
-
-    batch = prepared.build_batch(torch.as_tensor([0, 1], dtype=torch.int64))
-
+    assert prepared.sample_count == 4
+    assert prepared.batch_signatures.tolist() == [4, 3, 6, 4]
+    assert batch.sample_positions.tolist() == [0, 2]
+    assert batch.inputs.shape == (2, 6, 3)
+    assert batch.input_mask.tolist() == [
+        [True, True, True, True, False, False],
+        [True, True, True, True, True, True],
+    ]
     assert batch.action_mask.tolist() == [
         [True, True, False],
         [True, True, False],
     ]
+
+
+def test_sequence_input_to_device_is_noop_when_already_on_device() -> None:
+    prepared = prepare_sequence_input(
+        _test_store(),
+        action_space=_action_space(np.array([0, 1], dtype=np.int64)),
+    )
+    batch = prepared.build_batch(torch.as_tensor([0], dtype=torch.int64))
+
+    assert batch.to_device(torch.device("cpu")) is batch

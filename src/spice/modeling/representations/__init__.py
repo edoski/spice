@@ -1,19 +1,17 @@
-"""Public Representation Seam."""
+"""Sequence input tensorization."""
 
 from __future__ import annotations
 
-from .base import (
-    CompiledRepresentationContract,
-    HostStorageMode,
-    PreparedRepresentation,
-    RepresentationRuntimeContext,
+from .sequence_inputs import (
+    PreparedSequenceInputBatches,
+    SequenceInputBatch,
+    build_sequence_input_batch,
+    prepare_sequence_input,
 )
-from .registry import compile_representation_contract
 
 __all__ = [
-    "CompiledRepresentationContract",
-    "HostStorageMode",
-    "PreparedRepresentation",
-    "RepresentationRuntimeContext",
-    "compile_representation_contract",
+    "PreparedSequenceInputBatches",
+    "SequenceInputBatch",
+    "build_sequence_input_batch",
+    "prepare_sequence_input",
 ]

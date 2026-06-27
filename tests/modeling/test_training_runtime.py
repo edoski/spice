@@ -3,14 +3,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, cast
 
-import pytest
+import numpy as np
 import torch
 
 from spice.config.models import TrainingConfig
-from spice.modeling.batch_plan import BatchRuntimeContext, DeviceStorageBudget
+from spice.modeling.batch_plan import BatchRuntimeContext
 from spice.modeling.dataset_builders import PreparedTrainingSampleSelection
 from spice.modeling.runtime_planning import ModelingRuntimePlan
-from spice.modeling.training_runtime import plan_training_runtime
+from spice.modeling.training_runtime import plan_training_runtime, prepare_training_runtime
+from spice.temporal.execution_policy import PreparedActionSpace
 
 
 def _training_config() -> TrainingConfig:
@@ -25,206 +26,134 @@ def _training_config() -> TrainingConfig:
             "seed": 7,
             "deterministic": True,
             "log_every_n_steps": 1,
+            "sequence": {"min_length": 4, "max_length": 64},
         }
     )
 
 
-def _runtime_plan(runtime_context: BatchRuntimeContext) -> ModelingRuntimePlan:
+def _runtime_plan() -> ModelingRuntimePlan:
     return ModelingRuntimePlan(
         resolved_device=torch.device("cpu"),
         precision="32-true",
-        batch_runtime_context=runtime_context,
+        batch_runtime_context=BatchRuntimeContext(batch_size=1),
         deterministic=True,
         seed=7,
-        compile_enabled=True,
     )
 
 
-def test_plan_training_runtime_uses_unshuffled_host_warmup_and_reuses_state(
+def _sample_role(indices: list[int]) -> PreparedTrainingSampleSelection:
+    sample_indices = np.array(indices, dtype=np.int64)
+    action_space = PreparedActionSpace(
+        sample_indices=sample_indices,
+        max_candidate_slots=1,
+        action_mask=np.ones((sample_indices.shape[0], 1), dtype=np.bool_),
+    )
+    return PreparedTrainingSampleSelection(
+        temporal_facts=cast(Any, SimpleNamespace(action_space=action_space))
+    )
+
+
+def test_plan_training_runtime_builds_streaming_train_and_validation_plans(
     monkeypatch,
 ) -> None:
-    model = torch.nn.Linear(1, 1)
-    model.weight.data.fill_(4.0)
-    original_weight = model.weight.detach().clone()
-    runtime_context = BatchRuntimeContext(
-        batch_size=1,
-        available_host_memory_bytes=1024,
-        device_storage_budget=DeviceStorageBudget.coarse(999),
-    )
     calls = []
     prediction_state = object()
-    train_facts = object()
-    validation_facts = object()
-    execution_policy = SimpleNamespace()
+    train_samples = _sample_role([0, 1])
+    validation_samples = _sample_role([2])
 
     def fake_build_prediction_batch_plan(
         *_args, temporal_facts, runtime_plan, shuffle, **_kwargs
     ):
         calls.append(
             {
-                "budget": runtime_plan.batch_runtime_context.device_storage_budget,
-                "host_loader_policy": runtime_plan.batch_runtime_context.host_loader_policy,
-                "seed": runtime_plan.seed,
+                "runtime_plan": runtime_plan,
                 "shuffle": shuffle,
                 "temporal_facts": temporal_facts,
             }
         )
         return SimpleNamespace(source=[SimpleNamespace()])
 
-    class FakeOptimizer:
-        def __init__(self, params, *, lr, weight_decay) -> None:
-            self.params = list(params)
-            self.lr = lr
-            self.weight_decay = weight_decay
-
-    optimizers: list[FakeOptimizer] = []
-
-    def fake_adamw(params, *, lr, weight_decay):
-        optimizer = FakeOptimizer(params, lr=lr, weight_decay=weight_decay)
-        optimizers.append(optimizer)
-        return optimizer
-
-    def fake_execute_training_batch(model, _batch, **_kwargs) -> object:
-        model.weight.data.fill_(9.0)
-        return object()
-
-    empty_cache_calls = []
-    fit_state_calls = []
-
     prediction_contract = SimpleNamespace(
         fit_training_state=lambda *args, **kwargs: (
-            fit_state_calls.append((args, kwargs)) or prediction_state
+            prediction_state if kwargs["temporal_facts"] is train_samples.temporal_facts else None
         )
     )
     monkeypatch.setattr(
         "spice.modeling.training_runtime.build_prediction_batch_plan",
         fake_build_prediction_batch_plan,
     )
-    monkeypatch.setattr("spice.modeling.training_runtime.torch.optim.AdamW", fake_adamw)
-    monkeypatch.setattr(
-        "spice.modeling.training_runtime.execute_training_batch",
-        fake_execute_training_batch,
-    )
-    monkeypatch.setattr(
-        "spice.modeling.training_runtime.measure_device_resident_budget",
-        lambda *, run_probe, **_kwargs: run_probe() or 900,
-    )
-    monkeypatch.setattr(
-        "spice.modeling.training_runtime.torch.cuda.empty_cache",
-        lambda: empty_cache_calls.append(True),
-    )
 
     plan = plan_training_runtime(
-        cast(Any, model),
+        cast(Any, torch.nn.Linear(1, 1)),
         prediction_contract=cast(Any, prediction_contract),
-        execution_policy=cast(Any, execution_policy),
-        representation_contract=cast(Any, SimpleNamespace()),
+        execution_policy=cast(Any, SimpleNamespace()),
         store=cast(Any, SimpleNamespace()),
-        train_samples=PreparedTrainingSampleSelection(cast(Any, train_facts)),
-        validation_samples=PreparedTrainingSampleSelection(cast(Any, validation_facts)),
-        runtime_plan=_runtime_plan(runtime_context),
+        train_samples=train_samples,
+        validation_samples=validation_samples,
+        runtime_plan=_runtime_plan(),
+    )
+
+    assert plan.prediction_training_state is prediction_state
+    assert plan.runtime_plan == _runtime_plan()
+    assert calls == [
+        {
+            "runtime_plan": _runtime_plan(),
+            "shuffle": True,
+            "temporal_facts": train_samples.temporal_facts,
+        },
+        {
+            "runtime_plan": _runtime_plan(),
+            "shuffle": False,
+            "temporal_facts": validation_samples.temporal_facts,
+        },
+    ]
+
+
+def test_prepare_training_runtime_builds_cuda_runtime_and_moves_model(monkeypatch) -> None:
+    model = torch.nn.Linear(1, 1)
+    runtime_plan = _runtime_plan()
+    moved_models: list[torch.nn.Module] = []
+
+    monkeypatch.setattr(
+        "spice.modeling.training_runtime.build_training_modeling_runtime_plan",
+        lambda *, training_config: runtime_plan,
+    )
+    monkeypatch.setattr(
+        "spice.modeling.training_runtime.prepare_model_for_runtime",
+        lambda model, plan: moved_models.append(model) or model,
+    )
+    monkeypatch.setattr(
+        "spice.modeling.training_runtime.modeling_backend_scope",
+        lambda _plan: _NullContext(),
+    )
+    monkeypatch.setattr(
+        "spice.modeling.training_runtime.plan_training_runtime",
+        lambda model, **kwargs: SimpleNamespace(
+            runtime_plan=kwargs["runtime_plan"],
+            train_batch_plan=object(),
+            validation_batch_plan=object(),
+            prediction_training_state=None,
+        ),
+    )
+
+    prepared = prepare_training_runtime(
+        cast(Any, model),
+        prediction_contract=cast(Any, SimpleNamespace()),
+        execution_policy=cast(Any, SimpleNamespace()),
+        store=cast(Any, SimpleNamespace()),
+        train_samples=_sample_role([0]),
+        validation_samples=_sample_role([1]),
         training_config=_training_config(),
     )
 
-    assert calls == [
-        {
-            "budget": DeviceStorageBudget.disabled(),
-            "host_loader_policy": "single_process_unpinned",
-            "seed": 7,
-            "shuffle": False,
-            "temporal_facts": train_facts,
-        },
-        {
-            "budget": DeviceStorageBudget.measured(900),
-            "host_loader_policy": "automatic",
-            "seed": 7,
-            "shuffle": True,
-            "temporal_facts": train_facts,
-        },
-        {
-            "budget": DeviceStorageBudget.measured(900),
-            "host_loader_policy": "automatic",
-            "seed": 7,
-            "shuffle": False,
-            "temporal_facts": validation_facts,
-        },
-    ]
-    assert optimizers[0].lr == 0.02
-    assert optimizers[0].weight_decay == 0.03
-    assert len(fit_state_calls) == 1
-    assert fit_state_calls[0][1]["temporal_facts"] is train_facts
-    assert plan.prediction_training_state is prediction_state
-    assert plan.runtime_plan == ModelingRuntimePlan(
-        resolved_device=torch.device("cpu"),
-        precision="32-true",
-        batch_runtime_context=runtime_context.with_device_storage_budget(
-            DeviceStorageBudget.measured(900)
-        ),
-        deterministic=True,
-        seed=7,
-        compile_enabled=True,
-    )
-    assert torch.equal(model.weight.detach(), original_weight)
-    assert empty_cache_calls == [True]
+    assert prepared.fit_model is model
+    assert prepared.batch_plan.runtime_plan is runtime_plan
+    assert moved_models == [model]
 
 
-def test_plan_training_runtime_restores_model_and_clears_cache_after_probe_failure(
-    monkeypatch,
-) -> None:
-    model = torch.nn.Linear(1, 1)
-    model.weight.data.fill_(4.0)
-    original_weight = model.weight.detach().clone()
-    runtime_context = BatchRuntimeContext(
-        batch_size=1,
-        available_host_memory_bytes=1024,
-        device_storage_budget=DeviceStorageBudget.coarse(999),
-    )
-    empty_cache_calls = []
-    execution_policy = SimpleNamespace()
+class _NullContext:
+    def __enter__(self) -> None:
+        return None
 
-    monkeypatch.setattr(
-        "spice.modeling.training_runtime.build_prediction_batch_plan",
-        lambda *_, **__: SimpleNamespace(source=[SimpleNamespace()]),
-    )
-    monkeypatch.setattr(
-        "spice.modeling.training_runtime.torch.optim.AdamW",
-        lambda params, **_kwargs: SimpleNamespace(params=list(params)),
-    )
-    monkeypatch.setattr(
-        "spice.modeling.training_runtime.measure_device_resident_budget",
-        lambda *, run_probe, **_kwargs: run_probe(),
-    )
-    monkeypatch.setattr(
-        "spice.modeling.training_runtime.torch.cuda.empty_cache",
-        lambda: empty_cache_calls.append(True),
-    )
-
-    def failing_execute_training_batch(model, *_args, **_kwargs) -> object:
-        model.weight.data.fill_(9.0)
-        raise RuntimeError("probe failed")
-
-    monkeypatch.setattr(
-        "spice.modeling.training_runtime.execute_training_batch",
-        failing_execute_training_batch,
-    )
-    prediction_contract = SimpleNamespace(fit_training_state=lambda *_args, **_kwargs: object())
-
-    with pytest.raises(RuntimeError, match="probe failed"):
-        plan_training_runtime(
-            cast(Any, model),
-            prediction_contract=cast(Any, prediction_contract),
-            execution_policy=cast(Any, execution_policy),
-            representation_contract=cast(Any, SimpleNamespace()),
-            store=cast(Any, SimpleNamespace()),
-            train_samples=PreparedTrainingSampleSelection(
-                cast(Any, object()),
-            ),
-            validation_samples=PreparedTrainingSampleSelection(
-                cast(Any, object()),
-            ),
-            runtime_plan=_runtime_plan(runtime_context),
-            training_config=_training_config(),
-        )
-
-    assert torch.equal(model.weight.detach(), original_weight)
-    assert empty_cache_calls == [True]
+    def __exit__(self, *_args) -> None:
+        return None

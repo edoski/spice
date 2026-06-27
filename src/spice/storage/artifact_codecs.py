@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 from ..config.models import (
     ArtifactVariant,
     PredictionConfig,
+    SequenceConfig,
     SplitConfig,
     StudyConfig,
     TrainingConfig,
@@ -15,10 +16,7 @@ from ..config.models import (
 )
 from ..evaluation import EvaluationRun, coerce_evaluator_config
 from ..metrics import MetricDescriptor, MetricSet, WindowMetricSummary
-from ..modeling.dataset_builders import (
-    coerce_builder_runtime_metadata,
-    coerce_dataset_builder_config,
-)
+from ..modeling.dataset_builders import SequenceRuntimeMetadata
 from ..modeling.families.registry import coerce_model_config
 from ..objectives import coerce_objective_config
 from ..temporal.capability import TemporalCapability
@@ -168,7 +166,7 @@ class TrainingSourcePayload(PayloadRecord):
 
 class ArtifactManifestPayload(PayloadRecord):
     artifact_id: str
-    dataset_builder: dict[str, object]
+    sequence: dict[str, object]
     prediction: dict[str, object]
     objective: dict[str, object]
     evaluator: dict[str, object] | None = None
@@ -185,7 +183,7 @@ class ArtifactManifestPayload(PayloadRecord):
     split: dict[str, object]
     training: dict[str, object]
     scaler: dict[str, object]
-    builder_runtime_metadata: dict[str, object]
+    sequence_runtime_metadata: dict[str, object]
     temporal_capability: dict[str, object]
     semantics: dict[str, object]
 
@@ -193,7 +191,7 @@ class ArtifactManifestPayload(PayloadRecord):
     def from_manifest(cls, manifest: TrainingArtifactManifest) -> ArtifactManifestPayload:
         return cls(
             artifact_id=manifest.artifact_id,
-            dataset_builder=manifest.dataset_builder.model_dump(mode="json", exclude_none=True),
+            sequence=manifest.sequence.model_dump(mode="json"),
             prediction=manifest.prediction.model_dump(mode="json"),
             objective=manifest.objective.model_dump(mode="json", exclude_none=True),
             evaluator=(
@@ -216,7 +214,7 @@ class ArtifactManifestPayload(PayloadRecord):
             split=manifest.split.model_dump(mode="json"),
             training=manifest.training.model_dump(mode="json"),
             scaler=manifest.scaler.model_dump(mode="json", exclude_none=True),
-            builder_runtime_metadata=manifest.builder_runtime_metadata.model_dump(mode="json"),
+            sequence_runtime_metadata=manifest.sequence_runtime_metadata.model_dump(mode="json"),
             temporal_capability=TemporalCapabilityPayload.from_capability(
                 manifest.temporal_capability
             ).model_dump(mode="json"),
@@ -226,7 +224,6 @@ class ArtifactManifestPayload(PayloadRecord):
     def to_manifest(self) -> TrainingArtifactManifest:
         from ..modeling.results import TrainingArtifactManifest
 
-        dataset_builder = coerce_dataset_builder_config(self.dataset_builder)
         temporal_capability = TemporalCapabilityPayload.model_validate(
             mapping_payload(
                 self.temporal_capability,
@@ -242,7 +239,7 @@ class ArtifactManifestPayload(PayloadRecord):
             )
         return TrainingArtifactManifest(
             artifact_id=self.artifact_id,
-            dataset_builder=dataset_builder,
+            sequence=SequenceConfig.model_validate(self.sequence),
             prediction=PredictionConfig.model_validate(self.prediction),
             objective=coerce_objective_config(self.objective),
             evaluator=(
@@ -267,12 +264,12 @@ class ArtifactManifestPayload(PayloadRecord):
             split=SplitConfig.model_validate(self.split),
             training=TrainingConfig.model_validate(self.training),
             scaler=ScalerStats.model_validate(self.scaler),
-            builder_runtime_metadata=coerce_builder_runtime_metadata(
-                dataset_builder.id,
+            sequence_runtime_metadata=SequenceRuntimeMetadata.model_validate(
                 mapping_payload(
-                    self.builder_runtime_metadata,
-                    label="artifact_manifest.builder_runtime_metadata",
+                    self.sequence_runtime_metadata,
+                    label="artifact_manifest.sequence_runtime_metadata",
                 ),
+                strict=True,
             ),
             temporal_capability=temporal_capability,
             semantics=semantics,

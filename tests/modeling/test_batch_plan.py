@@ -9,7 +9,6 @@ import torch
 
 from spice.modeling.batch_plan import (
     BatchRuntimeContext,
-    DeviceStorageBudget,
     build_model_input_batch_plan,
     build_prediction_batch_plan,
 )
@@ -19,28 +18,28 @@ from spice.temporal import (
     PreparedTemporalFacts,
     PreparedTemporalOutcomeFacts,
 )
+from spice.temporal.problem_store import CompiledProblemStore
 
 
-@dataclass(frozen=True, slots=True)
-class _Store:
-    max_candidate_slots: int = 3
-
-
-class _ExecutionPolicy:
-    def prepare_action_space(
-        self, store: _Store, sample_indices: np.ndarray
-    ) -> PreparedActionSpace:
-        return PreparedActionSpace(
-            sample_indices=sample_indices,
-            max_candidate_slots=store.max_candidate_slots,
-            action_mask=np.ones(
-                (sample_indices.shape[0], store.max_candidate_slots), dtype=np.bool_
-            )
-        )
+def _store() -> CompiledProblemStore:
+    return CompiledProblemStore(
+        feature_matrix=np.arange(10, dtype=np.float32).reshape(5, 2),
+        log_base_fees=np.zeros(5, dtype=np.float32),
+        timestamps=np.arange(5, dtype=np.int64),
+        anchor_rows=np.array([1, 1, 3, 3], dtype=np.int64),
+        context_start_rows=np.array([0, 1, 2, 3], dtype=np.int64),
+        candidate_start_rows=np.array([1, 1, 3, 3], dtype=np.int64),
+        candidate_end_rows=np.array([2, 2, 4, 4], dtype=np.int64),
+        max_candidate_slots=3,
+    )
 
 
 def _action_space(sample_indices: np.ndarray) -> PreparedActionSpace:
-    return _ExecutionPolicy().prepare_action_space(_Store(), sample_indices)
+    return PreparedActionSpace(
+        sample_indices=sample_indices,
+        max_candidate_slots=3,
+        action_mask=np.ones((sample_indices.shape[0], 3), dtype=np.bool_),
+    )
 
 
 def _temporal_facts(sample_indices: np.ndarray) -> PreparedTemporalFacts:
@@ -49,83 +48,33 @@ def _temporal_facts(sample_indices: np.ndarray) -> PreparedTemporalFacts:
     return PreparedTemporalFacts(
         action_space=action_space,
         outcome_facts=PreparedTemporalOutcomeFacts(
-            action_outcome_rows=np.zeros(
-                (sample_count, action_space.max_candidate_slots),
-                dtype=np.int64,
-            ),
-            action_outcome_log_fees=np.zeros(
-                (sample_count, action_space.max_candidate_slots),
-                dtype=np.float32,
-            ),
-            reachable_action_mask=np.ones(
-                (sample_count, action_space.max_candidate_slots),
-                dtype=np.bool_,
-            ),
+            action_outcome_rows=np.zeros((sample_count, 3), dtype=np.int64),
+            action_outcome_log_fees=np.zeros((sample_count, 3), dtype=np.float32),
+            reachable_action_mask=np.ones((sample_count, 3), dtype=np.bool_),
             baseline_rows=np.zeros(sample_count, dtype=np.int64),
-            overflow_mask=np.zeros(
-                (sample_count, action_space.max_candidate_slots),
-                dtype=np.bool_,
-            ),
+            overflow_mask=np.zeros((sample_count, 3), dtype=np.bool_),
         ),
     )
 
 
 @dataclass(slots=True)
-class _InputBatch:
+class _TargetBatch:
     sample_positions: torch.Tensor
 
-    def to_device(self, device: torch.device) -> _InputBatch:
+    def to_device(self, _device: torch.device) -> _TargetBatch:
         return self
 
-    def model_kwargs(self) -> dict[str, torch.Tensor]:
-        return {}
-
-    def pin_memory(self) -> _InputBatch:
+    def pin_memory(self) -> _TargetBatch:
         return self
-
-
-class _Prepared:
-    sample_count = 4
-    batch_signatures = np.array([2, 1, 2, 1], dtype=np.int64)
-    estimated_storage_bytes = 1024
-    host_storage_mode: Literal["host_materialized"] = "host_materialized"
-
-    def __init__(self, *, fail_device_storage: bool = False) -> None:
-        self.fail_device_storage = fail_device_storage
-        self.device_storage_calls = 0
-
-    def build_batch(self, sample_positions: torch.Tensor) -> _InputBatch:
-        return _InputBatch(sample_positions=sample_positions)
-
-    def to_device_storage(self, device: torch.device):
-        self.device_storage_calls += 1
-        if self.fail_device_storage:
-            raise torch.cuda.OutOfMemoryError("oom")
-        return self
-
-
-class _RepresentationContract:
-    def __init__(self, prepared: _Prepared) -> None:
-        self.prepared = prepared
-        self.action_space: PreparedActionSpace | None = None
-
-    def prepare(self, *_args, **_kwargs) -> _Prepared:
-        self.action_space = _kwargs["action_space"]
-        return self.prepared
 
 
 class _Targets:
-    estimated_storage_bytes = 256
-
     def __init__(self) -> None:
         self.positions: list[list[int]] = []
 
-    def build_batch(self, sample_positions: torch.Tensor) -> torch.Tensor:
+    def build_batch(self, sample_positions: torch.Tensor) -> _TargetBatch:
         self.positions.append(sample_positions.tolist())
-        return sample_positions + 10
-
-    def to_device_storage(self, device: torch.device):
-        return self
+        return _TargetBatch(sample_positions=sample_positions + 10)
 
 
 class _PredictionContract:
@@ -133,36 +82,22 @@ class _PredictionContract:
         self.targets = targets
         self.temporal_facts: PreparedTemporalFacts | None = None
 
-    def prepare_targets(self, *_args, **_kwargs) -> _Targets:
-        self.temporal_facts = _kwargs["temporal_facts"]
+    def prepare_targets(self, *_args, **kwargs) -> _Targets:
+        self.temporal_facts = kwargs["temporal_facts"]
         return self.targets
-
-
-def _runtime_context(
-    *,
-    device_storage_budget: DeviceStorageBudget | None = None,
-    host_loader_policy: Literal["automatic", "single_process_unpinned"] = "automatic",
-) -> BatchRuntimeContext:
-    return BatchRuntimeContext(
-        batch_size=2,
-        available_host_memory_bytes=1024,
-        device_storage_budget=device_storage_budget or DeviceStorageBudget.disabled(),
-        host_loader_policy=host_loader_policy,
-    )
 
 
 def _runtime_plan(
     *,
     resolved_device: torch.device | None = None,
-    device_storage_budget: DeviceStorageBudget | None = None,
     host_loader_policy: Literal["automatic", "single_process_unpinned"] = "automatic",
     seed: int = 2026,
 ) -> ModelingRuntimePlan:
     return ModelingRuntimePlan(
         resolved_device=resolved_device or torch.device("cpu"),
         precision="32-true",
-        batch_runtime_context=_runtime_context(
-            device_storage_budget=device_storage_budget,
+        batch_runtime_context=BatchRuntimeContext(
+            batch_size=2,
             host_loader_policy=host_loader_policy,
         ),
         deterministic=None,
@@ -175,10 +110,8 @@ def test_host_loader_worker_override_rejects_invalid_values(monkeypatch) -> None
 
     with pytest.raises(ValueError, match="must be non-negative"):
         build_model_input_batch_plan(
-            _Store(),
+            _store(),
             action_space=_action_space(np.arange(4, dtype=np.int64)),
-            representation_contract=_RepresentationContract(_Prepared()),
-            execution_policy=_ExecutionPolicy(),
             runtime_plan=_runtime_plan(),
         )
 
@@ -210,10 +143,8 @@ def test_single_process_unpinned_loader_policy_disables_workers_and_pin_memory(
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
 
     plan = build_model_input_batch_plan(
-        _Store(),
+        _store(),
         action_space=_action_space(np.arange(4, dtype=np.int64)),
-        representation_contract=_RepresentationContract(_Prepared()),
-        execution_policy=_ExecutionPolicy(),
         runtime_plan=_runtime_plan(
             resolved_device=torch.device("cuda"),
             host_loader_policy="single_process_unpinned",
@@ -233,30 +164,23 @@ def test_single_process_unpinned_loader_policy_disables_workers_and_pin_memory(
     ]
 
 
-def test_batch_plan_orders_samples_deterministically_by_signature() -> None:
+def test_batch_plan_orders_samples_deterministically_by_context_length() -> None:
     plan = build_model_input_batch_plan(
-        _Store(),
+        _store(),
         action_space=_action_space(np.arange(4, dtype=np.int64)),
-        representation_contract=_RepresentationContract(_Prepared()),
-        execution_policy=_ExecutionPolicy(),
         runtime_plan=_runtime_plan(),
     )
 
-    assert plan.storage_mode == "host_materialized"
     assert plan.sample_count == 4
     assert plan.batch_count == 2
-    assert plan.estimated_storage_bytes == 1024
     assert [batch.sample_positions.tolist() for batch in plan.source] == [[1, 3], [0, 2]]
 
 
 def test_shuffled_batch_plan_changes_by_epoch_but_keeps_batch_shape() -> None:
-    targets = _Targets()
     plan = build_prediction_batch_plan(
-        _Store(),
+        _store(),
         temporal_facts=_temporal_facts(np.arange(4, dtype=np.int64)),
-        representation_contract=_RepresentationContract(_Prepared()),
-        prediction_contract=_PredictionContract(targets),
-        execution_policy=_ExecutionPolicy(),
+        prediction_contract=_PredictionContract(_Targets()),
         runtime_plan=_runtime_plan(),
         shuffle=True,
     )
@@ -273,75 +197,17 @@ def test_shuffled_batch_plan_changes_by_epoch_but_keeps_batch_shape() -> None:
 
 def test_prediction_batch_plan_binds_targets_to_input_sample_positions() -> None:
     targets = _Targets()
-    representation_contract = _RepresentationContract(_Prepared())
     prediction_contract = _PredictionContract(targets)
     plan = build_prediction_batch_plan(
-        _Store(),
+        _store(),
         temporal_facts=_temporal_facts(np.arange(4, dtype=np.int64)),
-        representation_contract=representation_contract,
         prediction_contract=prediction_contract,
-        execution_policy=_ExecutionPolicy(),
         runtime_plan=_runtime_plan(),
     )
 
     first_batch = next(iter(plan.source))
 
     assert first_batch.inputs.sample_positions.tolist() == [1, 3]
-    assert first_batch.targets.tolist() == [11, 13]
+    assert first_batch.targets.sample_positions.tolist() == [11, 13]
     assert targets.positions == [[1, 3]]
     assert prediction_contract.temporal_facts is not None
-    assert representation_contract.action_space is prediction_contract.temporal_facts.action_space
-    assert plan.estimated_storage_bytes == 1280
-
-
-@pytest.mark.parametrize(
-    ("device_storage_budget", "expected_storage_mode", "expected_device_storage_calls"),
-    [
-        (DeviceStorageBudget.disabled(), "host_materialized", 0),
-        (DeviceStorageBudget.coarse(None), "host_materialized", 0),
-        (DeviceStorageBudget.coarse(2048), "cuda_materialized", 1),
-        (DeviceStorageBudget.measured(0), "host_materialized", 0),
-        (DeviceStorageBudget.measured(2048), "cuda_materialized", 1),
-    ],
-)
-def test_cuda_batch_plan_consumes_device_storage_budget_phase(
-    device_storage_budget: DeviceStorageBudget,
-    expected_storage_mode: str,
-    expected_device_storage_calls: int,
-) -> None:
-    prepared = _Prepared()
-
-    plan = build_model_input_batch_plan(
-        _Store(),
-        action_space=_action_space(np.arange(4, dtype=np.int64)),
-        representation_contract=_RepresentationContract(prepared),
-        execution_policy=_ExecutionPolicy(),
-        runtime_plan=_runtime_plan(
-            resolved_device=torch.device("cuda"),
-            device_storage_budget=device_storage_budget,
-        ),
-    )
-
-    assert plan.storage_mode == expected_storage_mode
-    assert prepared.device_storage_calls == expected_device_storage_calls
-    assert next(iter(plan.source)).sample_positions.tolist() == [1, 3]
-
-
-def test_device_resident_oom_falls_back_to_host_loader(monkeypatch) -> None:
-    empty_cache_calls: list[bool] = []
-    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: empty_cache_calls.append(True))
-
-    plan = build_model_input_batch_plan(
-        _Store(),
-        action_space=_action_space(np.arange(4, dtype=np.int64)),
-        representation_contract=_RepresentationContract(_Prepared(fail_device_storage=True)),
-        execution_policy=_ExecutionPolicy(),
-        runtime_plan=_runtime_plan(
-            resolved_device=torch.device("cuda"),
-            device_storage_budget=DeviceStorageBudget.measured(2048),
-        ),
-    )
-
-    assert plan.storage_mode == "host_materialized"
-    assert next(iter(plan.source)).sample_positions.tolist() == [1, 3]
-    assert empty_cache_calls == [True]

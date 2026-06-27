@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from itertools import product
 from typing import cast
 
-from ...config.models import WorkflowTask
 from ...config import typed_groups as typed
+from ...config.models import WorkflowTask
 from ...core.errors import ConfigResolutionError
 from ..schema import (
     BenchmarkCase,
