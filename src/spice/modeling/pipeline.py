@@ -22,9 +22,7 @@ from ..config.models import (
 )
 from ..corpus.io import load_block_frame
 from ..corpus.metadata import CorpusManifest
-from ..evaluation import CompiledEvaluatorContract, EvaluatorConfig, compile_evaluator_contract
 from ..features import CompiledFeatureContract, compile_feature_contract
-from ..objectives import ObjectiveConfig
 from ..prediction import CompiledPredictionContract, compile_prediction_contract
 from ..temporal.contracts import CompiledProblemContract, compile_problem_contract
 from .dataset_builders import (
@@ -35,7 +33,6 @@ from .dataset_builders import (
 )
 from .families.base import ModelConfig
 from .families.registry import build_model
-from .objective_runtime import CompiledObjectiveRuntime, compile_objective_runtime
 from .results import TrainingSourceProvenance
 from .training_run import TrainingRunResult
 from .training_runner import (
@@ -67,10 +64,7 @@ class TrainingSpec:
     problem_contract: CompiledProblemContract
     features: FeaturesConfig
     prediction: PredictionConfig
-    objective: ObjectiveConfig
-    evaluator: EvaluatorConfig | None
     prediction_contract: CompiledPredictionContract
-    objective_runtime: CompiledObjectiveRuntime
     model: ModelConfig
     split: SplitConfig
     training: TrainingConfig
@@ -93,8 +87,6 @@ class CompiledTrainingContext:
     feature_contract: CompiledFeatureContract
     problem_contract: CompiledProblemContract
     prediction_contract: CompiledPredictionContract
-    objective_runtime: CompiledObjectiveRuntime
-    evaluator_contract: CompiledEvaluatorContract | None
 
 
 def build_artifact_training_spec(
@@ -170,10 +162,7 @@ def _build_training_spec(
         problem_contract=context.problem_contract,
         features=config.features,
         prediction=config.prediction,
-        objective=config.objective,
-        evaluator=config.evaluator,
         prediction_contract=context.prediction_contract,
-        objective_runtime=context.objective_runtime,
         model=config.model,
         variant=variant,
         study=study if variant is ArtifactVariant.TUNED else None,
@@ -225,14 +214,6 @@ def compile_training_context(
         prediction_id=config.prediction.id,
         family_id=config.prediction.family_id,
     )
-    evaluator_contract = (
-        None if config.evaluator is None else compile_evaluator_contract(config.evaluator)
-    )
-    objective_runtime = compile_objective_runtime(
-        config.objective,
-        evaluator_contract=evaluator_contract,
-        prediction_metric_descriptors=prediction_contract.training_metric_descriptors,
-    )
     return CompiledTrainingContext(
         feature_contract=feature_contract,
         problem_contract=compile_problem_contract(
@@ -241,8 +222,6 @@ def compile_training_context(
             chain_runtime=chain_runtime or config.chain.runtime,
         ),
         prediction_contract=prediction_contract,
-        objective_runtime=objective_runtime,
-        evaluator_contract=evaluator_contract,
     )
 
 
@@ -280,7 +259,6 @@ def run_training(
         TrainingFitSpec(
             model=model,
             prediction_contract=spec.prediction_contract,
-            objective_runtime=spec.objective_runtime,
             prepared=prepared,
             training_config=spec.training,
             checkpoint=checkpoint,

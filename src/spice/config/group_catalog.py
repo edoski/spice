@@ -15,7 +15,6 @@ from ..core.errors import ConfigResolutionError
 from ..evaluation import coerce_evaluator_config
 from ..execution.models import ExecutionSpec
 from ..modeling.families.registry import coerce_model_config
-from ..objectives import coerce_objective_config
 from .models import (
     ChainSpec,
     CorpusSpec,
@@ -42,7 +41,6 @@ class ConfigGroup(StrEnum):
     EXECUTION = "execution"
     FEATURES = "features"
     MODEL = "model"
-    OBJECTIVE = "objective"
     PREDICTION = "prediction"
     PROBLEM = "problem"
     PROVIDER = "provider"
@@ -181,13 +179,6 @@ GROUP_SPECS: tuple[GroupSpec[object], ...] = (
         seed_name="lstm",
         validate=coerce_model_config,
         seed_from_requested_name=True,
-        public=True,
-    ),
-    GroupSpec(
-        group=ConfigGroup.OBJECTIVE,
-        seed_name="validation_total_loss",
-        validate=coerce_objective_config,
-        seed_from_requested_name=False,
         public=True,
     ),
     GroupSpec(

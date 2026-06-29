@@ -10,7 +10,8 @@ import torch
 from ..core.constants import TRAINING_CHECKPOINT_FILENAME
 from ..core.files import write_path_atomic
 from ..metrics import MetricSet
-from ..storage.artifact import write_training_state
+from ..storage.artifact import write_training_summary
+from ._fit_policy import require_finite_metrics
 from .artifacts import (
     TrainingArtifactManifest,
     build_training_artifact_manifest,
@@ -22,7 +23,6 @@ from .results import (
     LoadedTrainingSummary,
     TrainingRuntimeSummary,
     build_training_runtime_summary,
-    iter_epoch_records,
 )
 from .scoring import PredictionMetricScoringRuntimePlan, score_prediction_metrics
 from .training_run import TrainingRunResult
@@ -119,6 +119,8 @@ def _evaluate_split_metrics(
             runtime_plan=training_run.training_result.runtime_plan,
         )
     )
+    require_finite_metrics(best_validation_metrics, phase="final validation")
+    require_finite_metrics(test_metrics, phase="final test")
     return best_validation_metrics, test_metrics
 
 
@@ -177,11 +179,7 @@ def run_persisted_training(
         spec=spec,
         model=loaded_artifact.model,
     )
-    _write_training_summary(
-        artifact_dir,
-        summary=summary.runtime,
-        training_run=training_run,
-    )
+    _write_training_summary(artifact_dir, summary=summary.runtime)
     _checkpoint_path(artifact_dir).unlink(missing_ok=True)
     return PersistedTrainingRun(
         training_run=training_run,
@@ -220,10 +218,8 @@ def _write_training_summary(
     artifact_dir: Path,
     *,
     summary: TrainingRuntimeSummary,
-    training_run: TrainingRunResult,
 ) -> None:
-    write_training_state(
+    write_training_summary(
         artifact_dir / ".spice" / "state.sqlite",
         summary=summary,
-        epoch_rows=list(iter_epoch_records(training_run)),
     )

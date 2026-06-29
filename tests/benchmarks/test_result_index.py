@@ -71,7 +71,6 @@ def _record(
         model_id="lstm",
         problem_id="current_row_nominal",
         prediction_id="icdcs_2026",
-        objective_id="evaluation",
         evaluator_id="poisson_replay",
         delay_seconds=36,
         variant="baseline",

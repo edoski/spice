@@ -17,7 +17,6 @@ build_artifact_training_spec() / build_trial_training_spec()
   +--> feature contract
   +--> problem contract
   +--> prediction contract
-  +--> objective runtime
   |
   v
 fixed sequence preparation
@@ -34,8 +33,9 @@ write artifact payloads into storage-provided staged root
 
 Training is CUDA-only. `training_runner.run_training_fit()` keeps SPICE's fit
 policy and delegates the epoch host loop to Lightning. Lightning owns `fit`; SPICE
-still owns optimizer settings, loss computation, metric accumulation, objective
-selection, finite-metric policy, best-state restore, callbacks, and split metrics.
+still owns optimizer settings, loss computation, metric accumulation, validation
+total-loss selection, finite-metric policy, best-state restore, callbacks, and
+split metrics.
 
 ## Evaluation Flow
 
@@ -77,8 +77,7 @@ modeling/
   training_runtime.py     training batch plans and prediction state fitting
   lightning_module.py     thin LightningModule hosting SPICE training steps
   training_runner.py      public fit entrypoint and result assembly
-  _fit_policy.py          best-state, objective history, and early-stop policy
-  objective_runtime.py    objective contract and metric production during training
+  _fit_policy.py          best-state and early-stop policy
   scoring.py              model inference to evaluator bridge
   artifacts.py            artifact loading/validation helpers
   artifact_inference.py   artifact validation to inference scoring context

@@ -1,7 +1,7 @@
 # Concrete Modeling Runtime
 
 The modeling runtime builds fixed-sequence datasets, trains CUDA neural networks,
-decodes predictions, runs evaluation objectives, persists artifacts, and tunes
+decodes predictions, runs evaluations, persists artifacts, and tunes
 hyperparameters.
 
 ## Mental Model
@@ -24,9 +24,9 @@ runtime values.
 
 ## Training Context
 
-Training compiles the feature, problem, prediction, objective, optional evaluator,
-and model-family contracts. Fixed sequence preparation then owns sample selection,
-chronological split assignment, sequence-length calibration, and scaler fitting.
+Training compiles the feature, problem, prediction, and model-family contracts.
+Fixed sequence preparation then owns sample selection, chronological split
+assignment, sequence-length calibration, and scaler fitting.
 
 ## Batch Plan
 
@@ -50,12 +50,11 @@ at the batch level; validation, inference, and metric scoring keep stable order.
 
 Training is CUDA-only and uses Lightning only as the host for `fit`. The SPICE
 Lightning module uses manual optimization with AdamW, `32-true` precision, gradient
-clipping, SPICE prediction losses, SPICE metric accumulators, and SPICE objective
-runtime.
+clipping, SPICE prediction losses, and SPICE metric accumulators.
 
-`TrainingFitPolicy` owns finite-metric checks, objective history, strict
-`min_delta`, one-based best epoch, best CPU state, and patience stopping. The best
-state is restored before the training result returns.
+`TrainingFitPolicy` owns finite-metric checks, strict `min_delta`, one-based best
+epoch, best CPU state, and patience stopping. Validation `total_loss` selects the
+best state. The best state is restored before the training result returns.
 
 ## Inference
 
@@ -86,4 +85,4 @@ and prediction training state from the completed fit.
 Tuning Execution uses Optuna. `modeling.tuning_execution` opens or resumes the
 storage-backed study, validates trial counts, samples typed params, applies them to
 the base config, trains each trial through non-persisted trial training, records
-sampled params and best epoch metadata, and returns the selected objective metric.
+sampled params and best epoch metadata, and returns validation `total_loss`.

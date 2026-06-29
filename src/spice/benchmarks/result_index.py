@@ -40,7 +40,6 @@ BENCHMARK_RESULT_EXPORT_COLUMNS = (
     "model",
     "problem",
     "prediction",
-    "objective",
     "evaluator",
     "delay_seconds",
     "variant",
@@ -93,7 +92,6 @@ class BenchmarkResultIndexRow:
     model_id: str
     problem_id: str
     prediction_id: str
-    objective_id: str
     evaluator_id: str
     delay_seconds: int
     variant: str
@@ -264,7 +262,6 @@ def _upsert_collection_snapshot(path: Path, snapshot: BenchmarkCollectionSnapsho
                         model_id=record.model_id,
                         problem_id=record.problem_id,
                         prediction_id=record.prediction_id,
-                        objective_id=record.objective_id,
                         evaluator_id=record.evaluator_id,
                         delay_seconds=record.delay_seconds,
                         variant=record.variant,
@@ -355,7 +352,6 @@ def _list_indexed_results(
         result_observations.c.model_id,
         result_observations.c.problem_id,
         result_observations.c.prediction_id,
-        result_observations.c.objective_id,
         result_observations.c.evaluator_id,
         result_observations.c.delay_seconds,
         result_observations.c.variant,
@@ -415,7 +411,6 @@ def _list_indexed_results(
                     model_id=str(row["model_id"]),
                     problem_id=str(row["problem_id"]),
                     prediction_id=str(row["prediction_id"]),
-                    objective_id=str(row["objective_id"]),
                     evaluator_id=str(row["evaluator_id"]),
                     delay_seconds=int(row["delay_seconds"]),
                     variant=str(row["variant"]),
@@ -458,7 +453,6 @@ def _result_record_csv_row(record: BenchmarkResultIndexRow) -> dict[str, str]:
         "model": record.model_id,
         "problem": record.problem_id,
         "prediction": record.prediction_id,
-        "objective": record.objective_id,
         "evaluator": record.evaluator_id,
         "delay_seconds": str(record.delay_seconds),
         "variant": record.variant,

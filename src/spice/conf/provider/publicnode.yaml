@@ -16,6 +16,8 @@ acquisition:
 endpoints:
   ethereum:
     url: https://ethereum-rpc.publicnode.com
+  sepolia:
+    url: https://ethereum-sepolia-rpc.publicnode.com
   polygon:
     url: https://polygon-bor-rpc.publicnode.com
   avalanche:

@@ -6,7 +6,7 @@
 
 ## Theory
 
-Good experiment config separates durable concepts from run controls. A surface should describe the research context: dataset, chain, problem, features, model family, objective, and evaluator. A workflow selection or benchmark should vary run-specific selections such as delay, trial count, study name, and artifact variant.
+Good experiment config separates durable concepts from run controls. A surface should describe the research context: dataset, chain, problem, features, model family, and prediction family. A workflow selection or benchmark should vary run-specific selections such as delay, trial count, study name, and artifact variant.
 
 ## Invariants
 
@@ -29,8 +29,8 @@ conf/
   problem/          temporal problem specs
   prediction/       prediction-family configs
   model/            model-family configs
-  objective/        optimization objective configs
-  evaluation/       evaluator configs
+  evaluator/        evaluator configs
+  evaluations/      reusable evaluation-window suites
   training/         optimizer and loop settings
   split/            train/validation/test split settings
   tuning/           tuning run controls

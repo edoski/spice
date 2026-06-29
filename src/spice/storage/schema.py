@@ -44,13 +44,6 @@ training_summary = Table(
     Column("payload", JSON, nullable=False),
 )
 
-training_epochs = Table(
-    "training_epochs",
-    metadata,
-    Column("epoch", Integer, primary_key=True),
-    Column("payload", JSON, nullable=False),
-)
-
 evaluation_summary = Table(
     "evaluation_summary",
     metadata,
@@ -71,6 +64,5 @@ STUDY_TABLES = (study_manifest,)
 ARTIFACT_TABLES = (
     artifact_manifest,
     training_summary,
-    training_epochs,
     evaluation_summary,
 )

@@ -49,14 +49,13 @@ def _base_surface(conf_root) -> dict[str, object]:
     return load_named_group_payload("current_row_fee_dynamics", "surface")
 
 
-def _tune_config(tmp_path, *, surface: str, objective: str | None = None) -> TuneConfig:
+def _tune_config(tmp_path, *, surface: str) -> TuneConfig:
     return cast(
         TuneConfig,
         resolve_workflow_config(
             TuneWorkflowSelection(
                 surface=surface,
                 corpus_id=TEST_DATASET_ID,
-                objective=objective,
                 storage_root=tmp_path / "outputs",
             ),
         ),
@@ -67,7 +66,6 @@ def _train_config(
     tmp_path,
     *,
     surface: str,
-    objective: str | None = None,
     study_id: str | None = None,
 ) -> TrainConfig:
     return cast(
@@ -78,7 +76,6 @@ def _train_config(
                 corpus_id=None if study_id is not None else TEST_DATASET_ID,
                 study_id=study_id,
                 variant="tuned" if study_id is not None else "baseline",
-                objective=objective,
                 storage_root=tmp_path / "outputs",
             ),
         ),
@@ -153,10 +150,10 @@ def test_study_id_uses_resolved_identity_but_not_trial_limits(
         yaml.safe_dump(evaluator_payload, sort_keys=False),
         encoding="utf-8",
     )
-    changed_evaluation = _tune_config(tmp_path, surface="current_row_fee_dynamics")
+    unchanged_evaluation = _tune_config(tmp_path, surface="current_row_fee_dynamics")
 
     assert produced_study_id(changed) != produced_study_id(base)
-    assert produced_study_id(changed_evaluation) != produced_study_id(base)
+    assert produced_study_id(unchanged_evaluation) == produced_study_id(base)
     assert produced_study_id(limited) == produced_study_id(base)
 
 
@@ -173,11 +170,6 @@ def test_artifact_id_uses_training_identity_and_selected_dataset(
 
     base = _train_config(tmp_path, surface="current_row_fee_dynamics")
     changed_problem = _train_config(tmp_path, surface="artifact_identity_change")
-    changed_objective = _train_config(
-        tmp_path,
-        surface="current_row_fee_dynamics",
-        objective="validation_total_loss",
-    )
     evaluator_path = conf_root / "evaluator" / "poisson_replay.yaml"
     evaluator_payload = load_named_group_payload("poisson_replay", "evaluator")
     evaluator_payload["seed"] = 3030
@@ -185,15 +177,12 @@ def test_artifact_id_uses_training_identity_and_selected_dataset(
         yaml.safe_dump(evaluator_payload, sort_keys=False),
         encoding="utf-8",
     )
-    changed_evaluation = _train_config(tmp_path, surface="current_row_fee_dynamics")
+    unchanged_evaluation = _train_config(tmp_path, surface="current_row_fee_dynamics")
 
     assert produced_artifact_id(changed_problem, corpus_id=TEST_DATASET_ID) != (
         produced_artifact_id(base, corpus_id=TEST_DATASET_ID)
     )
-    assert produced_artifact_id(changed_objective, corpus_id=TEST_DATASET_ID) != (
-        produced_artifact_id(base, corpus_id=TEST_DATASET_ID)
-    )
-    assert produced_artifact_id(changed_evaluation, corpus_id=TEST_DATASET_ID) != (
+    assert produced_artifact_id(unchanged_evaluation, corpus_id=TEST_DATASET_ID) == (
         produced_artifact_id(base, corpus_id=TEST_DATASET_ID)
     )
 

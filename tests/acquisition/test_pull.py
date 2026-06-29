@@ -9,7 +9,11 @@ from spice.acquisition.errors import (
     OversizedAcquisitionRequestError,
     TransientAcquisitionError,
 )
-from spice.acquisition.pull import AcquisitionPullController, pull_block_range
+from spice.acquisition.pull import (
+    MAX_ACQUISITION_ATTEMPTS_PER_RANGE,
+    AcquisitionPullController,
+    pull_block_range,
+)
 from spice.acquisition.types import BlockPullPlan, BlockRange, TimestampRange
 from spice.corpus.contract import CanonicalBlockRow
 from tests.dataset_helpers import make_block_rows
@@ -202,7 +206,10 @@ def test_pull_fails_after_transient_retry_limit(tmp_path) -> None:
             raise TransientAcquisitionError("timeout")
 
     source = AlwaysTransientSource()
-    with pytest.raises(RuntimeError, match="exceeded 8 transient retry attempts"):
+    with pytest.raises(
+        RuntimeError,
+        match=f"exceeded {MAX_ACQUISITION_ATTEMPTS_PER_RANGE} transient retry attempts",
+    ):
         asyncio.run(
             pull_block_range(
                 source,
@@ -216,7 +223,7 @@ def test_pull_fails_after_transient_retry_limit(tmp_path) -> None:
                 sink=_FakeSink(),
             )
         )
-    assert len(source.requests) == 8
+    assert len(source.requests) == MAX_ACQUISITION_ATTEMPTS_PER_RANGE
 
 
 def test_pull_cancellation_cancels_in_flight_tasks(tmp_path) -> None:

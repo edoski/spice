@@ -13,21 +13,19 @@ from spice.modeling.results import (
     EvaluationExecutionProvenance,
     EvaluationRuntimeSummary,
     SplitSizes,
-    TrainingEpochRecord,
     TrainingRuntimeSummary,
 )
 from spice.storage.artifact import (
     _evaluation_storage_id,
     list_evaluation_runs,
     list_evaluation_summaries,
-    list_training_epochs,
     load_artifact_manifest,
     load_evaluation_summary,
     load_training_summary,
     record_evaluation_state,
     upsert_evaluation_state,
     write_artifact_manifest,
-    write_training_state,
+    write_training_summary,
 )
 from spice.storage.artifact_codecs import (
     ARTIFACT_MANIFEST_CODEC,
@@ -48,42 +46,20 @@ def test_training_artifact_summary_round_trip(tmp_path) -> None:
         n_rows_used=96,
         split_sizes=SplitSizes(train_samples=16, validation_samples=4, test_samples=4),
         best_epoch=2,
-        best_objective_metric_id="total_loss",
-        best_objective_value=0.25,
-        best_validation_metrics=MetricSet(values={"total_loss": 0.25}),
-        test_metrics=MetricSet(values={"total_loss": 0.3}),
+        best_validation_total_loss=0.25,
+        test_total_loss=0.3,
     )
-    epoch_rows = [
-        TrainingEpochRecord(
-            epoch=1,
-            train_metrics=MetricSet(values={"total_loss": 0.4}),
-            validation_metrics=MetricSet(values={"total_loss": 0.35}),
-            objective_metrics=MetricSet(values={"total_loss": 0.35}),
-        ),
-        TrainingEpochRecord(
-            epoch=2,
-            train_metrics=MetricSet(values={"total_loss": 0.3}),
-            validation_metrics=MetricSet(values={"total_loss": 0.25}),
-            objective_metrics=MetricSet(values={"total_loss": 0.25}),
-        ),
-    ]
 
     write_artifact_manifest(db_path, manifest=manifest)
-    write_training_state(
-        db_path,
-        summary=summary,
-        epoch_rows=epoch_rows,
-    )
+    write_training_summary(db_path, summary=summary)
 
     loaded_manifest = load_artifact_manifest(db_path)
     loaded_summary = load_training_summary(db_path)
-    loaded_epochs = list_training_epochs(db_path)
 
     assert loaded_manifest == manifest
     assert loaded_summary is not None
     assert loaded_summary.manifest == manifest
     assert loaded_summary.runtime == summary
-    assert loaded_epochs == epoch_rows
 
 
 def test_artifact_manifest_codec_round_trips() -> None:
@@ -122,10 +98,8 @@ def test_training_summary_codec_round_trips() -> None:
         n_rows_used=96,
         split_sizes=SplitSizes(train_samples=16, validation_samples=4, test_samples=4),
         best_epoch=2,
-        best_objective_metric_id="total_loss",
-        best_objective_value=0.25,
-        best_validation_metrics=MetricSet(values={"total_loss": 0.25}),
-        test_metrics=MetricSet(values={"total_loss": 0.3}),
+        best_validation_total_loss=0.25,
+        test_total_loss=0.3,
     )
 
     assert TRAINING_SUMMARY_CODEC.decode(TRAINING_SUMMARY_CODEC.encode(summary)) == summary

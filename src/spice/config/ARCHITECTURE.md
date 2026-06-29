@@ -66,7 +66,6 @@ evaluator.id             -> evaluator config type
 model.id                 -> model-family config type
 problem.compiler.id      -> problem compiler config type
 problem.execution_policy.id   -> execution-policy config type
-objective.id             -> objective config shape
 ```
 
 So config group typed loading, resolved snapshot hydration, and typed tuned-parameter transforms call owner coercers. Config-facing coercer envelope errors normalize to `ConfigResolutionError`. Owner tables stay in their packages; `core.specs` only supplies mechanical helpers for payload/id extraction, concrete-type validation, and compile-time type assertions.
@@ -79,7 +78,10 @@ Surface resolution is the fresh path from produce-root Workflow Selection to Wor
 
 Surface resolution does not hydrate raw resolved snapshots. Resolved snapshots are already past selection and surface ownership.
 
-Required workflow refs are checked during fresh resolution: acquire requires acquisition/provider refs, model workflows require model/training/split/objective refs, tune and tuned-train require tuning-space refs, and evaluator-backed objectives require a matching selected evaluator.
+Required workflow refs are checked during fresh resolution: acquire requires
+acquisition/provider refs, model workflows require model/training/split refs, and
+tune and tuned-train require tuning-space refs. Evaluate requires an artifact id,
+corpus id, evaluator, and evaluation window.
 
 ## Resolved Workflow Hydration
 

@@ -29,8 +29,6 @@ cases:
       - id: train_baseline
         workflow: train
         set:
-          objective: profit_poisson_replay
-          evaluator: poisson_replay
           variant: baseline
       - id: evaluate_baseline
         workflow: evaluate

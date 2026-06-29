@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 from spice.config import (
     ArtifactVariant,
     ChainSpec,
@@ -17,11 +19,9 @@ from spice.modeling.dataset_builders import (
 )
 from spice.modeling.families.lstm import LstmModelConfig
 from spice.modeling.results import TrainingArtifactManifest, TrainingSourceProvenance
-from spice.objectives import coerce_objective_config
 from spice.prediction import compile_prediction_contract
 from spice.semantics import (
     ArtifactSemantics,
-    ObjectiveSemantics,
 )
 from spice.temporal import TemporalCapability
 from spice.temporal.compilers.observed_time_window import ObservedTimeWindowRuntimeMetadata
@@ -54,16 +54,6 @@ def _features_config():
                 "log_base_fee_per_gas",
                 "log_prev_gas_used",
             ],
-        }
-    )
-
-
-def _objective_config():
-    return coerce_objective_config(
-        {
-            "id": "validation",
-            "metric_id": "total_loss",
-            "direction": "minimize",
         }
     )
 
@@ -108,7 +98,6 @@ def _training_config():
             "gradient_clip_norm": 1.0,
             "seed": 2026,
             "deterministic": True,
-            "log_every_n_steps": 1,
             "sequence": {"min_length": 8, "max_length": 64},
         }
     )
@@ -153,8 +142,6 @@ def manifest(
         artifact_id="artifact-1",
         sequence=sequence,
         prediction=prediction,
-        objective=_objective_config(),
-        evaluator=None,
         chain_name="ethereum",
         corpus_id="current_row_fee_dynamics",
         corpus_name="current_row_fee_dynamics",
@@ -174,7 +161,7 @@ def manifest(
         study=StudyConfig(name="default"),
         study_id=None,
         features=features,
-        model=model,
+        model=cast(Any, model),
         split=_split_config(),
         training=_training_config(),
         scaler=ScalerStats(means=[0.0, 1.0], scales=[1.0, 1.0]),
@@ -188,12 +175,6 @@ def manifest(
         semantics=ArtifactSemantics(
             problem=problem_contract.semantics,
             execution_policy=problem_contract.execution_policy.semantics,
-            objective=ObjectiveSemantics(
-                objective_id="validation",
-                metric_id="total_loss",
-                direction="minimize",
-                evaluator_id=None,
-            ),
             feature=feature_contract.semantics,
             prediction=prediction_contract.semantics,
             temporal_capability=temporal_capability.semantics,

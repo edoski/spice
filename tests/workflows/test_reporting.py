@@ -192,7 +192,7 @@ def test_train_workflow_emits_compact_epoch_output(
 
     spec = SimpleNamespace(
         training=SimpleNamespace(max_epochs=3),
-        prediction_contract=SimpleNamespace(primary_metric_id="profit_over_baseline"),
+        prediction_contract=SimpleNamespace(primary_metric_id="total_loss"),
         problem_contract=object(),
         feature_contract=object(),
     )
@@ -215,13 +215,10 @@ def test_train_workflow_emits_compact_epoch_output(
             TrainingEpochProgress(
                 epoch=1,
                 max_epochs=3,
-                train_metrics=MetricSet(values={"profit_over_baseline": 0.15}),
-                validation_metrics=MetricSet(values={"profit_over_baseline": 0.2}),
-                objective_metrics=MetricSet(values={"profit_over_baseline": 0.2}),
-                objective_metric_id="profit_over_baseline",
-                direction="maximize",
+                train_metrics=MetricSet(values={"total_loss": 0.25}),
+                validation_metrics=MetricSet(values={"total_loss": 0.2}),
                 best_epoch=1,
-                best_objective_value=0.2,
+                best_validation_loss=0.2,
             )
         )
         return SimpleNamespace(summary=object())
@@ -254,7 +251,8 @@ def test_train_workflow_emits_compact_epoch_output(
     assert "train corpus=" in rendered
     assert "prepare rows=128 samples=24" in rendered
     assert "fit started epochs=3" in rendered
-    assert "fit epoch=1/3 objective.profit_over_baseline=0.2000" in rendered
+    assert "fit epoch=1/3 validation.total_loss=0.2000" in rendered
+    assert "best.validation.total_loss=0.2000" in rendered
     assert "train complete artifact=" in rendered
 
 

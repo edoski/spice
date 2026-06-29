@@ -13,11 +13,9 @@ features: core_fee_dynamics
 problem: current_row_nominal
 model: lstm
 prediction: icdcs_2026
-objective: profit_poisson_replay
 acquisition: {provider: publicnode}
 training: {id: default, split: default}
 tuning: {id: default, space: lstm_fixed_context}
-evaluator: {id: poisson_replay}
 evaluations: null
 ```
 
@@ -33,13 +31,11 @@ The surface YAML uses targeted nesting where the nesting matches ownership:
 | `problem` | Temporal problem spec. |
 | `model` | Model family config. |
 | `prediction` | Prediction head/decoder semantics. |
-| `objective` | Training/tuning objective. |
 | `acquisition.provider` | RPC provider spec. Provider YAML owns endpoint and acquisition runtime settings. |
 | `training.id` | Training hyperparameter spec. |
 | `training.split` | Split spec. |
 | `tuning.id` | Optuna runtime spec. |
 | `tuning.space` | Tuning search-space spec. |
-| `evaluator.id` | Evaluator spec used by train/tune objectives and evaluate runs. |
 | `evaluations` | Optional reusable suite of named evaluation windows. |
 
 ## Current Specs
@@ -64,12 +60,14 @@ Problems:
 Training uses fixed internal sequence preparation. `training.sequence.min_length` and
 `training.sequence.max_length` bound the derived context length.
 
-Evaluators: `poisson_replay`. The default surface uses `poisson_replay`.
+Evaluators: `poisson_replay`. Evaluate workflows select an evaluator explicitly.
 
-Benchmarks: `priority_fee_ablation`, `safe_baseline_grid`, `large_capacity_hpo`, `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, `delay_degradation_sweep`, and `evaluator_objective_grid`.
+Benchmarks: `priority_fee_ablation`, `safe_baseline_grid`, `large_capacity_hpo`, `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, and `delay_degradation_sweep`.
 
 `safe_baseline_grid` is the untuned ETH/POL/AVAX by LSTM/Transformer/Transformer-LSTM baseline. `large_capacity_hpo` is the bounded calibration search: the same 3x3 grid, conservative large-capacity spaces, and 32 trials per cell. `lookback_window_sweep`, `slot_spacing_sweep`, `elapsed_position_ablation`, and `delay_degradation_sweep` are fixed train/evaluate grids, not per-cell HPO grids. `delay_degradation_sweep` trains one artifact per `max_delay_seconds` value and evaluates with the artifact capability delay unless an evaluate step sets `delay_seconds`. Sample-count sweeps are deferred because larger history windows need explicit date-range and protocol-regime checks.
 
 ## Invariants
 
-Config ids name concrete specs. Surface fields point at existing specs. Evaluation objectives declare `evaluator_id`, and train/tune selected evaluator config ids must match it. Estimated-block runnable paths are archived, not available as current configs.
+Config ids name concrete specs. Surface fields point at existing specs. Training
+and tuning select checkpoints by validation `total_loss`. Estimated-block
+runnable paths are archived, not available as current configs.

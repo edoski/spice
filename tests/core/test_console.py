@@ -13,7 +13,7 @@ def test_reporter_renders_header_milestone_and_result() -> None:
         "train",
         [("corpus", "current_row_fee_dynamics"), ("chain", "ethereum"), ("model", "lstm")],
     )
-    reporter.milestone("fit epoch=1/10 objective.total_loss=1.2300 best_epoch=1")
+    reporter.milestone("fit epoch=1/10 validation.total_loss=1.2300 best_epoch=1")
     reporter.result(
         "train",
         [("artifact", "/tmp/artifact"), ("best_epoch", "6"), ("test.total_loss", "0.1200")],
@@ -24,7 +24,7 @@ def test_reporter_renders_header_milestone_and_result() -> None:
     assert "corpus=current_row_fee_dynamics" in rendered
     assert "chain=ethereum" in rendered
     assert "model=lstm" in rendered
-    assert "fit epoch=1/10 objective.total_loss=1.2300 best_epoch=1" in rendered
+    assert "fit epoch=1/10 validation.total_loss=1.2300 best_epoch=1" in rendered
     assert "train complete" in rendered
     assert "artifact=/tmp/artifact" in rendered
     assert "best_epoch=6" in rendered
@@ -39,7 +39,7 @@ def test_reporter_renders_warnings_and_sections() -> None:
     reporter.milestone("train cancelled; partial outputs removed", level="warning")
     reporter.sections(
         "artifact summary",
-        [("training", [("best epoch", "6"), ("best objective", "0.0118")])],
+        [("training", [("best epoch", "6"), ("best validation loss", "0.0118")])],
     )
     reporter.diagnostic_sections(
         "artifact matches",

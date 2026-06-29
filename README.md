@@ -38,7 +38,6 @@ features
   -> dataset builders
   -> model families
   -> prediction families
-  -> objectives
   -> evaluation
 ```
 
@@ -51,8 +50,7 @@ Read:
 5. [Dataset builder implementations](src/spice/modeling/dataset_builders/IMPLEMENTATIONS.md)
 6. [Model family implementations](src/spice/modeling/families/IMPLEMENTATIONS.md)
 7. [Prediction family implementations](src/spice/prediction/families/IMPLEMENTATIONS.md)
-8. [Objective implementations](src/spice/objectives/IMPLEMENTATIONS.md)
-9. [Evaluator implementations](src/spice/evaluation/IMPLEMENTATIONS.md)
+8. [Evaluator implementations](src/spice/evaluation/IMPLEMENTATIONS.md)
 
 The key mental model:
 
@@ -145,7 +143,7 @@ surface name + overrides
 | Artifact | Persisted trained model plus exact manifest and runtime state. |
 | Study | Persisted tuning state and Optuna trial database. |
 | Evaluator | Runtime scorer that turns decoded predictions into metrics. |
-| Surface | High-level YAML recipe combining chain, dataset, model, features, problem, objective, and evaluation. |
+| Surface | High-level YAML recipe combining chain, dataset, model, features, problem, prediction, and evaluation windows. |
 
 ## Stack
 

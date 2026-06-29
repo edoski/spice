@@ -7,7 +7,7 @@
 Materialization keeps three durable ledgers plus one root-facts read model distinct:
 
 - `BenchmarkDependencyLedger` owns matched local run ids, external Slurm dependencies, and the `artifact_from` source run id.
-- `BenchmarkSelectionLedger` owns benchmark coordinate intent such as surface, chain, model, problem, objective, evaluation, runtime knobs, and inline problem ids. It does not carry consumed root ids.
+- `BenchmarkSelectionLedger` owns benchmark coordinate intent such as surface, chain, model, problem, evaluation, runtime knobs, and inline problem ids. It does not carry consumed root ids.
 - `BenchmarkRootFacts` owns caller-facing consumed, produced, and source root ids.
 - `BenchmarkRootLedger` owns typed audit entries for consumed, produced, and source roots.
 

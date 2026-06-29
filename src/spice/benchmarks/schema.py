@@ -18,7 +18,7 @@ _BENCHMARK_DIMENSION_FIELDS = {
     "data": frozenset({"surface", "chain", "corpus_id"}),
     "features": frozenset({"features", "surface"}),
     "models": frozenset({"model", "tuning_space"}),
-    "scoring": frozenset({"objective", "evaluator", "evaluations"}),
+    "scoring": frozenset({"evaluator", "evaluations"}),
     "runtime": frozenset(
         {
             "corpus_id",

@@ -51,4 +51,5 @@ Compilers decide:
 - what feature prerequisites and warmup rows are needed.
 - what runtime metadata must be persisted.
 
-They should not decide action masks, prediction target batches, model architecture, loss functions, objective metrics, or evaluator aggregation.
+They should not decide action masks, prediction target batches, model architecture,
+loss functions, training metrics, or evaluator aggregation.

@@ -26,7 +26,6 @@ from ..modeling.families.base import (
     ModelTuningSpaceConfig,
     TunedModelParams,
 )
-from ..objectives import ObjectiveConfig
 from ..prediction import validate_prediction_family_id
 from ..temporal.compilers import ProblemCompilerConfig
 from ..temporal.execution_policy import ExecutionPolicyConfig
@@ -239,7 +238,6 @@ class TrainingConfig(_ConfigModel):
     gradient_clip_norm: float = Field(gt=0.0)
     seed: int = Field(ge=0)
     deterministic: bool
-    log_every_n_steps: int = Field(gt=0)
     sequence: SequenceConfig
 
 
@@ -558,12 +556,7 @@ class ModelWorkflowConfig(WorkflowConfig):
     artifact: ArtifactConfig = Field(default_factory=ArtifactConfig)
 
 
-class ObjectiveModelWorkflowConfig(ModelWorkflowConfig):
-    objective: SerializeAsAny[ObjectiveConfig]
-    evaluator: SerializeAsAny[EvaluatorConfig] | None = None
-
-
-class TrainConfig(ObjectiveModelWorkflowConfig):
+class TrainConfig(ModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.TRAIN
     corpus_id: str | None = None
     study_id: str | None = None
@@ -588,7 +581,7 @@ class TrainConfig(ObjectiveModelWorkflowConfig):
         return self
 
 
-class TuneConfig(ObjectiveModelWorkflowConfig):
+class TuneConfig(ModelWorkflowConfig):
     workflow: WorkflowTask = WorkflowTask.TUNE
     corpus_id: str
     training_cutoff_timestamp: int | None = Field(default=None, gt=0)
@@ -598,7 +591,7 @@ class TuneConfig(ObjectiveModelWorkflowConfig):
     tuning_space: TuningSpaceConfig
 
     @model_validator(mode="after")
-    def validate_required_objective_and_tuning_space(self) -> Self:
+    def validate_tuning_space(self) -> Self:
         if self.tuning_space.model.id != self.model.id:
             raise ConfigResolutionError("tuning_space.model.id must match model.id")
         if not self.tuning_space.has_candidates():

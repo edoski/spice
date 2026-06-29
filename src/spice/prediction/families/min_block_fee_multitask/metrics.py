@@ -124,13 +124,10 @@ class MinBlockFeeEpochAccumulator:
             raise TypeError("min_block_fee_multitask expects metric totals")
         self.totals = _add_metric_totals(self.totals, batch_state)
 
-    def snapshot(self) -> MetricSet:
+    def finalize(self) -> MetricSet:
         if self.totals is None:
             raise ValueError("Cannot summarize an empty accumulator")
         return _metric_set_from_totals(self.totals)
-
-    def finalize(self) -> MetricSet:
-        return self.snapshot()
 
 
 TRAINING_METRIC_DESCRIPTORS: tuple[MetricDescriptor, ...] = (

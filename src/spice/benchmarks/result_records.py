@@ -70,7 +70,6 @@ class BenchmarkResultRecord(BaseModel):
     model_id: str
     problem_id: str
     prediction_id: str
-    objective_id: str
     evaluator_id: str
     delay_seconds: int
     variant: str
@@ -113,9 +112,12 @@ def build_benchmark_result_record(
     runtime = evaluation.runtime
     metrics: list[MetricValueRecord] = []
     if training is not None:
-        metrics.extend(
-            MetricValueRecord(source="training_test", metric_id=metric_id, value=value)
-            for metric_id, value in training.runtime.test_metrics.values.items()
+        metrics.append(
+            MetricValueRecord(
+                source="training_test",
+                metric_id="total_loss",
+                value=training.runtime.test_total_loss,
+            )
         )
     metrics.extend(
         MetricValueRecord(source="evaluation", metric_id=metric_id, value=value)
@@ -155,7 +157,6 @@ def build_benchmark_result_record(
         model_id=manifest.model.id,
         problem_id=manifest.problem_id,
         prediction_id=manifest.prediction_id,
-        objective_id=manifest.objective.id,
         evaluator_id=match.evaluator_id,
         delay_seconds=match.delay_seconds,
         variant=manifest.variant.value,

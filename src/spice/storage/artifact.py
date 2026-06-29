@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection, RowMapping
 
@@ -18,7 +18,6 @@ from ..core.errors import MissingStateError, StateLayoutError
 from .artifact_codecs import (
     ARTIFACT_MANIFEST_CODEC,
     EVALUATION_SUMMARY_CODEC,
-    TRAINING_EPOCH_CODEC,
     TRAINING_SUMMARY_CODEC,
 )
 from .engine import (
@@ -34,7 +33,6 @@ from .schema import (
     ARTIFACT_TABLES,
     artifact_manifest,
     evaluation_summary,
-    training_epochs,
     training_summary,
 )
 
@@ -45,7 +43,6 @@ if TYPE_CHECKING:
         LoadedEvaluationSummary,
         LoadedTrainingSummary,
         TrainingArtifactManifest,
-        TrainingEpochRecord,
         TrainingRuntimeSummary,
     )
 
@@ -93,28 +90,18 @@ def load_artifact_manifest(db_path: Path) -> TrainingArtifactManifest:
         engine.dispose()
 
 
-def write_training_state(
+def write_training_summary(
     db_path: Path,
     *,
     summary: TrainingRuntimeSummary,
-    epoch_rows: list[TrainingEpochRecord],
 ) -> None:
-    """Persist training runtime summary plus ordered epoch history for one artifact root."""
+    """Persist the training runtime summary for one artifact root."""
 
     ensure_state_db(db_path, root_kind=ARTIFACT_ROOT_KIND, tables=ARTIFACT_TABLES)
     engine = create_state_engine(db_path)
     try:
         with engine.begin() as conn:
             _TRAINING_SUMMARY_STORE.upsert(conn, summary)
-            conn.execute(delete(training_epochs))
-            if epoch_rows:
-                conn.execute(
-                    training_epochs.insert(),
-                    [
-                        {"epoch": record.epoch, "payload": TRAINING_EPOCH_CODEC.encode(record)}
-                        for record in epoch_rows
-                    ],
-                )
             touch_meta(conn, root_kind=ARTIFACT_ROOT_KIND)
     finally:
         engine.dispose()
@@ -139,34 +126,6 @@ def load_training_summary(db_path: Path) -> LoadedTrainingSummary | None:
             manifest=manifest,
             runtime=summary,
         )
-    finally:
-        engine.dispose()
-
-
-def list_training_epochs(db_path: Path) -> list[TrainingEpochRecord]:
-    if not table_exists(db_path, training_epochs.name):
-        return []
-    require_root_kind(db_path, ARTIFACT_ROOT_KIND)
-    engine = create_state_engine(db_path)
-    try:
-        with engine.connect() as conn:
-            rows = (
-                conn.execute(
-                    select(training_epochs.c.epoch, training_epochs.c.payload).order_by(
-                        training_epochs.c.epoch
-                    )
-                )
-                .mappings()
-                .all()
-            )
-        records = [
-            TRAINING_EPOCH_CODEC.decode(mapping_payload(row["payload"], label="training_epochs"))
-            for row in rows
-        ]
-        for row, record in zip(rows, records, strict=True):
-            if record.epoch != int(row["epoch"]):
-                raise StateLayoutError("training epoch payload does not match row epoch")
-        return records
     finally:
         engine.dispose()
 

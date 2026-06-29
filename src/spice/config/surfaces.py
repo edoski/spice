@@ -20,22 +20,16 @@ class SurfaceTuningFrame(ConfigModel):
     space: str | None = None
 
 
-class SurfaceEvaluatorFrame(ConfigModel):
-    id: str | None = None
-
-
 class SurfaceFrame(ConfigModel):
     chain: str
     corpus: str
     problem: str | ProblemSpec
     features: str | None = None
     prediction: str
-    objective: str | None = None
     model: str | None = None
     acquisition: SurfaceAcquisitionFrame
     training: SurfaceTrainingFrame
     tuning: SurfaceTuningFrame
-    evaluator: SurfaceEvaluatorFrame
     evaluations: str | None = None
     storage: StorageSpec | None = None
     study: StudyConfig | None = None

@@ -26,8 +26,6 @@ cases:
         after:
           - slurm: afterok:59648
         set:
-          objective: profit_poisson_replay
-          evaluator: poisson_replay
           variant: baseline
       - id: evaluate_baseline
         workflow: evaluate

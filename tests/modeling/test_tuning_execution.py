@@ -80,11 +80,6 @@ def _load_tune_config(
         "sampler_seed": 2026,
         "enable_pruning": False,
     }
-    override["objective"] = {
-        "id": "validation",
-        "metric_id": "offset_accuracy",
-        "direction": "maximize",
-    }
     return cast(
         TuneConfig,
         load_workflow_config(
@@ -96,7 +91,7 @@ def _load_tune_config(
     )
 
 
-def test_tuning_execution_controls_study_direction(
+def test_tuning_execution_uses_total_loss_minimize_direction(
     tmp_path,
     load_workflow_config,
     model_workflow_override,
@@ -128,8 +123,7 @@ def test_tuning_execution_controls_study_direction(
         corpus_manifest=_corpus_manifest(config),
     )
 
-    assert opened.study.direction.name == "MAXIMIZE"
-    assert opened.manifest.objective.metric_id == "offset_accuracy"
+    assert opened.study.direction.name == "MINIMIZE"
 
 
 def test_tuning_execution_reports_resume_trials_and_best_improvements(
@@ -174,8 +168,8 @@ def test_tuning_execution_reports_resume_trials_and_best_improvements(
             ]
             self.best_trial = self.trials[0]
 
-        def optimize(self, objective, *, n_trials: int, timeout, callbacks) -> None:
-            del objective, timeout
+        def optimize(self, func, *, n_trials: int, timeout, callbacks) -> None:
+            del func, timeout
             for index in range(n_trials):
                 trial = SimpleNamespace(
                     number=index + 1,

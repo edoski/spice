@@ -30,15 +30,11 @@ cases:
       - id: tune
         workflow: tune
         set:
-          objective: profit_poisson_replay
-          evaluator: poisson_replay
           trial_count: 32
       - id: train_tuned
         workflow: train
         after: [tune]
         set:
-          objective: profit_poisson_replay
-          evaluator: poisson_replay
           variant: tuned
       - id: evaluate_tuned
         workflow: evaluate

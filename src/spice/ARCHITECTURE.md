@@ -39,7 +39,6 @@ modeling     tensorization, training, inference, scoring bridge
 metrics      shared metric descriptors, metric sets, and window summaries
 prediction   targets, losses, training metric production, decoded-result kinds
 evaluation   decision-quality scoring over decoded results
-objectives   scalar metrics for training/tuning decisions
 benchmarks   benchmark specs, durable plan entries, run state, collection
 storage      identities, roots, SQLite state, lifecycle, catalog
 execution    explicit remote targets, resolved workflow execution, transfer
@@ -90,7 +89,6 @@ spice/
   features/         observable feature construction
   metrics.py        shared metric descriptors, metric sets, and window summaries
   modeling/         datasets, models, training, inference
-  objectives/       train/tune objective contracts
   prediction/       target/loss/decode semantics
   storage/          identities, roots, SQLite state, catalog, lifecycle
   temporal/         time-window problem construction
@@ -111,8 +109,10 @@ Spice expands each piece because blockchain fee decisions are temporal:
 data        corpus + features
 examples    temporal compilers + execution policies
 model       dataset builders + model families
-loss        prediction families + objectives
+loss        prediction families
 evaluation  evaluator contracts + storage summaries
 ```
 
-This separation lets one model architecture learn different prediction tasks, one prediction task use different evaluator metrics, and one corpus support multiple experiments.
+This separation lets one model architecture learn different prediction tasks, one
+prediction task use different evaluator metrics at evaluation time, and one corpus
+support multiple experiments.

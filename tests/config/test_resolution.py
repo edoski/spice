@@ -91,7 +91,6 @@ def test_surface_refs_and_selection_defaults_resolve(
     conf_root = isolate_conf_root()
     child_root = tmp_path / "child_outputs"
     payload = _base_surface(conf_root)
-    payload["objective"] = "profit_poisson_replay"
     (conf_root / "training" / "child_training.yaml").write_text(
         yaml.safe_dump(
             {
@@ -377,66 +376,6 @@ def test_invalid_resolution_selections_fail_cleanly(
         )
 
 
-def test_benchmark_objective_requires_matching_evaluation(
-    tmp_path: Path,
-    isolate_conf_root,
-) -> None:
-    conf_root = isolate_conf_root()
-    (conf_root / "objective" / "mismatch.yaml").write_text(
-        "\n".join(
-            [
-                "id: evaluation",
-                "metric_id: profit_over_baseline",
-                "direction: maximize",
-                "evaluator_id: other_evaluation",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    payload = _base_surface(conf_root)
-    payload["objective"] = "mismatch"
-    payload["evaluator"] = {"id": "poisson_replay"}
-    _write_surface(conf_root, "mismatch", payload)
-
-    with pytest.raises(
-        ConfigResolutionError,
-        match=(
-            "objective mismatch requires evaluator "
-            "other_evaluation, got poisson_replay"
-        ),
-    ):
-        resolve_workflow_config(
-            TrainWorkflowSelection(
-                surface="mismatch",
-                corpus_id=TEST_DATASET_ID,
-                storage_root=tmp_path / "outputs",
-            ),
-        )
-
-
-def test_evaluation_objective_requires_selected_evaluation(
-    tmp_path: Path,
-    isolate_conf_root,
-) -> None:
-    conf_root = isolate_conf_root()
-    payload = _base_surface(conf_root)
-    payload["objective"] = "profit_poisson_replay"
-    payload["evaluator"] = {"id": None}
-    _write_surface(conf_root, "missing_eval", payload)
-
-    with pytest.raises(
-        ConfigResolutionError,
-        match="objective profit_poisson_replay requires evaluator poisson_replay",
-    ):
-        resolve_workflow_config(
-            TrainWorkflowSelection(
-                surface="missing_eval",
-                corpus_id=TEST_DATASET_ID,
-                storage_root=tmp_path / "outputs",
-            ),
-        )
-
-
 def test_tune_requires_selected_tuning_space(
     tmp_path: Path,
     isolate_conf_root,
@@ -502,7 +441,7 @@ def test_tuned_train_rejects_corpus_id(
         )
 
 
-def test_selection_overrides_allow_problem_features_and_evaluation_selection(
+def test_selection_overrides_allow_problem_and_features_selection(
     tmp_path: Path,
     isolate_conf_root,
 ) -> None:
@@ -522,8 +461,6 @@ def test_selection_overrides_allow_problem_features_and_evaluation_selection(
     )
     assert train_config.problem.id == "current_row_recent_median"
     assert train_config.features.id == "core_fee_dynamics"
-    assert train_config.evaluator is not None
-    assert train_config.evaluator.id == "poisson_replay"
 
 
 def test_surface_evaluations_derive_training_cutoff(
@@ -596,42 +533,6 @@ def test_selection_accepts_inline_problem_spec(
 
     assert config.problem.id == "inline_problem"
     assert config.problem.lookback_seconds == 600
-
-
-def test_selection_overrides_allow_objective_selection(
-    tmp_path: Path,
-    isolate_conf_root,
-) -> None:
-    isolate_conf_root()
-
-    train_config = cast(
-        TrainConfig,
-        resolve_workflow_config(
-            TrainWorkflowSelection(
-                surface="current_row_fee_dynamics",
-                corpus_id=TEST_DATASET_ID,
-                objective="validation_total_loss",
-                storage_root=tmp_path / "train_outputs",
-            ),
-        ),
-    )
-    assert train_config.objective.id == "validation"
-    assert train_config.objective.metric_id == "total_loss"
-    assert train_config.objective.direction == "minimize"
-
-    tune_config = cast(
-        TuneConfig,
-        resolve_workflow_config(
-            TuneWorkflowSelection(
-                surface="current_row_fee_dynamics",
-                corpus_id=TEST_DATASET_ID,
-                objective="validation_total_loss",
-                storage_root=tmp_path / "tune_outputs",
-            ),
-        ),
-    )
-    assert tune_config.objective.id == "validation"
-    assert tune_config.objective.metric_id == "total_loss"
 
 
 @pytest.mark.parametrize(

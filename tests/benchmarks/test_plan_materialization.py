@@ -404,7 +404,6 @@ def test_plan_materialization_preserves_selection_ledger_context(
                     "base": {
                         "surface": "current_row_fee_dynamics",
                         "corpus_id": ETH_DATASET_ID,
-                        "objective": "validation_total_loss",
                     },
                     "steps": [
                         {
@@ -428,7 +427,6 @@ def test_plan_materialization_preserves_selection_ledger_context(
 
     assert isinstance(evaluate.config, EvaluateConfig)
     assert evaluate.selection.surface == "current_row_fee_dynamics"
-    assert evaluate.selection.objective == "validation_total_loss"
     assert evaluate.root_facts.consumed_corpus_id == ETH_DATASET_ID
     assert evaluate.root_facts.consumed_artifact_id == evaluate.config.artifact_id
 

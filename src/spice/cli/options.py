@@ -119,22 +119,6 @@ WorkflowProviderOption = Annotated[
         help="Override the RPC provider spec.",
     ),
 ]
-WorkflowObjectiveOption = Annotated[
-    str | None,
-    workflow_selection_option(
-        "--objective",
-        metavar="OBJECTIVE",
-        help="Override the objective spec.",
-    ),
-]
-WorkflowEvaluatorOverrideOption = Annotated[
-    str | None,
-    workflow_selection_option(
-        "--evaluator",
-        metavar="EVALUATOR",
-        help="Override the evaluator spec.",
-    ),
-]
 WorkflowEvaluatorSpecOption = Annotated[
     str | None,
     workflow_selection_option(

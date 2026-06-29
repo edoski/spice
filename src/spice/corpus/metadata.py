@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
 import json
+from collections.abc import Iterable, Mapping
 from hashlib import sha256
 from typing import Literal, cast
 

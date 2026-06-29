@@ -1,6 +1,5 @@
 """Public configuration API."""
 
-from ..objectives import ObjectiveConfig
 from .models import (
     AcquireConfig,
     AcquisitionConfig,
@@ -61,7 +60,6 @@ __all__ = [
     "EvaluationsSpec",
     "FeaturesConfig",
     "ModelConfig",
-    "ObjectiveConfig",
     "PredictionConfig",
     "ProviderEndpointConfig",
     "ProviderSpec",

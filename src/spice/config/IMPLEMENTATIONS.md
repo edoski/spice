@@ -55,7 +55,7 @@ overrides: model=lstm, delay_seconds=36
              v
   chain/corpus/provider/problem
   features/model/prediction
-  objective/evaluator/evaluations/training/split
+  evaluations/training/split
              |
              v
       workflow config model
@@ -65,7 +65,9 @@ Fresh resolution applies acquire/train/tune selections to the Surface inside `re
 
 Surface resolution is a typed construction path. Once named groups and overrides have been resolved, `resolution.py` instantiates the workflow config from typed pieces. It does not round-trip through raw resolved snapshot hydration.
 
-Selection overrides are explicit: only `None` means “use the surface value.” Empty strings and other invalid refs are carried into typed loading and fail as bad references. Evaluation-backed objectives must select the evaluator they name; missing evaluator is rejected before workflow execution.
+Selection overrides are explicit: only `None` means “use the surface value.”
+Empty strings and other invalid refs are carried into typed loading and fail as
+bad references.
 
 Workflow Command Selection lives at the CLI edge. Workflow commands construct typed `WorkflowSelection` models from operator options, then call `resolve_workflow_config()` to produce concrete workflow configs. Benchmarks construct typed selections inside benchmark materialization before using the same fresh resolution path.
 
@@ -79,7 +81,10 @@ Acquire is excluded from snapshot hydration. Acquire configs contain provider/ac
 
 Tuned-parameter application is not snapshot hydration. It is a typed train/tune config transform that applies tuned params through owner-family validators and rebuilds the workflow config directly.
 
-Model workflow snapshots contain training/evaluation fields: chain, corpus, problem, model, dataset builder, features, prediction, objective, evaluator, storage, artifact, split, training, study, tuning, and tuning space depending on workflow.
+Model workflow snapshots contain training/evaluation fields: chain, corpus,
+problem, model, features, prediction, storage, artifact, split, training, study,
+tuning, and tuning space depending on workflow. Evaluate snapshots also contain
+evaluator and evaluation-window controls.
 
 Evaluation windows use UTC timestamp ranges:
 
@@ -90,23 +95,11 @@ evaluation.start
   -> required context and outcome rows remain internal
 ```
 
-## Objective And Evaluation Rules
+## Evaluation Rules
 
-Training and tuning can optimize either validation metrics or evaluator metrics.
-
-```text
-validation objective
-  -> use shared MetricSet directly
-
-evaluation objective
-  -> compile named evaluator
-  -> score validation samples through evaluator
-  -> optimize evaluator metric
-```
-
-For train and tune, an evaluation objective must declare an `evaluator_id`, and the selected evaluator config id must match it. Evaluate workflow can run a diagnostic evaluator directly; the artifact still validates against the training semantics stored in its manifest.
-
-Runtime evaluator contracts carry typed evaluator configs. Persisted evaluation summaries carry immutable Evaluation Config Snapshots, and artifact storage codecs serialize and hydrate those snapshots at the persisted-state boundary.
+Training and tuning select checkpoints by validation `total_loss`. Evaluate
+workflow compiles the selected evaluator and stores an immutable Evaluation Config
+Snapshot under the artifact state DB.
 
 ## Config Boundary Errors
 
@@ -120,7 +113,6 @@ Typical failures:
 | Wrong local config type | A spec was routed to a compiler that does not own it. |
 | Extra fields | The YAML contains fields not accepted by that concrete config. |
 | Missing owner id | Registry dispatch cannot choose an implementation. |
-| Objective evaluator mismatch | Training would optimize a different evaluator than requested. |
 
 ## CLI Remote Target Boundary
 

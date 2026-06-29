@@ -4,7 +4,6 @@ features: core_fee_dynamics
 problem: current_row_nominal
 model: lstm
 prediction: icdcs_2026
-objective: profit_poisson_replay
 acquisition:
   provider: publicnode
 training:
@@ -13,5 +12,3 @@ training:
 tuning:
   id: default
   space: lstm_fixed_context
-evaluator:
-  id: poisson_replay

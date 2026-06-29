@@ -37,7 +37,7 @@ Execution policies own action availability. `strict_deadline_miss` currently pre
 
 ## Family Comparison
 
-| Family | Training objective | Outputs | Decode |
+| Family | Training loss | Outputs | Decode |
 | --- | --- | --- | --- |
 | `min_block_fee_multitask` | Weighted offset classification plus fee regression. | Offset logits and scalar min log fee. | Masked argmax offset. |
 

@@ -20,9 +20,7 @@ from ..config.models import (
     TuningSpaceConfig,
 )
 from ..core.errors import ConfigResolutionError
-from ..evaluation import EvaluatorConfig
 from ..modeling.families.base import ModelConfig
-from ..objectives import ObjectiveConfig
 from .study_models import StudyManifest
 
 
@@ -37,8 +35,6 @@ class StudyStorageIdentity(IdentityModel):
     model: SerializeAsAny[ModelConfig]
     problem: ProblemSpec
     prediction: PredictionConfig
-    objective: ObjectiveConfig
-    evaluator: SerializeAsAny[EvaluatorConfig] | None
     study: StudyConfig
     split: SplitConfig
     training: TrainingConfig
@@ -53,8 +49,6 @@ class ArtifactStorageIdentity(IdentityModel):
     model: SerializeAsAny[ModelConfig]
     problem: ProblemSpec
     prediction: PredictionConfig
-    objective: ObjectiveConfig
-    evaluator: SerializeAsAny[EvaluatorConfig] | None
     split: SplitConfig
     training: TrainingConfig
     variant: ArtifactVariant
@@ -71,8 +65,6 @@ class StudyDefinitionIdentity(IdentityModel):
     training_cutoff_timestamp: int | None
     sequence: SequenceConfig
     prediction: PredictionConfig
-    objective: ObjectiveConfig
-    evaluator: SerializeAsAny[EvaluatorConfig] | None
     problem: ProblemSpec
     features: FeaturesConfig
     model: SerializeAsAny[ModelConfig]
@@ -105,8 +97,6 @@ def study_storage_identity(
     model: ModelConfig,
     problem: ProblemSpec,
     prediction: PredictionConfig,
-    objective: ObjectiveConfig,
-    evaluator: EvaluatorConfig | None,
     study: StudyConfig,
     split: SplitConfig,
     training: TrainingConfig,
@@ -120,8 +110,6 @@ def study_storage_identity(
         model=model,
         problem=problem,
         prediction=prediction,
-        objective=objective,
-        evaluator=evaluator,
         study=study,
         split=split,
         training=training,
@@ -143,8 +131,6 @@ def study_storage_identity_from_config(
         model=config.model,
         problem=config.problem,
         prediction=config.prediction,
-        objective=config.objective,
-        evaluator=config.evaluator,
         study=config.study,
         split=config.split,
         training=config.training,
@@ -168,8 +154,6 @@ def artifact_storage_identity_from_config(
         model=config.model,
         problem=config.problem,
         prediction=config.prediction,
-        objective=config.objective,
-        evaluator=config.evaluator,
         split=config.split,
         training=config.training,
         variant=config.artifact.variant,
@@ -188,8 +172,6 @@ def study_definition_identity(
     training_cutoff_timestamp: int | None,
     sequence: SequenceConfig,
     prediction: PredictionConfig,
-    objective: ObjectiveConfig,
-    evaluator: EvaluatorConfig | None,
     problem: ProblemSpec,
     features: FeaturesConfig,
     model: ModelConfig,
@@ -207,8 +189,6 @@ def study_definition_identity(
         training_cutoff_timestamp=training_cutoff_timestamp,
         sequence=sequence,
         prediction=prediction,
-        objective=objective,
-        evaluator=evaluator,
         problem=problem,
         features=features,
         model=model,
@@ -229,8 +209,6 @@ def study_definition_identity_from_manifest(manifest: StudyManifest) -> StudyDef
         training_cutoff_timestamp=manifest.training_source.training_cutoff_timestamp,
         sequence=manifest.sequence,
         prediction=manifest.prediction,
-        objective=manifest.objective,
-        evaluator=manifest.evaluator,
         problem=manifest.problem,
         features=manifest.features,
         model=manifest.model,
@@ -262,8 +240,6 @@ def study_definition_identity_from_tuned_config(
         training_cutoff_timestamp=config.training_cutoff_timestamp,
         sequence=config.training.sequence,
         prediction=config.prediction,
-        objective=config.objective,
-        evaluator=config.evaluator,
         problem=config.problem,
         features=config.features,
         model=config.model,

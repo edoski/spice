@@ -74,11 +74,6 @@ arrivals
 
 Duplicate selected samples can occur when several arrivals map to the same sample. They count as repeated events and contribute independently to event-weighted aggregate metrics.
 
-
-## Objective Link
-
-Evaluation objectives call evaluator scoring on validation samples during training and tuning. Standalone evaluate workflow compiles the selected evaluation config and stores its summary under the artifact state DB.
-
 ## Failure Modes
 
 | Failure | Meaning |

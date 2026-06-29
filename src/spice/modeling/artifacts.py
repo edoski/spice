@@ -34,8 +34,6 @@ def build_training_artifact_manifest(
         artifact_id=spec.artifact_id,
         sequence=spec.training.sequence,
         prediction=spec.prediction,
-        objective=spec.objective,
-        evaluator=spec.evaluator,
         chain_name=spec.chain.name,
         corpus_id=spec.corpus_id,
         corpus_name=spec.corpus_name,
@@ -54,7 +52,6 @@ def build_training_artifact_manifest(
         semantics=ArtifactSemantics(
             problem=spec.problem_contract.semantics,
             execution_policy=spec.problem_contract.execution_policy.semantics,
-            objective=spec.objective_runtime.contract.semantics,
             feature=spec.feature_contract.semantics,
             prediction=spec.prediction_contract.semantics,
             temporal_capability=prepared.temporal_capability.semantics,

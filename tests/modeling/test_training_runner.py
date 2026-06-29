@@ -12,7 +12,6 @@ from spice.config.models import TrainingConfig
 from spice.metrics import MetricSet
 from spice.modeling._fit_policy import CompletedEpoch
 from spice.modeling.batch_plan import BatchRuntimeContext
-from spice.modeling.objective_runtime import CompiledObjectiveRuntime
 from spice.modeling.runtime_planning import ModelingRuntimePlan
 from spice.modeling.training_runner import (
     TrainingFitSpec,
@@ -23,7 +22,6 @@ from spice.modeling.training_runner_types import (
     TrainingCheckpoint,
 )
 from spice.modeling.training_runtime import PreparedTrainingRuntime, TrainingRuntimePlan
-from spice.objectives import CompiledObjectiveContract
 from spice.temporal.execution_policy import PreparedActionSpace
 
 
@@ -44,26 +42,8 @@ def _training_config(*, max_epochs: int = 2, patience: int = 2) -> TrainingConfi
             "gradient_clip_norm": 1.0,
             "seed": 1,
             "deterministic": True,
-            "log_every_n_steps": 1,
             "sequence": {"min_length": 4, "max_length": 64},
         }
-    )
-
-
-def _objective_contract() -> CompiledObjectiveContract:
-    return CompiledObjectiveContract(
-        objective_id="validation",
-        metric_id="score",
-        direction="maximize",
-        evaluator_id=None,
-    )
-
-
-def _objective_runtime(evaluate_metrics_fn=None) -> CompiledObjectiveRuntime:
-    return CompiledObjectiveRuntime(
-        contract=_objective_contract(),
-        evaluate_metrics_fn=evaluate_metrics_fn
-        or (lambda validation_metrics, context: validation_metrics),
     )
 
 
@@ -131,12 +111,10 @@ def _fit_spec(
     *,
     model,
     training_config,
-    objective_runtime=None,
 ) -> TrainingFitSpec:
     return TrainingFitSpec(
         model=model,
         prediction_contract=cast(Any, SimpleNamespace()),
-        objective_runtime=objective_runtime or _objective_runtime(),
         prepared=cast(Any, _prepared(train=[0], validation=[0])),
         training_config=training_config,
     )
@@ -144,18 +122,23 @@ def _fit_spec(
 
 class _FakeLightningModule:
     instances: list[_FakeLightningModule] = []
+    model: Any
+    policy: Any
+    start_epoch: int
+    optimizer_state: dict[str, object] | None
+    training_config: TrainingConfig
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         self.__dict__.update(kwargs)
         self.fit_calls: list[tuple[object, object]] = []
         type(self).instances.append(self)
 
     def finalized_best(self):
-        best_epoch, best_state, best_value = self.policy.finalized_best(model=self.model)
+        best_epoch, best_state, best_value = self.policy.finalized_best()
         return SimpleNamespace(
             best_epoch=best_epoch,
             best_state=best_state,
-            best_objective_value=best_value,
+            best_validation_loss=best_value,
         )
 
 
@@ -166,37 +149,27 @@ class _FakeTrainer:
         self.kwargs = kwargs
         type(self).instances.append(self)
 
-    def fit(self, module, *, train_dataloaders, val_dataloaders) -> None:
+    def fit(self, module: Any, *, train_dataloaders, val_dataloaders) -> None:
         module.fit_calls.append((train_dataloaders, val_dataloaders))
-        first_score = 2.0 if module.start_epoch > 1 else 1.0
-        module.model.weight.data.fill_(first_score)
-        validation_metrics = MetricSet({"score": first_score})
-        objective_metrics = module.objective_runtime.evaluate_metrics(
-            validation_metrics,
-            scoring_plan=module.objective_scoring_plan,
-        )
+        first_loss = 0.8 if module.start_epoch > 1 else 1.0
+        module.model.weight.data.fill_(first_loss)
+        validation_metrics = MetricSet({"total_loss": first_loss})
         module.policy.record_completed_epoch(
             CompletedEpoch(
                 epoch=module.start_epoch,
-                train_metrics=MetricSet({"score": first_score}),
+                train_metrics=MetricSet({"total_loss": first_loss}),
                 validation_metrics=validation_metrics,
-                objective_metrics=objective_metrics,
             ),
             model=module.model,
         )
         if module.training_config.max_epochs > module.start_epoch:
             module.model.weight.data.fill_(2.0)
-            validation_metrics = MetricSet({"score": 1.005})
-            objective_metrics = module.objective_runtime.evaluate_metrics(
-                validation_metrics,
-                scoring_plan=module.objective_scoring_plan,
-            )
+            validation_metrics = MetricSet({"total_loss": 1.005})
             module.policy.record_completed_epoch(
                 CompletedEpoch(
                     epoch=module.start_epoch + 1,
-                    train_metrics=MetricSet({"score": 1.005}),
+                    train_metrics=MetricSet({"total_loss": 1.005}),
                     validation_metrics=validation_metrics,
-                    objective_metrics=objective_metrics,
                 ),
                 model=module.model,
             )
@@ -234,14 +207,12 @@ def test_training_fit_uses_lightning_trainer_and_restores_best_state(
         "enable_checkpointing": False,
         "enable_progress_bar": False,
         "deterministic": True,
-        "log_every_n_steps": 1,
     }
     assert _FakeLightningModule.instances[0].fit_calls == [(["train"], ["validation"])]
     assert result.best_epoch == 1
-    assert result.best_objective_value == 1.0
+    assert result.best_validation_loss == 1.0
     assert len(result.train_history) == 2
     assert len(result.validation_history) == 2
-    assert len(result.objective_history) == 2
     assert model.weight.item() == 1.0
     assert result.runtime_plan.seed == 0
 
@@ -257,9 +228,8 @@ def test_training_fit_resumes_from_checkpoint(
         model_state={"weight": torch.tensor(1.0)},
         optimizer_state={"epoch": 1},
         policy_state={
-            "train_history": [{"score": 1.0}],
-            "validation_history": [{"score": 1.0}],
-            "objective_history": [{"score": 1.0}],
+            "train_history": [{"total_loss": 1.0}],
+            "validation_history": [{"total_loss": 1.0}],
             "best_state": {"weight": torch.tensor(1.0)},
             "best_epoch": 1,
             "epochs_without_improvement": 0,
@@ -282,46 +252,7 @@ def test_training_fit_resumes_from_checkpoint(
     assert _FakeTrainer.instances[0].kwargs["max_epochs"] == 1
     assert result.best_epoch == 2
     assert len(result.train_history) == 2
-    assert model.weight.item() == 2.0
-
-
-def test_training_fit_delegates_scoring_plan_to_objective_runtime(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_training_runtime(monkeypatch)
-    _patch_lightning(monkeypatch)
-    seen_scoring_plans: list[object] = []
-
-    def evaluate_metrics(validation_metrics, scoring_plan):
-        assert validation_metrics == MetricSet({"score": 1.0})
-        seen_scoring_plans.append(scoring_plan)
-        return MetricSet({"score": 1.0})
-
-    model = _TinyModel()
-    prediction_contract = cast(Any, SimpleNamespace(name="prediction"))
-    prepared = _prepared(train=[0], validation=[1])
-
-    run_training_fit(
-        TrainingFitSpec(
-            model=cast(Any, model),
-            prediction_contract=prediction_contract,
-            objective_runtime=_objective_runtime(evaluate_metrics),
-            prepared=cast(Any, prepared),
-            training_config=_training_config(max_epochs=1),
-        )
-    )
-
-    module = _FakeLightningModule.instances[0]
-    scoring_plan = module.objective_scoring_plan
-    assert scoring_plan.model is model
-    assert scoring_plan.prediction_contract is prediction_contract
-    assert scoring_plan.execution_policy is prepared.execution_policy
-    assert scoring_plan.store is prepared.store
-    assert seen_scoring_plans == [scoring_plan]
-    np.testing.assert_array_equal(
-        scoring_plan.action_space.sample_indices,
-        np.array([1], dtype=np.int64),
-    )
+    assert model.weight.item() == pytest.approx(0.8)
 
 
 def test_training_fit_rejects_empty_train_or_validation_samples() -> None:
@@ -330,7 +261,6 @@ def test_training_fit_rejects_empty_train_or_validation_samples() -> None:
             TrainingFitSpec(
                 model=cast(Any, _TinyModel()),
                 prediction_contract=cast(Any, SimpleNamespace()),
-                objective_runtime=_objective_runtime(),
                 prepared=cast(Any, _prepared(train=[], validation=[0])),
                 training_config=_training_config(max_epochs=1),
             )

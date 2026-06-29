@@ -14,7 +14,7 @@ The family decodes to `DecodedOffsets`. Auxiliary heads, losses, candidate maski
 
 ## Extension Points
 
-Add auxiliary heads only when they are part of the family objective. Add a new prediction family if downstream decoded behavior changes.
+Add auxiliary heads only when they are part of the family training loss. Add a new prediction family if downstream decoded behavior changes.
 
 ## Runtime Shape
 

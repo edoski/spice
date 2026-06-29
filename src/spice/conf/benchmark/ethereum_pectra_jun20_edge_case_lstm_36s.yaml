@@ -15,8 +15,6 @@ cases:
       - id: train_total_loss
         workflow: train
         set:
-          objective: validation_total_loss
-          evaluator: poisson_replay
           model: lstm
           variant: baseline
 

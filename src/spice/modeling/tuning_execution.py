@@ -218,7 +218,7 @@ def _trial_objective(
     )
     block_path = roots.corpus.blocks_dir
     trial_run = run_trial_training(block_path, spec=spec)
-    metric_value = trial_run.summary.runtime.best_objective_value
+    metric_value = trial_run.summary.runtime.best_validation_total_loss
     best_epoch = trial_run.training_run.training_result.best_epoch
     _record_trial_best_epoch(trial, best_epoch)
     if config.tuning.enable_pruning:

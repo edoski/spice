@@ -77,8 +77,6 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
                             "id": "tune",
                             "workflow": "tune",
                             "set": {
-                                "objective": "validation_total_loss",
-                                "evaluator": "poisson_replay",
                                 "trial_count": 3,
                             },
                         },
@@ -135,7 +133,6 @@ def test_benchmark_dimensions_expand_tuned_train_and_artifact_from(
 
 def test_packaged_benchmark_yamls_keep_expected_shapes() -> None:
     expected_counts = {
-        "evaluator_objective_grid": 18,
         "large_capacity_hpo": 27,
         "priority_fee_ablation": 36,
         "safe_baseline_grid": 18,
@@ -160,33 +157,6 @@ def test_packaged_benchmark_yamls_keep_expected_shapes() -> None:
             entry.dependencies.artifact_from_run_id in entry.dependencies.local_run_ids
             for entry in evaluate_entries
         )
-
-
-def test_evaluator_objective_grid_keeps_poisson_evaluation_binding() -> None:
-    plan = materialize_benchmark_plan("evaluator_objective_grid")
-
-    evaluate = next(
-        entry
-        for entry in plan
-        if entry.step_id == "evaluate_poisson_artifact_with_poisson"
-        and "data-chain-ethereum__corpus_id-cor_9a73b1e88edb488afb1e" in entry.run_id
-        and "models-model-lstm__tuning_space-lstm_large_capacity" in entry.run_id
-    )
-
-    assert isinstance(evaluate.config, EvaluateConfig)
-    assert evaluate.config.evaluator.id == "poisson_replay"
-    assert evaluate.selection.surface == "current_row_fee_dynamics"
-    assert evaluate.selection.model == "lstm"
-    assert evaluate.selection.problem == "current_row_nominal"
-    assert evaluate.root_facts.consumed_artifact_id == evaluate.config.artifact_id
-    assert evaluate.dependencies.local_run_ids == (
-        "evaluator_objective_grid."
-        "data-chain-ethereum__corpus_id-cor_9a73b1e88edb488afb1e."
-        "models-model-lstm__tuning_space-lstm_large_capacity."
-        "problems-current_row_nominal."
-        "train_poisson_objective",
-    )
-
 
 def test_benchmark_rejects_step_local_evaluate_training_fields(isolate_conf_root) -> None:
     conf_root = isolate_conf_root()

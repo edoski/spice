@@ -7,7 +7,6 @@ from typing import TypeAlias, cast, overload
 
 from ..evaluation import EvaluatorConfig
 from ..modeling.families.base import ModelConfig
-from ..objectives import ObjectiveConfig
 from .models import (
     ArtifactConfig,
     ChainSpec,
@@ -46,8 +45,6 @@ class ResolvedModelWorkflowFields:
     model: ModelConfig[str]
     features: FeaturesConfig
     prediction: PredictionConfig
-    objective: ObjectiveConfig
-    evaluator: EvaluatorConfig | None
     study: StudyConfig
     artifact: ArtifactConfig
     split: SplitConfig
@@ -145,8 +142,6 @@ def _assemble_train_config(fields: ResolvedTrainWorkflowFields) -> TrainConfig:
         model=model_fields.model,
         features=model_fields.features,
         prediction=model_fields.prediction,
-        objective=model_fields.objective,
-        evaluator=model_fields.evaluator,
         study=model_fields.study,
         artifact=model_fields.artifact,
         training=model_fields.training,
@@ -170,8 +165,6 @@ def _assemble_tune_config(fields: ResolvedTuneWorkflowFields) -> TuneConfig:
         model=model_fields.model,
         features=model_fields.features,
         prediction=model_fields.prediction,
-        objective=model_fields.objective,
-        evaluator=model_fields.evaluator,
         study=model_fields.study,
         artifact=model_fields.artifact,
         training=model_fields.training,

@@ -9,10 +9,9 @@ from ..core.errors import MissingStateError, StateLayoutError
 from ..core.rendering import metric_bundle_string, window_metric_fields
 from ..features import FeaturePrerequisites
 from ..modeling.artifacts import TrainingArtifactManifest
-from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary, TrainingEpochRecord
+from ..modeling.results import LoadedEvaluationSummary, LoadedTrainingSummary
 from .artifact import (
     list_evaluation_summaries,
-    list_training_epochs,
     load_artifact_manifest,
     load_training_summary,
 )
@@ -32,7 +31,6 @@ class ArtifactRootDescription:
     manifest: TrainingArtifactManifest
     training: LoadedTrainingSummary | None = None
     evaluations: list[LoadedEvaluationSummary] | None = None
-    epochs: list[TrainingEpochRecord] | None = None
     show_runs: bool = False
 
 
@@ -97,7 +95,6 @@ def describe_artifact_root(
         ),
         training=training,
         evaluations=evaluations or None,
-        epochs=list_training_epochs(root_db_path) if detail == "epochs" else None,
         show_runs=detail == "runs",
     )
 
@@ -142,13 +139,10 @@ def artifact_sections(
                 [
                     ("best epoch", str(runtime.best_epoch)),
                     (
-                        "objective",
-                        (
-                            f"{training.manifest.semantics.objective.objective_id}:"
-                            f"{runtime.best_objective_metric_id}"
-                        ),
+                        "best validation total loss",
+                        f"{runtime.best_validation_total_loss:.4f}",
                     ),
-                    ("best objective", f"{runtime.best_objective_value:.4f}"),
+                    ("test total loss", f"{runtime.test_total_loss:.4f}"),
                     (
                         "rows",
                         f"used={runtime.n_rows_used} available={runtime.n_rows_available}",
@@ -161,20 +155,6 @@ def artifact_sections(
                                 f"validation={runtime.split_sizes.validation_samples}",
                                 f"test={runtime.split_sizes.test_samples}",
                             ]
-                        ),
-                    ),
-                    (
-                        "validation metrics",
-                        metric_bundle_string(
-                            training.manifest.training_metric_descriptors,
-                            runtime.best_validation_metrics.values,
-                        ),
-                    ),
-                    (
-                        "test metrics",
-                        metric_bundle_string(
-                            training.manifest.training_metric_descriptors,
-                            runtime.test_metrics.values,
                         ),
                     ),
                 ],
@@ -225,13 +205,6 @@ def artifact_sections(
                         ),
                     )
                 )
-    if description.epochs:
-        sections.append(
-            (
-                "epochs",
-                [(f"epoch {record.epoch}", epoch_string(record)) for record in description.epochs],
-            )
-        )
     if description.show_runs and description.evaluations:
         multiple_evaluations = len(description.evaluations) > 1
         for evaluation in description.evaluations:
@@ -256,13 +229,6 @@ def artifact_sections(
 
 def feature_prerequisites_string(prerequisites: FeaturePrerequisites) -> str:
     return f"history={prerequisites.history_seconds}s warmup={prerequisites.warmup_rows} rows"
-
-
-def epoch_string(record: TrainingEpochRecord) -> str:
-    return (
-        f"train={metric_bundle_string([], record.train_metrics.values)} "
-        f"val={metric_bundle_string([], record.validation_metrics.values)}"
-    )
 
 
 def evaluation_run_string(run) -> str:

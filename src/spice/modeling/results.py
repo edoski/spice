@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TypeAlias, cast
 
@@ -26,7 +26,6 @@ from ..modeling.dataset_builders import (
     SequenceRuntimeMetadata,
 )
 from ..modeling.families.base import ModelConfig
-from ..objectives import ObjectiveConfig
 from ..semantics import ArtifactSemantics
 from ..temporal.capability import TemporalCapability
 from ..temporal.input_normalization import ScalerStats
@@ -71,8 +70,6 @@ class TrainingArtifactManifest:
     artifact_id: str
     sequence: SequenceConfig
     prediction: PredictionConfig
-    objective: ObjectiveConfig
-    evaluator: EvaluatorConfig | None
     chain_name: str
     corpus_id: str
     corpus_name: str
@@ -150,10 +147,8 @@ class TrainingRuntimeSummary:
     n_rows_used: int
     split_sizes: SplitSizes
     best_epoch: int
-    best_objective_metric_id: str
-    best_objective_value: float
-    best_validation_metrics: MetricSet
-    test_metrics: MetricSet
+    best_validation_total_loss: float
+    test_total_loss: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,14 +157,6 @@ class LoadedTrainingSummary:
 
     manifest: TrainingArtifactManifest
     runtime: TrainingRuntimeSummary
-
-
-@dataclass(frozen=True, slots=True)
-class TrainingEpochRecord:
-    epoch: int
-    train_metrics: MetricSet
-    validation_metrics: MetricSet
-    objective_metrics: MetricSet
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,24 +227,6 @@ class LoadedEvaluationSummary:
     runtime: EvaluationRuntimeSummary
 
 
-def iter_epoch_records(result: TrainingRunResult) -> Iterator[TrainingEpochRecord]:
-    for index, (train_metrics, validation_metrics, objective_metrics) in enumerate(
-        zip(
-            result.training_result.train_history,
-            result.training_result.validation_history,
-            result.training_result.objective_history,
-            strict=True,
-        ),
-        start=1,
-    ):
-        yield TrainingEpochRecord(
-            epoch=index,
-            train_metrics=train_metrics,
-            validation_metrics=validation_metrics,
-            objective_metrics=objective_metrics,
-        )
-
-
 def build_training_runtime_summary(
     result: TrainingRunResult,
     *,
@@ -274,10 +243,8 @@ def build_training_runtime_summary(
             test_samples=int(prepared.samples.test.sample_indices.shape[0]),
         ),
         best_epoch=result.training_result.best_epoch,
-        best_objective_metric_id=result.training_result.objective_metric_id,
-        best_objective_value=result.training_result.best_objective_value,
-        best_validation_metrics=best_validation_metrics,
-        test_metrics=test_metrics,
+        best_validation_total_loss=best_validation_metrics.require("total_loss"),
+        test_total_loss=test_metrics.require("total_loss"),
     )
 
 

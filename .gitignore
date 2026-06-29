@@ -17,5 +17,12 @@ build/
 dist/
 /data/
 /outputs/
+/.spice/
+/tmp/
+/benchmarks/exports/
+/benchmarks/figures/
+/benchmarks/*.bak
+/apps/mobile/node_modules/
+/apps/mobile/.expo/
 .idea/
 .vscode/

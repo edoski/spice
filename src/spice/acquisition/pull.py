@@ -18,7 +18,6 @@ TRANSIENT_FAILURE_WINDOW = 32
 TRANSIENT_FAILURE_WINDOW_THRESHOLD = 3
 TRANSIENT_FAILURE_STREAK_THRESHOLD = 2
 SUCCESS_STREAK_FOR_RECOVERY = 64
-TRANSIENT_EXHAUSTION_COOLDOWN_SECONDS = 30.0
 
 
 @dataclass(slots=True)
@@ -233,9 +232,12 @@ async def pull_block_range(
                     if _is_transient_error(exc):
                         controller.record_transient_failure()
                         if request.attempts + 1 >= MAX_ACQUISITION_ATTEMPTS_PER_RANGE:
-                            controller.reset_transient_pressure()
-                            await asyncio.sleep(TRANSIENT_EXHAUSTION_COOLDOWN_SECONDS)
-                            heappush(pending_requests, request.reset_attempts())
+                            raise RuntimeError(
+                                "Acquisition range "
+                                f"{request.start}..{request.end} exceeded "
+                                f"{MAX_ACQUISITION_ATTEMPTS_PER_RANGE} "
+                                "transient retry attempts"
+                            ) from exc
                         else:
                             heappush(pending_requests, request.retry())
                         continue

@@ -14,7 +14,6 @@ from ..core.errors import ConfigResolutionError
 from ..evaluation import EvaluatorConfig, coerce_evaluator_config
 from ..modeling.families.registry import coerce_model_config
 from ..modeling.tuned_config import coerce_tuning_space_config
-from ..objectives import ObjectiveConfig, coerce_objective_config
 from .models import (
     ArtifactConfig,
     ChainSpec,
@@ -220,24 +219,12 @@ def _hydrate_model_workflow_fields(
         model=model,
         features=coerce_features_config(_owner_field(raw, "features", FeaturesConfig)),
         prediction=_model_field(raw, "prediction", PredictionConfig),
-        objective=coerce_objective_config(
-            _owner_field(raw, "objective", ObjectiveConfig)
-        ),
-        evaluator=_optional_evaluator(raw.get("evaluator")),
         study=_model_field(raw, "study", StudyConfig),
         artifact=_model_field(raw, "artifact", ArtifactConfig),
         split=_model_field(raw, "split", SplitConfig),
         training=_model_field(raw, "training", TrainingConfig),
         tuning=_optional_tuning(raw.get("tuning")),
         tuning_space=tuning_space,
-    )
-
-
-def _optional_evaluator(payload: object) -> EvaluatorConfig | None:
-    if payload is None:
-        return None
-    return coerce_evaluator_config(
-        _mapping_or_owner(payload, label="evaluator", config_type=EvaluatorConfig)
     )
 
 

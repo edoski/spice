@@ -14,11 +14,10 @@ from ..config.models import (
     coerce_features_config,
     coerce_problem_spec,
 )
-from ..evaluation import EvaluationRun, coerce_evaluator_config
+from ..evaluation import EvaluationRun
 from ..metrics import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..modeling.dataset_builders import SequenceRuntimeMetadata
 from ..modeling.families.registry import coerce_model_config
-from ..objectives import coerce_objective_config
 from ..temporal.capability import TemporalCapability
 from ..temporal.compilers import (
     problem_runtime_metadata_from_compiler_payload,
@@ -37,7 +36,6 @@ if TYPE_CHECKING:
     from ..modeling.results import (
         EvaluationRuntimeSummary,
         TrainingArtifactManifest,
-        TrainingEpochRecord,
         TrainingRuntimeSummary,
         TrainingSourceProvenance,
     )
@@ -168,8 +166,6 @@ class ArtifactManifestPayload(PayloadRecord):
     artifact_id: str
     sequence: dict[str, object]
     prediction: dict[str, object]
-    objective: dict[str, object]
-    evaluator: dict[str, object] | None = None
     chain_name: str
     corpus_id: str
     corpus_name: str
@@ -193,12 +189,6 @@ class ArtifactManifestPayload(PayloadRecord):
             artifact_id=manifest.artifact_id,
             sequence=manifest.sequence.model_dump(mode="json"),
             prediction=manifest.prediction.model_dump(mode="json"),
-            objective=manifest.objective.model_dump(mode="json", exclude_none=True),
-            evaluator=(
-                None
-                if manifest.evaluator is None
-                else manifest.evaluator.model_dump(mode="json", exclude_none=True)
-            ),
             chain_name=manifest.chain_name,
             corpus_id=manifest.corpus_id,
             corpus_name=manifest.corpus_name,
@@ -241,10 +231,6 @@ class ArtifactManifestPayload(PayloadRecord):
             artifact_id=self.artifact_id,
             sequence=SequenceConfig.model_validate(self.sequence),
             prediction=PredictionConfig.model_validate(self.prediction),
-            objective=coerce_objective_config(self.objective),
-            evaluator=(
-                None if self.evaluator is None else coerce_evaluator_config(self.evaluator)
-            ),
             chain_name=self.chain_name,
             corpus_id=self.corpus_id,
             corpus_name=self.corpus_name,
@@ -283,10 +269,8 @@ class TrainingSummaryPayload(PayloadRecord):
     validation_samples: int
     test_samples: int
     best_epoch: int
-    best_objective_metric_id: str
-    best_objective_value: float
-    best_validation_metrics: dict[str, float]
-    test_metrics: dict[str, float]
+    best_validation_total_loss: float
+    test_total_loss: float
 
     @classmethod
     def from_runtime(cls, summary: TrainingRuntimeSummary) -> TrainingSummaryPayload:
@@ -297,10 +281,8 @@ class TrainingSummaryPayload(PayloadRecord):
             validation_samples=summary.split_sizes.validation_samples,
             test_samples=summary.split_sizes.test_samples,
             best_epoch=summary.best_epoch,
-            best_objective_metric_id=summary.best_objective_metric_id,
-            best_objective_value=summary.best_objective_value,
-            best_validation_metrics=_metric_values_payload(summary.best_validation_metrics),
-            test_metrics=_metric_values_payload(summary.test_metrics),
+            best_validation_total_loss=summary.best_validation_total_loss,
+            test_total_loss=summary.test_total_loss,
         )
 
     def to_runtime(self) -> TrainingRuntimeSummary:
@@ -315,36 +297,8 @@ class TrainingSummaryPayload(PayloadRecord):
                 test_samples=self.test_samples,
             ),
             best_epoch=self.best_epoch,
-            best_objective_metric_id=self.best_objective_metric_id,
-            best_objective_value=self.best_objective_value,
-            best_validation_metrics=MetricSet(values=self.best_validation_metrics),
-            test_metrics=MetricSet(values=self.test_metrics),
-        )
-
-
-class TrainingEpochPayload(PayloadRecord):
-    epoch: int
-    train_metrics: dict[str, float]
-    validation_metrics: dict[str, float]
-    objective_metrics: dict[str, float]
-
-    @classmethod
-    def from_record(cls, record: TrainingEpochRecord) -> TrainingEpochPayload:
-        return cls(
-            epoch=record.epoch,
-            train_metrics=_metric_values_payload(record.train_metrics),
-            validation_metrics=_metric_values_payload(record.validation_metrics),
-            objective_metrics=_metric_values_payload(record.objective_metrics),
-        )
-
-    def to_record(self) -> TrainingEpochRecord:
-        from ..modeling.results import TrainingEpochRecord
-
-        return TrainingEpochRecord(
-            epoch=self.epoch,
-            train_metrics=MetricSet(values=self.train_metrics),
-            validation_metrics=MetricSet(values=self.validation_metrics),
-            objective_metrics=MetricSet(values=self.objective_metrics),
+            best_validation_total_loss=self.best_validation_total_loss,
+            test_total_loss=self.test_total_loss,
         )
 
 
@@ -481,12 +435,6 @@ TRAINING_SUMMARY_CODEC: PayloadCodec[TrainingRuntimeSummary] = payload_record_co
     TrainingSummaryPayload,
     TrainingSummaryPayload.from_runtime,
     TrainingSummaryPayload.to_runtime,
-)
-TRAINING_EPOCH_CODEC: PayloadCodec[TrainingEpochRecord] = payload_record_codec(
-    "training epoch",
-    TrainingEpochPayload,
-    TrainingEpochPayload.from_record,
-    TrainingEpochPayload.to_record,
 )
 EVALUATION_SUMMARY_CODEC: PayloadCodec[EvaluationRuntimeSummary] = payload_record_codec(
     "evaluation summary",

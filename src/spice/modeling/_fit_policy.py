@@ -10,8 +10,9 @@ import torch
 
 from ..core.errors import SpiceOperatorError
 from ..metrics import MetricSet
-from ..objectives import CompiledObjectiveContract
 from .models import TemporalModel
+
+SELECTION_METRIC_ID = "total_loss"
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,11 +21,8 @@ class TrainingEpochProgress:
     max_epochs: int
     train_metrics: MetricSet
     validation_metrics: MetricSet
-    objective_metrics: MetricSet
-    objective_metric_id: str
-    direction: str
     best_epoch: int
-    best_objective_value: float
+    best_validation_loss: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +30,6 @@ class CompletedEpoch:
     epoch: int
     train_metrics: MetricSet
     validation_metrics: MetricSet
-    objective_metrics: MetricSet
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,13 +41,11 @@ class FitPolicyDecision:
 
 @dataclass(slots=True)
 class TrainingFitPolicy:
-    objective_contract: CompiledObjectiveContract
     max_epochs: int
     patience: int
     min_delta: float
     train_history: list[MetricSet]
     validation_history: list[MetricSet]
-    objective_history: list[MetricSet]
     best_state: dict[str, torch.Tensor] | None
     best_epoch: int
     epochs_without_improvement: int
@@ -59,19 +54,16 @@ class TrainingFitPolicy:
     def create(
         cls,
         *,
-        objective_contract: CompiledObjectiveContract,
         max_epochs: int,
         patience: int,
         min_delta: float,
     ) -> TrainingFitPolicy:
         return cls(
-            objective_contract=objective_contract,
             max_epochs=max_epochs,
             patience=patience,
             min_delta=min_delta,
             train_history=[],
             validation_history=[],
-            objective_history=[],
             best_state=None,
             best_epoch=0,
             epochs_without_improvement=0,
@@ -103,16 +95,13 @@ class TrainingFitPolicy:
         *,
         model: TemporalModel,
     ) -> FitPolicyDecision:
-        self.objective_history.append(completed.objective_metrics)
         self.train_history.append(completed.train_metrics)
         self.validation_history.append(completed.validation_metrics)
 
         if _is_improvement(
             current_epoch=completed.epoch,
             best_epoch=self.best_epoch,
-            history=self.objective_history,
-            direction=self.objective_contract.direction,
-            metric_id=self.objective_contract.metric_id,
+            history=self.validation_history,
             min_delta=self.min_delta,
         ):
             self.best_state = _clone_cpu_state(model)
@@ -121,19 +110,14 @@ class TrainingFitPolicy:
         else:
             self.epochs_without_improvement += 1
 
-        best_value = self.objective_contract.value(
-            self.objective_history[self.best_epoch - 1]
-        )
+        best_value = self.validation_history[self.best_epoch - 1].require(SELECTION_METRIC_ID)
         progress = TrainingEpochProgress(
             epoch=completed.epoch,
             max_epochs=self.max_epochs,
             train_metrics=completed.train_metrics,
             validation_metrics=completed.validation_metrics,
-            objective_metrics=completed.objective_metrics,
-            objective_metric_id=self.objective_contract.metric_id,
-            direction=self.objective_contract.direction,
             best_epoch=self.best_epoch,
-            best_objective_value=best_value,
+            best_validation_loss=best_value,
         )
         if self.epochs_without_improvement >= self.patience:
             return FitPolicyDecision(
@@ -143,20 +127,10 @@ class TrainingFitPolicy:
             )
         return FitPolicyDecision(progress=progress)
 
-    def finalized_best(
-        self,
-        *,
-        model: TemporalModel,
-    ) -> tuple[int, dict[str, torch.Tensor], float]:
+    def finalized_best(self) -> tuple[int, dict[str, torch.Tensor], float]:
         if self.best_state is None:
-            self.best_epoch = _best_epoch_from_objective_history(
-                self.objective_history,
-                objective_contract=self.objective_contract,
-            )
-            self.best_state = _clone_cpu_state(model)
-        best_value = self.objective_contract.value(
-            self.objective_history[self.best_epoch - 1]
-        )
+            raise SpiceOperatorError("Training completed without a finite best validation state")
+        best_value = self.validation_history[self.best_epoch - 1].require(SELECTION_METRIC_ID)
         return self.best_epoch, self.best_state, best_value
 
     def state_dict(self) -> dict[str, object]:
@@ -164,9 +138,6 @@ class TrainingFitPolicy:
             "train_history": [_metric_payload(metrics) for metrics in self.train_history],
             "validation_history": [
                 _metric_payload(metrics) for metrics in self.validation_history
-            ],
-            "objective_history": [
-                _metric_payload(metrics) for metrics in self.objective_history
             ],
             "best_state": self.best_state,
             "best_epoch": self.best_epoch,
@@ -181,10 +152,6 @@ class TrainingFitPolicy:
         self.validation_history = [
             MetricSet(dict(cast(dict[str, float], payload)))
             for payload in cast(list[object], state["validation_history"])
-        ]
-        self.objective_history = [
-            MetricSet(dict(cast(dict[str, float], payload)))
-            for payload in cast(list[object], state["objective_history"])
         ]
         self.best_state = cast(dict[str, torch.Tensor] | None, state["best_state"])
         self.best_epoch = int(cast(int, state["best_epoch"]))
@@ -208,17 +175,22 @@ def _all_metrics_finite(metrics: MetricSet) -> bool:
     return all(np.isfinite(value) for value in metrics.values.values())
 
 
+def require_finite_metrics(
+    metrics: MetricSet,
+    *,
+    phase: str,
+) -> None:
+    if _all_metrics_finite(metrics):
+        return
+    raise SpiceOperatorError(f"Non-finite {phase} metrics")
+
+
 def _nonfinite_metric_error(
     *,
     epoch: int,
     phase: str,
     best_epoch: int,
 ) -> SpiceOperatorError:
-    if best_epoch > 0:
-        return SpiceOperatorError(
-            f"Non-finite {phase} metrics at epoch {epoch}; "
-            f"stopping and preserving best_epoch={best_epoch}"
-        )
     return SpiceOperatorError(
         f"Non-finite {phase} metrics at epoch {epoch} before any valid best state"
     )
@@ -229,34 +201,10 @@ def _is_improvement(
     current_epoch: int,
     best_epoch: int,
     history: list[MetricSet],
-    direction: str,
-    metric_id: str,
     min_delta: float,
 ) -> bool:
     if best_epoch == 0:
         return True
-    current_value = history[current_epoch - 1].require(metric_id)
-    best_value = history[best_epoch - 1].require(metric_id)
-    if direction == "maximize":
-        return current_value > best_value + min_delta
+    current_value = history[current_epoch - 1].require(SELECTION_METRIC_ID)
+    best_value = history[best_epoch - 1].require(SELECTION_METRIC_ID)
     return current_value < best_value - min_delta
-
-
-def _best_epoch_from_objective_history(
-    history: list[MetricSet],
-    *,
-    objective_contract: CompiledObjectiveContract,
-) -> int:
-    if not history:
-        return 1
-    if objective_contract.direction == "maximize":
-        winner = max(
-            range(len(history)),
-            key=lambda index: objective_contract.value(history[index]),
-        )
-    else:
-        winner = min(
-            range(len(history)),
-            key=lambda index: objective_contract.value(history[index]),
-        )
-    return winner + 1

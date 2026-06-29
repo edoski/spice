@@ -9,7 +9,6 @@ from typing import TypeVar, cast
 from ..evaluation import EvaluatorConfig
 from ..execution.models import ExecutionSpec
 from ..modeling.families.base import ModelConfig
-from ..objectives import ObjectiveConfig
 from .group_catalog import ConfigGroup, GroupSpec, group_spec, validate_named_group_payload
 from .groups import load_named_group_document
 from .models import (
@@ -35,7 +34,6 @@ EVALUATIONS = cast(GroupSpec[EvaluationsSpec], group_spec(ConfigGroup.EVALUATION
 EXECUTION = cast(GroupSpec[ExecutionSpec], group_spec(ConfigGroup.EXECUTION))
 FEATURES = cast(GroupSpec[FeaturesConfig], group_spec(ConfigGroup.FEATURES))
 MODEL = cast(GroupSpec[ModelConfig[str]], group_spec(ConfigGroup.MODEL))
-OBJECTIVE = cast(GroupSpec[ObjectiveConfig], group_spec(ConfigGroup.OBJECTIVE))
 PREDICTION = cast(GroupSpec[PredictionConfig], group_spec(ConfigGroup.PREDICTION))
 PROBLEM = cast(GroupSpec[ProblemSpec], group_spec(ConfigGroup.PROBLEM))
 PROVIDER = cast(GroupSpec[ProviderSpec], group_spec(ConfigGroup.PROVIDER))

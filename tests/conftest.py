@@ -108,15 +108,7 @@ def model_workflow_override():
                 "gradient_clip_norm": 1.0,
                 "seed": 2026,
                 "deterministic": True,
-                "log_every_n_steps": 1,
                 "sequence": {"min_length": 64, "max_length": 4096},
-            },
-            "evaluator": {
-                "id": "poisson_replay",
-                "window_seconds": 600,
-                "arrival_rate_per_second": 0.02,
-                "repetitions": 3,
-                "seed": 2026,
             },
             "tuning": {
                 "trial_count": 2,

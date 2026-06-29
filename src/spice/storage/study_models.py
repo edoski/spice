@@ -21,11 +21,9 @@ from ..config.models import (
     TuningSpaceConfig,
 )
 from ..core.errors import ConfigResolutionError, StateLayoutError
-from ..evaluation import EvaluatorConfig
 from ..modeling.families.base import ModelConfig
 from ..modeling.results import TrainingSourceProvenance
 from ..modeling.tuned_config import coerce_tuned_parameter_set
-from ..objectives import ObjectiveConfig
 from ..semantics import StudySemantics
 
 TRIAL_PARAMS_KEY = "spice_params"
@@ -60,8 +58,6 @@ class StudyManifest:
     sampler_seed: int
     pruner_name: str
     enable_pruning: bool
-    objective: ObjectiveConfig
-    evaluator: EvaluatorConfig | None
     tuning_space: TuningSpaceConfig
     semantics: StudySemantics
 

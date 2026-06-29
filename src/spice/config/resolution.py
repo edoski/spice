@@ -9,10 +9,8 @@ from pydantic import ValidationError
 
 from ..core.config_model import ConfigModel
 from ..core.errors import ConfigResolutionError
-from ..evaluation import EvaluatorConfig
 from ..modeling.families.base import ModelConfig
 from ..modeling.tuned_config import coerce_tuning_space_config
-from ..objectives import ObjectiveConfig
 from . import typed_groups as typed
 from .group_catalog import ConfigGroup
 from .groups import load_named_group_payload
@@ -150,7 +148,7 @@ def _resolve_problem(name: str | ProblemSpec) -> ProblemSpec:
     return typed.load(typed.PROBLEM, name)
 
 
-def _resolve_evaluator(name: str | None) -> EvaluatorConfig | None:
+def _resolve_evaluator(name: str | None):
     if name is None:
         return None
     return typed.load(typed.EVALUATOR, name)
@@ -164,31 +162,6 @@ def _resolve_training_cutoff(
     if evaluations_name is None:
         return None
     return typed.load(typed.EVALUATIONS, evaluations_name).training_cutoff_timestamp
-
-
-def _resolve_objective(name: str, *, evaluator_name: str | None) -> ObjectiveConfig:
-    objective = typed.load(typed.OBJECTIVE, name)
-    expected_evaluation = _objective_evaluator_id(objective)
-    if expected_evaluation is None:
-        return objective
-    if evaluator_name is None:
-        raise ConfigResolutionError(
-            f"objective {name} requires evaluator {expected_evaluation}"
-        )
-    if expected_evaluation != evaluator_name:
-        raise ConfigResolutionError(
-            f"objective {name} requires evaluator {expected_evaluation}, "
-            f"got {evaluator_name}"
-        )
-    return objective
-
-
-def _objective_evaluator_id(config: ObjectiveConfig) -> str | None:
-    if config.id != "evaluation":
-        return None
-    if config.evaluator_id is None:
-        raise ConfigResolutionError("evaluation objective.evaluator_id must be a named evaluator")
-    return config.evaluator_id
 
 
 def _resolve_storage(storage: StorageSpec | None) -> StorageSpec:
@@ -210,7 +183,6 @@ def _resolve_model_workflow_fields(
     require_tuning: bool,
     allow_tuned_variant: bool,
 ) -> ResolvedModelWorkflowFields:
-    evaluator_name = _selected(selection.evaluator, frame.evaluator.id)
     corpus = typed.load(typed.CORPUS, frame.corpus)
     chain = typed.load(
         typed.CHAIN,
@@ -226,11 +198,6 @@ def _resolve_model_workflow_fields(
         _required(_selected(selection.features, frame.features), "features"),
     )
     prediction = typed.load(typed.PREDICTION, frame.prediction)
-    objective = _resolve_objective(
-        _required(_selected(selection.objective, frame.objective), "objective"),
-        evaluator_name=evaluator_name,
-    )
-    evaluator = _resolve_evaluator(evaluator_name)
     study = _resolve_study(
         frame.study if selection.study is None else StudyConfig(name=selection.study)
     )
@@ -263,8 +230,6 @@ def _resolve_model_workflow_fields(
         model=model,
         features=features,
         prediction=prediction,
-        objective=objective,
-        evaluator=evaluator,
         study=study,
         artifact=artifact,
         training=training,

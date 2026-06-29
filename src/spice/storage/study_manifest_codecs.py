@@ -16,11 +16,9 @@ from ..config.models import (
     coerce_problem_spec,
 )
 from ..core.errors import StateLayoutError
-from ..evaluation import coerce_evaluator_config
 from ..modeling.families.base import ModelConfig
 from ..modeling.families.registry import coerce_model_config
 from ..modeling.tuned_config import coerce_tuning_space_config
-from ..objectives import coerce_objective_config
 from .artifact_codecs import TrainingSourcePayload
 from .identity import identity_payload, study_manifest_identity
 from .payloads import PayloadCodec, PayloadRecord, decode_payload_record
@@ -32,8 +30,6 @@ class StudyDefinitionPayload(PayloadRecord):
     study_id: str
     sequence: dict[str, object]
     prediction: dict[str, object]
-    objective: dict[str, object]
-    evaluator: dict[str, object] | None = None
     study_name: str
     chain_name: str
     corpus_id: str
@@ -80,12 +76,6 @@ class StudyManifestPayload(PayloadRecord):
             study_id=definition.study_id,
             sequence=SequenceConfig.model_validate(definition.sequence),
             prediction=prediction,
-            objective=coerce_objective_config(definition.objective),
-            evaluator=(
-                None
-                if definition.evaluator is None
-                else coerce_evaluator_config(definition.evaluator)
-            ),
             study_name=definition.study_name,
             chain_name=definition.chain_name,
             corpus_id=definition.corpus_id,

@@ -38,7 +38,7 @@ The engine creates the expected tables for a root kind and validates table shape
 | Root kind | Main tables |
 | --- | --- |
 | corpus | `dataset_manifest`, `acquire_runs` |
-| artifact | `artifact_manifest`, `training_summary`, `training_epochs`, `evaluation_summary` |
+| artifact | `artifact_manifest`, `training_summary`, `evaluation_summary` |
 | study | `study_manifest` plus Optuna tables |
 
 SQLite connections enable foreign keys, WAL, and busy timeout.
@@ -76,12 +76,15 @@ artifact manifest
   -> exact configs
   -> feature graph fingerprint
   -> scaler
-  -> builder runtime metadata
+  -> sequence runtime metadata
   -> semantics
-  -> split/training/model/prediction/objective
+  -> split/training/model/prediction
 ```
 
-Training state stores one summary and ordered epoch rows. Evaluation state stores multiple summaries keyed by an evaluation storage id derived from evaluator config, delay, and execution ref when present.
+Training state stores one compact summary with rows, split sizes, best epoch,
+best validation total loss, and test total loss. Evaluation state stores multiple
+summaries keyed by an evaluation storage id derived from evaluator config, delay,
+and execution ref when present.
 
 Artifact manifest codecs serialize the persisted Temporal Capability envelope, including compiler runtime metadata payloads. Temporal owns the runtime capability value and compiler metadata dispatch; storage owns the artifact manifest payload shape.
 

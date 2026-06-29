@@ -31,23 +31,10 @@ def training_result_fields(
         ("artifact", str(artifact_dir)),
         ("best_epoch", str(runtime.best_epoch)),
         (
-            f"objective.{runtime.best_objective_metric_id}",
-            metric_string(runtime.best_objective_value),
+            "best.validation.total_loss",
+            metric_string(runtime.best_validation_total_loss),
         ),
     ]
-    if primary_metric_id in runtime.best_validation_metrics.values:
-        fields.append(
-            (
-                f"validation.{primary_metric_id}",
-                metric_string(runtime.best_validation_metrics.values[primary_metric_id]),
-            )
-        )
-    if primary_metric_id in runtime.test_metrics.values:
-        fields.append(
-            (
-                f"test.{primary_metric_id}",
-                metric_string(runtime.test_metrics.values[primary_metric_id]),
-            )
-        )
+    if primary_metric_id == "total_loss":
+        fields.append(("test.total_loss", metric_string(runtime.test_total_loss)))
     return fields
-

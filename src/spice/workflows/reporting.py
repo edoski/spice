@@ -284,11 +284,6 @@ def _fit_epoch_message(
     primary_metric_id: str,
 ) -> str:
     fields = [f"epoch={progress.epoch}/{progress.max_epochs}"]
-    if progress.objective_metric_id in progress.objective_metrics.values:
-        fields.append(
-            f"objective.{progress.objective_metric_id}="
-            f"{metric_string(progress.objective_metrics.values[progress.objective_metric_id])}"
-        )
     if primary_metric_id in progress.validation_metrics.values:
         fields.append(
             f"validation.{primary_metric_id}="
@@ -296,7 +291,7 @@ def _fit_epoch_message(
         )
     fields.append(f"best_epoch={progress.best_epoch}")
     fields.append(
-        f"best.{progress.objective_metric_id}={metric_string(progress.best_objective_value)}"
+        f"best.validation.total_loss={metric_string(progress.best_validation_loss)}"
     )
     return "fit " + " ".join(fields)
 

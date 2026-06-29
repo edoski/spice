@@ -161,7 +161,6 @@ def _loaded_summary(config):
             model=SimpleNamespace(id="lstm"),
             problem_id="current_row_nominal",
             prediction_id="icdcs_2026",
-            objective=SimpleNamespace(id="evaluation"),
             variant=ArtifactVariant.BASELINE,
             study_id=None,
             study=None,
@@ -283,13 +282,7 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
             evaluation=_loaded_summary(config),
             training=SimpleNamespace(
                 runtime=SimpleNamespace(
-                    test_metrics=SimpleNamespace(
-                        values={
-                            "total_loss": 0.3,
-                            "offset_accuracy": 0.8,
-                            "macro_f1": 0.7,
-                        }
-                    )
+                    test_total_loss=0.3,
                 )
             ),
             match_facts=_match_facts(config, selection),
@@ -317,7 +310,7 @@ def test_benchmark_collect_writes_snapshot_and_replaces_index_rows(
     assert benchmark_result_index_counts(index_path=index_path) == {
         "runs": 1,
         "observations": 1,
-        "metrics": 6,
+        "metrics": 4,
     }
     assert len(resolve_calls) == 2
     assert len(pull_calls) == 2

@@ -31,7 +31,7 @@ Contextual tuning-space loading stays in resolution because its validity depends
 
 Tuned-parameter application is a typed Workflow Config transform, not a Resolved Workflow Hydration caller. It applies tuned params by constructing validated concrete nested configs and rebuilding the train or tune config directly.
 
-Runtime evaluator and objective contracts carry typed configs or policy fields. Durable payloads are produced only by storage codecs and snapshot codecs.
+Runtime evaluator contracts and training policy fields carry typed configs. Durable payloads are produced only by storage codecs and snapshot codecs.
 
 ## Consequences
 

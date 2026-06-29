@@ -28,8 +28,6 @@ class AcquireWorkflowSelection(WorkflowSelectionBase):
 
 
 class ModelWorkflowSelectionBase(WorkflowSelectionBase):
-    objective: str | None = None
-    evaluator: str | None = None
     evaluations: str | None = None
     model: str | None = None
     tuning_space: str | None = None

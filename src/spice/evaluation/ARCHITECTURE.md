@@ -4,7 +4,7 @@
 
 `evaluation` scores decoded predictions against temporal problem stores. It owns evaluator config validation, evaluator contracts, evaluator metric descriptors, event selection, shared Temporal Accounting, and decoded-result checks. Generic metric result types live in `spice.metrics`.
 
-Training metrics answer “did the model optimize its objective?” Evaluation metrics answer “were the decoded decisions good under the temporal problem?” These are related but not identical.
+Training metrics answer “did the prediction loss improve?” Evaluation metrics answer “were the decoded decisions good under the temporal problem?” These are related but not identical.
 
 ## Config And Registry Pattern
 
@@ -94,7 +94,7 @@ Temporal Accounting returns evaluation-private temporal replay result types. Eve
 metric id -> label -> role(primary | secondary | diagnostic)
 ```
 
-Each evaluator contract must declare exactly one primary metric. Descriptor ids must be unique and path-safe. Returned summary metrics and per-run metrics must exactly match descriptor ids; window metric ids must be descriptor ids. Metric descriptors may also declare optimization direction. Evaluation-backed objectives must use the same direction as the selected evaluator metric, so a cost metric cannot accidentally be maximized and a profit metric cannot accidentally be minimized.
+Each evaluator contract must declare exactly one primary metric. Descriptor ids must be unique and path-safe. Returned summary metrics and per-run metrics must exactly match descriptor ids; window metric ids must be descriptor ids. Metric descriptors may also declare optimization direction for reporting and comparison.
 
 ## Module Map
 

@@ -74,7 +74,7 @@ def load_or_create_materialized_study(db_path: Path, *, config: TuneConfig) -> o
         return optuna.create_study(
             study_name=config.study.name,
             storage=study_storage(db_path),
-            direction=config.objective.direction.value,
+            direction="minimize",
             load_if_exists=False,
             sampler=optuna.samplers.TPESampler(seed=config.tuning.sampler_seed),
             pruner=(

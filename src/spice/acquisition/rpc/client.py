@@ -48,7 +48,6 @@ class BlockRpcClient:
     source_requirements: CorpusAcquisitionSourceRequirements
     _include_priority_fee_percentiles: bool = field(init=False, repr=False)
     _web3: AsyncWeb3 = field(init=False, repr=False)
-    _fee_history_unsupported: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         unsupported = self.source_requirements.optional_enrichments - SUPPORTED_RPC_ENRICHMENTS
@@ -74,8 +73,14 @@ class BlockRpcClient:
     async def _get_block(self, block_number: int) -> BlockHeader:
         return self._header_from_raw_block(await self._raw_block_payload(block_number))
 
+    async def block_header(self, block_number: int) -> BlockHeader:
+        return await self._get_block(block_number)
+
     async def _get_latest_block(self) -> BlockHeader:
         return self._header_from_raw_block(await self._raw_block_payload("latest"))
+
+    async def latest_block_header(self) -> BlockHeader:
+        return await self._get_latest_block()
 
     async def find_first_block_at_or_after(self, timestamp: int) -> int:
         if timestamp < 0:
@@ -199,8 +204,6 @@ class BlockRpcClient:
         block_count = end - start
         if block_count <= 0:
             return []
-        if self._fee_history_unsupported:
-            raise self._unsupported_fee_history_error()
         try:
             response = await self._web3.eth.fee_history(
                 block_count,
@@ -209,8 +212,7 @@ class BlockRpcClient:
             )
         except Web3RPCError as exc:
             if self._is_unavailable_fee_history_error(exc):
-                self._fee_history_unsupported = True
-                return self._null_fee_history_rows(block_count)
+                raise self._unsupported_fee_history_error(str(exc)) from exc
             raise
         if not isinstance(response, Mapping):
             raise self._unsupported_fee_history_error(

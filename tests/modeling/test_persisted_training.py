@@ -53,11 +53,9 @@ def _training_run(*, model: object) -> TrainingRunResult:
         prepared=cast(Any, prepared),
         training_result=TrainingResult(
             best_epoch=1,
-            objective_metric_id="score",
-            best_objective_value=1.0,
-            train_history=[MetricSet({"score": 1.0})],
-            validation_history=[MetricSet({"score": 1.0})],
-            objective_history=[MetricSet({"score": 1.0})],
+            best_validation_loss=1.0,
+            train_history=[MetricSet({"total_loss": 1.0})],
+            validation_history=[MetricSet({"total_loss": 1.0})],
             prediction_training_state=object(),
             runtime_plan=runtime_plan,
         ),
@@ -93,12 +91,8 @@ def _patch_persisted_training(monkeypatch: pytest.MonkeyPatch, *, training_model
         lambda *_args, **_kwargs: SimpleNamespace(model=loaded_model),
     )
     monkeypatch.setattr(
-        "spice.modeling.persisted_training.write_training_state",
+        "spice.modeling.persisted_training.write_training_summary",
         lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "spice.modeling.persisted_training.iter_epoch_records",
-        lambda *_args, **_kwargs: [],
     )
     monkeypatch.setattr(
         "spice.modeling.persisted_training.build_training_runtime_summary",
@@ -115,7 +109,7 @@ def _patch_persisted_training(monkeypatch: pytest.MonkeyPatch, *, training_model
             metric_spec.prediction_training_state
             is training_run.training_result.prediction_training_state
         )
-        return MetricSet({"score": float(len(evaluated_models))})
+        return MetricSet({"total_loss": float(len(evaluated_models))})
 
     monkeypatch.setattr(
         "spice.modeling.persisted_training.score_prediction_metrics",
@@ -176,9 +170,8 @@ def test_persisted_training_resumes_and_rewrites_checkpoint(
         model_state={"weight": torch.tensor(1.0)},
         optimizer_state={"epoch": 1},
         policy_state={
-            "train_history": [{"score": 1.0}],
-            "validation_history": [{"score": 1.0}],
-            "objective_history": [{"score": 1.0}],
+            "train_history": [{"total_loss": 1.0}],
+            "validation_history": [{"total_loss": 1.0}],
             "best_state": {"weight": torch.tensor(1.0)},
             "best_epoch": 1,
             "epochs_without_improvement": 0,
@@ -206,9 +199,9 @@ def test_persisted_training_resumes_and_rewrites_checkpoint(
             TrainingCheckpoint(
                 completed_epoch=2,
                 model_state={"weight": torch.tensor(2.0)},
-                optimizer_state={"epoch": 2},
-                policy_state=saved.policy_state,
-            )
+            optimizer_state={"epoch": 2},
+            policy_state=saved.policy_state,
+        )
         )
         return training_run
 
@@ -227,19 +220,15 @@ def test_persisted_training_resumes_and_rewrites_checkpoint(
     )
     monkeypatch.setattr(
         "spice.modeling.persisted_training.score_prediction_metrics",
-        lambda *_args, **_kwargs: MetricSet({"score": 1.0}),
+        lambda *_args, **_kwargs: MetricSet({"total_loss": 1.0}),
     )
     monkeypatch.setattr(
         "spice.modeling.persisted_training.build_training_runtime_summary",
         lambda *_args, **_kwargs: SimpleNamespace(),
     )
     monkeypatch.setattr(
-        "spice.modeling.persisted_training.write_training_state",
+        "spice.modeling.persisted_training.write_training_summary",
         lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "spice.modeling.persisted_training.iter_epoch_records",
-        lambda *_args, **_kwargs: [],
     )
 
     run_persisted_training(

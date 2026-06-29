@@ -22,4 +22,4 @@ Batch Plan owns loader policy and host/device storage selection. Representation 
 
 Architecture reviews should not re-suggest deleting the Representation Seam solely because there is one Adapter today.
 
-New Representation Adapters must prove they need a distinct input contract. Execution-policy, evaluator, objective, or prediction-output changes should stay in those Modules when they do not change model input representation.
+New Representation Adapters must prove they need a distinct input contract. Execution-policy, evaluator, training-loss, or prediction-output changes should stay in those Modules when they do not change model input representation.

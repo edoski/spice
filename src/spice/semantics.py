@@ -41,16 +41,6 @@ class ExecutionPolicySemantics:
 
 
 @dataclass(frozen=True, slots=True)
-class ObjectiveSemantics:
-    """Resolved optimization-objective identity for provenance."""
-
-    objective_id: str
-    metric_id: str
-    direction: Literal["maximize", "minimize"]
-    evaluator_id: str | None
-
-
-@dataclass(frozen=True, slots=True)
 class PredictionSemantics:
     """Family-owned prediction semantics that persist with studies and artifacts."""
 
@@ -76,7 +66,6 @@ class StudySemantics:
 
     problem: ProblemSemantics
     execution_policy: ExecutionPolicySemantics
-    objective: ObjectiveSemantics
     feature: FeatureSemantics
     prediction: PredictionSemantics
 
@@ -87,7 +76,6 @@ class ArtifactSemantics:
 
     problem: ProblemSemantics
     execution_policy: ExecutionPolicySemantics
-    objective: ObjectiveSemantics
     feature: FeatureSemantics
     prediction: PredictionSemantics
     temporal_capability: TemporalCapabilitySemantics

@@ -25,7 +25,6 @@ def _training_config() -> TrainingConfig:
             "gradient_clip_norm": 1.0,
             "seed": 7,
             "deterministic": True,
-            "log_every_n_steps": 1,
             "sequence": {"min_length": 4, "max_length": 64},
         }
     )

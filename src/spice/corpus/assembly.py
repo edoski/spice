@@ -15,7 +15,6 @@ from ..config.models import AcquireConfig
 from ..storage.workflow_roots import AcquireWorkflowRoots
 from .acquisition_stage import CorpusAcquisitionPublication, CorpusAcquisitionStage
 from .planning import (
-    CorpusAcquisitionPlan,
     CorpusAcquisitionPlanningContext,
     CorpusAcquisitionPlanningSpec,
     CorpusAcquisitionSourceRequirements,

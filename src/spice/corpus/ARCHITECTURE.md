@@ -12,7 +12,7 @@ Corpus identity is durable data identity:
 chain + corpus name + corpus window -> corpus id
 ```
 
-It does not include model, prediction, objective, evaluator, or artifact settings.
+It does not include model, prediction, evaluator, or artifact settings.
 
 ## Acquisition To Corpus Flow
 
@@ -61,4 +61,6 @@ This prevents expensive training or evaluation from running on a corpus that can
 
 ## Boundaries
 
-Corpus code should not know about model families, evaluator adapters, objectives, or artifact variants. Corpus Capability Planning may compile feature/problem contracts only to prove raw corpus coverage during acquisition.
+Corpus code should not know about model families, evaluator adapters, training
+losses, or artifact variants. Corpus Capability Planning may compile
+feature/problem contracts only to prove raw corpus coverage during acquisition.

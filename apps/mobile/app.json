@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "SPICE Demo",
+    "slug": "spice-demo",
+    "scheme": "spice-demo",
+    "plugins": ["expo-secure-store"],
+    "ios": {
+      "bundleIdentifier": "dev.edoski.spice.demo"
+    },
+    "android": {
+      "package": "dev.edoski.spice.demo"
+    }
+  }
+}

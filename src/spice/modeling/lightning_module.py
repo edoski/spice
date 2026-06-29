@@ -14,8 +14,7 @@ from ..prediction.contracts import PredictionBatch
 from ._fit_policy import CompletedEpoch, FitPolicyDecision, TrainingFitPolicy
 from ._runtime import precision_context
 from .models import TemporalModel
-from .objective_runtime import CompiledObjectiveRuntime
-from .scoring import EvaluationScoringRuntimePlan
+from .runtime_planning import ModelingRuntimePlan
 from .training_runner_types import TrainingCallbacks, TrainingCheckpoint
 
 
@@ -23,7 +22,7 @@ from .training_runner_types import TrainingCallbacks, TrainingCheckpoint
 class LightningFitResult:
     best_epoch: int
     best_state: dict[str, torch.Tensor]
-    best_objective_value: float
+    best_validation_loss: float
 
 
 class SpiceLightningModule(pl.LightningModule):
@@ -32,8 +31,7 @@ class SpiceLightningModule(pl.LightningModule):
         *,
         model: TemporalModel,
         prediction_contract: CompiledPredictionContract,
-        objective_runtime: CompiledObjectiveRuntime,
-        objective_scoring_plan: EvaluationScoringRuntimePlan,
+        runtime_plan: ModelingRuntimePlan,
         prediction_training_state: object | None,
         training_config: TrainingConfig,
         policy: TrainingFitPolicy,
@@ -44,8 +42,7 @@ class SpiceLightningModule(pl.LightningModule):
         super().__init__()
         self.model = model
         self.prediction_contract = prediction_contract
-        self.objective_runtime = objective_runtime
-        self.objective_scoring_plan = objective_scoring_plan
+        self.runtime_plan = runtime_plan
         self.prediction_training_state = prediction_training_state
         self.training_config = training_config
         self.policy = policy
@@ -90,9 +87,9 @@ class SpiceLightningModule(pl.LightningModule):
     def training_step(self, batch: PredictionBatch, batch_idx: int) -> None:
         del batch_idx
         optimizer = self._optimizer()
-        device_batch = batch.to_device(self.objective_scoring_plan.runtime_plan.resolved_device)
+        device_batch = batch.to_device(self.runtime_plan.resolved_device)
         optimizer.zero_grad(set_to_none=True)
-        with precision_context(precision=self.objective_scoring_plan.runtime_plan.precision):
+        with precision_context(precision=self.runtime_plan.precision):
             outputs = self.model(**device_batch.model_kwargs())
             loss, batch_state = self.prediction_contract.compute_batch_loss_and_state(
                 outputs,
@@ -134,8 +131,8 @@ class SpiceLightningModule(pl.LightningModule):
         del batch_idx
         if self._stop_before_validation:
             return
-        device_batch = batch.to_device(self.objective_scoring_plan.runtime_plan.resolved_device)
-        with precision_context(precision=self.objective_scoring_plan.runtime_plan.precision):
+        device_batch = batch.to_device(self.runtime_plan.resolved_device)
+        with precision_context(precision=self.runtime_plan.precision):
             outputs = self.model(**device_batch.model_kwargs())
             _, batch_state = self.prediction_contract.compute_batch_loss_and_state(
                 outputs,
@@ -165,26 +162,11 @@ class SpiceLightningModule(pl.LightningModule):
             if self.trainer is not None:
                 self.trainer.should_stop = True
             return
-        objective_metrics = self.objective_runtime.evaluate_metrics(
-            validation_metrics,
-            scoring_plan=self.objective_scoring_plan,
-        )
-        objective_decision = self.policy.handle_nonfinite_metrics(
-            epoch=epoch,
-            phase="objective",
-            metrics=objective_metrics,
-        )
-        if objective_decision is not None:
-            self._emit_early_stop(objective_decision)
-            if self.trainer is not None:
-                self.trainer.should_stop = True
-            return
         fit_decision = self.policy.record_completed_epoch(
             CompletedEpoch(
                 epoch=epoch,
                 train_metrics=self._last_train_metrics,
                 validation_metrics=validation_metrics,
-                objective_metrics=objective_metrics,
             ),
             model=self.model,
         )
@@ -209,11 +191,11 @@ class SpiceLightningModule(pl.LightningModule):
                 self.trainer.should_stop = True
 
     def finalized_best(self) -> LightningFitResult:
-        best_epoch, best_state, best_value = self.policy.finalized_best(model=self.model)
+        best_epoch, best_state, best_value = self.policy.finalized_best()
         return LightningFitResult(
             best_epoch=best_epoch,
             best_state=best_state,
-            best_objective_value=best_value,
+            best_validation_loss=best_value,
         )
 
     def _spice_epoch(self) -> int:

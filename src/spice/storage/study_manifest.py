@@ -57,8 +57,6 @@ def manifest_from_tune_config(
         study_id=study.study_id,
         sequence=config.training.sequence,
         prediction=config.prediction,
-        objective=config.objective,
-        evaluator=config.evaluator,
         study_name=study.study_name,
         chain_name=corpus_manifest.chain.name,
         corpus_id=corpus.corpus_id,
@@ -82,7 +80,6 @@ def manifest_from_tune_config(
         semantics=StudySemantics(
             problem=context.problem_contract.semantics,
             execution_policy=context.problem_contract.execution_policy.semantics,
-            objective=context.objective_runtime.contract.semantics,
             feature=context.feature_contract.semantics,
             prediction=context.prediction_contract.semantics,
         ),
