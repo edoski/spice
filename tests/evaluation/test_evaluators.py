@@ -108,6 +108,24 @@ def test_evaluator_config_supports_explicit_block_replay_specs() -> None:
     assert contract.primary_metric_id == "profit_over_baseline"
 
 
+def test_evaluator_config_supports_named_block_replay_variants() -> None:
+    config = coerce_evaluator_config(
+        {
+            **_block_poisson_config(),
+            "id": "block_poisson_replay_300",
+            "window_blocks": 300,
+            "repetitions": 200,
+        }
+    )
+    contract = compile_evaluator_contract(config)
+
+    assert config.id == "block_poisson_replay_300"
+    assert config.window_blocks == 300
+    assert config.repetitions == 200
+    assert contract.evaluator_id == "block_poisson_replay_300"
+    assert contract.primary_metric_id == "profit_over_baseline"
+
+
 def test_evaluator_compile_requires_concrete_poisson_config() -> None:
     with pytest.raises(ConfigResolutionError, match="Known values"):
         compile_evaluator_contract(EvaluatorConfig(id="base"))

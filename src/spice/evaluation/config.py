@@ -7,6 +7,13 @@ from pydantic import ConfigDict, Field, field_validator
 from ..core.config_model import ConfigModel
 from ..core.validation import validate_path_segment
 
+BLOCK_POISSON_REPLAY_EVALUATOR_IDS = frozenset(
+    {
+        "block_poisson_replay",
+        "block_poisson_replay_300",
+    }
+)
+
 
 class EvaluatorConfig(ConfigModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True, strict=True)
@@ -44,6 +51,7 @@ class BlockPoissonReplayEvaluatorConfig(EvaluatorConfig):
     @classmethod
     def validate_block_poisson_id(_cls, value: str) -> str:
         value = EvaluatorConfig.validate_id(value)
-        if value != "block_poisson_replay":
-            raise ValueError("evaluation.id must be block_poisson_replay")
+        if value not in BLOCK_POISSON_REPLAY_EVALUATOR_IDS:
+            known = ", ".join(sorted(BLOCK_POISSON_REPLAY_EVALUATOR_IDS))
+            raise ValueError(f"evaluation.id must be one of: {known}")
         return value

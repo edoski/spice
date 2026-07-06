@@ -13,6 +13,7 @@ from ..core.specs import (
 )
 from .block_poisson_replay import compile_block_poisson_replay_evaluator_contract
 from .config import (
+    BLOCK_POISSON_REPLAY_EVALUATOR_IDS,
     BlockPoissonReplayEvaluatorConfig,
     EvaluatorConfig,
     PoissonReplayEvaluatorConfig,
@@ -27,17 +28,22 @@ class _EvaluatorSpec:
     compile_contract: Callable[[EvaluatorConfig], CompiledEvaluatorContract]
 
 
-_EVALUATOR_SPECS: dict[str, _EvaluatorSpec] = {
-    "block_poisson_replay": _EvaluatorSpec(
-        config_type=BlockPoissonReplayEvaluatorConfig,
-        compile_contract=lambda config: compile_block_poisson_replay_evaluator_contract(
-            require_spec_config(
-                config,
-                BlockPoissonReplayEvaluatorConfig,
-                "evaluator config",
-            )
-        ),
+_BLOCK_POISSON_REPLAY_SPEC = _EvaluatorSpec(
+    config_type=BlockPoissonReplayEvaluatorConfig,
+    compile_contract=lambda config: compile_block_poisson_replay_evaluator_contract(
+        require_spec_config(
+            config,
+            BlockPoissonReplayEvaluatorConfig,
+            "evaluator config",
+        )
     ),
+)
+
+_EVALUATOR_SPECS: dict[str, _EvaluatorSpec] = {
+    **{
+        evaluator_id: _BLOCK_POISSON_REPLAY_SPEC
+        for evaluator_id in BLOCK_POISSON_REPLAY_EVALUATOR_IDS
+    },
     "poisson_replay": _EvaluatorSpec(
         config_type=PoissonReplayEvaluatorConfig,
         compile_contract=lambda config: compile_poisson_replay_evaluator_contract(

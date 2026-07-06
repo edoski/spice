@@ -29,6 +29,8 @@ RUN_DIR = (
     / "20260629T184758Z"
 )
 COLLECTION_PATH = RUN_DIR / "collection.json"
+WINDOW_BLOCK_COUNT = 1200
+WINDOW_LABEL = f"{WINDOW_BLOCK_COUNT}-block"
 
 
 @dataclass(frozen=True)
@@ -105,6 +107,27 @@ CSV_FIELDS = [
     "baseline_cost_over_optimum_percent",
     "evaluation_job_id",
     "evaluation_target",
+]
+
+POLYGON_FEE_BULK_RULE = "log10(median_base_fee_gwei) 1.5*IQR fence"
+POLYGON_FEE_BULK_NOTE = (
+    "Bulk view excludes fee-selected Polygon windows outside 1.5*IQR Tukey fences "
+    "computed on log10 median base fee."
+)
+POLYGON_VOLATILITY_PROFIT_BULK_RULE = "profit_over_baseline_percent 5*IQR fence"
+OUTLIER_FIELDS = [
+    "chain",
+    "window_id",
+    "selection_quartile",
+    "median_base_fee_gwei",
+    "base_fee_volatility_log_change_std",
+    "log10_median_base_fee_gwei",
+    "outlier_side",
+    "outlier_rule",
+    "profit_over_baseline_percent",
+    "exact_optimum_hit_rate_percent",
+    "start_block",
+    "end_block_exclusive",
 ]
 
 
@@ -273,6 +296,93 @@ def log_ticks(values: list[float]) -> list[float]:
     return ticks
 
 
+def sparse_log_ticks(values: list[float]) -> list[float]:
+    low, high = log_xlim(values)
+    start = math.floor(math.log10(low))
+    stop = math.ceil(math.log10(high))
+    step = 2 if stop - start > 7 else 1
+    return [10**power for power in range(start, stop + 1, step) if low <= 10**power <= high]
+
+
+def readable_log_ticks(values: list[float], *, max_ticks: int = 7) -> list[float]:
+    ticks = log_ticks(values)
+    if len(ticks) <= max_ticks:
+        return ticks
+    return sparse_log_ticks(values)
+
+
+def log_iqr_bounds(values: list[float], *, multiplier: float = 1.5) -> tuple[float, float]:
+    log_values = [math.log10(value) for value in values if value > 0]
+    q1, q3 = np.percentile(log_values, [25, 75])
+    iqr = float(q3 - q1)
+    return 10 ** (float(q1) - multiplier * iqr), 10 ** (float(q3) + multiplier * iqr)
+
+
+def iqr_bounds(values: list[float], *, multiplier: float = 1.5) -> tuple[float, float]:
+    q1, q3 = np.percentile(values, [25, 75])
+    iqr = float(q3 - q1)
+    return float(q1) - multiplier * iqr, float(q3) + multiplier * iqr
+
+
+def polygon_fee_level_bulk_split(
+    rows: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]], tuple[float, float]]:
+    fee_rows = [
+        row
+        for row in rows
+        if row["chain"] == "polygon" and row["selection_metric"] == "fee_level"
+    ]
+    if len(fee_rows) != 108:
+        raise ValueError(f"expected 108 Polygon fee rows, got {len(fee_rows)}")
+    bounds = log_iqr_bounds([float(row["median_base_fee_gwei"]) for row in fee_rows])
+    low, high = bounds
+    bulk: list[dict[str, object]] = []
+    outliers: list[dict[str, object]] = []
+    for row in fee_rows:
+        fee = float(row["median_base_fee_gwei"])
+        if low <= fee <= high:
+            bulk.append(row)
+            continue
+        outlier = dict(row)
+        outlier["log10_median_base_fee_gwei"] = math.log10(fee)
+        outlier["outlier_side"] = "low" if fee < low else "high"
+        outlier["outlier_rule"] = POLYGON_FEE_BULK_RULE
+        outliers.append(outlier)
+    return bulk, outliers, bounds
+
+
+def polygon_volatility_profit_bulk_split(
+    rows: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]], tuple[float, float]]:
+    volatility_rows = [
+        row
+        for row in rows
+        if row["chain"] == "polygon" and row["selection_metric"] == "volatility"
+    ]
+    if len(volatility_rows) != 108:
+        raise ValueError(f"expected 108 Polygon volatility rows, got {len(volatility_rows)}")
+    bounds = iqr_bounds(
+        [float(row["profit_over_baseline_percent"]) for row in volatility_rows],
+        multiplier=5.0,
+    )
+    low, high = bounds
+    bulk: list[dict[str, object]] = []
+    outliers: list[dict[str, object]] = []
+    for row in volatility_rows:
+        profit = float(row["profit_over_baseline_percent"])
+        if low <= profit <= high:
+            bulk.append(row)
+            continue
+        outlier = dict(row)
+        outlier["log10_median_base_fee_gwei"] = math.log10(
+            float(row["median_base_fee_gwei"])
+        )
+        outlier["outlier_side"] = "low" if profit < low else "high"
+        outlier["outlier_rule"] = POLYGON_VOLATILITY_PROFIT_BULK_RULE
+        outliers.append(outlier)
+    return bulk, outliers, bounds
+
+
 def y_limits(
     values: list[float], errors: list[float], *, floor_zero: bool = False
 ) -> tuple[float, float]:
@@ -357,11 +467,15 @@ def render_chain_scatter(
     y_label: str,
     title_metric: str,
     filename_suffix: str,
+    expected_rows: int = 108,
+    title_suffix: str = "",
+    sparse_x_ticks: bool = False,
 ) -> None:
     plot_rows = [row for row in rows if row["selection_metric"] == selection_metric]
-    if len(plot_rows) != 108:
+    if len(plot_rows) != expected_rows:
         raise ValueError(
-            f"{config.chain} {selection_metric}: expected 108 rows, got {len(plot_rows)}"
+            f"{config.chain} {selection_metric}: expected {expected_rows} rows, "
+            f"got {len(plot_rows)}"
         )
     xs = [float(row[x_key]) for row in plot_rows]
     ys = [float(row[y_key]) for row in plot_rows]
@@ -375,7 +489,8 @@ def render_chain_scatter(
     if x_key == "median_base_fee_gwei":
         ax.set_xscale("log")
         ax.set_xlim(*log_xlim(xs))
-        ax.xaxis.set_major_locator(mticker.FixedLocator(log_ticks(xs)))
+        ticks = readable_log_ticks(xs) if sparse_x_ticks else log_ticks(xs)
+        ax.xaxis.set_major_locator(mticker.FixedLocator(ticks))
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(format_tick))
         ax.xaxis.set_minor_formatter(mticker.NullFormatter())
         ax.set_xlabel("Median base fee during evaluation window (gwei; log scale)")
@@ -388,7 +503,7 @@ def render_chain_scatter(
     ax.set_ylabel(y_label)
     ax.set_ylim(*y_limits(ys, yerr, floor_zero=y_key == "exact_optimum_hit_rate_percent"))
     ax.set_title(
-        f"{config.label} LSTM: {title_metric} vs {x_title}",
+        f"{config.label} LSTM ({WINDOW_LABEL}): {title_metric} vs {x_title}{title_suffix}",
         loc="left",
         pad=12,
         fontweight="bold",
@@ -406,6 +521,7 @@ def render_chain_scatter(
 
 
 def render_chain_figures(config: ChainConfig, rows: list[dict[str, object]]) -> None:
+    sparse_polygon_fee_ticks = config.chain == "polygon"
     render_chain_scatter(
         config=config,
         rows=rows,
@@ -416,6 +532,7 @@ def render_chain_figures(config: ChainConfig, rows: list[dict[str, object]]) -> 
         y_label="Profit over baseline (%)",
         title_metric="profit",
         filename_suffix="profit_vs_base_fee",
+        sparse_x_ticks=sparse_polygon_fee_ticks,
     )
     render_chain_scatter(
         config=config,
@@ -438,6 +555,7 @@ def render_chain_figures(config: ChainConfig, rows: list[dict[str, object]]) -> 
         y_label="Exact optimum hit rate (%)",
         title_metric="exact optimum hit rate",
         filename_suffix="accuracy_vs_base_fee",
+        sparse_x_ticks=sparse_polygon_fee_ticks,
     )
     render_chain_scatter(
         config=config,
@@ -452,12 +570,62 @@ def render_chain_figures(config: ChainConfig, rows: list[dict[str, object]]) -> 
     )
 
 
+def render_polygon_fee_level_bulk_figures(rows: list[dict[str, object]]) -> None:
+    config = next(config for config in CHAIN_CONFIGS if config.chain == "polygon")
+    bulk, outliers, bounds = polygon_fee_level_bulk_split(rows)
+    write_csv(
+        EXPORT_DIR / "polygon_bhilai_large_lstm_block_count_quartile_fee_level_bulk.csv",
+        bulk,
+        CSV_FIELDS,
+    )
+    write_csv(
+        EXPORT_DIR / "polygon_bhilai_large_lstm_block_count_quartile_fee_level_outliers.csv",
+        outliers,
+        OUTLIER_FIELDS,
+    )
+    title_suffix = " (bulk)"
+    for y_key, y_ci_key, y_label, title_metric, suffix in (
+        (
+            "profit_over_baseline_percent",
+            "profit_over_baseline_ci95_half_width_percent",
+            "Profit over baseline (%)",
+            "profit",
+            "profit_vs_base_fee_bulk",
+        ),
+        (
+            "exact_optimum_hit_rate_percent",
+            "exact_optimum_hit_rate_ci95_half_width_percent",
+            "Exact optimum hit rate (%)",
+            "exact optimum hit rate",
+            "accuracy_vs_base_fee_bulk",
+        ),
+    ):
+        render_chain_scatter(
+            config=config,
+            rows=bulk,
+            selection_metric="fee_level",
+            x_key="median_base_fee_gwei",
+            y_key=y_key,
+            y_ci_key=y_ci_key,
+            y_label=y_label,
+            title_metric=title_metric,
+            filename_suffix=suffix,
+            expected_rows=len(bulk),
+            title_suffix=title_suffix,
+        )
+    print(
+        "polygon_fee_level_bulk="
+        f"{len(bulk)} outliers={len(outliers)} low={bounds[0]:.12g} high={bounds[1]:.12g}"
+    )
+
+
 def render_cross_chain_profit_facets(
     rows_by_chain: dict[str, list[dict[str, object]]],
     *,
     selection_metric: str,
     x_key: str,
     filename: str,
+    title: str = f"LSTM {WINDOW_LABEL} quartile profit comparison",
 ) -> None:
     rc_params()
     fig, axes = plt.subplots(1, 3, figsize=(12.8, 4.85), sharey=True)
@@ -479,12 +647,20 @@ def render_cross_chain_profit_facets(
         if x_key == "median_base_fee_gwei":
             ax.set_xscale("log")
             ax.set_xlim(*log_xlim(xs))
-            ax.xaxis.set_major_locator(mticker.FixedLocator(log_ticks(xs)))
+            ticks = (
+                readable_log_ticks(xs)
+                if config.chain in {"polygon", "avalanche"}
+                else log_ticks(xs)
+            )
+            ax.xaxis.set_major_locator(mticker.FixedLocator(ticks))
             ax.xaxis.set_major_formatter(mticker.FuncFormatter(format_tick))
             ax.xaxis.set_minor_formatter(mticker.NullFormatter())
             ax.set_xlabel("Median base fee (gwei; log)")
         else:
             ax.margins(x=0.08)
+            if config.chain == "avalanche":
+                ax.xaxis.set_major_locator(mticker.MaxNLocator(nbins=4))
+                ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))
             ax.set_xlabel("Base-fee volatility")
         ax.set_title(config.label, loc="left", fontweight="bold", pad=9)
 
@@ -498,9 +674,7 @@ def render_cross_chain_profit_facets(
     yerr = [float(row["profit_over_baseline_ci95_half_width_percent"]) for row in all_plot_rows]
     axes[0].set_ylim(*y_limits(ys, yerr))
     axes[0].set_ylabel("Profit over baseline (%)")
-    fig.suptitle(
-        "LSTM block-count quartile profit comparison", x=0.055, ha="left", fontweight="bold"
-    )
+    fig.suptitle(title, x=0.055, ha="left", fontweight="bold")
     fig.legend(
         handles=quartile_handles(),
         loc="lower center",
@@ -511,6 +685,55 @@ def render_cross_chain_profit_facets(
     fig.subplots_adjust(left=0.065, right=0.99, top=0.83, bottom=0.23, wspace=0.16)
     save_figure(fig, filename)
     plt.close(fig)
+
+
+def render_cross_chain_bulk_profit_facets(
+    rows_by_chain: dict[str, list[dict[str, object]]],
+) -> None:
+    polygon_rows = rows_by_chain["polygon"]
+    fee_bulk, fee_outliers, fee_bounds = polygon_fee_level_bulk_split(polygon_rows)
+    volatility_bulk, volatility_outliers, volatility_bounds = polygon_volatility_profit_bulk_split(
+        polygon_rows
+    )
+    write_csv(
+        EXPORT_DIR / "polygon_bhilai_large_lstm_block_count_quartile_volatility_profit_bulk.csv",
+        volatility_bulk,
+        CSV_FIELDS,
+    )
+    write_csv(
+        EXPORT_DIR
+        / "polygon_bhilai_large_lstm_block_count_quartile_volatility_profit_outliers.csv",
+        volatility_outliers,
+        OUTLIER_FIELDS,
+    )
+
+    fee_rows_by_chain = dict(rows_by_chain)
+    fee_rows_by_chain["polygon"] = fee_bulk
+    render_cross_chain_profit_facets(
+        fee_rows_by_chain,
+        selection_metric="fee_level",
+        x_key="median_base_fee_gwei",
+        filename="lstm_36s_block_count_quartile_cross_chain_profit_vs_base_fee_bulk",
+        title=f"LSTM {WINDOW_LABEL} quartile profit comparison (Polygon bulk)",
+    )
+
+    volatility_rows_by_chain = dict(rows_by_chain)
+    volatility_rows_by_chain["polygon"] = volatility_bulk
+    render_cross_chain_profit_facets(
+        volatility_rows_by_chain,
+        selection_metric="volatility",
+        x_key="base_fee_volatility_log_change_std",
+        filename="lstm_36s_block_count_quartile_cross_chain_profit_vs_base_fee_volatility_bulk",
+        title=f"LSTM {WINDOW_LABEL} quartile profit comparison (Polygon bulk)",
+    )
+    print(
+        "cross_chain_polygon_bulk="
+        f"fee_keep={len(fee_bulk)} fee_outliers={len(fee_outliers)} "
+        f"fee_low={fee_bounds[0]:.12g} fee_high={fee_bounds[1]:.12g} "
+        f"volatility_keep={len(volatility_bulk)} "
+        f"volatility_profit_outliers={len(volatility_outliers)} "
+        f"profit_low={volatility_bounds[0]:.12g} profit_high={volatility_bounds[1]:.12g}"
+    )
 
 
 def mean_ci95(values: list[float]) -> tuple[float, float, float]:
@@ -616,11 +839,11 @@ def markdown_report(
 ) -> str:
     config_by_chain = {config.chain: config for config in CHAIN_CONFIGS}
     lines: list[str] = []
-    lines.append("### 29/06 block-count quartile LSTM results")
+    lines.append(f"### 29/06 {WINDOW_LABEL} quartile LSTM results")
     lines.append("")
     lines.append(
-        "Block-count quartile rerun: 648 evaluation windows, 216 per chain. "
-        "Each window has exactly 1200 contiguous anchor blocks. Each chain has "
+        f"{WINDOW_LABEL} quartile rerun: 648 evaluation windows, 216 per chain. "
+        f"Each window has exactly {WINDOW_BLOCK_COUNT} contiguous anchor blocks. Each chain has "
         "108 fee-level quartile windows and 108 volatility quartile windows."
     )
     lines.append("")
@@ -710,6 +933,7 @@ def main() -> None:
             CSV_FIELDS,
         )
         render_chain_figures(config, rows_by_chain[config.chain])
+    render_polygon_fee_level_bulk_figures(rows)
 
     render_cross_chain_profit_facets(
         rows_by_chain,
@@ -723,6 +947,7 @@ def main() -> None:
         x_key="base_fee_volatility_log_change_std",
         filename="lstm_36s_block_count_quartile_cross_chain_profit_vs_base_fee_volatility",
     )
+    render_cross_chain_bulk_profit_facets(rows_by_chain)
 
     correlations = pearson_rows(rows)
     summaries = summary_rows(rows)
