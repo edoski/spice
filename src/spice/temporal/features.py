@@ -13,12 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 _FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 _PositiveFiniteFloat = Annotated[float, Field(gt=0.0, allow_inf_nan=False)]
 
-_COMMON_PREFIX = ("log_base_fee_per_gas", "gas_utilization")
-_ETHEREUM_PREFIX = (*_COMMON_PREFIX, "log_exact_forming_base_fee_per_gas")
-_ACTIVITY_PAIR = ("log_gas_limit", "log1p_tx_count")
-_HOUR_PAIR = ("hour_sin", "hour_cos")
-
-
 class FeatureState(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -43,14 +37,9 @@ class FeatureState(BaseModel):
 def fit_feature_state(
     training_support: pl.DataFrame,
     *,
-    chain_id: int,
     ordered_features: tuple[str, ...],
 ) -> FeatureState:
-    raw = _raw_feature_rows(
-        training_support,
-        chain_id=chain_id,
-        ordered_features=ordered_features,
-    )
+    raw = _raw_feature_rows(training_support, ordered_features=ordered_features)
     if raw.shape[0] == 0:
         raise ValueError("training_support must be non-empty")
     if not np.isfinite(raw).all():
@@ -72,18 +61,13 @@ def fit_feature_state(
 def transform_feature_rows(
     blocks: pl.DataFrame,
     *,
-    chain_id: int,
     ordered_features: tuple[str, ...],
     state: FeatureState,
 ) -> NDArray[np.float32]:
     if len(state.means) != len(ordered_features):
         raise ValueError("state width must equal ordered_features width")
 
-    raw = _raw_feature_rows(
-        blocks,
-        chain_id=chain_id,
-        ordered_features=ordered_features,
-    )
+    raw = _raw_feature_rows(blocks, ordered_features=ordered_features)
     means = np.asarray(state.means, dtype=np.float64)
     standard_deviations = np.asarray(state.standard_deviations, dtype=np.float64)
     with np.errstate(over="ignore", invalid="ignore"):
@@ -93,6 +77,8 @@ def transform_feature_rows(
         )
     if not np.isfinite(transformed).all():
         raise ValueError("transformed features must be finite float32 values")
+    if transformed.dtype != np.float32:
+        raise ValueError("transformed features must have float32 dtype")
     if not transformed.flags.c_contiguous:
         raise ValueError("transformed features must be C-contiguous")
     return transformed
@@ -101,62 +87,77 @@ def transform_feature_rows(
 def _raw_feature_rows(
     blocks: pl.DataFrame,
     *,
-    chain_id: int,
     ordered_features: tuple[str, ...],
 ) -> NDArray[np.float64]:
-    prefix = _feature_prefix(chain_id)
-    _validate_feature_order(prefix, ordered_features)
-
-    base_fees = _float_column(blocks, "base_fee_per_gas")
-    gas_used = _float_column(blocks, "gas_used")
-    gas_limits = _float_column(blocks, "gas_limit")
-    with np.errstate(divide="ignore", invalid="ignore"):
-        columns = [np.log(base_fees), gas_used / gas_limits]
-
-    if chain_id == 1:
-        columns.append(_ethereum_forming_fee_logs(blocks))
-    if _ACTIVITY_PAIR[0] in ordered_features:
-        tx_counts = _float_column(blocks, "tx_count")
-        with np.errstate(divide="ignore", invalid="ignore"):
-            columns.extend((np.log(gas_limits), np.log1p(tx_counts)))
-    if _HOUR_PAIR[0] in ordered_features:
-        timestamps = blocks["timestamp"].to_numpy().astype(np.int64, copy=False)
-        hours = (timestamps // 3_600) % 24
-        angles = 2.0 * math.pi * hours.astype(np.float64, copy=False) / 24.0
-        columns.extend((np.sin(angles), np.cos(angles)))
-
+    _validate_feature_uniqueness(ordered_features)
+    columns = [_feature_values(blocks, feature_name) for feature_name in ordered_features]
     return np.ascontiguousarray(np.column_stack(columns), dtype=np.float64)
 
 
-def _feature_prefix(chain_id: int) -> tuple[str, ...]:
-    if chain_id == 1:
-        return _ETHEREUM_PREFIX
-    if chain_id in (137, 43_114):
-        return _COMMON_PREFIX
-    raise ValueError(f"Unsupported chain: {chain_id}")
+def _validate_feature_uniqueness(ordered_features: tuple[str, ...]) -> None:
+    if len(set(ordered_features)) != len(ordered_features):
+        raise ValueError("ordered_features must not contain duplicates")
 
 
-def _validate_feature_order(
-    prefix: tuple[str, ...],
-    ordered_features: tuple[str, ...],
-) -> None:
-    allowed = (
-        prefix,
-        (*prefix, *_ACTIVITY_PAIR),
-        (*prefix, *_HOUR_PAIR),
-        (*prefix, *_ACTIVITY_PAIR, *_HOUR_PAIR),
-    )
-    if ordered_features not in allowed:
-        raise ValueError("ordered_features is not an approved feature tuple")
+def _feature_values(blocks: pl.DataFrame, feature_name: str) -> NDArray[np.float64]:
+    if feature_name == "log_base_fee_per_gas":
+        _require_source_columns(blocks, "base_fee_per_gas")
+        base_fees = _float_column(blocks, "base_fee_per_gas")
+        if np.any(base_fees <= 0.0):
+            raise ValueError("base_fee_per_gas must be positive")
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.log(base_fees)
+    if feature_name == "gas_utilization":
+        _require_source_columns(blocks, "gas_used", "gas_limit")
+        gas_limits = _float_column(blocks, "gas_limit")
+        if np.any(gas_limits <= 0.0):
+            raise ValueError("gas_limit must be positive")
+        return _float_column(blocks, "gas_used") / gas_limits
+    if feature_name == "log_exact_forming_base_fee_per_gas":
+        _require_source_columns(blocks, "base_fee_per_gas", "gas_used", "gas_limit")
+        return _forming_base_fee_logs(blocks)
+    if feature_name == "log_gas_limit":
+        _require_source_columns(blocks, "gas_limit")
+        gas_limits = _float_column(blocks, "gas_limit")
+        if np.any(gas_limits <= 0.0):
+            raise ValueError("gas_limit must be positive")
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.log(gas_limits)
+    if feature_name == "log1p_tx_count":
+        _require_source_columns(blocks, "tx_count")
+        tx_counts = _float_column(blocks, "tx_count")
+        if np.any(tx_counts <= -1.0):
+            raise ValueError("tx_count must be greater than -1")
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.log1p(tx_counts)
+    if feature_name == "hour_sin":
+        _require_source_columns(blocks, "timestamp")
+        return np.sin(_hour_angles(blocks))
+    if feature_name == "hour_cos":
+        _require_source_columns(blocks, "timestamp")
+        return np.cos(_hour_angles(blocks))
+    raise ValueError(f"Unsupported feature: {feature_name}")
 
 
-def _ethereum_forming_fee_logs(blocks: pl.DataFrame) -> NDArray[np.float64]:
+def _require_source_columns(blocks: pl.DataFrame, *columns: str) -> None:
+    missing = [column for column in columns if column not in blocks.columns]
+    if missing:
+        raise ValueError("missing required source columns: " + ", ".join(missing))
+
+
+def _hour_angles(blocks: pl.DataFrame) -> NDArray[np.float64]:
+    timestamps = blocks["timestamp"].to_numpy().astype(np.int64, copy=False)
+    hours = (timestamps // 3_600) % 24
+    return 2.0 * math.pi * hours.astype(np.float64, copy=False) / 24.0
+
+
+def _forming_base_fee_logs(blocks: pl.DataFrame) -> NDArray[np.float64]:
     base_fees = blocks["base_fee_per_gas"].to_list()
     gas_used_values = blocks["gas_used"].to_list()
     gas_limits = blocks["gas_limit"].to_list()
     return np.fromiter(
         (
-            math.log(_ethereum_child_base_fee(base_fee, gas_used, gas_limit))
+            _forming_base_fee_log(base_fee, gas_used, gas_limit)
             for base_fee, gas_used, gas_limit in zip(
                 base_fees,
                 gas_used_values,
@@ -169,7 +170,20 @@ def _ethereum_forming_fee_logs(blocks: pl.DataFrame) -> NDArray[np.float64]:
     )
 
 
-def _ethereum_child_base_fee(
+def _forming_base_fee_log(
+    base_fee_per_gas: int,
+    gas_used: int,
+    gas_limit: int,
+) -> float:
+    if base_fee_per_gas <= 0:
+        raise ValueError("base_fee_per_gas must be positive")
+    child_base_fee = _forming_child_base_fee(base_fee_per_gas, gas_used, gas_limit)
+    if child_base_fee <= 0:
+        raise ValueError("forming base fee must be positive")
+    return math.log(child_base_fee)
+
+
+def _forming_child_base_fee(
     base_fee_per_gas: int,
     gas_used: int,
     gas_limit: int,
