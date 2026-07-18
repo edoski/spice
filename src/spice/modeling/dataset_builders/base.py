@@ -23,30 +23,3 @@ class SequenceRuntimeMetadata(ConfigModel):
         if not self.min_length <= self.sequence_length <= self.max_length:
             raise ValueError("sequence_length must be within configured bounds")
         return self
-
-
-def sequence_runtime_metadata(
-    *,
-    sequence_length: int,
-    median_dt_seconds: float,
-    min_length: int,
-    max_length: int,
-) -> SequenceRuntimeMetadata:
-    return SequenceRuntimeMetadata(
-        sequence_length=sequence_length,
-        median_dt_seconds=median_dt_seconds,
-        min_length=min_length,
-        max_length=max_length,
-    )
-
-
-def validate_feature_prerequisites(
-    actual,
-    expected,
-) -> None:
-    if actual != expected:
-        raise ValueError(
-            "Resolved feature prerequisites do not match the current feature graph: "
-            f"expected {expected.model_dump(mode='json')}, "
-            f"got {actual.model_dump(mode='json')}"
-        )

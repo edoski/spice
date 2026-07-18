@@ -1,5 +1,3 @@
-# pyright: strict
-
 """Shared catalog for named config groups."""
 
 from __future__ import annotations
@@ -14,9 +12,7 @@ from ..modeling.families.registry import coerce_model_config
 from .models import (
     ChainSpec,
     EvaluationsSpec,
-    SplitConfig,
     TrainingConfig,
-    coerce_problem_spec,
 )
 
 ConfigT = TypeVar("ConfigT")
@@ -28,8 +24,6 @@ class ConfigGroup(StrEnum):
     EVALUATOR = "evaluator"
     EVALUATIONS = "evaluations"
     MODEL = "model"
-    PROBLEM = "problem"
-    SPLIT = "split"
     TRAINING = "training"
 
 
@@ -59,24 +53,10 @@ GROUP_SPECS: tuple[GroupSpec[object], ...] = (
         public=True,
     ),
     GroupSpec(
-        group=ConfigGroup.SPLIT,
-        seed_name="default",
-        validate=SplitConfig.model_validate,
-        public=True,
-    ),
-    GroupSpec(
         group=ConfigGroup.CHAIN,
         seed_name="ethereum",
         validate=ChainSpec.model_validate,
         identity_field="name",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    GroupSpec(
-        group=ConfigGroup.PROBLEM,
-        seed_name="current_row_nominal",
-        validate=coerce_problem_spec,
-        identity_field="id",
         seed_from_requested_name=True,
         public=True,
     ),
