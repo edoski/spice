@@ -16,7 +16,6 @@ from .models import (
     CorpusSpec,
     EvaluationsSpec,
     FeaturesConfig,
-    PredictionConfig,
     ProblemSpec,
     ProviderSpec,
     SplitConfig,
@@ -34,7 +33,6 @@ EVALUATIONS = cast(GroupSpec[EvaluationsSpec], group_spec(ConfigGroup.EVALUATION
 EXECUTION = cast(GroupSpec[ExecutionSpec], group_spec(ConfigGroup.EXECUTION))
 FEATURES = cast(GroupSpec[FeaturesConfig], group_spec(ConfigGroup.FEATURES))
 MODEL = cast(GroupSpec[ModelConfig[str]], group_spec(ConfigGroup.MODEL))
-PREDICTION = cast(GroupSpec[PredictionConfig], group_spec(ConfigGroup.PREDICTION))
 PROBLEM = cast(GroupSpec[ProblemSpec], group_spec(ConfigGroup.PROBLEM))
 PROVIDER = cast(GroupSpec[ProviderSpec], group_spec(ConfigGroup.PROVIDER))
 SPLIT = cast(GroupSpec[SplitConfig], group_spec(ConfigGroup.SPLIT))

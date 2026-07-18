@@ -1,29 +1,5 @@
-"""Prediction-family registry and compiled contracts."""
+"""Prediction-family identifier validation."""
 
-from .base import (
-    PredictionHeadSpec,
-    PredictionOutputSpec,
-)
-from .contracts import (
-    CompiledPredictionContract,
-    EpochMetricAccumulator,
-    ModelInputBatch,
-    PredictionBatch,
-    PredictionTargetBatch,
-)
-from .registry import (
-    compile_prediction_contract,
-    validate_prediction_family_id,
-)
+from .registry import validate_prediction_family_id
 
-__all__ = [
-    "CompiledPredictionContract",
-    "EpochMetricAccumulator",
-    "ModelInputBatch",
-    "PredictionBatch",
-    "PredictionHeadSpec",
-    "PredictionOutputSpec",
-    "PredictionTargetBatch",
-    "compile_prediction_contract",
-    "validate_prediction_family_id",
-]
+__all__ = ["validate_prediction_family_id"]

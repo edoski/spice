@@ -1,386 +1,243 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import cast
 
 import numpy as np
 import pytest
 import torch
+from numpy.typing import NDArray
 
-from spice.config import PredictionConfig
-from spice.modeling.models import ModelOutputs
-from spice.prediction import compile_prediction_contract
-from spice.prediction.decoded_offsets import DecodedOffsets
-from spice.prediction.decoding import ActionSpaceDecodeContext
-from spice.prediction.families.min_block_fee_multitask.batch import (
-    MinBlockFeeTargetBatch,
-    MinBlockFeeTrainingState,
+from spice.min_block_fee import (
+    ClassificationLossState,
+    MinBlockFeeOutput,
+    TargetState,
+    decode_action,
+    fit_classification_loss_state,
+    fit_target_state,
+    min_block_fee_loss,
+    standardize_target,
+    target_natural_log,
 )
-from spice.prediction.families.min_block_fee_multitask.metrics import (
-    compute_batch_loss_and_state,
-)
-from spice.prediction.families.min_block_fee_multitask.outputs import (
-    MIN_LOG_FEE_HEAD_ID,
-    OFFSET_LOGITS_HEAD_ID,
-)
-from spice.temporal import (
-    PreparedActionSpace,
-    PreparedTemporalFacts,
-    PreparedTemporalOutcomeFacts,
-    coerce_execution_policy_config,
-    compile_execution_policy_contract,
-)
-from spice.temporal.problem_store import CompiledProblemStore
 
 
-def _build_store() -> CompiledProblemStore:
-    fees = np.log(
-        np.array(
-            [
-                11.0,
-                10.0,
-                12.0,
-                12.0,
-                5.0,
-                13.0,
-                9.0,
-                8.0,
-                4.0,
-                14.0,
-                6.0,
-                7.0,
-                8.0,
-            ],
-            dtype=np.float32,
+def test_target_and_loss_match_hand_derived_fixture() -> None:
+    raw_minima = np.array([1, 4, 16, 64], dtype=np.int64)
+    target_state = fit_target_state(raw_minima)
+    log_four = math.log(4.0)
+
+    assert target_state.mean == pytest.approx(1.5 * log_four)
+    assert target_state.standard_deviation == pytest.approx(
+        math.sqrt(5.0) * log_four / 2.0
+    )
+
+    target_z = standardize_target(raw_minima, target_state)
+    expected_z = np.array(
+        [-3.0 / math.sqrt(5.0), -1.0 / math.sqrt(5.0), 1.0 / math.sqrt(5.0), 3.0 / math.sqrt(5.0)],
+        dtype=np.float32,
+    )
+    np.testing.assert_allclose(target_z, expected_z)
+    assert target_z.dtype == np.float32
+    assert target_z.flags.c_contiguous
+    torch.testing.assert_close(
+        target_natural_log(torch.from_numpy(target_z), target_state),
+        torch.log(torch.tensor(raw_minima, dtype=torch.float64)),
+    )
+
+    labels_array = np.array([0, 0, 1, 2], dtype=np.int64)
+    assert (
+        fit_classification_loss_state(
+            labels_array,
+            horizon_blocks=3,
+            classification_loss="unweighted",
         )
+        is None
     )
-    return CompiledProblemStore(
-        feature_matrix=np.zeros((13, 1), dtype=np.float32),
-        log_base_fees=fees.astype(np.float32, copy=False),
-        timestamps=np.arange(13, dtype=np.int64),
-        anchor_rows=np.array([0, 2, 5, 9], dtype=np.int64),
-        context_start_rows=np.zeros(4, dtype=np.int64),
-        candidate_start_rows=np.array([1, 3, 6, 10], dtype=np.int64),
-        candidate_end_rows=np.array([2, 5, 9, 12], dtype=np.int64),
-        max_candidate_slots=3,
+    classification_state = fit_classification_loss_state(
+        labels_array,
+        horizon_blocks=3,
+        classification_loss="corrected_inverse_frequency",
+    )
+    assert classification_state == ClassificationLossState(class_support=(2, 1, 1))
+
+    labels = torch.from_numpy(labels_array)
+    targets = torch.from_numpy(target_z)
+    logits = torch.zeros((4, 3), dtype=torch.float32, requires_grad=True)
+    predictions = (targets + torch.tensor([0.0, 0.5, 1.0, 2.0])).detach().requires_grad_()
+    output = MinBlockFeeOutput(action_logits=logits, minimum_fee_z=predictions)
+
+    unweighted = min_block_fee_loss(
+        output,
+        label=labels,
+        target=targets,
+        classification_state=None,
+    )
+    corrected = min_block_fee_loss(
+        output,
+        label=labels,
+        target=targets,
+        classification_state=classification_state,
+    )
+    log_three = math.log(3.0)
+    expected_regression = torch.tensor([0.0, 0.125, 0.5, 1.5])
+    expected_unweighted = expected_regression + log_three
+    expected_corrected_classification = torch.tensor([2.0, 2.0, 4.0, 4.0]) * (log_three / 3.0)
+
+    torch.testing.assert_close(
+        unweighted.classification_by_origin,
+        torch.full((4,), log_three),
+    )
+    torch.testing.assert_close(unweighted.regression_by_origin, expected_regression)
+    torch.testing.assert_close(unweighted.total_by_origin, expected_unweighted)
+    torch.testing.assert_close(unweighted.mean_total, expected_unweighted.sum() / 4.0)
+    torch.testing.assert_close(
+        corrected.classification_by_origin,
+        expected_corrected_classification,
+    )
+    torch.testing.assert_close(
+        corrected.total_by_origin,
+        expected_corrected_classification + expected_regression,
+    )
+    assert corrected.mean_total.requires_grad
+    assert not corrected.total_by_origin.requires_grad
+    assert not corrected.classification_by_origin.requires_grad
+    assert not corrected.regression_by_origin.requires_grad
+
+    first = min_block_fee_loss(
+        MinBlockFeeOutput(logits[:3], predictions[:3]),
+        label=labels[:3],
+        target=targets[:3],
+        classification_state=classification_state,
+    )
+    tail = min_block_fee_loss(
+        MinBlockFeeOutput(logits[3:], predictions[3:]),
+        label=labels[3:],
+        target=targets[3:],
+        classification_state=classification_state,
+    )
+    complete_total = torch.cat((first.total_by_origin, tail.total_by_origin))
+    torch.testing.assert_close(complete_total, corrected.total_by_origin)
+    torch.testing.assert_close(complete_total.sum() / 4.0, corrected.mean_total.detach())
+
+    corrected.mean_total.backward()
+    assert logits.grad is not None
+    assert predictions.grad is not None
+
+
+def _valid_output() -> MinBlockFeeOutput:
+    return MinBlockFeeOutput(
+        action_logits=torch.zeros((2, 2), dtype=torch.float32),
+        minimum_fee_z=torch.zeros(2, dtype=torch.float32),
     )
 
 
-def _contract():
-    prediction = PredictionConfig.model_validate(
-        {
-            "id": "current_row_fee_dynamics",
-            "family_id": "min_block_fee_multitask",
-        }
-    )
-    return compile_prediction_contract(
-        prediction_id=prediction.id,
-        family_id=prediction.family_id,
-    )
-
-
-def _execution_policy():
-    return compile_execution_policy_contract(
-        coerce_execution_policy_config({"id": "strict_deadline_miss"})
-    )
-
-
-def _prepare_temporal_facts(store: CompiledProblemStore, sample_indices: np.ndarray):
-    return _execution_policy().prepare_temporal_facts(store, sample_indices)
-
-
-def test_min_block_fee_multitask_targets_weights_loss_and_decode() -> None:
-    store = _build_store()
-    contract = _contract()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-
-    prepared_targets = contract.prepare_targets(
-        temporal_facts=_prepare_temporal_facts(store, sample_indices),
-    )
-    batch = cast(
-        MinBlockFeeTargetBatch,
-        prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64)),
-    )
-
-    np.testing.assert_array_equal(
-        batch.min_block_offsets.cpu().numpy(),
-        np.array([0, 1, 2, 0], dtype=np.int64),
-    )
-    assert batch.min_block_log_fees[1].item() == pytest_approx_log(5.0)
-    assert batch.min_block_log_fees[2].item() == pytest_approx_log(4.0)
-
-    training_state = contract.fit_training_state(
-        temporal_facts=_prepare_temporal_facts(store, sample_indices),
-    )
-    assert isinstance(training_state, MinBlockFeeTrainingState)
-    class_weights = training_state.class_weights.cpu().numpy()
-    assert class_weights[0] < class_weights[1]
-    assert class_weights[1] == pytest_approx(class_weights[2])
-    assert training_state.fee_std.item() > 0.0
-
-    outputs = ModelOutputs(
-        heads={
-            OFFSET_LOGITS_HEAD_ID: torch.tensor(
-                [
-                    [3.0, 0.0, 0.0],
-                    [0.5, 3.0, 0.0],
-                    [0.1, 0.2, 2.5],
-                    [2.2, 1.0, 0.0],
-                ],
-                dtype=torch.float32,
+@pytest.mark.parametrize(
+    "operation",
+    [
+        pytest.param(
+            lambda: TargetState(mean=math.nan, standard_deviation=1.0),
+            id="target-state-finite",
+        ),
+        pytest.param(
+            lambda: TargetState(mean=0.0, standard_deviation=0.0),
+            id="target-state-positive-standard-deviation",
+        ),
+        pytest.param(
+            lambda: ClassificationLossState(class_support=()),
+            id="classification-state-nonempty",
+        ),
+        pytest.param(
+            lambda: ClassificationLossState(class_support=(1, 0)),
+            id="classification-state-positive",
+        ),
+        pytest.param(
+            lambda: fit_target_state(cast(NDArray[np.int64], np.array([1, 2], dtype=np.int32))),
+            id="target-int64",
+        ),
+        pytest.param(
+            lambda: fit_target_state(np.array([1, 0], dtype=np.int64)),
+            id="target-positive",
+        ),
+        pytest.param(
+            lambda: fit_target_state(np.array([2, 2], dtype=np.int64)),
+            id="target-nonconstant",
+        ),
+        pytest.param(
+            lambda: standardize_target(
+                np.array([1, -1], dtype=np.int64),
+                TargetState(mean=0.0, standard_deviation=1.0),
             ),
-            MIN_LOG_FEE_HEAD_ID: (
-                (batch.min_block_log_fees - training_state.fee_mean) / training_state.fee_std
-            )
-            .unsqueeze(-1)
-            .clone(),
-        }
-    )
-
-    loss, state = contract.compute_batch_loss_and_state(
-        outputs,
-        batch,
-        training_state=training_state,
-    )
-    accumulator = contract.create_epoch_accumulator()
-    accumulator.update(state)
-    metrics = accumulator.finalize()
-    assert loss.item() < 0.5
-    assert metrics.require("offset_accuracy") == pytest_approx(1.0)
-    assert metrics.require("macro_f1") == pytest_approx(1.0)
-    assert metrics.require("regression_loss") == pytest_approx(0.0)
-    assert metrics.require("log_fee_mae") == pytest_approx(0.0)
-    assert metrics.require("log_fee_mse") == pytest_approx(0.0)
-
-    predictions = contract.allocate_decoded_result(store.n_samples)
-    assert isinstance(predictions, DecodedOffsets)
-    contract.decode_batch_result_into(
-        predictions,
-        outputs,
-        ActionSpaceDecodeContext(
-            sample_positions=torch.arange(store.n_samples, dtype=torch.int64),
-            action_mask=batch.action_mask,
+            id="standardize-positive",
         ),
-    )
-    assert torch.equal(
-        predictions.tensor,
-        torch.tensor([0, 1, 2, 0], dtype=torch.int64),
-    )
-
-
-def test_min_block_fee_multitask_uses_temporal_outcome_facts() -> None:
-    store = CompiledProblemStore(
-        feature_matrix=np.zeros((8, 1), dtype=np.float32),
-        log_base_fees=np.log(
-            np.array([10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0], dtype=np.float32)
-        ),
-        timestamps=np.arange(8, dtype=np.int64),
-        anchor_rows=np.array([0, 1, 2], dtype=np.int64),
-        context_start_rows=np.zeros(3, dtype=np.int64),
-        candidate_start_rows=np.array([1, 2, 3], dtype=np.int64),
-        candidate_end_rows=np.array([2, 5, 6], dtype=np.int64),
-        max_candidate_slots=4,
-    )
-    contract = _contract()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-
-    prepared_targets = contract.prepare_targets(
-        temporal_facts=_prepare_temporal_facts(store, sample_indices),
-    )
-    batch = cast(
-        MinBlockFeeTargetBatch,
-        prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64)),
-    )
-
-    np.testing.assert_array_equal(
-        batch.min_block_offsets.cpu().numpy(),
-        np.array([0, 2, 2], dtype=np.int64),
-    )
-    np.testing.assert_array_equal(
-        batch.action_mask.cpu().numpy(),
-        np.array(
-            [
-                [True, True, True, True],
-                [True, True, True, True],
-                [True, True, True, True],
-            ],
-            dtype=np.bool_,
-        ),
-    )
-    assert batch.min_block_log_fees[1].item() == pytest_approx_log(6.0)
-
-
-def test_min_block_fee_multitask_labels_ignore_unreachable_cheaper_actions() -> None:
-    contract = _contract()
-    action_space = PreparedActionSpace(
-        sample_indices=np.array([0], dtype=np.int64),
-        max_candidate_slots=3,
-        action_mask=np.array([[True, False, True]], dtype=np.bool_),
-    )
-    temporal_facts = PreparedTemporalFacts(
-        action_space=action_space,
-        outcome_facts=PreparedTemporalOutcomeFacts(
-            action_outcome_rows=np.array([[1, 2, 3]], dtype=np.int64),
-            action_outcome_log_fees=np.log(
-                np.array([[5.0, 1.0, 7.0]], dtype=np.float32)
-            ).astype(np.float32, copy=False),
-            reachable_action_mask=np.array([[True, False, True]], dtype=np.bool_),
-            baseline_rows=np.array([1], dtype=np.int64),
-            overflow_mask=np.array([[False, False, False]], dtype=np.bool_),
-        ),
-    )
-
-    prepared_targets = contract.prepare_targets(temporal_facts=temporal_facts)
-    batch = cast(
-        MinBlockFeeTargetBatch,
-        prepared_targets.build_batch(torch.tensor([0], dtype=torch.int64)),
-    )
-
-    assert batch.min_block_offsets.item() == 0
-    assert batch.min_block_log_fees.item() == pytest_approx_log(5.0)
-
-
-def test_min_block_fee_multitask_targets_follow_action_space_sample_indices() -> None:
-    store = _build_store()
-    contract = _contract()
-    execution_policy = _execution_policy()
-    sample_indices = np.array([2, 0], dtype=np.int64)
-
-    prepared_targets = contract.prepare_targets(
-        temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
-    )
-    batch = cast(
-        MinBlockFeeTargetBatch,
-        prepared_targets.build_batch(torch.arange(sample_indices.shape[0], dtype=torch.int64)),
-    )
-
-    np.testing.assert_array_equal(
-        batch.min_block_offsets.cpu().numpy(),
-        np.array([2, 0], dtype=np.int64),
-    )
-
-
-def test_min_block_fee_multitask_macro_f1_and_log_fee_errors() -> None:
-    training_state = MinBlockFeeTrainingState(
-        class_weights=torch.ones(3, dtype=torch.float32),
-        fee_mean=torch.tensor(1.0, dtype=torch.float32),
-        fee_std=torch.tensor(2.0, dtype=torch.float32),
-    )
-    target_log_fees = torch.tensor([1.0, 2.0, 4.0, 5.0], dtype=torch.float32)
-    predicted_log_fees = torch.tensor([1.0, 1.0, 5.0, 3.0], dtype=torch.float32)
-    batch = MinBlockFeeTargetBatch(
-        action_mask=torch.ones((4, 3), dtype=torch.bool),
-        min_block_offsets=torch.tensor([0, 1, 1, 2], dtype=torch.int64),
-        min_block_log_fees=target_log_fees,
-    )
-    offset_logits = torch.tensor(
-        [
-            [5.0, 0.0, 0.0],
-            [5.0, 0.0, 0.0],
-            [0.0, 5.0, 0.0],
-            [0.0, 5.0, 0.0],
-        ],
-        dtype=torch.float32,
-    )
-    fee_predictions = (
-        predicted_log_fees - training_state.fee_mean
-    ) / training_state.fee_std
-
-    _, state = compute_batch_loss_and_state(
-        offset_logits,
-        fee_predictions,
-        batch,
-        training_state=training_state,
-    )
-    accumulator = create_metric_accumulator()
-    accumulator.update(state)
-    metrics = accumulator.finalize()
-
-    assert metrics.require("macro_f1") == pytest_approx(7.0 / 18.0)
-    assert metrics.require("log_fee_mae") == pytest_approx(1.0)
-    assert metrics.require("log_fee_mse") == pytest_approx(1.5)
-
-
-def test_min_block_fee_training_state_resolve_preserves_semantic_tensors() -> None:
-    training_state = MinBlockFeeTrainingState(
-        class_weights=torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32),
-        fee_mean=torch.tensor(1.5, dtype=torch.float32),
-        fee_std=torch.tensor(2.5, dtype=torch.float32),
-    )
-    class_weights = training_state.class_weights.clone()
-    fee_mean = training_state.fee_mean.clone()
-    fee_std = training_state.fee_std.clone()
-
-    first = training_state.resolve(device=torch.device("cpu"), dtype=torch.float64)
-    second = training_state.resolve(device=torch.device("cpu"), dtype=torch.float64)
-
-    assert first is second
-    assert torch.equal(training_state.class_weights, class_weights)
-    assert torch.equal(training_state.fee_mean, fee_mean)
-    assert torch.equal(training_state.fee_std, fee_std)
-    assert training_state.class_weights.dtype == torch.float32
-
-
-def test_reused_training_state_matches_independently_refit_state_loss_and_metrics() -> None:
-    store = _build_store()
-    contract = _contract()
-    execution_policy = _execution_policy()
-    sample_indices = np.arange(store.n_samples, dtype=np.int64)
-    prepared_targets = contract.prepare_targets(
-        temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
-    )
-    batch = cast(
-        MinBlockFeeTargetBatch,
-        prepared_targets.build_batch(torch.arange(store.n_samples, dtype=torch.int64)),
-    )
-    outputs = ModelOutputs(
-        heads={
-            OFFSET_LOGITS_HEAD_ID: torch.tensor(
-                [
-                    [3.0, 0.0, 0.0],
-                    [0.5, 3.0, 0.0],
-                    [0.1, 0.2, 2.5],
-                    [2.2, 1.0, 0.0],
-                ],
-                dtype=torch.float32,
+        pytest.param(
+            lambda: fit_classification_loss_state(
+                np.array([0, 0], dtype=np.int64),
+                horizon_blocks=2,
+                classification_loss="corrected_inverse_frequency",
             ),
-            MIN_LOG_FEE_HEAD_ID: torch.zeros((store.n_samples, 1), dtype=torch.float32),
-        }
-    )
-    reused_state = contract.fit_training_state(
-        temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
-    )
-    refit_state = contract.fit_training_state(
-        temporal_facts=execution_policy.prepare_temporal_facts(store, sample_indices),
-    )
+            id="corrected-inverse-frequency-full-support",
+        ),
+        pytest.param(
+            lambda: min_block_fee_loss(
+                MinBlockFeeOutput(
+                    action_logits=torch.tensor([[math.inf, 0.0], [0.0, 0.0]]),
+                    minimum_fee_z=torch.zeros(2),
+                ),
+                label=torch.tensor([0, 1]),
+                target=torch.zeros(2),
+                classification_state=None,
+            ),
+            id="finite-output",
+        ),
+        pytest.param(
+            lambda: min_block_fee_loss(
+                _valid_output(),
+                label=torch.tensor([0.0, 1.0]),
+                target=torch.zeros(2),
+                classification_state=None,
+            ),
+            id="label-int64",
+        ),
+        pytest.param(
+            lambda: min_block_fee_loss(
+                _valid_output(),
+                label=torch.tensor([0, 2]),
+                target=torch.zeros(2),
+                classification_state=None,
+            ),
+            id="label-range",
+        ),
+        pytest.param(
+            lambda: min_block_fee_loss(
+                _valid_output(),
+                label=torch.tensor([0, 1]),
+                target=torch.tensor([0.0, math.nan]),
+                classification_state=None,
+            ),
+            id="finite-target",
+        ),
+        pytest.param(
+            lambda: decode_action(
+                MinBlockFeeOutput(
+                    action_logits=torch.zeros((2, 2)),
+                    minimum_fee_z=torch.zeros(1),
+                )
+            ),
+            id="aligned-output-heads",
+        ),
+    ],
+)
+def test_owned_invalid_inputs_are_rejected(operation: Callable[[], object]) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        operation()
 
-    reused_loss, reused_batch_state = contract.compute_batch_loss_and_state(
-        outputs,
-        batch,
-        training_state=reused_state,
-    )
-    refit_loss, refit_batch_state = contract.compute_batch_loss_and_state(
-        outputs,
-        batch,
-        training_state=refit_state,
-    )
-    reused_accumulator = contract.create_epoch_accumulator()
-    refit_accumulator = contract.create_epoch_accumulator()
-    reused_accumulator.update(reused_batch_state)
-    refit_accumulator.update(refit_batch_state)
 
-    assert reused_loss.item() == pytest_approx(refit_loss.item())
-    assert reused_accumulator.finalize().values == refit_accumulator.finalize().values
+def test_decode_uses_native_first_index_argmax_and_ignores_auxiliary_values() -> None:
+    logits = torch.tensor([[-1.0, 3.0, 2.0], [4.0, 0.0, -1.0]])
+    low_auxiliary = MinBlockFeeOutput(logits, torch.tensor([-100.0, -100.0]))
+    high_auxiliary = MinBlockFeeOutput(logits, torch.tensor([100.0, 100.0]))
+    expected = torch.tensor([1, 0], dtype=torch.int64)
 
-
-def create_metric_accumulator():
-    contract = _contract()
-    return contract.create_epoch_accumulator()
-
-
-def pytest_approx(value: float):
-    return pytest.approx(value)
-
-
-def pytest_approx_log(value: float):
-    return pytest.approx(math.log(value))
+    assert torch.equal(decode_action(low_auxiliary), expected)
+    assert torch.equal(decode_action(high_auxiliary), expected)

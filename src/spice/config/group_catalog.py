@@ -19,7 +19,6 @@ from .models import (
     ChainSpec,
     CorpusSpec,
     EvaluationsSpec,
-    PredictionConfig,
     ProviderSpec,
     SplitConfig,
     TrainingConfig,
@@ -41,7 +40,6 @@ class ConfigGroup(StrEnum):
     EXECUTION = "execution"
     FEATURES = "features"
     MODEL = "model"
-    PREDICTION = "prediction"
     PROBLEM = "problem"
     PROVIDER = "provider"
     SPLIT = "split"
@@ -178,14 +176,6 @@ GROUP_SPECS: tuple[GroupSpec[object], ...] = (
         group=ConfigGroup.MODEL,
         seed_name="lstm",
         validate=coerce_model_config,
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    GroupSpec(
-        group=ConfigGroup.PREDICTION,
-        seed_name="icdcs_2026",
-        validate=PredictionConfig.model_validate,
-        identity_field="id",
         seed_from_requested_name=True,
         public=True,
     ),
