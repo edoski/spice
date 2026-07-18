@@ -9,6 +9,7 @@ from spice.config import (
     AdamWMethod,
     ExperimentSemantics,
     FitMethod,
+    LossDefinition,
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
@@ -18,6 +19,7 @@ from spice.config import (
     OriginWindow,
     SelectedStudySource,
     StudyDefinition,
+    TrainingDefinition,
     TransformerCapacity,
     TransformerDefinition,
     TransformerLstmCapacity,
@@ -45,17 +47,16 @@ CORPUS_ID = UUID("20000000-0000-4000-8000-000000000001")
 OTHER_CORPUS_ID = UUID("20000000-0000-4000-8000-000000000002")
 
 FIT = FitMethod(
-    accumulation=1,
-    gradient_clip_norm=1.0,
+    accumulation=3,
+    gradient_clip_norm=0.75,
     scheduler="none",
-    seed=2026,
-    max_epochs=36,
-    validate_every_completed_epoch=1,
-    patience=8,
-    min_delta=0.0,
+    seed=17,
+    max_epochs=12,
+    validate_every_completed_epoch=2,
+    patience=4,
+    min_delta=0.01,
     improvement="strict_lower",
     restore="earliest_best",
-    minimum_epoch_floor=False,
 )
 
 LSTM_CAPACITY = LstmCapacity(projection=128, hidden=256, layers=1, head_hidden=128)
@@ -81,7 +82,7 @@ LSTM_METHOD = LstmMethod(
     capacity=LSTM_CAPACITY,
     dropout=0.2,
     optimizer=AdamWMethod(learning_rate=3e-4, weight_decay=1e-4),
-    training_batch=64,
+    training_batch=48,
     fit=FIT,
 )
 TRANSFORMER_METHOD = TransformerMethod(
@@ -89,7 +90,7 @@ TRANSFORMER_METHOD = TransformerMethod(
     capacity=TRANSFORMER_CAPACITY,
     dropout=0.2,
     optimizer=AdamWMethod(learning_rate=1e-4, weight_decay=1e-4),
-    training_batch=64,
+    training_batch=48,
     fit=FIT,
 )
 TRANSFORMER_LSTM_METHOD = TransformerLstmMethod(
@@ -97,30 +98,21 @@ TRANSFORMER_LSTM_METHOD = TransformerLstmMethod(
     capacity=TRANSFORMER_LSTM_CAPACITY,
     dropout=0.2,
     optimizer=AdamWMethod(learning_rate=1e-4, weight_decay=1e-4),
-    training_batch=64,
+    training_batch=48,
     fit=FIT,
 )
 
 LSTM_SPACE = LstmMethodSpace(
     family="lstm",
-    capacities=(LSTM_CAPACITY,),
-    dropouts=(0.2,),
-    learning_rates=(3e-4,),
-    weight_decays=(1e-4,),
+    methods=(LSTM_METHOD,),
 )
 TRANSFORMER_SPACE = TransformerMethodSpace(
     family="transformer",
-    capacities=(TRANSFORMER_CAPACITY,),
-    dropouts=(0.2,),
-    learning_rates=(1e-4,),
-    weight_decays=(1e-4,),
+    methods=(TRANSFORMER_METHOD,),
 )
 TRANSFORMER_LSTM_SPACE = TransformerLstmMethodSpace(
     family="transformer_lstm",
-    capacities=(TRANSFORMER_LSTM_CAPACITY,),
-    dropouts=(0.2,),
-    learning_rates=(1e-4,),
-    weight_decays=(1e-4,),
+    methods=(TRANSFORMER_LSTM_METHOD,),
 )
 
 
@@ -139,7 +131,14 @@ def _experiment(*, shift: int = 0) -> ExperimentSemantics:
         context_blocks=200,
         horizon_blocks=5,
         ordered_features=("base_fee", "gas_used"),
-        classification_loss="unweighted",
+        loss=LossDefinition(
+            classification_algorithm="cross_entropy",
+            classification_weighting="unweighted",
+            regression_algorithm="smooth_l1",
+            regression_threshold=0.75,
+            classification_scale=1.25,
+            regression_scale=0.5,
+        ),
     )
 
 
@@ -211,7 +210,13 @@ def test_composes_all_three_method_families(
 
     pure = training_definition_from_method(request.study_definition.experiment, method)
 
-    assert pure.model == model
+    assert pure == TrainingDefinition(
+        experiment=request.study_definition.experiment,
+        model=model,
+        optimizer=method.optimizer,
+        training_batch=method.training_batch,
+        fit=method.fit,
+    )
     assert apply_method(request, method) == pure
 
 
@@ -219,14 +224,14 @@ def test_retain_publish_and_materialize_selected_training(tmp_path: Path) -> Non
     request = _request()
     first = RetainedResult(
         method=LSTM_METHOD,
-        validation_total_loss=0.4,
-        earliest_best_epoch=3,
+        objective=-0.4,
+        selected_epoch=3,
         completed_epochs=8,
     )
     duplicate_at_cap = RetainedResult(
         method=LSTM_METHOD,
-        validation_total_loss=0.4,
-        earliest_best_epoch=4,
+        objective=-0.4,
+        selected_epoch=LSTM_METHOD.fit.max_epochs,
         completed_epochs=LSTM_METHOD.fit.max_epochs,
     )
 
@@ -243,13 +248,14 @@ def test_retain_publish_and_materialize_selected_training(tmp_path: Path) -> Non
         kind="selected_study",
         corpus_id=CORPUS_ID,
         study_id=STUDY_ID,
+        study_result_index=1,
         experiment=_experiment(shift=1_000),
     )
 
     selected = materialize_selected_training(tmp_path, source)
 
     assert not progress.exists()
-    assert selected.study_result_index == 0
+    assert selected.study_result_index == 1
     assert selected.method == LSTM_METHOD
     assert selected.training_definition == training_definition_from_method(
         source.experiment,
@@ -260,14 +266,14 @@ def test_retain_publish_and_materialize_selected_training(tmp_path: Path) -> Non
 @pytest.mark.parametrize(
     "case",
     [
-        "nonfinite_loss",
-        "negative_loss",
-        "best_after_completed",
+        "nonfinite_objective",
+        "selected_after_completed",
         "completed_above_max",
         "method_outside_space",
         "conflicting_append",
         "study_mismatch",
         "corpus_mismatch",
+        "result_index_out_of_range",
         "canonical_exists",
     ],
 )
@@ -275,8 +281,8 @@ def test_rejects_invalid_study_operations(case: str, tmp_path: Path) -> None:
     request = _request()
     result = RetainedResult(
         method=LSTM_METHOD,
-        validation_total_loss=0.5,
-        earliest_best_epoch=2,
+        objective=0.5,
+        selected_epoch=2,
         completed_epochs=5,
     )
 
@@ -285,7 +291,7 @@ def test_rejects_invalid_study_operations(case: str, tmp_path: Path) -> None:
         capacity=LSTM_CAPACITY,
         dropout=0.3,
         optimizer=LSTM_METHOD.optimizer,
-        training_batch=64,
+        training_batch=48,
         fit=FIT,
     )
     source: SelectedStudySource | None = None
@@ -299,6 +305,7 @@ def test_rejects_invalid_study_operations(case: str, tmp_path: Path) -> None:
             kind="selected_study",
             corpus_id=CORPUS_ID,
             study_id=OTHER_STUDY_ID,
+            study_result_index=0,
             experiment=_experiment(),
         )
     elif case == "corpus_mismatch":
@@ -309,6 +316,18 @@ def test_rejects_invalid_study_operations(case: str, tmp_path: Path) -> None:
             kind="selected_study",
             corpus_id=OTHER_CORPUS_ID,
             study_id=STUDY_ID,
+            study_result_index=0,
+            experiment=_experiment(),
+        )
+    elif case == "result_index_out_of_range":
+        canonical = study_json_path(tmp_path, STUDY_ID)
+        canonical.parent.mkdir(parents=True)
+        canonical.write_text(Study(request=request, trials=(result,)).model_dump_json())
+        source = SelectedStudySource(
+            kind="selected_study",
+            corpus_id=CORPUS_ID,
+            study_id=STUDY_ID,
+            study_result_index=1,
             experiment=_experiment(),
         )
     elif case == "canonical_exists":
@@ -316,35 +335,34 @@ def test_rejects_invalid_study_operations(case: str, tmp_path: Path) -> None:
         canonical = study_json_path(tmp_path, STUDY_ID)
         canonical.write_text("occupied")
 
-    error = FileExistsError if case == "canonical_exists" else ValueError
+    error = (
+        FileExistsError
+        if case == "canonical_exists"
+        else IndexError
+        if case == "result_index_out_of_range"
+        else ValueError
+    )
     with pytest.raises(error):
-        if case == "nonfinite_loss":
+        if case == "nonfinite_objective":
             RetainedResult(
                 method=LSTM_METHOD,
-                validation_total_loss=float("nan"),
-                earliest_best_epoch=1,
+                objective=float("nan"),
+                selected_epoch=1,
                 completed_epochs=1,
             )
-        elif case == "negative_loss":
+        elif case == "selected_after_completed":
             RetainedResult(
                 method=LSTM_METHOD,
-                validation_total_loss=-0.1,
-                earliest_best_epoch=1,
-                completed_epochs=1,
-            )
-        elif case == "best_after_completed":
-            RetainedResult(
-                method=LSTM_METHOD,
-                validation_total_loss=0.5,
-                earliest_best_epoch=3,
+                objective=0.5,
+                selected_epoch=3,
                 completed_epochs=2,
             )
         elif case == "completed_above_max":
             RetainedResult(
                 method=LSTM_METHOD,
-                validation_total_loss=0.5,
-                earliest_best_epoch=1,
-                completed_epochs=37,
+                objective=0.5,
+                selected_epoch=1,
+                completed_epochs=13,
             )
         elif case == "method_outside_space":
             Study(
@@ -352,15 +370,15 @@ def test_rejects_invalid_study_operations(case: str, tmp_path: Path) -> None:
                 trials=(
                     RetainedResult(
                         method=outside,
-                        validation_total_loss=0.5,
-                        earliest_best_epoch=1,
+                        objective=0.5,
+                        selected_epoch=1,
                         completed_epochs=1,
                     ),
                 ),
             )
         elif case == "conflicting_append":
             retain_result(tmp_path, _request(corpus_id=OTHER_CORPUS_ID), result)
-        elif case in {"study_mismatch", "corpus_mismatch"}:
+        elif case in {"study_mismatch", "corpus_mismatch", "result_index_out_of_range"}:
             assert source is not None
             materialize_selected_training(tmp_path, source)
         else:

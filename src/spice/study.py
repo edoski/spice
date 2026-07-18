@@ -39,9 +39,9 @@ __all__ = [
     "training_definition_from_method",
 ]
 
-_ValidationLoss: TypeAlias = Annotated[
+_Objective: TypeAlias = Annotated[
     float,
-    Field(strict=True, ge=0.0, allow_inf_nan=False),
+    Field(strict=True, allow_inf_nan=False),
 ]
 _Epoch: TypeAlias = Annotated[int, Field(strict=True, ge=1)]
 
@@ -57,14 +57,14 @@ class _FrozenRecord(BaseModel):
 
 class RetainedResult(_FrozenRecord):
     method: Method
-    validation_total_loss: _ValidationLoss
-    earliest_best_epoch: _Epoch
+    objective: _Objective
+    selected_epoch: _Epoch
     completed_epochs: _Epoch
 
     @model_validator(mode="after")
     def validate_epochs(self) -> Self:
-        if self.earliest_best_epoch > self.completed_epochs:
-            raise ValueError("earliest_best_epoch must not exceed completed_epochs")
+        if self.selected_epoch > self.completed_epochs:
+            raise ValueError("selected_epoch must not exceed completed_epochs")
         if self.completed_epochs > self.method.fit.max_epochs:
             raise ValueError("completed_epochs must not exceed method.fit.max_epochs")
         return self
@@ -186,9 +186,9 @@ def materialize_selected_training(
     if study.request.corpus_id != source.corpus_id:
         raise ValueError("selected source Corpus ID does not match canonical Study")
 
-    index, result = _select_result(study)
+    result = study.trials[source.study_result_index]
     return SelectedStudyTraining(
-        study_result_index=index,
+        study_result_index=source.study_result_index,
         method=result.method,
         training_definition=training_definition_from_method(source.experiment, result.method),
     )
@@ -197,24 +197,18 @@ def materialize_selected_training(
 def _require_method_in_space(space: MethodSpace, method: Method) -> None:
     match space, method:
         case LstmMethodSpace(), LstmMethod():
-            capacity_allowed = method.capacity in space.capacities
+            allowed = method in space.methods
         case TransformerMethodSpace(), TransformerMethod():
-            capacity_allowed = method.capacity in space.capacities
+            allowed = method in space.methods
         case TransformerLstmMethodSpace(), TransformerLstmMethod():
-            capacity_allowed = method.capacity in space.capacities
+            allowed = method in space.methods
         case _:
             raise ValueError(
                 f"Method family {method.family!r} does not match MethodSpace {space.family!r}"
             )
 
-    if not capacity_allowed:
-        raise ValueError("Method capacity is outside the MethodSpace")
-    if method.dropout not in space.dropouts:
-        raise ValueError("Method dropout is outside the MethodSpace")
-    if method.optimizer.learning_rate not in space.learning_rates:
-        raise ValueError("Method learning rate is outside the MethodSpace")
-    if method.optimizer.weight_decay not in space.weight_decays:
-        raise ValueError("Method weight decay is outside the MethodSpace")
+    if not allowed:
+        raise ValueError("Method is outside the MethodSpace")
 
 
 def _progress_path(storage_root: Path, study_id: UUID4) -> Path:
@@ -223,11 +217,3 @@ def _progress_path(storage_root: Path, study_id: UUID4) -> Path:
 
 def _load_study(path: Path) -> Study:
     return Study.model_validate_json(path.read_bytes(), strict=True)
-
-
-def _select_result(study: Study) -> tuple[int, RetainedResult]:
-    index = min(
-        range(len(study.trials)),
-        key=lambda current: (study.trials[current].validation_total_loss, current),
-    )
-    return index, study.trials[index]

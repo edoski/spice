@@ -288,6 +288,7 @@ class SelectedStudySource(_FrozenRecord):
     kind: Literal["selected_study"]
     corpus_id: UUID4
     study_id: UUID4
+    study_result_index: _NonNegativeInt
     experiment: ExperimentSemantics
 
 
