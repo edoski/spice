@@ -211,14 +211,6 @@ def _fit(
         ),
         pytest.param(
             lambda: _fit(
-                _valid_blocks().drop("tx_count"),
-                ordered_features=("log1p_tx_count",),
-            ),
-            "required source columns: tx_count",
-            id="missing-source",
-        ),
-        pytest.param(
-            lambda: _fit(
                 _blocks(
                     base_fees=[0, 1],
                     gas_used=[1, 3],

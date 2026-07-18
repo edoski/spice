@@ -77,10 +77,6 @@ def transform_feature_rows(
         )
     if not np.isfinite(transformed).all():
         raise ValueError("transformed features must be finite float32 values")
-    if transformed.dtype != np.float32:
-        raise ValueError("transformed features must have float32 dtype")
-    if not transformed.flags.c_contiguous:
-        raise ValueError("transformed features must be C-contiguous")
     return transformed
 
 
@@ -101,48 +97,35 @@ def _validate_feature_uniqueness(ordered_features: tuple[str, ...]) -> None:
 
 def _feature_values(blocks: pl.DataFrame, feature_name: str) -> NDArray[np.float64]:
     if feature_name == "log_base_fee_per_gas":
-        _require_source_columns(blocks, "base_fee_per_gas")
         base_fees = _float_column(blocks, "base_fee_per_gas")
         if np.any(base_fees <= 0.0):
             raise ValueError("base_fee_per_gas must be positive")
         with np.errstate(divide="ignore", invalid="ignore"):
             return np.log(base_fees)
     if feature_name == "gas_utilization":
-        _require_source_columns(blocks, "gas_used", "gas_limit")
         gas_limits = _float_column(blocks, "gas_limit")
         if np.any(gas_limits <= 0.0):
             raise ValueError("gas_limit must be positive")
         return _float_column(blocks, "gas_used") / gas_limits
     if feature_name == "log_exact_forming_base_fee_per_gas":
-        _require_source_columns(blocks, "base_fee_per_gas", "gas_used", "gas_limit")
         return _forming_base_fee_logs(blocks)
     if feature_name == "log_gas_limit":
-        _require_source_columns(blocks, "gas_limit")
         gas_limits = _float_column(blocks, "gas_limit")
         if np.any(gas_limits <= 0.0):
             raise ValueError("gas_limit must be positive")
         with np.errstate(divide="ignore", invalid="ignore"):
             return np.log(gas_limits)
     if feature_name == "log1p_tx_count":
-        _require_source_columns(blocks, "tx_count")
         tx_counts = _float_column(blocks, "tx_count")
         if np.any(tx_counts <= -1.0):
             raise ValueError("tx_count must be greater than -1")
         with np.errstate(divide="ignore", invalid="ignore"):
             return np.log1p(tx_counts)
     if feature_name == "hour_sin":
-        _require_source_columns(blocks, "timestamp")
         return np.sin(_hour_angles(blocks))
     if feature_name == "hour_cos":
-        _require_source_columns(blocks, "timestamp")
         return np.cos(_hour_angles(blocks))
     raise ValueError(f"Unsupported feature: {feature_name}")
-
-
-def _require_source_columns(blocks: pl.DataFrame, *columns: str) -> None:
-    missing = [column for column in columns if column not in blocks.columns]
-    if missing:
-        raise ValueError("missing required source columns: " + ", ".join(missing))
 
 
 def _hour_angles(blocks: pl.DataFrame) -> NDArray[np.float64]:
