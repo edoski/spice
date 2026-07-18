@@ -1,8 +1,9 @@
-"""Pure canonical storage layout helpers."""
+"""Pure canonical addresses for completed domain objects."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import UUID
 
 _CATALOG_DB_FILENAME = "catalog.sqlite"
 CORPORA_ROOT_NAME = "corpora"
@@ -16,17 +17,33 @@ def catalog_db_path(storage_root: Path) -> Path:
     return storage_root / STATE_DIR_NAME / _CATALOG_DB_FILENAME
 
 
-def corpus_root_path(storage_root: Path, *, chain_name: str, corpus_id: str) -> Path:
-    return storage_root / CORPORA_ROOT_NAME / chain_name / corpus_id
+def corpus_directory(storage_root: Path, corpus_id: UUID) -> Path:
+    return storage_root / "corpora" / str(corpus_id)
 
 
-def corpus_blocks_dir_path(corpus_root: Path) -> Path:
-    return corpus_root / CORPUS_BLOCKS_DIR_NAME
+def corpus_json_path(storage_root: Path, corpus_id: UUID) -> Path:
+    return corpus_directory(storage_root, corpus_id) / "corpus.json"
 
 
-def study_root_path(storage_root: Path, *, chain_name: str, study_id: str) -> Path:
-    return storage_root / STUDIES_ROOT_NAME / chain_name / study_id
+def corpus_blocks_path(storage_root: Path, corpus_id: UUID) -> Path:
+    return corpus_directory(storage_root, corpus_id) / "blocks.parquet"
 
 
-def artifact_root_path(storage_root: Path, *, chain_name: str, artifact_id: str) -> Path:
-    return storage_root / ARTIFACTS_ROOT_NAME / chain_name / artifact_id
+def study_json_path(storage_root: Path, study_id: UUID) -> Path:
+    return storage_root / "studies" / f"{study_id}.json"
+
+
+def artifact_checkpoint_path(storage_root: Path, artifact_id: UUID) -> Path:
+    return storage_root / "artifacts" / f"{artifact_id}.ckpt"
+
+
+def evaluation_directory(storage_root: Path, evaluation_id: UUID) -> Path:
+    return storage_root / "evaluations" / str(evaluation_id)
+
+
+def evaluation_json_path(storage_root: Path, evaluation_id: UUID) -> Path:
+    return evaluation_directory(storage_root, evaluation_id) / "evaluation.json"
+
+
+def evaluation_observations_path(storage_root: Path, evaluation_id: UUID) -> Path:
+    return evaluation_directory(storage_root, evaluation_id) / "observations.parquet"
