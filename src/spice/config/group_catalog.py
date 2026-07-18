@@ -22,7 +22,6 @@ from .models import (
     ProviderSpec,
     SplitConfig,
     TrainingConfig,
-    TuningConfig,
     coerce_features_config,
     coerce_problem_spec,
 )
@@ -45,8 +44,6 @@ class ConfigGroup(StrEnum):
     SPLIT = "split"
     SURFACE = "surface"
     TRAINING = "training"
-    TUNING = "tuning"
-    TUNING_SPACE = "tuning_space"
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,12 +97,6 @@ GROUP_SPECS: tuple[GroupSpec[object], ...] = (
         group=ConfigGroup.SPLIT,
         seed_name="default",
         validate=SplitConfig.model_validate,
-        public=True,
-    ),
-    GroupSpec(
-        group=ConfigGroup.TUNING,
-        seed_name="default",
-        validate=TuningConfig.model_validate,
         public=True,
     ),
     GroupSpec(
@@ -176,13 +167,6 @@ GROUP_SPECS: tuple[GroupSpec[object], ...] = (
         group=ConfigGroup.MODEL,
         seed_name="lstm",
         validate=coerce_model_config,
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    GroupSpec(
-        group=ConfigGroup.TUNING_SPACE,
-        seed_name="lstm_default",
-        validate=_mapping_payload,
         seed_from_requested_name=True,
         public=True,
     ),

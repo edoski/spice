@@ -20,7 +20,6 @@ from .models import (
     ProviderSpec,
     SplitConfig,
     TrainingConfig,
-    TuningConfig,
 )
 from .surfaces import SurfaceFrame
 
@@ -38,7 +37,6 @@ PROVIDER = cast(GroupSpec[ProviderSpec], group_spec(ConfigGroup.PROVIDER))
 SPLIT = cast(GroupSpec[SplitConfig], group_spec(ConfigGroup.SPLIT))
 SURFACE = cast(GroupSpec[SurfaceFrame], group_spec(ConfigGroup.SURFACE))
 TRAINING = cast(GroupSpec[TrainingConfig], group_spec(ConfigGroup.TRAINING))
-TUNING = cast(GroupSpec[TuningConfig], group_spec(ConfigGroup.TUNING))
 
 
 def load(spec: GroupSpec[ConfigT], name: str) -> ConfigT:

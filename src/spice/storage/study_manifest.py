@@ -1,134 +1,17 @@
-"""Study manifest creation, persistence, and validation."""
+"""Package-private read closure for legacy study-root manifests."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from ..config.models import (
-    TrainConfig,
-    TuneConfig,
-)
-from ..core.errors import MissingStateError, StateConflictError
-from ..corpus.metadata import CorpusManifest
-from ..modeling.pipeline import compile_training_context
-from ..modeling.results import TrainingSourceProvenance
-from ..semantics import StudySemantics
-from .engine import STUDY_ROOT_KIND, create_state_engine, ensure_state_db, require_root_kind
-from .identity import (
-    IdentityModel,
-    study_definition_identity_from_manifest,
-    study_definition_identity_from_tuned_config,
-    study_manifest_identity,
-)
-from .payloads import SingletonPayloadStore
-from .schema import STUDY_TABLES, study_manifest
-from .study_manifest_codecs import STUDY_MANIFEST_CODEC
+from ..core.errors import MissingStateError
+from .engine import STUDY_ROOT_KIND, create_state_engine, require_root_kind
+from .payloads import mapping_payload
+from .schema import study_manifest
+from .study_manifest_codecs import _decode_study_manifest
 from .study_models import StudyManifest
-
-if TYPE_CHECKING:
-    from .workflow_roots import CorpusRootHandle, StudyRootHandle
-
-STUDY_SAMPLER_NAME = "TPESampler"
-
-
-_STUDY_MANIFEST_STORE = SingletonPayloadStore(
-    table=study_manifest,
-    codec=STUDY_MANIFEST_CODEC,
-)
-
-
-def manifest_from_tune_config(
-    config: TuneConfig,
-    *,
-    corpus: CorpusRootHandle,
-    study: StudyRootHandle,
-    corpus_manifest: CorpusManifest,
-) -> StudyManifest:
-    """Build the canonical study manifest from one validated tuning definition."""
-
-    context = compile_training_context(
-        config,
-        chain_runtime=corpus_manifest.chain.runtime,
-    )
-    return StudyManifest(
-        study_id=study.study_id,
-        sequence=config.training.sequence,
-        prediction=config.prediction,
-        study_name=study.study_name,
-        chain_name=corpus_manifest.chain.name,
-        corpus_id=corpus.corpus_id,
-        corpus_name=corpus_manifest.corpus.name,
-        training_source=_training_source_from_corpus_manifest(
-            corpus.corpus_id,
-            training_cutoff_timestamp=config.training_cutoff_timestamp,
-            corpus_manifest=corpus_manifest,
-        ),
-        problem=config.problem,
-        features=config.features,
-        model=config.model,
-        split=config.split,
-        training=config.training,
-        tuning=config.tuning.search,
-        sampler_name=STUDY_SAMPLER_NAME,
-        sampler_seed=config.tuning.sampler_seed,
-        pruner_name=pruner_name(config.tuning.enable_pruning),
-        enable_pruning=config.tuning.enable_pruning,
-        tuning_space=config.tuning_space,
-        semantics=StudySemantics(
-            problem=context.problem_contract.semantics,
-            execution_policy=context.problem_contract.execution_policy.semantics,
-            feature=context.feature_contract.semantics,
-            prediction=context.prediction_contract.semantics,
-        ),
-    )
-
-
-def _training_source_from_corpus_manifest(
-    corpus_id: str,
-    *,
-    training_cutoff_timestamp: int | None,
-    corpus_manifest: CorpusManifest,
-) -> TrainingSourceProvenance:
-    blocks = corpus_manifest.blocks
-    coverage = blocks.coverage
-    if (
-        coverage.first_block is None
-        or coverage.last_block is None
-        or coverage.first_timestamp is None
-        or coverage.last_timestamp is None
-    ):
-        raise StateConflictError("Training corpus manifest is missing block coverage")
-    return TrainingSourceProvenance(
-        corpus_id=corpus_id,
-        window_start_timestamp=blocks.request.start_timestamp,
-        window_end_timestamp=blocks.request.end_timestamp,
-        first_block=coverage.first_block,
-        last_block=coverage.last_block,
-        first_timestamp=coverage.first_timestamp,
-        last_timestamp=coverage.last_timestamp,
-        training_cutoff_timestamp=training_cutoff_timestamp,
-        source_requirements_fingerprint=(
-            corpus_manifest.source_requirements.fingerprint()
-        ),
-    )
-
-
-def insert_study_manifest(db_path: Path, *, manifest: StudyManifest) -> None:
-    """Insert the study manifest exactly once for a study root."""
-
-    ensure_state_db(db_path, root_kind=STUDY_ROOT_KIND, tables=STUDY_TABLES)
-    engine = create_state_engine(db_path)
-    try:
-        with engine.begin() as conn:
-            existing = _STUDY_MANIFEST_STORE.load(conn)
-            if existing is not None:
-                raise StateConflictError(f"Study manifest already exists: {db_path}")
-            _STUDY_MANIFEST_STORE.upsert(conn, manifest)
-    finally:
-        engine.dispose()
 
 
 def load_study_manifest(db_path: Path) -> StudyManifest:
@@ -136,99 +19,26 @@ def load_study_manifest(db_path: Path) -> StudyManifest:
 
     if not db_path.is_file():
         raise MissingStateError(f"Missing study manifest: {db_path}")
-    require_root_kind(db_path, STUDY_ROOT_KIND)
-    engine = create_state_engine(db_path)
-    try:
-        with engine.connect() as conn:
-            manifest = _STUDY_MANIFEST_STORE.load(conn)
-        if manifest is None:
-            raise MissingStateError(f"Missing study manifest: {db_path}")
-        return manifest
-    finally:
-        engine.dispose()
+    manifest = _try_load_existing_manifest(db_path)
+    if manifest is None:
+        raise MissingStateError(f"Missing study manifest: {db_path}")
+    return manifest
 
 
 def try_load_study_manifest(db_path: Path) -> StudyManifest | None:
     if not db_path.is_file():
         return None
+    return _try_load_existing_manifest(db_path)
+
+
+def _try_load_existing_manifest(db_path: Path) -> StudyManifest | None:
     require_root_kind(db_path, STUDY_ROOT_KIND)
     engine = create_state_engine(db_path)
     try:
         with engine.connect() as conn:
-            row = conn.execute(select(study_manifest.c.singleton)).scalar_one_or_none()
-        if row is None:
-            return None
+            payload = conn.execute(select(study_manifest.c.payload)).scalar_one_or_none()
     finally:
         engine.dispose()
-    return load_study_manifest(db_path)
-
-
-def diff_study_manifests(stored: StudyManifest, requested: StudyManifest) -> list[str]:
-    return _mismatched_identity_fields(
-        study_manifest_identity(stored),
-        study_manifest_identity(requested),
-    )
-
-
-def validate_tuned_artifact_definition(
-    config: TrainConfig,
-    *,
-    manifest: StudyManifest,
-    study_id: str,
-    corpus_id: str,
-) -> None:
-    """Reject tuned artifacts whose identity diverges from the stored study."""
-
-    mismatches = _mismatched_identity_fields(
-        study_definition_identity_from_manifest(manifest),
-        study_definition_identity_from_tuned_config(
-            config,
-            study_id=study_id,
-            chain_name=manifest.chain_name,
-            corpus_id=corpus_id,
-            corpus_name=manifest.corpus_name,
-        ),
-    )
-    if mismatches:
-        raise StateConflictError(
-            "Tuned artifact definition does not match study definition: "
-            + ", ".join(mismatches)
-        )
-
-
-def _mismatched_identity_fields(
-    stored_identity: IdentityModel,
-    requested_identity: IdentityModel,
-) -> list[str]:
-    if type(stored_identity) is not type(requested_identity):
-        raise TypeError("identity comparisons require matching identity types")
-    return _identity_field_mismatches(stored_identity, requested_identity)
-
-
-def _identity_field_mismatches(
-    stored_identity: IdentityModel,
-    requested_identity: IdentityModel,
-    *,
-    prefix: str = "",
-) -> list[str]:
-    mismatches: list[str] = []
-    for field_name in stored_identity.__class__.model_fields:
-        stored_value = getattr(stored_identity, field_name)
-        requested_value = getattr(requested_identity, field_name)
-        label = field_name if not prefix else f"{prefix}.{field_name}"
-        if isinstance(stored_value, IdentityModel) and isinstance(requested_value, IdentityModel):
-            mismatches.extend(
-                _identity_field_mismatches(
-                    stored_value,
-                    requested_value,
-                    prefix=label,
-                )
-            )
-            continue
-        if stored_value != requested_value:
-            mismatches.append(label)
-    return mismatches
-
-
-def pruner_name(enable_pruning: bool) -> str:
-    return "MedianPruner" if enable_pruning else "NopPruner"
+    if payload is None:
+        return None
+    return _decode_study_manifest(mapping_payload(payload, label=study_manifest.name))

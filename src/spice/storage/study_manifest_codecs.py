@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from ..config.models import (
     PredictionConfig,
     ProblemSpec,
@@ -20,8 +18,7 @@ from ..modeling.families.base import ModelConfig
 from ..modeling.families.registry import coerce_model_config
 from ..modeling.tuned_config import coerce_tuning_space_config
 from .artifact_codecs import TrainingSourcePayload
-from .identity import identity_payload, study_manifest_identity
-from .payloads import PayloadCodec, PayloadRecord, decode_payload_record
+from .payloads import PayloadRecord, decode_payload_record
 from .semantics_codecs import STUDY_SEMANTICS_CODEC
 from .study_models import StudyManifest
 
@@ -52,20 +49,6 @@ class StudyManifestPayload(PayloadRecord):
     pruner_name: str
     enable_pruning: bool
     semantics: dict[str, object]
-
-    @classmethod
-    def from_manifest(cls, manifest: StudyManifest) -> StudyManifestPayload:
-        payload = {
-            **identity_payload(study_manifest_identity(manifest)),
-            "semantics": STUDY_SEMANTICS_CODEC.encode(manifest.semantics),
-        }
-        definition = payload["definition"]
-        if not isinstance(definition, dict):
-            raise TypeError("study manifest definition did not serialize to a mapping")
-        definition["training_source"] = TrainingSourcePayload.from_provenance(
-            manifest.training_source
-        ).model_dump(mode="json")
-        return cls.model_validate(payload)
 
     def to_manifest(self) -> StudyManifest:
         definition = self.definition
@@ -103,14 +86,6 @@ class StudyManifestPayload(PayloadRecord):
         )
 
 
-def _encode_study_manifest(manifest: StudyManifest) -> dict[str, object]:
-    payload = StudyManifestPayload.from_manifest(manifest).model_dump(
-        mode="json",
-        exclude_none=True,
-    )
-    return cast(dict[str, object], payload)
-
-
 def _decode_study_manifest(payload: dict[str, object]) -> StudyManifest:
     return decode_payload_record(
         "study manifest",
@@ -118,12 +93,6 @@ def _decode_study_manifest(payload: dict[str, object]) -> StudyManifest:
         payload,
         lambda model: model.to_manifest(),
     )
-
-
-STUDY_MANIFEST_CODEC: PayloadCodec[StudyManifest] = PayloadCodec(
-    encode=_encode_study_manifest,
-    decode=_decode_study_manifest,
-)
 
 
 def coerce_study_tuning_space(

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import optuna
-
 from ..config.models import (
     ProblemSpec,
     TunedParameterSet,
@@ -21,7 +19,7 @@ from ..core.specs import (
     validate_owner_config,
 )
 from .families.base import ModelTuningSpaceConfig, TunedModelParams
-from .families.registry import model_spec, sample_model_tuned_parameters
+from .families.registry import model_spec
 
 
 def coerce_tuning_space_config(
@@ -166,57 +164,6 @@ def coerce_tuned_parameter_set(
     ):
         return payload
     return TunedParameterSet(training=training, problem=problem, model=model)
-
-
-def sample_tuned_parameters(
-    trial: optuna.Trial,
-    *,
-    tuning_space: TuningSpaceConfig,
-) -> TunedParameterSet:
-    training_params: TunedTrainingParams | None = None
-    problem_params: TunedProblemParams | None = None
-    if tuning_space.training is not None:
-        training_values: dict[str, float | int] = {}
-        if tuning_space.training.learning_rate is not None:
-            training_values["learning_rate"] = float(
-                trial.suggest_categorical(
-                    "training.learning_rate",
-                    tuning_space.training.learning_rate,
-                )
-            )
-        if tuning_space.training.weight_decay is not None:
-            training_values["weight_decay"] = float(
-                trial.suggest_categorical(
-                    "training.weight_decay",
-                    tuning_space.training.weight_decay,
-                )
-            )
-        if tuning_space.training.batch_size is not None:
-            training_values["batch_size"] = int(
-                trial.suggest_categorical(
-                    "training.batch_size",
-                    tuning_space.training.batch_size,
-                )
-            )
-        if training_values:
-            training_params = validate_owner_config(training_values, TunedTrainingParams)
-    if tuning_space.problem is not None:
-        problem_values: dict[str, int] = {}
-        if tuning_space.problem.lookback_seconds is not None:
-            problem_values["lookback_seconds"] = int(
-                trial.suggest_categorical(
-                    "problem.lookback_seconds",
-                    tuning_space.problem.lookback_seconds,
-                )
-            )
-        if problem_values:
-            problem_params = validate_owner_config(problem_values, TunedProblemParams)
-    model_params = sample_model_tuned_parameters(trial, tuning_space.model)
-    return TunedParameterSet(
-        training=training_params,
-        problem=problem_params,
-        model=model_params,
-    )
 
 
 def _coerce_problem_tuning_space(

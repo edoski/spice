@@ -8,18 +8,14 @@ from pathlib import Path
 import optuna
 from optuna.storages import RDBStorage
 
-from ..config.models import TuneConfig, TunedParameterSet
 from ..core.errors import (
-    ConfigResolutionError,
     MissingStateError,
     StateConflictError,
     StateLayoutError,
 )
-from ..modeling.tuned_config import coerce_tuned_parameter_set
 from .engine import db_url
 from .study_manifest import load_study_manifest
 from .study_models import (
-    TRIAL_PARAMS_KEY,
     StudyManifest,
     StudySummary,
     StudyTrialRecord,
@@ -28,22 +24,11 @@ from .study_models import (
 )
 
 
-def study_storage(db_path: Path) -> RDBStorage:
+def _study_storage(db_path: Path) -> RDBStorage:
     return RDBStorage(
         url=db_url(db_path),
         engine_kwargs={"connect_args": {"timeout": 5}},
     )
-
-
-def load_best_params(db_path: Path, *, study_name: str) -> TunedParameterSet:
-    manifest, study = _load_verified_study(db_path, study_name=study_name)
-    payload = study.best_trial.user_attrs.get(TRIAL_PARAMS_KEY)
-    if not isinstance(payload, dict):
-        raise MissingStateError(f"Best tuning params are required but missing: {db_path}")
-    try:
-        return coerce_tuned_parameter_set(payload, model_id=manifest.model_id)
-    except (ConfigResolutionError, ValueError) as exc:
-        raise StateLayoutError(f"Invalid best tuning params payload: {exc}") from exc
 
 
 def load_study_summary(db_path: Path) -> StudySummary:
@@ -65,30 +50,7 @@ def load_materialized_study(db_path: Path, *, study_name: str) -> optuna.Study:
             "Materialized Optuna study name does not match stored manifest: "
             f"expected {study_name}, got {summary.study_name}"
         )
-    return optuna.load_study(study_name=study_name, storage=study_storage(db_path))
-
-
-def load_or_create_materialized_study(db_path: Path, *, config: TuneConfig) -> optuna.Study:
-    summary = _materialized_study_summary(db_path)
-    if summary is None:
-        return optuna.create_study(
-            study_name=config.study.name,
-            storage=study_storage(db_path),
-            direction="minimize",
-            load_if_exists=False,
-            sampler=optuna.samplers.TPESampler(seed=config.tuning.sampler_seed),
-            pruner=(
-                optuna.pruners.MedianPruner()
-                if config.tuning.enable_pruning
-                else optuna.pruners.NopPruner()
-            ),
-        )
-    if summary.study_name != config.study.name:
-        raise StateLayoutError(
-            "Materialized Optuna study name does not match stored manifest: "
-            f"expected {config.study.name}, got {summary.study_name}"
-        )
-    return optuna.load_study(study_name=summary.study_name, storage=study_storage(db_path))
+    return optuna.load_study(study_name=study_name, storage=_study_storage(db_path))
 
 
 def _load_verified_study(
@@ -108,7 +70,7 @@ def _load_verified_study(
 def _materialized_study_summary(db_path: Path) -> optuna.study.StudySummary | None:
     if not _has_materialized_optuna_tables(db_path):
         return None
-    summaries = optuna.get_all_study_summaries(storage=study_storage(db_path))
+    summaries = optuna.get_all_study_summaries(storage=_study_storage(db_path))
     if not summaries:
         return None
     if len(summaries) != 1:

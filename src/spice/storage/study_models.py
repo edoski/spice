@@ -173,10 +173,3 @@ def build_study_summary(manifest: StudyManifest, study: optuna.Study) -> StudySu
             )
         ),
     )
-
-
-def trial_params_payload(params: TunedParameterSet) -> dict[str, object]:
-    payload = params.model_dump(mode="json", exclude_none=True)
-    if not isinstance(payload, dict):
-        raise StateLayoutError("TunedParameterSet did not serialize to a mapping payload")
-    return payload
