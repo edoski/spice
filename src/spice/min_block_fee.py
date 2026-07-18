@@ -1,19 +1,18 @@
-# pyright: strict
-
 """Architecture-neutral minimum-block-fee target, loss, and decode contract."""
 
 from __future__ import annotations
 
-import typing as _typing
-from dataclasses import dataclass as _dataclass
+import typing
+from dataclasses import dataclass
+from typing import Annotated, NamedTuple, TypeAlias
 
-import numpy as _np
-import torch as _torch
-import torch.nn.functional as _functional
-from numpy.typing import NDArray as _NDArray
-from pydantic import BaseModel as _BaseModel
-from pydantic import ConfigDict as _ConfigDict
-from pydantic import Field as _Field
+import numpy as np
+import torch
+import torch.nn.functional as F
+from numpy.typing import NDArray
+from pydantic import BaseModel, ConfigDict, Field
+
+from .config import LossDefinition
 
 __all__ = [
     "TargetState",
@@ -28,19 +27,19 @@ __all__ = [
     "decode_action",
 ]
 
-_StrictFiniteFloat: _typing.TypeAlias = _typing.Annotated[
+_StrictFiniteFloat: TypeAlias = Annotated[
     float,
-    _Field(strict=True, allow_inf_nan=False),
+    Field(strict=True, allow_inf_nan=False),
 ]
-_StrictPositiveFloat: _typing.TypeAlias = _typing.Annotated[
+_StrictPositiveFloat: TypeAlias = Annotated[
     float,
-    _Field(strict=True, gt=0.0, allow_inf_nan=False),
+    Field(strict=True, gt=0.0, allow_inf_nan=False),
 ]
-_StrictPositiveInt: _typing.TypeAlias = _typing.Annotated[int, _Field(strict=True, gt=0)]
+_StrictPositiveInt: TypeAlias = Annotated[int, Field(strict=True, gt=0)]
 
 
-class _State(_BaseModel):
-    model_config = _ConfigDict(
+class _State(BaseModel):
+    model_config = ConfigDict(
         extra="forbid",
         frozen=True,
         strict=True,
@@ -54,54 +53,50 @@ class TargetState(_State):
 
 
 class ClassificationLossState(_State):
-    class_support: _typing.Annotated[tuple[_StrictPositiveInt, ...], _Field(min_length=1)]
+    class_support: Annotated[tuple[_StrictPositiveInt, ...], Field(min_length=1)]
 
 
-class MinBlockFeeOutput(_typing.NamedTuple):
-    action_logits: _torch.Tensor
-    minimum_fee_z: _torch.Tensor
+class MinBlockFeeOutput(NamedTuple):
+    action_logits: torch.Tensor
+    minimum_fee_z: torch.Tensor
 
 
-@_dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True)
 class MinBlockFeeLoss:
-    mean_total: _torch.Tensor
-    total_by_origin: _torch.Tensor
-    classification_by_origin: _torch.Tensor
-    regression_by_origin: _torch.Tensor
+    mean_total: torch.Tensor
+    total_by_origin: torch.Tensor
+    classification_by_origin: torch.Tensor
+    regression_by_origin: torch.Tensor
 
 
-def _require_int64_vector(values: object, name: str) -> _NDArray[_np.int64]:
-    if not isinstance(values, _np.ndarray):
+def _require_int64_vector(values: object, name: str) -> NDArray[np.int64]:
+    if not isinstance(values, np.ndarray):
         raise TypeError(f"{name} must be a numpy.ndarray")
-    array = _typing.cast(_NDArray[_np.generic], values)
-    if array.dtype != _np.dtype(_np.int64):
+    if values.dtype != np.dtype(np.int64):
         raise TypeError(f"{name} must have dtype int64")
-    if array.ndim != 1:
+    if values.ndim != 1:
         raise ValueError(f"{name} must be one-dimensional")
-    if array.size == 0:
+    if values.size == 0:
         raise ValueError(f"{name} must be nonempty")
-    return _typing.cast(_NDArray[_np.int64], array)
+    return values
 
 
-def _require_positive(values: _NDArray[_np.int64], name: str) -> None:
-    if _np.any(values <= 0):
+def _require_positive(values: NDArray[np.int64], name: str) -> None:
+    if np.any(values <= 0):
         raise ValueError(f"{name} must contain only positive values")
 
 
-def _natural_log(values: _NDArray[_np.int64]) -> _NDArray[_np.float64]:
-    result = _np.log(values.astype(_np.float64, copy=False))
-    if not _np.isfinite(result).all():
-        raise ValueError("natural-log targets must be finite")
-    return _typing.cast(_NDArray[_np.float64], result)
+def _natural_log(values: NDArray[np.int64]) -> NDArray[np.float64]:
+    return np.log(values.astype(np.float64, copy=False))
 
 
-def fit_target_state(raw_minima: _NDArray[_np.int64]) -> TargetState:
+def fit_target_state(raw_minima: NDArray[np.int64]) -> TargetState:
     minima = _require_int64_vector(raw_minima, "raw_minima")
     _require_positive(minima, "raw_minima")
     natural_log = _natural_log(minima)
-    mean = float(natural_log.mean(dtype=_np.float64))
-    standard_deviation = float(natural_log.std(dtype=_np.float64, ddof=0))
-    if not _np.isfinite(mean) or not _np.isfinite(standard_deviation):
+    mean = float(natural_log.mean(dtype=np.float64))
+    standard_deviation = float(natural_log.std(dtype=np.float64, ddof=0))
+    if not np.isfinite(mean) or not np.isfinite(standard_deviation):
         raise ValueError("target statistics must be finite")
     if standard_deviation == 0.0:
         raise ValueError("raw_minima must not be constant")
@@ -109,20 +104,20 @@ def fit_target_state(raw_minima: _NDArray[_np.int64]) -> TargetState:
 
 
 def standardize_target(
-    raw_minima: _NDArray[_np.int64],
+    raw_minima: NDArray[np.int64],
     state: TargetState,
-) -> _NDArray[_np.float32]:
+) -> NDArray[np.float32]:
     minima = _require_int64_vector(raw_minima, "raw_minima")
     _require_positive(minima, "raw_minima")
     standardized = (_natural_log(minima) - state.mean) / state.standard_deviation
-    result = _np.ascontiguousarray(standardized, dtype=_np.float32)
-    if not _np.isfinite(result).all():
+    result = np.ascontiguousarray(standardized, dtype=np.float32)
+    if not np.isfinite(result).all():
         raise ValueError("standardized targets must be finite")
     return result
 
 
-def _require_floating_vector(values: object, name: str) -> _torch.Tensor:
-    if not isinstance(values, _torch.Tensor):
+def _require_floating_vector(values: object, name: str) -> torch.Tensor:
+    if not isinstance(values, torch.Tensor):
         raise TypeError(f"{name} must be a torch.Tensor")
     if values.ndim != 1:
         raise ValueError(f"{name} must be one-dimensional")
@@ -130,48 +125,44 @@ def _require_floating_vector(values: object, name: str) -> _torch.Tensor:
         raise ValueError(f"{name} must be nonempty")
     if not values.is_floating_point():
         raise TypeError(f"{name} must have a floating dtype")
-    if not _torch.isfinite(values).all():
+    if not torch.isfinite(values).all():
         raise ValueError(f"{name} must be finite")
     return values
 
 
-def target_natural_log(target_z: _torch.Tensor, state: TargetState) -> _torch.Tensor:
-    standardized = _require_floating_vector(target_z, "target_z").to(dtype=_torch.float64)
+def target_natural_log(target_z: torch.Tensor, state: TargetState) -> torch.Tensor:
+    standardized = _require_floating_vector(target_z, "target_z").to(dtype=torch.float64)
     result = state.mean + state.standard_deviation * standardized
-    if not _torch.isfinite(result).all():
+    if not torch.isfinite(result).all():
         raise ValueError("natural-log targets must be finite")
     return result
 
 
 def fit_classification_loss_state(
-    labels: _NDArray[_np.int64],
+    labels: NDArray[np.int64],
     *,
     horizon_blocks: int,
-    classification_loss: _typing.Literal["unweighted", "corrected_inverse_frequency"],
+    loss_definition: LossDefinition,
 ) -> ClassificationLossState | None:
     label_values = _require_int64_vector(labels, "labels")
     if type(horizon_blocks) is not int:
         raise TypeError("horizon_blocks must be an int")
     if horizon_blocks <= 0:
         raise ValueError("horizon_blocks must be positive")
-    if classification_loss not in {"unweighted", "corrected_inverse_frequency"}:
-        raise ValueError(
-            "classification_loss must be 'unweighted' or 'corrected_inverse_frequency'"
-        )
-    if _np.any(label_values < 0) or _np.any(label_values >= horizon_blocks):
+    if np.any(label_values < 0) or np.any(label_values >= horizon_blocks):
         raise ValueError("labels must be in [0, horizon_blocks)")
-    if classification_loss == "unweighted":
+    if loss_definition.classification_weighting == "unweighted":
         return None
 
-    support = _np.bincount(label_values, minlength=horizon_blocks)
-    if _np.any(support == 0):
+    support = np.bincount(label_values, minlength=horizon_blocks)
+    if np.any(support == 0):
         raise ValueError(
             "corrected_inverse_frequency classification loss requires support for every class"
         )
     return ClassificationLossState(class_support=tuple(int(count) for count in support))
 
 
-def _require_output(output: MinBlockFeeOutput) -> tuple[_torch.Tensor, _torch.Tensor, int, int]:
+def _require_output(output: MinBlockFeeOutput) -> tuple[torch.Tensor, torch.Tensor, int, int]:
     logits = output.action_logits
     minimum_fee_z = output.minimum_fee_z
     if logits.ndim != 2:
@@ -181,7 +172,7 @@ def _require_output(output: MinBlockFeeOutput) -> tuple[_torch.Tensor, _torch.Te
         raise ValueError("action_logits must have nonempty batch and class dimensions")
     if not logits.is_floating_point():
         raise TypeError("action_logits must have a floating dtype")
-    if not _torch.isfinite(logits).all():
+    if not torch.isfinite(logits).all():
         raise ValueError("action_logits must be finite")
 
     fee_values = _require_floating_vector(minimum_fee_z, "minimum_fee_z")
@@ -195,14 +186,14 @@ def _require_labels(
     *,
     batch_size: int,
     class_count: int,
-) -> _torch.Tensor:
-    if not isinstance(labels, _torch.Tensor):
+) -> torch.Tensor:
+    if not isinstance(labels, torch.Tensor):
         raise TypeError("labels must be a torch.Tensor")
     if labels.ndim != 1 or labels.shape[0] != batch_size:
         raise ValueError("labels must have shape [B]")
-    if labels.dtype != _torch.int64:
+    if labels.dtype != torch.int64:
         raise TypeError("labels must have dtype int64")
-    if _torch.any(labels < 0) or _torch.any(labels >= class_count):
+    if torch.any(labels < 0) or torch.any(labels >= class_count):
         raise ValueError("labels must be valid class indices")
     return labels
 
@@ -210,8 +201,9 @@ def _require_labels(
 def min_block_fee_loss(
     output: MinBlockFeeOutput,
     *,
-    label: _torch.Tensor,
-    target: _torch.Tensor,
+    label: torch.Tensor,
+    target: torch.Tensor,
+    loss_definition: LossDefinition,
     classification_state: ClassificationLossState | None,
 ) -> MinBlockFeeLoss:
     logits, minimum_fee_z, batch_size, class_count = _require_output(output)
@@ -224,24 +216,29 @@ def min_block_fee_loss(
     if target_values.shape[0] != batch_size:
         raise ValueError("target must have shape [B]")
 
-    weights: _torch.Tensor | None = None
-    if classification_state is not None:
-        support = classification_state.class_support
+    if loss_definition.classification_weighting == "unweighted":
+        weights = None
+    else:
+        state = typing.cast(ClassificationLossState, classification_state)
+        support = state.class_support
         total_support = sum(support)
         width = len(support)
         weights = logits.new_tensor([total_support / (width * count) for count in support])
 
-    classification = _functional.cross_entropy(
+    classification = F.cross_entropy(
         logits,
         label_values,
         weight=weights,
         reduction="none",
     )
-    regression = _functional.smooth_l1_loss(
+    classification = classification * loss_definition.classification_scale
+    regression = F.smooth_l1_loss(
         minimum_fee_z,
         target_values,
         reduction="none",
+        beta=loss_definition.regression_threshold,
     )
+    regression = regression * loss_definition.regression_scale
     total = classification + regression
     return MinBlockFeeLoss(
         mean_total=total.sum() / batch_size,
@@ -251,6 +248,6 @@ def min_block_fee_loss(
     )
 
 
-def decode_action(output: MinBlockFeeOutput) -> _torch.Tensor:
+def decode_action(output: MinBlockFeeOutput) -> torch.Tensor:
     logits, _, _, _ = _require_output(output)
     return logits.argmax(dim=-1)

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from typing import cast
+from typing import Literal
 
 import numpy as np
 import pytest
 import torch
-from numpy.typing import NDArray
 
+from spice.config import LossDefinition
 from spice.min_block_fee import (
     ClassificationLossState,
     MinBlockFeeOutput,
@@ -20,6 +20,32 @@ from spice.min_block_fee import (
     standardize_target,
     target_natural_log,
 )
+
+
+def _loss_definition(
+    weighting: Literal["unweighted", "corrected_inverse_frequency"],
+    *,
+    regression_threshold: float,
+    classification_scale: float,
+    regression_scale: float,
+) -> LossDefinition:
+    return LossDefinition(
+        classification_algorithm="cross_entropy",
+        classification_weighting=weighting,
+        regression_algorithm="smooth_l1",
+        regression_threshold=regression_threshold,
+        classification_scale=classification_scale,
+        regression_scale=regression_scale,
+    )
+
+
+def _valid_loss_definition() -> LossDefinition:
+    return _loss_definition(
+        "unweighted",
+        regression_threshold=1.0,
+        classification_scale=1.0,
+        regression_scale=1.0,
+    )
 
 
 def test_target_and_loss_match_hand_derived_fixture() -> None:
@@ -46,18 +72,30 @@ def test_target_and_loss_match_hand_derived_fixture() -> None:
     )
 
     labels_array = np.array([0, 0, 1, 2], dtype=np.int64)
+    unweighted_definition = _loss_definition(
+        "unweighted",
+        regression_threshold=0.5,
+        classification_scale=2.0,
+        regression_scale=3.0,
+    )
+    corrected_definition = _loss_definition(
+        "corrected_inverse_frequency",
+        regression_threshold=2.0,
+        classification_scale=0.5,
+        regression_scale=2.0,
+    )
     assert (
         fit_classification_loss_state(
             labels_array,
             horizon_blocks=3,
-            classification_loss="unweighted",
+            loss_definition=unweighted_definition,
         )
         is None
     )
     classification_state = fit_classification_loss_state(
         labels_array,
         horizon_blocks=3,
-        classification_loss="corrected_inverse_frequency",
+        loss_definition=corrected_definition,
     )
     assert classification_state == ClassificationLossState(class_support=(2, 1, 1))
 
@@ -71,24 +109,30 @@ def test_target_and_loss_match_hand_derived_fixture() -> None:
         output,
         label=labels,
         target=targets,
-        classification_state=None,
+        classification_state=classification_state,
+        loss_definition=unweighted_definition,
     )
     corrected = min_block_fee_loss(
         output,
         label=labels,
         target=targets,
         classification_state=classification_state,
+        loss_definition=corrected_definition,
     )
     log_three = math.log(3.0)
-    expected_regression = torch.tensor([0.0, 0.125, 0.5, 1.5])
-    expected_unweighted = expected_regression + log_three
-    expected_corrected_classification = torch.tensor([2.0, 2.0, 4.0, 4.0]) * (log_three / 3.0)
+    expected_unweighted_classification = torch.full((4,), 2.0 * log_three)
+    expected_unweighted_regression = torch.tensor([0.0, 0.75, 2.25, 5.25])
+    expected_unweighted = expected_unweighted_classification + expected_unweighted_regression
+    expected_corrected_classification = torch.tensor([1.0, 1.0, 2.0, 2.0]) * (
+        log_three / 3.0
+    )
+    expected_corrected_regression = torch.tensor([0.0, 0.125, 0.5, 2.0])
 
     torch.testing.assert_close(
         unweighted.classification_by_origin,
-        torch.full((4,), log_three),
+        expected_unweighted_classification,
     )
-    torch.testing.assert_close(unweighted.regression_by_origin, expected_regression)
+    torch.testing.assert_close(unweighted.regression_by_origin, expected_unweighted_regression)
     torch.testing.assert_close(unweighted.total_by_origin, expected_unweighted)
     torch.testing.assert_close(unweighted.mean_total, expected_unweighted.sum() / 4.0)
     torch.testing.assert_close(
@@ -96,8 +140,12 @@ def test_target_and_loss_match_hand_derived_fixture() -> None:
         expected_corrected_classification,
     )
     torch.testing.assert_close(
+        corrected.regression_by_origin,
+        expected_corrected_regression,
+    )
+    torch.testing.assert_close(
         corrected.total_by_origin,
-        expected_corrected_classification + expected_regression,
+        expected_corrected_classification + expected_corrected_regression,
     )
     assert corrected.mean_total.requires_grad
     assert not corrected.total_by_origin.requires_grad
@@ -109,12 +157,14 @@ def test_target_and_loss_match_hand_derived_fixture() -> None:
         label=labels[:3],
         target=targets[:3],
         classification_state=classification_state,
+        loss_definition=corrected_definition,
     )
     tail = min_block_fee_loss(
         MinBlockFeeOutput(logits[3:], predictions[3:]),
         label=labels[3:],
         target=targets[3:],
         classification_state=classification_state,
+        loss_definition=corrected_definition,
     )
     complete_total = torch.cat((first.total_by_origin, tail.total_by_origin))
     torch.testing.assert_close(complete_total, corrected.total_by_origin)
@@ -152,7 +202,7 @@ def _valid_output() -> MinBlockFeeOutput:
             id="classification-state-positive",
         ),
         pytest.param(
-            lambda: fit_target_state(cast(NDArray[np.int64], np.array([1, 2], dtype=np.int32))),
+            lambda: fit_target_state(np.array([1, 2], dtype="int32")),
             id="target-int64",
         ),
         pytest.param(
@@ -174,7 +224,12 @@ def _valid_output() -> MinBlockFeeOutput:
             lambda: fit_classification_loss_state(
                 np.array([0, 0], dtype=np.int64),
                 horizon_blocks=2,
-                classification_loss="corrected_inverse_frequency",
+                loss_definition=_loss_definition(
+                    "corrected_inverse_frequency",
+                    regression_threshold=1.0,
+                    classification_scale=1.0,
+                    regression_scale=1.0,
+                ),
             ),
             id="corrected-inverse-frequency-full-support",
         ),
@@ -187,6 +242,7 @@ def _valid_output() -> MinBlockFeeOutput:
                 label=torch.tensor([0, 1]),
                 target=torch.zeros(2),
                 classification_state=None,
+                loss_definition=_valid_loss_definition(),
             ),
             id="finite-output",
         ),
@@ -196,6 +252,7 @@ def _valid_output() -> MinBlockFeeOutput:
                 label=torch.tensor([0.0, 1.0]),
                 target=torch.zeros(2),
                 classification_state=None,
+                loss_definition=_valid_loss_definition(),
             ),
             id="label-int64",
         ),
@@ -205,6 +262,7 @@ def _valid_output() -> MinBlockFeeOutput:
                 label=torch.tensor([0, 2]),
                 target=torch.zeros(2),
                 classification_state=None,
+                loss_definition=_valid_loss_definition(),
             ),
             id="label-range",
         ),
@@ -214,6 +272,7 @@ def _valid_output() -> MinBlockFeeOutput:
                 label=torch.tensor([0, 1]),
                 target=torch.tensor([0.0, math.nan]),
                 classification_state=None,
+                loss_definition=_valid_loss_definition(),
             ),
             id="finite-target",
         ),
