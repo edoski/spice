@@ -10,7 +10,7 @@ from ..models import ModelOutputs, TemporalModel
 from ._heads import TemporalOutputHead
 from ._sequence import take_last_valid
 from ._transformer_shared import (
-    SinusoidalPositionalEncoding,
+    add_sinusoidal_positions,
     build_transformer_encoder,
 )
 from .base import (
@@ -37,7 +37,6 @@ class TransformerLSTMBaseline(TemporalModel):
     ) -> None:
         super().__init__()
         self.input_projection = nn.Linear(n_features, config.d_model)
-        self.position_encoding = SinusoidalPositionalEncoding(config.d_model)
         self.encoder = build_transformer_encoder(config)
         self.lstm = nn.LSTM(
             input_size=config.d_model,
@@ -56,7 +55,7 @@ class TransformerLSTMBaseline(TemporalModel):
     def forward(self, inputs: torch.Tensor, input_mask: torch.Tensor) -> ModelOutputs:
         projected = self.input_projection(inputs)
         encoded = self.encoder(
-            self.position_encoding(projected),
+            add_sinusoidal_positions(projected),
             src_key_padding_mask=~input_mask.bool(),
         )
         recurrent, _ = self.lstm(encoded)

@@ -6,6 +6,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 import pytest
+import torch
 from pydantic import ValidationError
 
 from spice.config import (
@@ -18,6 +19,7 @@ from spice.config import (
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
+    LossDefinition,
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
@@ -37,6 +39,7 @@ from spice.config import (
     TransformerMethodSpace,
     TuneRequest,
 )
+from spice.modeling.families._transformer_shared import add_sinusoidal_positions
 from spice.storage.ids import (
     fresh_corpus_request,
     fresh_evaluate_request,
@@ -83,23 +86,29 @@ def _experiment() -> ExperimentSemantics:
         context_blocks=20,
         horizon_blocks=10,
         ordered_features=("base_fee", "gas_utilization"),
-        classification_loss="unweighted",
+        loss=LossDefinition(
+            classification_algorithm="cross_entropy",
+            classification_weighting="unweighted",
+            regression_algorithm="smooth_l1",
+            regression_threshold=0.75,
+            classification_scale=1.25,
+            regression_scale=0.5,
+        ),
     )
 
 
 def _fit() -> FitMethod:
     return FitMethod(
-        accumulation=1,
-        gradient_clip_norm=1.0,
+        accumulation=2,
+        gradient_clip_norm=0.75,
         scheduler="none",
-        seed=2026,
-        max_epochs=36,
-        validate_every_completed_epoch=1,
-        patience=8,
-        min_delta=0.0,
+        seed=17,
+        max_epochs=9,
+        validate_every_completed_epoch=2,
+        patience=3,
+        min_delta=0.01,
         improvement="strict_lower",
         restore="earliest_best",
-        minimum_epoch_floor=False,
     )
 
 
@@ -108,7 +117,7 @@ def _optimizer() -> AdamWMethod:
 
 
 def _branches() -> tuple[tuple[Any, Any, Any], ...]:
-    common = {"dropout": 0.2, "optimizer": _optimizer(), "training_batch": 64, "fit": _fit()}
+    common = {"dropout": 0.2, "optimizer": _optimizer(), "training_batch": 48, "fit": _fit()}
     lstm_capacity = LstmCapacity(projection=16, hidden=32, layers=1, head_hidden=16)
     transformer_capacity = TransformerCapacity(
         model_width=32,
@@ -126,42 +135,34 @@ def _branches() -> tuple[tuple[Any, Any, Any], ...]:
         lstm_layers=1,
         head_hidden=16,
     )
+    lstm_method = LstmMethod(family="lstm", capacity=lstm_capacity, **common)
+    transformer_method = TransformerMethod(
+        family="transformer", capacity=transformer_capacity, **common
+    )
+    hybrid_method = TransformerLstmMethod(
+        family="transformer_lstm", capacity=hybrid_capacity, **common
+    )
     return (
         (
             LstmDefinition(family="lstm", dropout=0.2, **lstm_capacity.model_dump()),
-            LstmMethod(family="lstm", capacity=lstm_capacity, **common),
-            LstmMethodSpace(
-                family="lstm",
-                capacities=(lstm_capacity,),
-                dropouts=(0.2,),
-                learning_rates=(0.001,),
-                weight_decays=(0.0,),
-            ),
+            lstm_method,
+            LstmMethodSpace(family="lstm", methods=(lstm_method,)),
         ),
         (
             TransformerDefinition(
                 family="transformer", dropout=0.2, **transformer_capacity.model_dump()
             ),
-            TransformerMethod(family="transformer", capacity=transformer_capacity, **common),
-            TransformerMethodSpace(
-                family="transformer",
-                capacities=(transformer_capacity,),
-                dropouts=(0.2,),
-                learning_rates=(0.001,),
-                weight_decays=(0.0,),
-            ),
+            transformer_method,
+            TransformerMethodSpace(family="transformer", methods=(transformer_method,)),
         ),
         (
             TransformerLstmDefinition(
                 family="transformer_lstm", dropout=0.2, **hybrid_capacity.model_dump()
             ),
-            TransformerLstmMethod(family="transformer_lstm", capacity=hybrid_capacity, **common),
+            hybrid_method,
             TransformerLstmMethodSpace(
                 family="transformer_lstm",
-                capacities=(hybrid_capacity,),
-                dropouts=(0.2,),
-                learning_rates=(0.001,),
-                weight_decays=(0.0,),
+                methods=(hybrid_method,),
             ),
         ),
     )
@@ -174,7 +175,7 @@ def test_positive_branch_matrix() -> None:
             experiment=experiment,
             model=model,
             optimizer=_optimizer(),
-            training_batch=64,
+            training_batch=96,
             fit=_fit(),
         )
         sources = (
@@ -206,7 +207,7 @@ def test_positive_branch_matrix() -> None:
             corpus_id=CORPUS_ID,
             study_definition=study,
         )
-        assert tune.study_definition.method_space.family == method.family
+        assert tune.study_definition.method_space.methods == (method,)
 
     for role in ("validation", "testing"):
         hydrated = WORKFLOW_REQUEST_ADAPTER.validate_python(
@@ -220,6 +221,18 @@ def test_positive_branch_matrix() -> None:
         )
         assert isinstance(hydrated, EvaluateRequest)
         assert hydrated.window.role == role
+
+
+def test_transformer_positions_follow_input_length_dtype_and_device() -> None:
+    inputs = torch.zeros(2, 4097, 4, dtype=torch.float64)
+
+    positioned = add_sinusoidal_positions(inputs)
+
+    assert positioned.shape == inputs.shape
+    assert positioned.dtype == inputs.dtype
+    assert positioned.device == inputs.device
+    assert positioned[0, 0].tolist() == [0.0, 1.0, 0.0, 1.0]
+    assert not torch.equal(positioned[:, 1], positioned[:, 2])
 
 
 def _invalid_cases() -> tuple[tuple[Callable[..., object], dict[str, object]], ...]:
@@ -256,8 +269,22 @@ def _invalid_cases() -> tuple[tuple[Callable[..., object], dict[str, object]], .
                 "head_hidden": 8,
             },
         ),
-        (LstmMethod, {**method.model_dump(), "training_batch": 32}),
-        (LstmMethodSpace, {**method_space.model_dump(), "dropouts": (0.2, 0.2)}),
+        (LstmMethod, {**method.model_dump(), "training_batch": 0}),
+        (LstmMethodSpace, {**method_space.model_dump(), "methods": (method, method)}),
+        (
+            LossDefinition,
+            {
+                **experiment.loss.model_dump(),
+                "regression_threshold": 0.0,
+            },
+        ),
+        (
+            LossDefinition,
+            {
+                **experiment.loss.model_dump(),
+                "classification_algorithm": "focal",
+            },
+        ),
         (
             ExperimentSemantics,
             {
@@ -291,10 +318,10 @@ def _invalid_cases() -> tuple[tuple[Callable[..., object], dict[str, object]], .
                     experiment=experiment,
                     model=model,
                     optimizer=_optimizer(),
-                    training_batch=64,
+                    training_batch=96,
                     fit=_fit(),
                 ).model_dump(),
-                "training_batch": 65,
+                "training_batch": 0,
             },
         ),
     )
@@ -325,7 +352,7 @@ def test_four_constructors_mint_once_while_hydration_preserves_ids(monkeypatch) 
         experiment=_experiment(),
         model=model,
         optimizer=_optimizer(),
-        training_batch=64,
+        training_batch=96,
         fit=_fit(),
     )
     tune = fresh_tune_request(

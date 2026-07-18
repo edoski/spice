@@ -63,13 +63,22 @@ class OriginWindow(_FrozenRecord):
         return self
 
 
+class LossDefinition(_FrozenRecord):
+    classification_algorithm: Literal["cross_entropy"]
+    classification_weighting: Literal["unweighted", "corrected_inverse_frequency"]
+    regression_algorithm: Literal["smooth_l1"]
+    regression_threshold: _PositiveFloat
+    classification_scale: _NonNegativeFloat
+    regression_scale: _NonNegativeFloat
+
+
 class ExperimentSemantics(_FrozenRecord):
     training_window: OriginWindow
     validation_window: OriginWindow
     context_blocks: _PositiveInt
     horizon_blocks: _PositiveInt
     ordered_features: Annotated[tuple[_FeatureName, ...], Field(min_length=1)]
-    classification_loss: Literal["unweighted", "corrected_inverse_frequency"]
+    loss: LossDefinition
 
     @model_validator(mode="after")
     def validate_semantics(self) -> Self:
@@ -175,31 +184,22 @@ class AdamWMethod(_FrozenRecord):
 
 
 class FitMethod(_FrozenRecord):
-    accumulation: Literal[1]
-    gradient_clip_norm: _PositiveFloat
+    accumulation: _PositiveInt
+    gradient_clip_norm: _NonNegativeFloat
     scheduler: Literal["none"]
-    seed: Literal[2026]
-    max_epochs: Literal[36]
-    validate_every_completed_epoch: Literal[1]
-    patience: Literal[8]
+    seed: _NonNegativeInt
+    max_epochs: _PositiveInt
+    validate_every_completed_epoch: _PositiveInt
+    patience: _NonNegativeInt
     min_delta: _NonNegativeFloat
     improvement: Literal["strict_lower"]
     restore: Literal["earliest_best"]
-    minimum_epoch_floor: Literal[False]
-
-    @model_validator(mode="after")
-    def validate_fixed_floats(self) -> Self:
-        if self.gradient_clip_norm != 1.0:
-            raise ValueError("gradient_clip_norm must equal 1.0")
-        if self.min_delta != 0.0:
-            raise ValueError("min_delta must equal 0.0")
-        return self
 
 
 class _MethodFields(_FrozenRecord):
     dropout: _Dropout
     optimizer: AdamWMethod
-    training_batch: Literal[64]
+    training_batch: _PositiveInt
     fit: FitMethod
 
 
@@ -229,46 +229,33 @@ def _require_unique(label: str, values: tuple[object, ...]) -> None:
         raise ValueError(f"{label} must not contain duplicates")
 
 
-class _MethodSpaceFields(_FrozenRecord):
-    dropouts: Annotated[tuple[_Dropout, ...], Field(min_length=1)]
-    learning_rates: Annotated[tuple[_PositiveFloat, ...], Field(min_length=1)]
-    weight_decays: Annotated[tuple[_NonNegativeFloat, ...], Field(min_length=1)]
-
-    @model_validator(mode="after")
-    def validate_unique_scalar_leaves(self) -> Self:
-        _require_unique("dropouts", self.dropouts)
-        _require_unique("learning_rates", self.learning_rates)
-        _require_unique("weight_decays", self.weight_decays)
-        return self
-
-
-class LstmMethodSpace(_MethodSpaceFields):
+class LstmMethodSpace(_FrozenRecord):
     family: Literal["lstm"]
-    capacities: Annotated[tuple[LstmCapacity, ...], Field(min_length=1)]
+    methods: Annotated[tuple[LstmMethod, ...], Field(min_length=1)]
 
     @model_validator(mode="after")
-    def validate_unique_capacities(self) -> Self:
-        _require_unique("capacities", self.capacities)
+    def validate_unique_methods(self) -> Self:
+        _require_unique("methods", self.methods)
         return self
 
 
-class TransformerMethodSpace(_MethodSpaceFields):
+class TransformerMethodSpace(_FrozenRecord):
     family: Literal["transformer"]
-    capacities: Annotated[tuple[TransformerCapacity, ...], Field(min_length=1)]
+    methods: Annotated[tuple[TransformerMethod, ...], Field(min_length=1)]
 
     @model_validator(mode="after")
-    def validate_unique_capacities(self) -> Self:
-        _require_unique("capacities", self.capacities)
+    def validate_unique_methods(self) -> Self:
+        _require_unique("methods", self.methods)
         return self
 
 
-class TransformerLstmMethodSpace(_MethodSpaceFields):
+class TransformerLstmMethodSpace(_FrozenRecord):
     family: Literal["transformer_lstm"]
-    capacities: Annotated[tuple[TransformerLstmCapacity, ...], Field(min_length=1)]
+    methods: Annotated[tuple[TransformerLstmMethod, ...], Field(min_length=1)]
 
     @model_validator(mode="after")
-    def validate_unique_capacities(self) -> Self:
-        _require_unique("capacities", self.capacities)
+    def validate_unique_methods(self) -> Self:
+        _require_unique("methods", self.methods)
         return self
 
 
@@ -287,7 +274,7 @@ class TrainingDefinition(_FrozenRecord):
     experiment: ExperimentSemantics
     model: ModelDefinition
     optimizer: AdamWMethod
-    training_batch: Literal[64]
+    training_batch: _PositiveInt
     fit: FitMethod
 
 

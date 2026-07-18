@@ -3,27 +3,39 @@
 from __future__ import annotations
 
 import math
-from typing import Protocol, cast
+from typing import Protocol
 
 import torch
 from torch import nn
 
 
-class SinusoidalPositionalEncoding(nn.Module):
-    def __init__(self, d_model: int, max_length: int = 4096) -> None:
-        super().__init__()
-        position = torch.arange(max_length, dtype=torch.float32).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0) / d_model)
+def add_sinusoidal_positions(inputs: torch.Tensor) -> torch.Tensor:
+    sequence_length = inputs.size(1)
+    model_width = inputs.size(2)
+    position = torch.arange(
+        sequence_length,
+        dtype=inputs.dtype,
+        device=inputs.device,
+    ).unsqueeze(1)
+    div_term = torch.exp(
+        torch.arange(
+            0,
+            model_width,
+            2,
+            dtype=inputs.dtype,
+            device=inputs.device,
         )
-        pe = torch.zeros(max_length, d_model, dtype=torch.float32)
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        self.register_buffer("pe", pe.unsqueeze(0), persistent=False)
-
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        positional_encoding = cast(torch.Tensor, self.get_buffer("pe"))
-        return inputs + positional_encoding[:, : inputs.size(1)]
+        * (-math.log(10000.0) / model_width)
+    )
+    encoding = torch.zeros(
+        sequence_length,
+        model_width,
+        dtype=inputs.dtype,
+        device=inputs.device,
+    )
+    encoding[:, 0::2] = torch.sin(position * div_term)
+    encoding[:, 1::2] = torch.cos(position * div_term)
+    return inputs + encoding.unsqueeze(0)
 
 
 class TransformerEncoderConfig(Protocol):
