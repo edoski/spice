@@ -1,15 +1,76 @@
-"""Canonical block corpus contract shared by acquisition and consumers."""
+"""Canonical Corpus values and block schema."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import SupportsInt, TypedDict, cast
+from typing import TYPE_CHECKING, SupportsInt, TypedDict, cast
 
 import polars as pl
-from polars.datatypes.classes import DataTypeClass
+from pydantic import BaseModel, ConfigDict, Field
 
-from ..config.models import ChainSpec
+from ..config import CorpusRequest
+
+if TYPE_CHECKING:
+    from ..config.models import ChainSpec
+
+
+class FinalizedAnchor(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+    )
+
+    block_number: int = Field(ge=0)
+    block_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]+$")
+
+
+class Corpus(BaseModel):
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+    )
+
+    request: CorpusRequest
+    finalized_anchor: FinalizedAnchor
+    blocks: pl.DataFrame
+
+
+_BLOCK_SCHEMA = pl.Schema(
+    {
+        "block_number": pl.Int64,
+        "timestamp": pl.Int64,
+        "chain_id": pl.Int64,
+        "base_fee_per_gas": pl.Int64,
+        "gas_used": pl.Int64,
+        "gas_limit": pl.Int64,
+        "tx_count": pl.Int64,
+    }
+)
+
+_CANONICAL_BLOCK_SCHEMA = pl.Schema(
+    {
+        "block_number": pl.Int64,
+        "timestamp": pl.Int64,
+        "base_fee_per_gas": pl.Int64,
+        "gas_used": pl.Int64,
+        "chain_id": pl.Int64,
+        "gas_limit": pl.Int64,
+        "tx_count": pl.Int64,
+        "block_size_bytes": pl.Int64,
+        "blob_gas_used": pl.Int64,
+        "excess_blob_gas": pl.Int64,
+        "priority_fee_p10": pl.Int64,
+        "priority_fee_p50": pl.Int64,
+        "priority_fee_p90": pl.Int64,
+        "priority_fee_spread": pl.Int64,
+    }
+)
+_CANONICAL_BLOCK_COLUMNS = tuple(_CANONICAL_BLOCK_SCHEMA)
 
 RpcBlock = Mapping[str, object]
 
@@ -31,12 +92,6 @@ class CanonicalBlockRow(TypedDict):
     priority_fee_spread: int | None
 
 
-@dataclass(frozen=True, slots=True)
-class CanonicalBlockFieldSpec:
-    name: str
-    dtype: DataTypeClass
-
-
 def _as_int(value: object) -> int:
     if isinstance(value, str) and value.startswith("0x"):
         return int(value, 16)
@@ -49,83 +104,6 @@ def _optional_int(value: object) -> int | None:
     if value is None:
         return None
     return _as_int(value)
-
-
-CANONICAL_BLOCK_FIELDS = (
-    CanonicalBlockFieldSpec(
-        name="block_number",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="timestamp",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="base_fee_per_gas",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="gas_used",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="chain_id",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="gas_limit",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="tx_count",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="block_size_bytes",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="blob_gas_used",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="excess_blob_gas",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="priority_fee_p10",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="priority_fee_p50",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="priority_fee_p90",
-        dtype=pl.Int64,
-    ),
-    CanonicalBlockFieldSpec(
-        name="priority_fee_spread",
-        dtype=pl.Int64,
-    ),
-)
-
-BLOCK_SCHEMA = {field.name: field.dtype for field in CANONICAL_BLOCK_FIELDS}
-BLOCK_COLUMNS = tuple(BLOCK_SCHEMA)
-REQUIRED_BLOCK_COLUMNS = (
-    "block_number",
-    "timestamp",
-    "chain_id",
-    "gas_used",
-    "gas_limit",
-    "tx_count",
-)
-
-
-def _validate_contract() -> None:
-    field_names = tuple(field.name for field in CANONICAL_BLOCK_FIELDS)
-    if len(field_names) != len(set(field_names)):
-        raise RuntimeError(f"Duplicate canonical block fields are not allowed: {field_names}")
 
 
 def build_canonical_block_row(
@@ -169,36 +147,23 @@ def canonicalize_block_frame(frame: pl.DataFrame) -> pl.DataFrame:
     return _select_canonical_columns(frame, strict_columns=False)
 
 
-def validate_block_frame(frame: pl.DataFrame) -> None:
-    if frame.height == 0:
-        raise ValueError("Block corpus is empty")
-    canonical = _select_canonical_columns(frame, strict_columns=True)
-    null_required = [
-        column for column in REQUIRED_BLOCK_COLUMNS if canonical[column].null_count() > 0
-    ]
-    if null_required:
-        raise ValueError(
-            "Block corpus has null required columns: " + ", ".join(null_required)
-        )
-    if canonical["block_number"].n_unique() != canonical.height:
-        raise ValueError("Block corpus must have unique block_number values")
-    if canonical["chain_id"].n_unique() != 1:
-        raise ValueError("Block corpus must contain exactly one chain_id")
-
-
 def _select_canonical_columns(
     frame: pl.DataFrame,
     *,
     strict_columns: bool,
 ) -> pl.DataFrame:
-    missing = [column for column in BLOCK_COLUMNS if column not in frame.columns]
+    missing = [
+        column for column in _CANONICAL_BLOCK_COLUMNS if column not in frame.columns
+    ]
     if missing:
         raise ValueError(
             "Block corpus is missing required columns for canonical output: "
             + ", ".join(missing)
         )
     if strict_columns:
-        unexpected = [column for column in frame.columns if column not in BLOCK_COLUMNS]
+        unexpected = [
+            column for column in frame.columns if column not in _CANONICAL_BLOCK_COLUMNS
+        ]
         if unexpected:
             raise ValueError(
                 "Block corpus contains unexpected columns for canonical output: "
@@ -208,9 +173,6 @@ def _select_canonical_columns(
     return frame.select(
         [
             pl.col(column).cast(dtype, strict=True).alias(column)
-            for column, dtype in BLOCK_SCHEMA.items()
+            for column, dtype in _CANONICAL_BLOCK_SCHEMA.items()
         ]
     )
-
-
-_validate_contract()

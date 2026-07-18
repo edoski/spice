@@ -1,41 +1,15 @@
-"""Shared validation for canonical block datasets."""
+"""Validation for one canonical Corpus candidate."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-import polars as pl
 from pydantic import BaseModel, ConfigDict, Field
 
+from .contract import _BLOCK_SCHEMA, Corpus
+
 ValidationStatus = Literal["clean", "error"]
-
-VALIDATION_COLUMNS = ("block_number", "timestamp", "chain_id")
-
-
-@dataclass(slots=True)
-class BlockFrameSummary:
-    row_count: int
-    first_block_number: int
-    last_block_number: int
-    first_timestamp: int
-    last_timestamp: int
-    chain_ids: tuple[int, ...]
-    duplicate_count: int
-    gap_count: int
-
-
-@dataclass(slots=True)
-class ExactWindowCounts:
-    below_start_count: int
-    above_end_count: int
-
-
-@dataclass(slots=True)
-class BlockFrameAssessment:
-    chain_id: int | None
-    errors: tuple[str, ...]
 
 
 class BlockDatasetValidationReport(BaseModel):
@@ -58,199 +32,51 @@ class BlockDatasetValidationReport(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
-def _finalize_validation_status(report: BlockDatasetValidationReport) -> None:
-    report.status = "error" if report.errors else "clean"
+def _validate_corpus_candidate(corpus: Corpus) -> None:
+    definition = corpus.request.definition
+    anchor = corpus.finalized_anchor
+    blocks = corpus.blocks
 
-
-def _coerce_validation_frame(
-    frame: pl.DataFrame,
-    *,
-    required_columns: frozenset[str],
-) -> pl.DataFrame:
-    expected_columns = tuple(dict.fromkeys((*VALIDATION_COLUMNS, *sorted(required_columns))))
-    missing = [column for column in expected_columns if column not in frame.columns]
-    if missing:
+    if anchor.block_number < definition.last_block:
+        raise ValueError("Finalized anchor precedes the requested last block")
+    if blocks.schema != _BLOCK_SCHEMA:
         raise ValueError(
-            "Block corpus is missing required validation columns: " + ", ".join(missing)
+            f"Corpus block schema must be exactly {_BLOCK_SCHEMA}, got {blocks.schema}"
         )
-    null_required = [
-        column for column in sorted(required_columns) if frame[column].null_count() > 0
+    null_columns = [
+        column for column in blocks.columns if blocks[column].null_count() > 0
     ]
-    if null_required:
+    if null_columns:
+        raise ValueError("Corpus block columns must be non-null: " + ", ".join(null_columns))
+
+    expected_count = definition.last_block - definition.first_block + 1
+    if blocks.height != expected_count:
         raise ValueError(
-            "Block corpus has null required source columns: " + ", ".join(null_required)
+            f"Corpus row count must be {expected_count}, got {blocks.height}"
         )
-    return frame.select(
-        [
-            pl.col("block_number").cast(pl.Int64, strict=True),
-            pl.col("timestamp").cast(pl.Int64, strict=True),
-            pl.col("chain_id").cast(pl.Int64, strict=True),
-        ]
-    ).sort("block_number")
+    block_numbers = blocks["block_number"]
+    if (
+        int(block_numbers[0]) != definition.first_block
+        or int(block_numbers[-1]) != definition.last_block
+    ):
+        raise ValueError("Corpus block range does not match the request")
+    if blocks.height > 1 and not (block_numbers.diff().drop_nulls() == 1).all():
+        raise ValueError("Corpus blocks must be contiguous in stored order")
+    if not (blocks["chain_id"] == definition.chain_id).all():
+        raise ValueError("Corpus chain_id does not match the request")
 
-
-def _summarize_validation_frame(validation_frame: pl.DataFrame) -> BlockFrameSummary:
-    if validation_frame.height == 0:
-        raise ValueError("Block corpus is empty")
-
-    block_numbers = [int(value) for value in validation_frame["block_number"].to_list()]
-    timestamps = [int(value) for value in validation_frame["timestamp"].to_list()]
-    chain_ids = tuple(sorted({int(value) for value in validation_frame["chain_id"].to_list()}))
-
-    duplicate_count = 0
-    gap_count = 0
-    for left, right in zip(block_numbers, block_numbers[1:], strict=False):
-        if right == left:
-            duplicate_count += 1
-        elif right != left + 1:
-            gap_count += 1
-
-    return BlockFrameSummary(
-        row_count=len(block_numbers),
-        first_block_number=block_numbers[0],
-        last_block_number=block_numbers[-1],
-        first_timestamp=timestamps[0],
-        last_timestamp=timestamps[-1],
-        chain_ids=chain_ids,
-        duplicate_count=duplicate_count,
-        gap_count=gap_count,
-    )
-
-
-def assess_block_frame_summary(
-    summary: BlockFrameSummary,
-    *,
-    expected_chain_id: int,
-) -> BlockFrameAssessment:
-    errors: list[str] = []
-    chain_id: int | None = None
-    if len(summary.chain_ids) != 1:
-        errors.append("Block corpus must contain exactly one chain_id")
-    else:
-        chain_id = summary.chain_ids[0]
-        if chain_id != expected_chain_id:
-            errors.append(
-                f"Block corpus chain_id mismatch: expected {expected_chain_id}, got {chain_id}"
-            )
-
-    if summary.duplicate_count:
-        errors.append(
-            f"Detected {summary.duplicate_count} duplicate block_number transition(s)"
-        )
-    if summary.gap_count:
-        errors.append(f"Detected {summary.gap_count} block-number gap(s)")
-    return BlockFrameAssessment(chain_id=chain_id, errors=tuple(errors))
-
-
-def exact_window_counts(
-    frame: pl.DataFrame,
-    expected_start_timestamp: int,
-    expected_end_timestamp: int,
-) -> ExactWindowCounts:
-    timestamps = [int(value) for value in frame["timestamp"].to_list()]
-    return ExactWindowCounts(
-        below_start_count=sum(
-            1 for timestamp in timestamps if timestamp < expected_start_timestamp
-        ),
-        above_end_count=sum(1 for timestamp in timestamps if timestamp >= expected_end_timestamp),
-    )
-
-
-def _apply_summary(
-    report: BlockDatasetValidationReport,
-    summary: BlockFrameSummary,
-    *,
-    expected_chain_id: int,
-) -> None:
-    report.row_count = summary.row_count
-    report.first_block_number = summary.first_block_number
-    report.last_block_number = summary.last_block_number
-    report.first_timestamp = summary.first_timestamp
-    report.last_timestamp = summary.last_timestamp
-    report.duplicate_count = summary.duplicate_count
-    report.gap_count = summary.gap_count
-
-    assessment = assess_block_frame_summary(
-        summary,
-        expected_chain_id=expected_chain_id,
-    )
-    report.chain_id = assessment.chain_id
-    report.errors.extend(assessment.errors)
-
-
-def validate_contiguous_block_frame(
-    frame: pl.DataFrame,
-    *,
-    dataset_path: Path,
-    expected_chain_id: int,
-    required_columns: frozenset[str] = frozenset(),
-) -> BlockDatasetValidationReport:
-    report = BlockDatasetValidationReport(dataset_path=dataset_path)
-    return _validate_block_frame(
-        frame,
-        report=report,
-        expected_chain_id=expected_chain_id,
-        required_columns=required_columns,
-    )
-
-
-def validate_exact_window_frame(
-    frame: pl.DataFrame,
-    *,
-    dataset_path: Path,
-    expected_chain_id: int,
-    expected_start_timestamp: int,
-    expected_end_timestamp: int,
-    required_columns: frozenset[str] = frozenset(),
-) -> BlockDatasetValidationReport:
-    report = BlockDatasetValidationReport(
-        dataset_path=dataset_path,
-        expected_start_timestamp=expected_start_timestamp,
-        expected_end_timestamp=expected_end_timestamp,
-    )
-    return _validate_block_frame(
-        frame,
-        report=report,
-        expected_chain_id=expected_chain_id,
-        expected_start_timestamp=expected_start_timestamp,
-        expected_end_timestamp=expected_end_timestamp,
-        required_columns=required_columns,
-    )
-
-
-def _validate_block_frame(
-    frame: pl.DataFrame,
-    *,
-    report: BlockDatasetValidationReport,
-    expected_chain_id: int,
-    expected_start_timestamp: int | None = None,
-    expected_end_timestamp: int | None = None,
-    required_columns: frozenset[str] = frozenset(),
-) -> BlockDatasetValidationReport:
-    try:
-        validation_frame = _coerce_validation_frame(
-            frame,
-            required_columns=required_columns,
-        )
-        summary = _summarize_validation_frame(validation_frame)
-    except Exception as exc:
-        report.errors.append(str(exc))
-        _finalize_validation_status(report)
-        return report
-
-    _apply_summary(report, summary, expected_chain_id=expected_chain_id)
-    if expected_start_timestamp is not None and expected_end_timestamp is not None:
-        counts = exact_window_counts(
-            frame=validation_frame,
-            expected_start_timestamp=expected_start_timestamp,
-            expected_end_timestamp=expected_end_timestamp,
-        )
-        report.below_start_count = counts.below_start_count
-        report.above_end_count = counts.above_end_count
-        if report.below_start_count or report.above_end_count:
-            report.errors.append(
-                f"Detected out-of-range timestamps: below_start={report.below_start_count}, "
-                f"above_end={report.above_end_count}"
-            )
-    _finalize_validation_status(report)
-    return report
+    timestamps = blocks["timestamp"]
+    if not (timestamps >= 0).all():
+        raise ValueError("Corpus timestamps must be nonnegative")
+    if blocks.height > 1 and not (timestamps.diff().drop_nulls() >= 0).all():
+        raise ValueError("Corpus timestamps must be nondecreasing")
+    if not (blocks["base_fee_per_gas"] > 0).all():
+        raise ValueError("Corpus base_fee_per_gas values must be positive")
+    if not (blocks["gas_limit"] > 0).all():
+        raise ValueError("Corpus gas_limit values must be positive")
+    if not (blocks["gas_used"] >= 0).all() or not (
+        blocks["gas_used"] <= blocks["gas_limit"]
+    ).all():
+        raise ValueError("Corpus gas_used values must be between zero and gas_limit")
+    if not (blocks["tx_count"] >= 0).all():
+        raise ValueError("Corpus tx_count values must be nonnegative")

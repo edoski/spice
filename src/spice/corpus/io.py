@@ -1,56 +1,45 @@
-"""Parquet-only block corpus IO."""
+"""Direct canonical Corpus IO."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from pathlib import Path
 
 import polars as pl
+from pydantic import UUID4, BaseModel, ConfigDict
 
-from .contract import (
-    BLOCK_COLUMNS,
-    validate_block_frame,
-)
-
-
-def _is_hidden_relative_path(path: Path) -> bool:
-    return any(part.startswith(".") for part in path.parts)
+from ..config import CorpusRequest
+from ..storage.layout import corpus_blocks_path, corpus_json_path
+from .contract import Corpus, FinalizedAnchor
+from .validation import _validate_corpus_candidate
 
 
-def iter_block_files(path: Path) -> list[Path]:
-    if path.is_file():
-        if path.suffix.lower() != ".parquet":
-            raise ValueError(f"Unsupported block file format: {path.suffix}")
-        return [path]
-    if not path.is_dir():
-        raise ValueError(f"Block corpus path does not exist: {path}")
+class _CorpusDocument(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        revalidate_instances="always",
+    )
 
-    files = [
-        candidate
-        for candidate in path.rglob("*.parquet")
-        if candidate.is_file() and not _is_hidden_relative_path(candidate.relative_to(path))
-    ]
-    if not files:
-        raise ValueError(f"No parquet block files found under {path}")
-    return sorted(files)
+    request: CorpusRequest
+    finalized_anchor: FinalizedAnchor
 
 
-def _scan_block_dataset(path: Path, *, columns: Sequence[str] | None = None) -> pl.LazyFrame:
-    files = iter_block_files(path)
-    frame = pl.scan_parquet([str(file_path) for file_path in files])
-    return frame.select(list(columns)) if columns is not None else frame
-
-
-def _read_block_dataset(path: Path, *, columns: Sequence[str] | None = None) -> pl.DataFrame:
-    return _scan_block_dataset(path, columns=columns).collect()
+def load_corpus(storage_root: Path, corpus_id: UUID4) -> Corpus:
+    document = _CorpusDocument.model_validate_json(
+        corpus_json_path(storage_root, corpus_id).read_text(encoding="utf-8")
+    )
+    if document.request.corpus_id != corpus_id:
+        raise ValueError("Corpus request UUID does not match the requested corpus")
+    corpus = Corpus(
+        request=document.request,
+        finalized_anchor=document.finalized_anchor,
+        blocks=pl.read_parquet(corpus_blocks_path(storage_root, corpus_id)),
+    )
+    _validate_corpus_candidate(corpus)
+    return corpus
 
 
 def write_block_file(path: Path, frame: pl.DataFrame) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.write_parquet(path)
-
-
-def load_block_frame(path: Path) -> pl.DataFrame:
-    frame = _read_block_dataset(path, columns=BLOCK_COLUMNS).sort("block_number")
-    validate_block_frame(frame)
-    return frame
