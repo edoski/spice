@@ -22,14 +22,12 @@ from ..evaluation import EvaluationRun, EvaluationSummary, EvaluatorConfig
 from ..metrics import MetricDescriptor, MetricSet, WindowMetricSummary
 from ..modeling.dataset_builders import (
     PreparedInferenceDataset,
-    PreparedTrainingDataset,
     SequenceRuntimeMetadata,
 )
 from ..modeling.families.base import ModelConfig
 from ..semantics import ArtifactSemantics
 from ..temporal.capability import TemporalCapability
 from ..temporal.input_normalization import ScalerStats
-from .training_run import TrainingRunResult
 
 JsonScalar: TypeAlias = str | int | float | bool | None
 JsonObject: TypeAlias = dict[str, object]
@@ -225,27 +223,6 @@ class LoadedEvaluationSummary:
     recorded_at: int
     manifest: TrainingArtifactManifest
     runtime: EvaluationRuntimeSummary
-
-
-def build_training_runtime_summary(
-    result: TrainingRunResult,
-    *,
-    prepared: PreparedTrainingDataset,
-    best_validation_metrics: MetricSet,
-    test_metrics: MetricSet,
-) -> TrainingRuntimeSummary:
-    return TrainingRuntimeSummary(
-        n_rows_available=prepared.n_rows_available,
-        n_rows_used=prepared.n_rows_used,
-        split_sizes=SplitSizes(
-            train_samples=int(prepared.samples.train.sample_indices.shape[0]),
-            validation_samples=int(prepared.samples.validation.sample_indices.shape[0]),
-            test_samples=int(prepared.samples.test.sample_indices.shape[0]),
-        ),
-        best_epoch=result.training_result.best_epoch,
-        best_validation_total_loss=best_validation_metrics.require("total_loss"),
-        test_total_loss=test_metrics.require("total_loss"),
-    )
 
 
 def build_evaluation_runtime_summary(

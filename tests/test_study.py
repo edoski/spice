@@ -59,7 +59,7 @@ FIT = FitMethod(
     restore="earliest_best",
 )
 
-LSTM_CAPACITY = LstmCapacity(projection=128, hidden=256, layers=1, head_hidden=128)
+LSTM_CAPACITY = LstmCapacity(hidden=256, layers=1, head_hidden=128)
 TRANSFORMER_CAPACITY = TransformerCapacity(
     model_width=192,
     attention_heads=4,
@@ -164,7 +164,6 @@ def _request(
             LSTM_METHOD,
             LstmDefinition(
                 family="lstm",
-                projection=128,
                 hidden=256,
                 layers=1,
                 head_hidden=128,

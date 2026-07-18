@@ -43,7 +43,6 @@ if TYPE_CHECKING:
         LoadedEvaluationSummary,
         LoadedTrainingSummary,
         TrainingArtifactManifest,
-        TrainingRuntimeSummary,
     )
 
 _ARTIFACT_MANIFEST_STORE = SingletonPayloadStore(
@@ -54,23 +53,6 @@ _TRAINING_SUMMARY_STORE = SingletonPayloadStore(
     table=training_summary,
     codec=TRAINING_SUMMARY_CODEC,
 )
-
-
-def write_artifact_manifest(
-    db_path: Path,
-    *,
-    manifest: TrainingArtifactManifest,
-) -> None:
-    """Persist the canonical artifact manifest before any runtime summaries are written."""
-
-    ensure_state_db(db_path, root_kind=ARTIFACT_ROOT_KIND, tables=ARTIFACT_TABLES)
-    engine = create_state_engine(db_path)
-    try:
-        with engine.begin() as conn:
-            _ARTIFACT_MANIFEST_STORE.upsert(conn, manifest)
-            touch_meta(conn, root_kind=ARTIFACT_ROOT_KIND)
-    finally:
-        engine.dispose()
 
 
 def load_artifact_manifest(db_path: Path) -> TrainingArtifactManifest:
@@ -86,23 +68,6 @@ def load_artifact_manifest(db_path: Path) -> TrainingArtifactManifest:
         if manifest is None:
             raise MissingStateError(f"Missing artifact manifest: {db_path}")
         return manifest
-    finally:
-        engine.dispose()
-
-
-def write_training_summary(
-    db_path: Path,
-    *,
-    summary: TrainingRuntimeSummary,
-) -> None:
-    """Persist the training runtime summary for one artifact root."""
-
-    ensure_state_db(db_path, root_kind=ARTIFACT_ROOT_KIND, tables=ARTIFACT_TABLES)
-    engine = create_state_engine(db_path)
-    try:
-        with engine.begin() as conn:
-            _TRAINING_SUMMARY_STORE.upsert(conn, summary)
-            touch_meta(conn, root_kind=ARTIFACT_ROOT_KIND)
     finally:
         engine.dispose()
 

@@ -98,7 +98,6 @@ def training_definition_from_method(
         case LstmMethod():
             model = LstmDefinition(
                 family="lstm",
-                projection=method.capacity.projection,
                 hidden=method.capacity.hidden,
                 layers=method.capacity.layers,
                 head_hidden=method.capacity.head_hidden,

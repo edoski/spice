@@ -8,11 +8,9 @@ from enum import StrEnum
 from typing import Generic, TypeVar
 
 from ..evaluation import coerce_evaluator_config
-from ..modeling.families.registry import coerce_model_config
 from .models import (
     ChainSpec,
     EvaluationsSpec,
-    TrainingConfig,
 )
 
 ConfigT = TypeVar("ConfigT")
@@ -23,8 +21,6 @@ class ConfigGroup(StrEnum):
     CHAIN = "chain"
     EVALUATOR = "evaluator"
     EVALUATIONS = "evaluations"
-    MODEL = "model"
-    TRAINING = "training"
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,12 +43,6 @@ class GroupSpec(Generic[ConfigT]):
 
 GROUP_SPECS: tuple[GroupSpec[object], ...] = (
     GroupSpec(
-        group=ConfigGroup.TRAINING,
-        seed_name="default",
-        validate=TrainingConfig.model_validate,
-        public=True,
-    ),
-    GroupSpec(
         group=ConfigGroup.CHAIN,
         seed_name="ethereum",
         validate=ChainSpec.model_validate,
@@ -73,13 +63,6 @@ GROUP_SPECS: tuple[GroupSpec[object], ...] = (
         seed_name=None,
         validate=EvaluationsSpec.model_validate,
         identity_field="id",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    GroupSpec(
-        group=ConfigGroup.MODEL,
-        seed_name="lstm",
-        validate=coerce_model_config,
         seed_from_requested_name=True,
         public=True,
     ),

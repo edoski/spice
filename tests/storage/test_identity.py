@@ -118,7 +118,7 @@ def _optimizer() -> AdamWMethod:
 
 def _branches() -> tuple[tuple[Any, Any, Any], ...]:
     common = {"dropout": 0.2, "optimizer": _optimizer(), "training_batch": 48, "fit": _fit()}
-    lstm_capacity = LstmCapacity(projection=16, hidden=32, layers=1, head_hidden=16)
+    lstm_capacity = LstmCapacity(hidden=32, layers=1, head_hidden=16)
     transformer_capacity = TransformerCapacity(
         model_width=32,
         attention_heads=4,

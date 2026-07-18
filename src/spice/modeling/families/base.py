@@ -98,7 +98,6 @@ class ExperimentSemantics(_FrozenRecord):
 
 class LstmDefinition(_FrozenRecord):
     family: Literal["lstm"]
-    projection: _PositiveInt
     hidden: _PositiveInt
     layers: _PositiveInt
     head_hidden: _PositiveInt
@@ -144,7 +143,6 @@ ModelDefinition: TypeAlias = Annotated[
 
 
 class LstmCapacity(_FrozenRecord):
-    projection: _PositiveInt
     hidden: _PositiveInt
     layers: _PositiveInt
     head_hidden: _PositiveInt

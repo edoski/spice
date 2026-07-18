@@ -1,1 +1,1 @@
-"""Model-family package."""
+"""Concrete model-family definition values."""

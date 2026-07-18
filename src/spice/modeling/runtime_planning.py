@@ -7,8 +7,7 @@ from dataclasses import dataclass
 
 import torch
 
-from ..config.models import TrainingConfig
-from ._runtime import build_cuda_modeling_runtime, configure_torch_backends, set_global_seed
+from ._runtime import configure_torch_backends
 from .batch_plan import BatchRuntimeContext
 from .models import TemporalModel
 
@@ -35,22 +34,6 @@ def with_batch_runtime_context(
     )
 
 
-def build_cuda_modeling_runtime_plan(
-    *,
-    batch_size: int,
-    deterministic: bool | None = None,
-    seed: int = 0,
-) -> ModelingRuntimePlan:
-    runtime = build_cuda_modeling_runtime(batch_size=batch_size)
-    return ModelingRuntimePlan(
-        resolved_device=runtime.resolved_device,
-        precision="32-true",
-        batch_runtime_context=runtime.batch_runtime_context,
-        deterministic=deterministic,
-        seed=seed,
-    )
-
-
 def build_cpu_modeling_runtime_plan(
     *,
     batch_size: int,
@@ -67,18 +50,6 @@ def build_cpu_modeling_runtime_plan(
         ),
         deterministic=deterministic,
         seed=seed,
-    )
-
-
-def build_training_modeling_runtime_plan(
-    *,
-    training_config: TrainingConfig,
-) -> ModelingRuntimePlan:
-    set_global_seed(training_config.seed)
-    return build_cuda_modeling_runtime_plan(
-        batch_size=training_config.batch_size,
-        deterministic=training_config.deterministic,
-        seed=training_config.seed,
     )
 
 
