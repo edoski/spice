@@ -193,10 +193,6 @@ def _resolve_model_workflow_fields(
         _required_value(_selected(selection.problem, frame.problem), "problem")
     )
     model = typed.load(typed.MODEL, _required(_selected(selection.model, frame.model), "model"))
-    features = typed.load(
-        typed.FEATURES,
-        _required(_selected(selection.features, frame.features), "features"),
-    )
     prediction = typed.load(typed.PREDICTION, frame.prediction)
     study = _resolve_study(
         frame.study if selection.study is None else StudyConfig(name=selection.study)
@@ -228,7 +224,6 @@ def _resolve_model_workflow_fields(
         storage=storage,
         problem=problem,
         model=model,
-        features=features,
         prediction=prediction,
         study=study,
         artifact=artifact,
@@ -266,10 +261,6 @@ def _resolve_acquire_config(selection: AcquireWorkflowSelection) -> AcquireConfi
         retry_count=provider.transport.retry_count,
         backoff_factor=provider.transport.backoff_factor,
     )
-    features = typed.load(
-        typed.FEATURES,
-        _required(_selected(selection.features, frame.features), "features"),
-    )
     if provider.acquisition is None:
         raise ConfigResolutionError(
             f"provider {provider.name} must define acquisition settings"
@@ -282,7 +273,6 @@ def _resolve_acquire_config(selection: AcquireWorkflowSelection) -> AcquireConfi
         corpus=corpus,
         storage=storage,
         problem=problem,
-        features=features,
         rpc_endpoint=rpc_endpoint,
         acquisition=acquisition,
     )

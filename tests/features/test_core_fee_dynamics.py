@@ -1,349 +1,367 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import cast
+from collections.abc import Callable
 
 import numpy as np
 import polars as pl
 import pytest
+from pydantic import ValidationError
 
-from spice.config import coerce_features_config
-from spice.config.groups import load_named_group_payload
-from spice.core.errors import ConfigResolutionError
-from spice.features import (
-    FeaturePrerequisites,
-    compile_feature_contract,
-    validate_feature_selection,
+from spice.temporal.features import (
+    FeatureState,
+    fit_feature_state,
+    transform_feature_rows,
 )
-from spice.features import core as feature_core
-from spice.features.sets.core_fee_dynamics import _base_fee as base_fee_module
-from spice.features.sets.core_fee_dynamics import _block_facts as block_facts_module
-from spice.features.sets.core_fee_dynamics import _family_builder as family_builder_module
-from spice.features.sets.core_fee_dynamics import _fee_context as fee_context_module
-from spice.features.sets.core_fee_dynamics import _priority_fee as priority_fee_module
-from spice.features.sets.core_fee_dynamics import _time as time_module
-from spice.features.sets.core_fee_dynamics import _transforms as transforms_module
-from spice.features.sets.core_fee_dynamics import elapsed_position as elapsed_module
-from spice.features.sets.core_fee_dynamics import safe as safe_module
-from spice.features.sets.core_fee_dynamics import with_priority_fee as priority_module
-from spice.features.sets.core_fee_dynamics.elapsed_position import (
-    CORE_FEE_DYNAMICS_ELAPSED_POSITION,
-    CORE_FEE_DYNAMICS_ELAPSED_POSITION_OUTPUTS,
+
+ETHEREUM_FEATURES = (
+    "log_base_fee_per_gas",
+    "gas_utilization",
+    "log_exact_forming_base_fee_per_gas",
+    "log_gas_limit",
+    "log1p_tx_count",
+    "hour_sin",
+    "hour_cos",
 )
-from spice.features.sets.core_fee_dynamics.safe import (
-    CORE_FEE_DYNAMICS,
-    CORE_FEE_DYNAMICS_OUTPUTS,
+POLYGON_FEATURES = (
+    "log_base_fee_per_gas",
+    "gas_utilization",
+    "log_gas_limit",
+    "log1p_tx_count",
 )
-from spice.features.sets.core_fee_dynamics.with_priority_fee import (
-    CORE_FEE_DYNAMICS_PRIORITY_FEE,
-    CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS,
-    PRIORITY_FEE_OUTPUTS,
+AVALANCHE_FEATURES = (
+    "log_base_fee_per_gas",
+    "gas_utilization",
+    "hour_sin",
+    "hour_cos",
 )
 
 
-def _frame(row_count: int = 140) -> pl.DataFrame:
-    block_numbers = np.arange(10_000, 10_000 + row_count, dtype=np.int64)
+def _blocks(
+    *,
+    base_fees: list[float | int],
+    gas_used: list[int],
+    gas_limits: list[int],
+    tx_counts: list[int],
+    timestamps: list[int],
+) -> pl.DataFrame:
     return pl.DataFrame(
         {
-            "block_number": block_numbers,
-            "timestamp": np.arange(row_count, dtype=np.int64) * 12,
-            "base_fee_per_gas": 1_000_000_000 + block_numbers,
-            "gas_used": 15_000_000 + np.arange(row_count, dtype=np.int64),
-            "gas_limit": np.full(row_count, 30_000_000, dtype=np.int64),
-            "tx_count": 100 + np.arange(row_count, dtype=np.int64),
-            "block_size_bytes": [None] * row_count,
-            "blob_gas_used": [None] * row_count,
-            "excess_blob_gas": [None] * row_count,
-            "priority_fee_p10": np.full(row_count, 1_000_000, dtype=np.int64),
-            "priority_fee_p50": np.full(row_count, 2_000_000, dtype=np.int64),
-            "priority_fee_p90": np.full(row_count, 4_000_000, dtype=np.int64),
-            "priority_fee_spread": np.full(row_count, 3_000_000, dtype=np.int64),
-            "chain_id": np.ones(row_count, dtype=np.int64),
-        }
-    ).sample(fraction=1.0, shuffle=True, seed=7)
-
-
-def _contract(outputs: list[str], *, features_id: str = "core_fee_dynamics"):
-    return compile_feature_contract(
-        features=coerce_features_config({"id": features_id, "outputs": outputs})
-    )
-
-
-def test_core_fee_dynamics_builds_finite_aligned_feature_table() -> None:
-    contract = _contract(
-        [
-            "log_base_fee_per_gas",
-            "log_prev_gas_used",
-            "prev_gas_utilization",
-            "roll100_mean_logfee",
-            "dlog_base_fee",
-        ]
-    )
-
-    table = contract.build_table(_frame())
-
-    assert contract.feature_prerequisites == FeaturePrerequisites(warmup_rows=99)
-    assert table.feature_matrix.shape == (140, 5)
-    assert np.isfinite(table.feature_matrix).all()
-    assert table.series.block_numbers[0] == 10_000
-    assert table.feature_matrix[0, 1] == 0.0
-    assert table.feature_matrix[99, 4] > 0.0
-
-
-def test_core_fee_dynamics_lags_finalized_current_block_facts() -> None:
-    table = _contract(
-        [
-            "log_prev_gas_used",
-            "prev_gas_utilization",
-        ]
-    ).build_table(_frame(4))
-
-    assert table.feature_matrix[1, 0] == pytest.approx(np.log1p(15_000_000))
-    assert table.feature_matrix[1, 1] == pytest.approx(15_000_000 / 30_000_000)
-
-
-def test_core_fee_dynamics_requires_base_fee_after_warmup() -> None:
-    frame = _frame(4).with_columns(
-        pl.when(pl.col("block_number") == 10_003)
-        .then(None)
-        .otherwise(pl.col("base_fee_per_gas"))
-        .alias("base_fee_per_gas")
-    )
-
-    with pytest.raises(ValueError, match="current_base_fee_per_gas"):
-        _contract(["log_base_fee_per_gas"]).build_table(frame)
-
-
-def test_core_fee_dynamics_validates_sources_before_global_feature_warmup() -> None:
-    frame = _frame(140).with_columns(
-        pl.when(pl.col("block_number") == 10_000)
-        .then(None)
-        .otherwise(pl.col("base_fee_per_gas"))
-        .alias("base_fee_per_gas")
-    )
-
-    with pytest.raises(ValueError, match="current_base_fee_per_gas"):
-        _contract(["log_base_fee_per_gas", "roll100_mean_logfee"]).build_table(frame)
-
-
-def test_feature_selection_validation_rejects_unknown_outputs() -> None:
-    with pytest.raises(ValueError, match="Unknown feature outputs"):
-        validate_feature_selection("core_fee_dynamics", ("raw_producer_address",))
-
-
-def test_core_fee_dynamics_rejects_priority_fee_outputs() -> None:
-    with pytest.raises(
-        ConfigResolutionError,
-        match="Unknown feature outputs: prev_priority_fee_p50",
-    ):
-        coerce_features_config(
-            {
-                "id": "core_fee_dynamics",
-                "outputs": [*CORE_FEE_DYNAMICS_OUTPUTS, "prev_priority_fee_p50"],
-            }
-        )
-
-    coerce_features_config(
-        {
-            "id": "core_fee_dynamics_with_priority_fee",
-            "outputs": [*CORE_FEE_DYNAMICS_OUTPUTS, "prev_priority_fee_p50"],
+            "base_fee_per_gas": base_fees,
+            "gas_used": gas_used,
+            "gas_limit": gas_limits,
+            "tx_count": tx_counts,
+            "timestamp": timestamps,
         }
     )
 
 
-def test_core_fee_dynamics_fingerprints_follow_owned_modules() -> None:
-    core_path = Path(feature_core.__file__).resolve()
-    shared_owner_paths = (
-        Path(transforms_module.__file__).resolve(),
-        Path(time_module.__file__).resolve(),
-        Path(base_fee_module.__file__).resolve(),
-        Path(block_facts_module.__file__).resolve(),
-        Path(fee_context_module.__file__).resolve(),
+def test_exact_three_chain_feature_formulas_fit_and_held_out_transform() -> None:
+    ethereum = _blocks(
+        base_fees=[1_000, 2_000, 3_000, 8_000_000_000_000_000_000],
+        gas_used=[500, 1_200, 1_200, 4],
+        gas_limits=[1_000, 2_000, 3_000, 4],
+        tx_counts=[0, 1, 2, 3],
+        timestamps=[0, 6 * 3_600, 12 * 3_600, 18 * 3_600],
     )
-
-    assert CORE_FEE_DYNAMICS.fingerprint_sources == (
-        Path(safe_module.__file__).resolve(),
-        Path(family_builder_module.__file__).resolve(),
-        *shared_owner_paths,
-        core_path,
+    polygon = _blocks(
+        base_fees=[10, 20, 80],
+        gas_used=[1, 3, 8],
+        gas_limits=[2, 6, 10],
+        tx_counts=[0, 3, 8],
+        timestamps=[0, 1, 2],
     )
-    assert CORE_FEE_DYNAMICS_PRIORITY_FEE.fingerprint_sources == (
-        Path(priority_module.__file__).resolve(),
-        Path(family_builder_module.__file__).resolve(),
-        *shared_owner_paths,
-        Path(priority_fee_module.__file__).resolve(),
-        core_path,
+    avalanche = _blocks(
+        base_fees=[10, 30, 90, 270],
+        gas_used=[1, 4, 9, 16],
+        gas_limits=[2, 8, 10, 20],
+        tx_counts=[0, 0, 0, 0],
+        timestamps=[0, 6 * 3_600, 12 * 3_600, 18 * 3_600],
     )
-    assert CORE_FEE_DYNAMICS_ELAPSED_POSITION.fingerprint_sources == (
-        Path(elapsed_module.__file__).resolve(),
-        Path(family_builder_module.__file__).resolve(),
-        *shared_owner_paths,
-        core_path,
+    expected_raw = {
+        1: np.column_stack(
+            (
+                np.log([1_000, 2_000, 3_000, 8_000_000_000_000_000_000]),
+                [0.5, 0.6, 0.4, 1.0],
+                np.log([1_000, 2_050, 2_925, 9_000_000_000_000_000_000]),
+                np.log([1_000, 2_000, 3_000, 4]),
+                np.log1p([0, 1, 2, 3]),
+                np.sin([0.0, np.pi / 2, np.pi, 3 * np.pi / 2]),
+                np.cos([0.0, np.pi / 2, np.pi, 3 * np.pi / 2]),
+            )
+        ),
+        137: np.column_stack(
+            (
+                np.log([10, 20, 80]),
+                [0.5, 0.5, 0.8],
+                np.log([2, 6, 10]),
+                np.log1p([0, 3, 8]),
+            )
+        ),
+        43_114: np.column_stack(
+            (
+                np.log([10, 30, 90, 270]),
+                [0.5, 0.5, 0.9, 0.8],
+                np.sin([0.0, np.pi / 2, np.pi, 3 * np.pi / 2]),
+                np.cos([0.0, np.pi / 2, np.pi, 3 * np.pi / 2]),
+            )
+        ),
+    }
+
+    cases = (
+        (1, ETHEREUM_FEATURES, ethereum),
+        (137, POLYGON_FEATURES, polygon),
+        (43_114, AVALANCHE_FEATURES, avalanche),
     )
-
-
-def test_default_core_fee_dynamics_excludes_elapsed_position_signal() -> None:
-    payload = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
-    outputs = cast(list[str], payload["outputs"])
-
-    assert "elapsed_seconds" not in outputs
-    with pytest.raises(ConfigResolutionError, match="Unknown feature outputs: elapsed_seconds"):
-        coerce_features_config(
-            {
-                "id": "core_fee_dynamics",
-                "outputs": [*outputs, "elapsed_seconds"],
-            }
+    states: dict[int, FeatureState] = {}
+    for chain_id, ordered_features, support in cases:
+        raw = expected_raw[chain_id].astype(np.float64)
+        state = fit_feature_state(
+            support,
+            chain_id=chain_id,
+            ordered_features=ordered_features,
         )
+        states[chain_id] = state
+        np.testing.assert_allclose(state.means, raw.mean(axis=0))
+        np.testing.assert_allclose(state.standard_deviations, raw.std(axis=0, ddof=0))
 
+        transformed = transform_feature_rows(
+            support,
+            chain_id=chain_id,
+            ordered_features=ordered_features,
+            state=state,
+        )
+        expected = ((raw - raw.mean(axis=0)) / raw.std(axis=0, ddof=0)).astype(np.float32)
+        np.testing.assert_allclose(transformed, expected, rtol=1e-6, atol=1e-6)
+        assert transformed.shape == (support.height, len(ordered_features))
+        assert transformed.dtype == np.float32
+        assert transformed.flags.c_contiguous
+        assert np.isfinite(transformed).all()
 
-def test_elapsed_position_ablation_config_adds_elapsed_seconds_signal() -> None:
-    baseline = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
-    ablation = cast(
-        dict[str, object],
-        load_named_group_payload("core_fee_dynamics_elapsed_position", "features"),
+    ethereum_state = states[1]
+    held_out = _blocks(
+        base_fees=[1],
+        gas_used=[101],
+        gas_limits=[200],
+        tx_counts=[4],
+        timestamps=[3_600],
     )
-    baseline_outputs = cast(list[str], baseline["outputs"])
-    ablation_outputs = cast(list[str], ablation["outputs"])
-
-    assert ablation["id"] == "core_fee_dynamics_elapsed_position"
-    assert tuple(ablation_outputs) == CORE_FEE_DYNAMICS_ELAPSED_POSITION_OUTPUTS
-    assert ablation_outputs[:-1] == baseline_outputs
-    assert ablation_outputs[-1] == "elapsed_seconds"
-    coerce_features_config(ablation)
-
-
-def test_core_fee_dynamics_config_matches_canonical_safe_outputs() -> None:
-    baseline = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
-    baseline_outputs = cast(list[str], baseline["outputs"])
-
-    assert tuple(baseline_outputs) == CORE_FEE_DYNAMICS_OUTPUTS
-    assert "elapsed_seconds" not in baseline_outputs
-    assert "prev_priority_fee_p50" not in baseline_outputs
-    assert "dlog_base_fee" in baseline_outputs
-    assert "prev_gas_utilization_lag6" in baseline_outputs
-    assert "roll200_std_prev_gas_utilization" in baseline_outputs
-    coerce_features_config(baseline)
-
-
-def test_core_fee_dynamics_source_columns_follow_selected_feature_family() -> None:
-    baseline_contract = _contract(list(CORE_FEE_DYNAMICS_OUTPUTS))
-    priority_contract = _contract(
-        [*CORE_FEE_DYNAMICS_OUTPUTS, "prev_priority_fee_p50"],
-        features_id="core_fee_dynamics_with_priority_fee",
-    )
-
-    assert "block_number" in baseline_contract.required_source_columns
-    assert "timestamp" in baseline_contract.required_source_columns
-    assert "base_fee_per_gas" in baseline_contract.required_source_columns
-    assert "priority_fee_p50" not in baseline_contract.required_source_columns
-    assert "priority_fee_percentiles" not in baseline_contract.acquisition_enrichments
-    assert "gas_used" in baseline_contract.required_source_columns
-    assert "priority_fee_p50" in priority_contract.required_source_columns
-    assert "priority_fee_percentiles" in priority_contract.acquisition_enrichments
-
-
-def test_feature_contract_requires_canonical_series_columns_for_all_outputs() -> None:
-    contract = _contract(["prev_gas_utilization"])
-
-    assert {"block_number", "timestamp", "base_fee_per_gas"} <= contract.required_source_columns
-    with pytest.raises(ValueError, match="base_fee_per_gas"):
-        contract.build_table(_frame().drop("base_fee_per_gas"))
-
-
-def test_core_fee_dynamics_local_trends_build_finite_aligned_table() -> None:
-    contract = _contract(
+    held_out_raw = np.array(
         [
-            "dlog_base_fee",
-            "base_fee_trend",
-            "dlog_base_fee_lag6",
-            "prev_gas_utilization_lag6",
-            "roll200_mean_logfee",
-            "roll200_std_prev_gas_utilization",
-        ]
-    )
-
-    table = contract.build_table(_frame(220))
-
-    assert contract.feature_prerequisites == FeaturePrerequisites(warmup_rows=200)
-    assert table.feature_matrix.shape == (220, 6)
-    assert np.isfinite(table.feature_matrix).all()
-    assert table.feature_matrix[200, 1] == pytest.approx(1.0)
-
-
-def test_core_fee_dynamics_local_trend_lags_use_prior_rows() -> None:
-    table = _contract(
-        [
-            "prev_gas_utilization",
-            "prev_gas_utilization_lag1",
-            "dlog_base_fee",
-            "dlog_base_fee_lag1",
-        ]
-    ).build_table(_frame(12))
-
-    assert table.feature_matrix[3, 0] == pytest.approx((15_000_000 + 2) / 30_000_000)
-    assert table.feature_matrix[3, 1] == pytest.approx((15_000_000 + 1) / 30_000_000)
-    assert table.feature_matrix[3, 3] == pytest.approx(table.feature_matrix[2, 2])
-
-
-def test_priority_fee_config_adds_scalar_and_trend_outputs() -> None:
-    baseline = cast(dict[str, object], load_named_group_payload("core_fee_dynamics", "features"))
-    priority = cast(
-        dict[str, object],
-        load_named_group_payload("core_fee_dynamics_with_priority_fee", "features"),
-    )
-    baseline_outputs = cast(list[str], baseline["outputs"])
-    priority_outputs = cast(list[str], priority["outputs"])
-
-    assert priority["id"] == "core_fee_dynamics_with_priority_fee"
-    assert tuple(priority_outputs) == CORE_FEE_DYNAMICS_PRIORITY_FEE_OUTPUTS
-    assert tuple(priority_outputs) == (*tuple(baseline_outputs), *PRIORITY_FEE_OUTPUTS)
-    assert "prev_priority_fee_p10" in priority_outputs
-    assert "log_prev_priority_fee_p10" not in priority_outputs
-    assert "elapsed_seconds" not in priority_outputs
-    coerce_features_config(priority)
-
-
-def test_priority_fee_features_build_finite_aligned_table() -> None:
-    contract = _contract(
-        [
-            "prev_priority_fee_p50",
-            "log_prev_priority_fee_p50",
-            "dlog_prev_priority_fee_p50_lag6",
-            "roll200_std_log_prev_priority_fee_p50",
-            "log_prev_priority_fee_spread",
-            "dlog_prev_priority_fee_spread_lag6",
-            "roll200_mean_log_prev_priority_fee_spread",
+            [
+                0.0,
+                101 / 200,
+                np.log(2),
+                np.log(200),
+                np.log(5),
+                np.sin(np.pi / 12),
+                np.cos(np.pi / 12),
+            ]
         ],
-        features_id="core_fee_dynamics_with_priority_fee",
+        dtype=np.float64,
     )
 
-    table = contract.build_table(_frame(220))
-
-    assert contract.feature_prerequisites == FeaturePrerequisites(warmup_rows=200)
-    assert table.feature_matrix.shape == (220, 7)
-    assert np.isfinite(table.feature_matrix).all()
-
-
-def test_priority_fee_trend_lags_use_prior_fee_history_rows() -> None:
-    frame = _frame(12).with_columns(
-        (1_000 + (pl.col("block_number") - 10_000) * 10).alias("priority_fee_p50"),
-        (500 + (pl.col("block_number") - 10_000) * 5).alias("priority_fee_spread"),
+    held_out_result = transform_feature_rows(
+        held_out,
+        chain_id=1,
+        ordered_features=ETHEREUM_FEATURES,
+        state=ethereum_state,
     )
-    table = _contract(
-        [
-            "log_prev_priority_fee_p50",
-            "dlog_prev_priority_fee_p50",
-            "dlog_prev_priority_fee_p50_lag1",
-            "log_prev_priority_fee_spread",
-            "dlog_prev_priority_fee_spread",
-            "dlog_prev_priority_fee_spread_lag1",
-        ],
-        features_id="core_fee_dynamics_with_priority_fee",
-    ).build_table(frame)
 
-    expected_p50_delta = np.log1p(1_030) - np.log1p(1_020)
-    expected_spread_delta = np.log1p(515) - np.log1p(510)
-    assert table.feature_matrix[4, 1] == pytest.approx(expected_p50_delta)
-    assert table.feature_matrix[5, 2] == pytest.approx(expected_p50_delta)
-    assert table.feature_matrix[4, 4] == pytest.approx(expected_spread_delta)
-    assert table.feature_matrix[5, 5] == pytest.approx(expected_spread_delta)
+    np.testing.assert_allclose(
+        held_out_result,
+        (
+            (held_out_raw - np.asarray(ethereum_state.means))
+            / np.asarray(ethereum_state.standard_deviations)
+        ).astype(np.float32),
+        rtol=1e-6,
+        atol=1e-6,
+    )
+
+
+def _valid_blocks() -> pl.DataFrame:
+    return _blocks(
+        base_fees=[10, 20],
+        gas_used=[1, 3],
+        gas_limits=[2, 4],
+        tx_counts=[0, 1],
+        timestamps=[0, 3_600],
+    )
+
+
+def _fit(
+    blocks: pl.DataFrame,
+    *,
+    chain_id: int = 137,
+    ordered_features: tuple[str, ...] = ("log_base_fee_per_gas", "gas_utilization"),
+) -> FeatureState:
+    return fit_feature_state(
+        blocks,
+        chain_id=chain_id,
+        ordered_features=ordered_features,
+    )
+
+
+@pytest.mark.parametrize(
+    ("operation", "match"),
+    [
+        pytest.param(lambda: _fit(_valid_blocks(), chain_id=2), "Unsupported chain", id="chain"),
+        pytest.param(
+            lambda: _fit(
+                _valid_blocks(),
+                ordered_features=("log_base_fee_per_gas", "gas_utilization", "unknown"),
+            ),
+            "ordered_features",
+            id="unknown-name",
+        ),
+        pytest.param(
+            lambda: _fit(
+                _valid_blocks(),
+                ordered_features=("gas_utilization", "log_base_fee_per_gas"),
+            ),
+            "ordered_features",
+            id="order",
+        ),
+        pytest.param(
+            lambda: _fit(
+                _valid_blocks(),
+                chain_id=1,
+                ordered_features=("log_base_fee_per_gas", "gas_utilization"),
+            ),
+            "ordered_features",
+            id="missing-ethereum-forming-fee",
+        ),
+        pytest.param(
+            lambda: _fit(
+                _valid_blocks(),
+                ordered_features=(
+                    "log_base_fee_per_gas",
+                    "gas_utilization",
+                    "log_exact_forming_base_fee_per_gas",
+                ),
+            ),
+            "ordered_features",
+            id="forbidden-polygon-forming-fee",
+        ),
+        pytest.param(
+            lambda: _fit(
+                _valid_blocks(),
+                ordered_features=(
+                    "log_base_fee_per_gas",
+                    "gas_utilization",
+                    "log_gas_limit",
+                ),
+            ),
+            "ordered_features",
+            id="partial-activity-pair",
+        ),
+        pytest.param(
+            lambda: _fit(
+                _valid_blocks(),
+                ordered_features=(
+                    "log_base_fee_per_gas",
+                    "gas_utilization",
+                    "hour_sin",
+                ),
+            ),
+            "ordered_features",
+            id="partial-hour-pair",
+        ),
+        pytest.param(
+            lambda: _fit(
+                _blocks(
+                    base_fees=[10, 20],
+                    gas_used=[0, 1],
+                    gas_limits=[1, 1],
+                    tx_counts=[0, 1],
+                    timestamps=[0, 1],
+                ),
+                chain_id=1,
+                ordered_features=(
+                    "log_base_fee_per_gas",
+                    "gas_utilization",
+                    "log_exact_forming_base_fee_per_gas",
+                ),
+            ),
+            "gas_target must be positive",
+            id="gas-target",
+        ),
+        pytest.param(lambda: _fit(_valid_blocks().clear()), "non-empty", id="empty-fit"),
+        pytest.param(
+            lambda: _fit(
+                _blocks(
+                    base_fees=[0.0, 1.0],
+                    gas_used=[1, 3],
+                    gas_limits=[2, 4],
+                    tx_counts=[0, 1],
+                    timestamps=[0, 1],
+                )
+            ),
+            "finite raw",
+            id="nonfinite-fit",
+        ),
+        pytest.param(
+            lambda: _fit(
+                _blocks(
+                    base_fees=[10, 10],
+                    gas_used=[1, 1],
+                    gas_limits=[2, 2],
+                    tx_counts=[0, 0],
+                    timestamps=[0, 0],
+                )
+            ),
+            "constant",
+            id="constant-fit",
+        ),
+        pytest.param(
+            lambda: FeatureState.model_validate(
+                {"means": (), "standard_deviations": ()}, strict=True
+            ),
+            "at least 1 item",
+            id="empty-state",
+        ),
+        pytest.param(
+            lambda: FeatureState(means=(0.0,), standard_deviations=(1.0, 2.0)),
+            "equal widths",
+            id="state-widths",
+        ),
+        pytest.param(
+            lambda: FeatureState(means=(float("nan"),), standard_deviations=(1.0,)),
+            "finite number",
+            id="nonfinite-state",
+        ),
+        pytest.param(
+            lambda: FeatureState(means=(0.0,), standard_deviations=(0.0,)),
+            "greater than 0",
+            id="nonpositive-state",
+        ),
+        pytest.param(
+            lambda: transform_feature_rows(
+                _valid_blocks(),
+                chain_id=137,
+                ordered_features=("log_base_fee_per_gas", "gas_utilization"),
+                state=FeatureState(means=(0.0,), standard_deviations=(1.0,)),
+            ),
+            "state width",
+            id="transform-state-width",
+        ),
+        pytest.param(
+            lambda: transform_feature_rows(
+                _valid_blocks(),
+                chain_id=137,
+                ordered_features=("log_base_fee_per_gas", "gas_utilization"),
+                state=FeatureState(
+                    means=(0.0, 0.0),
+                    standard_deviations=(1e-300, 1e-300),
+                ),
+            ),
+            "finite float32",
+            id="float32-overflow",
+        ),
+    ],
+)
+def test_feature_contract_rejections(
+    operation: Callable[[], object],
+    match: str,
+) -> None:
+    with pytest.raises((ValueError, ValidationError), match=match):
+        operation()

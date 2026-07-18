@@ -15,7 +15,6 @@ from .models import (
     ChainSpec,
     CorpusSpec,
     EvaluationsSpec,
-    FeaturesConfig,
     ProblemSpec,
     ProviderSpec,
     SplitConfig,
@@ -30,7 +29,6 @@ CORPUS = cast(GroupSpec[CorpusSpec], group_spec(ConfigGroup.CORPUS))
 EVALUATOR = cast(GroupSpec[EvaluatorConfig], group_spec(ConfigGroup.EVALUATOR))
 EVALUATIONS = cast(GroupSpec[EvaluationsSpec], group_spec(ConfigGroup.EVALUATIONS))
 EXECUTION = cast(GroupSpec[ExecutionSpec], group_spec(ConfigGroup.EXECUTION))
-FEATURES = cast(GroupSpec[FeaturesConfig], group_spec(ConfigGroup.FEATURES))
 MODEL = cast(GroupSpec[ModelConfig[str]], group_spec(ConfigGroup.MODEL))
 PROBLEM = cast(GroupSpec[ProblemSpec], group_spec(ConfigGroup.PROBLEM))
 PROVIDER = cast(GroupSpec[ProviderSpec], group_spec(ConfigGroup.PROVIDER))

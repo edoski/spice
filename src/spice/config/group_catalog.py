@@ -22,7 +22,6 @@ from .models import (
     ProviderSpec,
     SplitConfig,
     TrainingConfig,
-    coerce_features_config,
     coerce_problem_spec,
 )
 
@@ -37,7 +36,6 @@ class ConfigGroup(StrEnum):
     EVALUATOR = "evaluator"
     EVALUATIONS = "evaluations"
     EXECUTION = "execution"
-    FEATURES = "features"
     MODEL = "model"
     PROBLEM = "problem"
     PROVIDER = "provider"
@@ -151,14 +149,6 @@ GROUP_SPECS: tuple[GroupSpec[object], ...] = (
         group=ConfigGroup.EXECUTION,
         seed_name="disi_l40",
         validate=ExecutionSpec.model_validate,
-        identity_field="id",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-    GroupSpec(
-        group=ConfigGroup.FEATURES,
-        seed_name="core_fee_dynamics",
-        validate=coerce_features_config,
         identity_field="id",
         seed_from_requested_name=True,
         public=True,
