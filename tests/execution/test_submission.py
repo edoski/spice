@@ -1,131 +1,262 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from typing import Literal
+from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
+from typer.testing import CliRunner
 
-from spice.config import TrainConfig, WorkflowTask
-from spice.core.errors import SpiceOperatorError
-from spice.execution.provenance import ExecutionJobProvenance
-from spice.execution.submission import (
-    WorkflowSubmissionEvent,
-    submit_resolved_workflow,
+import spice.cli.app as cli
+from spice.cli.app import app
+from spice.config import (
+    WORKFLOW_REQUEST_ADAPTER,
+    EvaluateRequest,
+    ExperimentSemantics,
+    LossDefinition,
+    OriginWindow,
+    SelectedStudySource,
+    TrainRequest,
+    WorkflowRequest,
 )
 
+CORPUS_ID = UUID("00000000-0000-4000-8000-000000000001")
+ARTIFACT_ID = UUID("00000000-0000-4000-8000-000000000002")
+EVALUATION_ID = UUID("00000000-0000-4000-8000-000000000003")
+STUDY_ID = UUID("00000000-0000-4000-8000-000000000004")
 
-class _FakeSession:
-    def __init__(
-        self,
-        *,
-        follow_by_default: bool = True,
-        state: str | None = "COMPLETED",
-        interrupt: bool = False,
-    ) -> None:
-        self.follow_by_default = follow_by_default
-        self.state = state
-        self.interrupt = interrupt
-        self.followed = False
-        self.submitted_dependency: str | None = None
 
-    def submit_workflow(
-        self,
-        task: WorkflowTask,
-        *,
-        config,
-        dependency: str | None = None,
-    ) -> ExecutionJobProvenance:
-        del config
-        self.submitted_dependency = dependency
-        return ExecutionJobProvenance.slurm(
-            task=task,
-            target="target",
-            job_id="12345",
-            log_path=Path("/logs/spice-train-12345.out"),
+def _window(role: Literal["training", "validation", "testing"]) -> OriginWindow:
+    first = {"training": 100, "validation": 210, "testing": 300}[role]
+    return OriginWindow(
+        role=role,
+        first_parent_block=first,
+        last_parent_block=first + 9,
+    )
+
+
+def _experiment() -> ExperimentSemantics:
+    return ExperimentSemantics(
+        training_window=_window("training"),
+        validation_window=_window("validation"),
+        context_blocks=20,
+        horizon_blocks=10,
+        ordered_features=("base_fee",),
+        loss=LossDefinition(
+            classification_algorithm="cross_entropy",
+            classification_weighting="unweighted",
+            regression_algorithm="smooth_l1",
+            regression_threshold=1.0,
+            classification_scale=1.0,
+            regression_scale=1.0,
+        ),
+    )
+
+
+def _request(workflow: Literal["train", "evaluate"]) -> WorkflowRequest:
+    if workflow == "evaluate":
+        return EvaluateRequest(
+            workflow="evaluate",
+            evaluation_id=EVALUATION_ID,
+            artifact_id=ARTIFACT_ID,
+            corpus_id=CORPUS_ID,
+            window=_window("testing"),
         )
-
-    def follow_job(self, _provenance: ExecutionJobProvenance) -> str | None:
-        self.followed = True
-        if self.interrupt:
-            raise KeyboardInterrupt
-        return self.state
-
-
-def _train_config() -> TrainConfig:
-    return TrainConfig.model_construct(workflow=WorkflowTask.TRAIN)
-
-
-def test_submit_resolved_workflow_detach_skips_follow() -> None:
-    session = _FakeSession()
-    events: list[WorkflowSubmissionEvent] = []
-
-    result = submit_resolved_workflow(
-        _train_config(),
-        target="target",
-        dependency="afterok:999",
-        detach=True,
-        on_event=events.append,
-        session_factory=lambda _target: session,
+    return TrainRequest(
+        workflow="train",
+        artifact_id=ARTIFACT_ID,
+        source=SelectedStudySource(
+            kind="selected_study",
+            corpus_id=CORPUS_ID,
+            study_id=STUDY_ID,
+            study_result_index=0,
+            experiment=_experiment(),
+        ),
     )
 
-    assert result.detached is True
-    assert result.state is None
-    assert session.followed is False
-    assert session.submitted_dependency == "afterok:999"
-    assert [event.kind for event in events] == ["submitted"]
 
-
-def test_submit_resolved_workflow_follows_and_reports_success() -> None:
-    session = _FakeSession(state="COMPLETED")
-    events: list[WorkflowSubmissionEvent] = []
-
-    result = submit_resolved_workflow(
-        _train_config(),
-        target="target",
-        on_event=events.append,
-        session_factory=lambda _target: session,
+def _write_remote(path: Path, *, executable: str = "/opt/spice executable") -> None:
+    path.write_text(
+        f"""ssh: university-alias
+executable: {executable}
+storage_root: /remote/storage root
+log_root: /remote/logs
+train:
+  partition: train-partition
+  cpus_per_task: 8
+  memory_gb: 48
+  time_limit: "3-00:00:00"
+tune:
+  partition: tune-partition
+  cpus_per_task: 6
+  memory_gb: 36
+  time_limit: "2-00:00:00"
+evaluate:
+  partition: evaluate-partition
+  cpus_per_task: 4
+  memory_gb: 24
+  time_limit: "1-00:00:00"
+""",
+        encoding="utf-8",
     )
 
-    assert result.detached is False
-    assert result.state == "COMPLETED"
-    assert session.followed is True
-    assert [(event.kind, event.state) for event in events] == [
-        ("submitted", None),
-        ("finished", "COMPLETED"),
+
+@pytest.mark.parametrize(
+    ("workflow", "sbatch_output", "job_id", "resource_lines"),
+    [
+        (
+            "train",
+            "123\n",
+            123,
+            ("train-partition", "8", "48", "3-00:00:00"),
+        ),
+        (
+            "evaluate",
+            "456;university\n",
+            456,
+            ("evaluate-partition", "4", "24", "1-00:00:00"),
+        ),
+    ],
+)
+def test_submit_cli_sends_one_exact_typed_script(
+    workflow: Literal["train", "evaluate"],
+    sbatch_output: str,
+    job_id: int,
+    resource_lines: tuple[str, str, str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _request(workflow)
+    request_path = tmp_path / "REQUEST.json"
+    request_path.write_bytes(WORKFLOW_REQUEST_ADAPTER.dump_json(request))
+    _write_remote(tmp_path / "REMOTE.yaml")
+    monkeypatch.chdir(tmp_path)
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, stdout=sbatch_output)
+
+    monkeypatch.setattr("spice.execution.submission.subprocess.run", fake_run)
+
+    result = CliRunner().invoke(app, ["submit", str(request_path)])
+
+    assert result.exit_code == 0
+    assert result.output == f"{job_id}\n"
+    assert len(calls) == 1
+    argv, kwargs = calls[0]
+    assert argv == [
+        "ssh",
+        "-T",
+        "-o",
+        "BatchMode=yes",
+        "university-alias",
+        "sbatch",
+        "--parsable",
     ]
+    partition, cpus, memory, time_limit = resource_lines
+    request_json = WORKFLOW_REQUEST_ADAPTER.dump_json(request).decode()
+    assert kwargs == {
+        "input": (
+            "#!/bin/bash\n"
+            f"#SBATCH --partition={partition}\n"
+            "#SBATCH --nodes=1\n"
+            "#SBATCH --ntasks=1\n"
+            "#SBATCH --gres=gpu:1\n"
+            f"#SBATCH --cpus-per-task={cpus}\n"
+            f"#SBATCH --mem={memory}G\n"
+            f"#SBATCH --time={time_limit}\n"
+            "#SBATCH --output=/remote/logs/%j.out\n"
+            "export STORAGE_ROOT='/remote/storage root'\n"
+            "exec '/opt/spice executable' remote workflow <<'SPICE_REQUEST'\n"
+            f"{request_json}\n"
+            "SPICE_REQUEST\n"
+        ),
+        "text": True,
+        "stdout": subprocess.PIPE,
+        "check": True,
+    }
 
 
-def test_submit_resolved_workflow_failed_final_state_raises_after_reporting() -> None:
-    session = _FakeSession(state="FAILED")
-    events: list[WorkflowSubmissionEvent] = []
+def test_submit_cli_hydrates_every_request_before_submission(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    valid = tmp_path / "valid.json"
+    invalid = tmp_path / "invalid.json"
+    valid.write_bytes(WORKFLOW_REQUEST_ADAPTER.dump_json(_request("train")))
+    invalid.write_text("{}", encoding="utf-8")
+    calls: list[WorkflowRequest] = []
+    monkeypatch.setattr(cli, "submit_workflow", lambda request: calls.append(request) or 1)
 
-    with pytest.raises(SpiceOperatorError, match="Job 12345 ended with state FAILED"):
-        submit_resolved_workflow(
-            _train_config(),
-            target="target",
-            on_event=events.append,
-            session_factory=lambda _target: session,
-        )
+    result = CliRunner().invoke(app, ["submit", str(valid), str(invalid)])
 
-    assert [(event.kind, event.state) for event in events] == [
-        ("submitted", None),
-        ("finished", "FAILED"),
-    ]
+    assert result.exit_code == 1
+    assert isinstance(result.exception, ValidationError)
+    assert result.output == ""
+    assert calls == []
 
 
-def test_submit_resolved_workflow_keyboard_interrupt_detaches() -> None:
-    session = _FakeSession(interrupt=True)
-    events: list[WorkflowSubmissionEvent] = []
+def test_submit_cli_stops_after_failure_and_keeps_prior_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths: list[Path] = []
+    for index, workflow in enumerate(("train", "evaluate", "train")):
+        path = tmp_path / f"{index}.json"
+        path.write_bytes(WORKFLOW_REQUEST_ADAPTER.dump_json(_request(workflow)))
+        paths.append(path)
+    failure = RuntimeError("submission failed")
+    calls: list[WorkflowRequest] = []
 
-    result = submit_resolved_workflow(
-        _train_config(),
-        target="target",
-        on_event=events.append,
-        session_factory=lambda _target: session,
+    def fake_submit(request: WorkflowRequest) -> int:
+        calls.append(request)
+        if len(calls) == 2:
+            raise failure
+        return 123
+
+    monkeypatch.setattr(cli, "submit_workflow", fake_submit)
+
+    result = CliRunner().invoke(app, ["submit", *(str(path) for path in paths)])
+
+    assert result.exit_code == 1
+    assert result.exception is failure
+    assert result.output == "123\n"
+    assert calls == [_request("train"), _request("evaluate")]
+
+
+@pytest.mark.parametrize("case", ["relative_executable", "malformed_output"])
+def test_submit_rejects_owned_invalid_inputs(
+    case: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request_path = tmp_path / "REQUEST.json"
+    request_path.write_bytes(WORKFLOW_REQUEST_ADAPTER.dump_json(_request("train")))
+    _write_remote(
+        tmp_path / "REMOTE.yaml",
+        executable="relative/spice" if case == "relative_executable" else "/opt/spice",
     )
+    monkeypatch.chdir(tmp_path)
+    calls = 0
 
-    assert result.detached is True
-    assert result.state == "running"
-    assert [(event.kind, event.state) for event in events] == [
-        ("submitted", None),
-        ("detached", "running"),
-    ]
+    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(argv, 0, stdout="not-a-job\n")
+
+    monkeypatch.setattr("spice.execution.submission.subprocess.run", fake_run)
+
+    result = CliRunner().invoke(app, ["submit", str(request_path)])
+
+    assert result.exit_code == 1
+    assert result.output == ""
+    if case == "relative_executable":
+        assert isinstance(result.exception, ValidationError)
+        assert "executable must be an absolute path" in str(result.exception)
+        assert calls == 0
+    else:
+        assert isinstance(result.exception, ValueError)
+        assert calls == 1

@@ -1,70 +1,99 @@
-"""Execution-owned workflow submit/follow lifecycle."""
+"""Submit one typed workflow through SSH and Slurm."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Literal
+import re
+import shlex
+import subprocess
+from pathlib import Path
+from typing import Annotated
 
-from ..config.resolved_workflows import ResolvedWorkflowConfig
-from ..core.errors import SpiceOperatorError
-from .provenance import ExecutionJobProvenance
-from .session import ExecutionSession, open_execution_session
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
-WorkflowSubmissionEventKind = Literal["submitted", "detached", "finished"]
-WorkflowSubmissionEventFn = Callable[["WorkflowSubmissionEvent"], None]
+from ..config import WORKFLOW_REQUEST_ADAPTER, WorkflowRequest
 
-
-@dataclass(frozen=True, slots=True)
-class WorkflowSubmissionEvent:
-    kind: WorkflowSubmissionEventKind
-    provenance: ExecutionJobProvenance
-    state: str | None = None
+_NonEmptyString = Annotated[str, Field(strict=True, min_length=1)]
+_PositiveInt = Annotated[int, Field(strict=True, gt=0)]
+_JOB_ID_PATTERN = re.compile(r"([0-9]+)(?:;[^;\r\n]+)?\n?")
 
 
-@dataclass(frozen=True, slots=True)
-class WorkflowSubmissionResult:
-    provenance: ExecutionJobProvenance
-    state: str | None
-    detached: bool
+class _Record(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
 
-def submit_resolved_workflow(
-    config: ResolvedWorkflowConfig,
-    *,
-    target: str,
-    dependency: str | None = None,
-    detach: bool = False,
-    on_event: WorkflowSubmissionEventFn | None = None,
-    session_factory: Callable[[str], ExecutionSession] | None = None,
-) -> WorkflowSubmissionResult:
-    if session_factory is None:
-        session_factory = open_execution_session
-    session = session_factory(target)
-    provenance = session.submit_workflow(
-        config.workflow,
-        config=config,
-        dependency=dependency,
+class _Resources(_Record):
+    partition: _NonEmptyString
+    cpus_per_task: _PositiveInt
+    memory_gb: _PositiveInt
+    time_limit: _NonEmptyString
+
+
+class _Remote(_Record):
+    ssh: _NonEmptyString
+    executable: _NonEmptyString
+    storage_root: _NonEmptyString
+    log_root: _NonEmptyString
+    train: _Resources
+    tune: _Resources
+    evaluate: _Resources
+
+    @field_validator("executable", "storage_root", "log_root")
+    @classmethod
+    def validate_absolute_path(cls, value: str, info: ValidationInfo) -> str:
+        if not Path(value).is_absolute():
+            raise ValueError(f"{info.field_name} must be an absolute path")
+        return value
+
+
+def submit(request: WorkflowRequest) -> int:
+    """Submit one Train or Evaluate request and return its positive Slurm ID."""
+
+    request_json = WORKFLOW_REQUEST_ADAPTER.dump_json(request).decode()
+    remote = _Remote.model_validate(yaml.safe_load(Path("REMOTE.yaml").read_bytes()))
+    resources = remote.train if request.workflow == "train" else remote.evaluate
+    script = _render_script(remote, resources, request_json)
+    result = subprocess.run(
+        [
+            "ssh",
+            "-T",
+            "-o",
+            "BatchMode=yes",
+            remote.ssh,
+            "sbatch",
+            "--parsable",
+        ],
+        input=script,
+        text=True,
+        stdout=subprocess.PIPE,
+        check=True,
     )
-    _emit(on_event, WorkflowSubmissionEvent("submitted", provenance))
-    if detach or not session.follow_by_default:
-        return WorkflowSubmissionResult(provenance=provenance, state=None, detached=True)
-    try:
-        state = session.follow_job(provenance)
-    except KeyboardInterrupt:
-        _emit(on_event, WorkflowSubmissionEvent("detached", provenance, state="running"))
-        return WorkflowSubmissionResult(provenance=provenance, state="running", detached=True)
-    if state is None:
-        return WorkflowSubmissionResult(provenance=provenance, state=None, detached=False)
-    _emit(on_event, WorkflowSubmissionEvent("finished", provenance, state=state))
-    if state != "COMPLETED":
-        raise SpiceOperatorError(f"Job {provenance.job_id} ended with state {state}")
-    return WorkflowSubmissionResult(provenance=provenance, state=state, detached=False)
+    return _parse_job_id(result.stdout)
 
 
-def _emit(
-    on_event: WorkflowSubmissionEventFn | None,
-    event: WorkflowSubmissionEvent,
-) -> None:
-    if on_event is not None:
-        on_event(event)
+def _render_script(remote: _Remote, resources: _Resources, request_json: str) -> str:
+    return "\n".join(
+        (
+            "#!/bin/bash",
+            f"#SBATCH --partition={resources.partition}",
+            "#SBATCH --nodes=1",
+            "#SBATCH --ntasks=1",
+            "#SBATCH --gres=gpu:1",
+            f"#SBATCH --cpus-per-task={resources.cpus_per_task}",
+            f"#SBATCH --mem={resources.memory_gb}G",
+            f"#SBATCH --time={resources.time_limit}",
+            f"#SBATCH --output={remote.log_root}/%j.out",
+            f"export STORAGE_ROOT={shlex.quote(remote.storage_root)}",
+            f"exec {shlex.quote(remote.executable)} remote workflow <<'SPICE_REQUEST'",
+            request_json,
+            "SPICE_REQUEST",
+            "",
+        )
+    )
+
+
+def _parse_job_id(output: str) -> int:
+    match = _JOB_ID_PATTERN.fullmatch(output)
+    if match is None or (job_id := int(match.group(1))) <= 0:
+        raise ValueError(f"invalid sbatch --parsable output: {output!r}")
+    return job_id

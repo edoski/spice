@@ -1,1 +1,1 @@
-"""CLI command modules."""
+"""Corpus CLI command."""
