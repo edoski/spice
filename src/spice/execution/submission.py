@@ -11,7 +11,7 @@ from typing import Annotated, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
-from ..config import WorkflowRequest
+from ..config import Method, TuneRequest, WorkflowRequest
 
 _NonEmptyString = Annotated[str, Field(strict=True, min_length=1)]
 _PositiveInt = Annotated[int, Field(strict=True, gt=0)]
@@ -70,15 +70,38 @@ class _WorkflowEnvelope(_Record):
     deployment: _Deployment
 
 
+class _CandidateProcessInput(_Record):
+    request: TuneRequest
+    method: Method
+    deployment: _Deployment
+
+
 def submit(request: WorkflowRequest) -> int:
     """Submit one Train or Evaluate request and return its positive Slurm ID."""
 
-    remote = _Remote.model_validate(yaml.safe_load(Path("REMOTE.yaml").read_bytes()))
+    remote = _load_remote()
     envelope_json = _WorkflowEnvelope(
         request=request,
         deployment=remote.deployment,
     ).model_dump_json()
-    script = _render_script(remote, envelope_json)
+    return _invoke_sbatch(remote, _render_script(remote, envelope_json, "workflow"))
+
+
+def _submit_candidate(request: TuneRequest, method: Method) -> int:
+    remote = _load_remote()
+    candidate_json = _CandidateProcessInput(
+        request=request,
+        method=method,
+        deployment=remote.deployment,
+    ).model_dump_json()
+    return _invoke_sbatch(remote, _render_script(remote, candidate_json, "candidate"))
+
+
+def _load_remote() -> _Remote:
+    return _Remote.model_validate(yaml.safe_load(Path("REMOTE.yaml").read_bytes()))
+
+
+def _invoke_sbatch(remote: _Remote, script: str) -> int:
     result = subprocess.run(
         [
             "ssh",
@@ -97,7 +120,11 @@ def submit(request: WorkflowRequest) -> int:
     return _parse_job_id(result.stdout)
 
 
-def _render_script(remote: _Remote, envelope_json: str) -> str:
+def _render_script(
+    remote: _Remote,
+    process_input_json: str,
+    leaf: Literal["workflow", "candidate"],
+) -> str:
     resources = remote.resources
     return "\n".join(
         (
@@ -111,8 +138,8 @@ def _render_script(remote: _Remote, envelope_json: str) -> str:
             f"#SBATCH --time={resources.time_limit}",
             f"#SBATCH --output={remote.log_root}/%j.out",
             f"export STORAGE_ROOT={shlex.quote(remote.storage_root)}",
-            f"exec {shlex.quote(remote.executable)} remote workflow <<'SPICE_REQUEST'",
-            envelope_json,
+            f"exec {shlex.quote(remote.executable)} remote {leaf} <<'SPICE_REQUEST'",
+            process_input_json,
             "SPICE_REQUEST",
             "",
         )
