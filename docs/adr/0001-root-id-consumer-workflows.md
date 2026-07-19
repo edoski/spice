@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Superseded.
+
+Successor: [ADR 0006: Direct Durable Object Authority](0006-direct-durable-object-authority.md).
 
 ## Context
 

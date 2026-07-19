@@ -1,92 +1,56 @@
-# Temporal Architecture
+# Temporal Preparation
 
-## Purpose
+FABLE (Fee Analysis through Blockchain Learning and Estimation) has two direct temporal preparation paths: historical fixed-block examples and live closed-head inference. Both use the same ordered feature functions and persisted training-only feature state.
 
-`temporal` lowers feature tables into supervised temporal problem stores. It owns problem compilers, execution policies, input-normalization contracts, problem-store shapes, and temporal semantics.
+## Historical interface
 
-Many time-series ML bugs are leakage bugs. Leakage happens when training examples include future information. Temporal contracts make time explicit.
-
-## Core Row Concepts
+`prepare_fit_history(corpus, experiment)` validates complete context and outcome support, fits state from training support only, and returns:
 
 ```text
-context_start        anchor / candidate_start        candidate window end
-     |                         |                         |
-     v                         v                         v
------+-------------------------+-------------------------+---- time
-     <---- model context -----> <---- candidate window --->
+HistoricalPreparation
+  training: HistoricalDataset
+  validation: HistoricalDataset
+  feature_state: FeatureState
+  target_state: TargetState
+  classification_state: ClassificationLossState | None
 ```
 
-For current-row style problems, the anchor and candidate start may be the same row. The model may use context and anchor-available features. Prediction chooses an offset inside the candidate window. The execution policy maps that offset to an outcome row and compares it to baseline or optimum behavior.
+`prepare_historical_window(corpus, experiment, window, *, feature_state, target_state)` prepares an exact validation or testing window with persisted state. A validation window must equal the experiment's authored validation window. A testing window must begin after all validation outcomes are complete.
 
-## Problem Store
-
-All compilers lower to `CompiledProblemStore`:
+For origin `h`, support is exact by block number:
 
 ```text
-feature_matrix
-log_base_fees
-timestamps
-context_start_rows
-anchor_rows
-candidate_start_rows
-candidate window end row array
-max_candidate_slots
+context:  h-C+1 ... h
+outcome:  h+1   ... h+K
+action k: target h+1+k
 ```
 
-Prediction and evaluation consume this generic shape instead of compiler-specific details.
-Problem stores own generic row geometry. Construction validates row-aligned feature, fee, and timestamp arrays; monotonic timestamps; aligned sample row arrays; positive action width; context rows inside each anchor; and non-empty candidate windows whose exclusive end stays inside the store. Store sample views also reject negative or out-of-range sample indices instead of relying on NumPy wrapping. Dataset-builder selection policy, fixed-context filtering, and inference timestamp-window sample filtering live in corpus preparation, not in the generic store.
+The Corpus must include every context and outcome block named by this geometry.
 
-Problem stores do not own action availability. `max_candidate_slots` is the action width, not a guarantee that every physical candidate window has that many rows. Action validity belongs to the execution policy because overflow and deadline behavior are policy semantics.
+## Lazy dataset
 
-## Compiler Flow
+Preparation builds one contiguous CPU backing over the needed range:
 
-```text
-ProblemSpec + FeatureContract + ExecutionPolicyContract
-        |
-        v
-problem compiler
-        |
-        +--> capability store for training
-        |
-        +--> delay store for evaluation at a concrete delay
-        |
-        v
-CompiledProblemContract
-```
+- transformed feature rows: float32 `[rows,F]`;
+- raw base fees: int64 `[rows]`;
+- block numbers: int64 `[rows]`.
 
-Compilers publish feature prerequisites and runtime metadata codecs. Dataset builders and workflows call compiler contracts; they should not inspect concrete compiler classes.
+It stores per-origin row positions and first-argmin labels as int64 vectors and standardized targets as a float32 vector. `HistoricalDataset.__getitem__()` slices one float32 `[C,F]` input and one int64 `[K]` raw fee outcome on demand, plus scalar int64 label and origin block and scalar float32 target.
 
-Training compiles the maximum supported delay into a capability store and a **Temporal Capability**. The capability is the artifact-facing runtime value that carries compiler runtime metadata, maximum delay, and action width into inference. Evaluation defaults and delay checks use the artifact Temporal Capability as authority; `ProblemSemantics.max_delay_seconds` remains authored problem provenance. Evaluation compiles a concrete delay store from the capability; it does not rediscover action width from the evaluation corpus. Storage artifact codecs own the persisted Temporal Capability envelope.
+## Feature state
 
-## Execution Policy
+The ordered feature tuple is request authority. Names must be unique and supported by the direct implementation. Raw features are assembled in exactly that order as Float64. Training-support population means and standard deviations use `ddof=0`; a constant feature is invalid. Transform applies those values and returns finite C-contiguous float32 rows.
 
-Prediction chooses an action. Execution policy defines what that action means in the problem:
+Exact formulas, units, causal availability, and the Ethereum forming-fee recurrence belong to the [theory](../../../docs/theory.md#causal-features).
 
-```text
-execution policy + problem store + sample indices
-        |
-        +--> prepared Action Space
-             +--> sample indices
-             +--> action width
-             +--> action mask
-        |
-        +--> prepared temporal facts
-             +--> Action Space
-             +--> Temporal Outcome Facts
-        |
-decoded offsets
-        |
-        v
-execute selected rows
-        |
-        +--> realized rows
-        +--> baseline rows
-        +--> optimum rows
-        +--> overflow mask
-```
+## Outcome preparation
 
-Model-input representation and prediction target construction consume the same prepared Action Space. Prediction training consumes prepared temporal facts so training state and target batches share one per-split policy preparation. Evaluators receive an execution-policy contract, not a policy id string.
+Historical outcomes remain positive int64 fees. For each origin, NumPy first-index `argmin` over `h+1 … h+K` produces the label; the selected raw minimum feeds the fitted target state. Training fits classification support only when the request asks for corrected inverse-frequency weighting.
 
-## Extension Points
+Role boundaries are complete-outcome boundaries. The training last parent plus `K` must be strictly before the first validation parent; an authored testing window obeys the same rule after validation. Training alone fits feature state, target state, classification support, and model weights.
 
-Add a compiler when example construction changes. Add a execution policy when outcome semantics change. Add input normalization when scaler fitting policy changes. Keep runtime metadata typed, routed through compiler registries, and bundled into Temporal Capability at artifact boundaries.
+## Live interface
+
+Serving freezes one latest closed head `h`, reads exactly `C-1` predecessors, validates the same seven row fields, transforms the ordered features with the artifact's `FeatureState`, and constructs float32 `[1,C,F]`. Historical preparation owns outcomes, labels, and target values.
+
+The artifact fixes `C`, `K`, feature order, and fitted states. Decoding returns `k`, and serving reports `h+1+k` as the target block coordinate.

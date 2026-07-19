@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Superseded.
+
+Successor: [ADR 0007: Native External Execution Boundary](0007-native-external-execution-boundary.md).
 
 ## Context
 

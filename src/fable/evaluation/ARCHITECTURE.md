@@ -1,115 +1,36 @@
-# Evaluation Architecture
+# Evaluation
 
-## Purpose
+FABLE (Fee Analysis through Blockchain Learning and Estimation) separates canonical evaluation observations, transient reductions, sealed reports, and experiment-specific evidence. Explicit UUIDs and paths connect these operations.
 
-`evaluation` scores decoded predictions against temporal problem stores. It owns evaluator config validation, evaluator contracts, evaluator metric descriptors, event selection, shared Temporal Accounting, and decoded-result checks. Generic metric result types live in `spice.metrics`.
+## Canonical evaluation
 
-Training metrics answer “did the prediction loss improve?” Evaluation metrics answer “were the decoded decisions good under the temporal problem?” These are related but not identical.
+`evaluate(request, storage_root, deployment)` loads the exact Corpus and native artifact, requires the artifact's source Corpus to equal the evaluation Corpus, prepares the authored validation or testing origin window with persisted state, and performs CUDA inference.
 
-## Config And Registry Pattern
-
-There are two concrete evaluator specs:
-
-```yaml
-id: poisson_replay
-window_seconds: 7200
-repetitions: 50
-arrival_rate_per_second: 0.05
-seed: 2026
-```
-
-```yaml
-```
+For every eligible origin it writes one ordered, nonnull observation containing the decision coordinate, target and decoded actions, scaled classification contribution, auxiliary z prediction, raw fee facts, and elapsed-time descriptions. Work is written under `evaluations/.<evaluation_id>/` and renamed to:
 
 ```text
-mapping / EvaluatorConfig
-        |
-        v
-coerce_evaluator_config()
-  - dispatch by evaluation.id
-  - validate concrete evaluator config
-  - report config-facing envelope errors as ConfigResolutionError
-        |
-        v
-compile_evaluator_contract()
-  - dispatch by config id
-  - compile concrete evaluator contract
+evaluations/<evaluation_id>/
+  evaluation.json
+  observations.parquet
 ```
 
-The registry is an explicit table of trusted evaluator adapters. It is not a generic engine registry. Shared owner-spec helpers handle only mechanical payload and concrete-type validation; evaluator ids and compile hooks stay local to `evaluation`.
+The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical 13-column S12 contract in the [reference](../../../docs/reference.md#s12-canonical-observations).
 
-## Scoring Flow
+## One-evaluation reduction
 
-```text
-model outputs
-    |
-    v
-prediction contract decodes result
-    |
-    v
-decoded result id
-    |
-    +--> evaluator contract checks accepted decoded-result id
-             |
-             v
-        evaluator.run(store, execution_policy, decoded_result, action_space)
-             |
-             v
-        EvaluationSummary
-```
+`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` loads and cross-checks the request, artifact association, window, and ordered observation schema. It returns one transient 43-field row.
 
-Evaluators never call models or prediction heads. The `modeling.scoring` bridge performs inference and passes decoded results to evaluator contracts.
+The reducer validates exact origin coverage, nonnull inputs, action bounds, positive fee denominators, wait bounds, finite values, and scientific identities. It reconstructs regression target and Smooth-L1 using the artifact's `TargetState` and authored loss. Economic differences begin in raw Int64 before Float64 aggregation. The sole nullable result is captured opportunity when exact total opportunity is zero.
 
-## Decoded Result Boundary
+## Derived report composition
 
-The evaluator accepts the generic `DecodedPredictionResult` and a prepared Action Space at the evaluator entrypoint because that is the evaluator ABI. Replay then narrows to `DecodedOffsets` from `prediction.decoded_offsets` once:
+`write_sealed_report(storage_root, evaluation_ids, destination)` accepts a nonempty, duplicate-free tuple of testing evaluation UUIDs. In caller order it joins each transient reduction with exact artifact, Corpus, window, model, experiment, and coverage context, then publishes the 62-column S15 TSV through a hidden sibling.
 
-```text
-Temporal Replay Runner
-  generic decoded result -> require_decoded_offsets()
-  validated selected runs -> temporal_accounting.summarize_selected_temporal_decision_runs()
-```
+Top-level `experiments` owns two fixed protocols:
 
-`temporal_accounting` is evaluation-private and accepts `DecodedOffsets` directly. That keeps generic decoded-result handling at the evaluator boundary.
+- `experiments.context_history.write_context_history_evidence(...)` writes the 71-column S16 context-history sensitivity TSV.
+- `experiments.k5_fee_conditions.write_k5_fee_condition_evidence(...)` writes the 27-column S18 primary K=5 fee-condition TSV.
 
-## Temporal Accounting
+Those functions own their fixed matrices, order, regrouping, and null rules.
 
-Temporal replay evaluator Adapters choose event positions from a runner-built replay sample view. The **Temporal Replay Runner** owns decoded-result validation, replay sample positions/timestamps/count derived from the prepared Action Space, selected-position validation, strict scalar metadata validation, and no-run failures. Temporal Accounting computes realized, baseline, optimum, event-mean economic metrics, fee sums, and per-run window summaries for validated selected runs.
-
-```text
-selected sample positions
-  -> execution policy realization
-  -> realized / baseline / optimum rows
-  -> real fee values
-  -> event-mean metrics and fee sums
-```
-
-`poisson_replay` owns Poisson windowing, arrival sampling, chronological ordering of the replay sample view, and arrival-to-position selection. It feeds selections to the runner, which validates metadata, handles no-run failures, and uses Temporal Accounting.
-
-Temporal Accounting returns evaluation-private temporal replay result types. Event metric sums and fee sums stay as replay accounting facts until output assembly. A Temporal Replay Metric Catalog owns metric ids, descriptors, event-mean membership, fee-sum membership, window-summary membership, metric validation, metric assembly, and extraction into generic metric dictionaries. The Temporal Replay Runner attaches those descriptors and converts typed replay results to generic `EvaluationSummary` before the result leaves `evaluation`, so storage, benchmarks, reporting, and modeling keep one public evaluation result ABI.
-
-## Metric Descriptor Rule
-
-```text
-metric id -> label -> role(primary | secondary | diagnostic)
-```
-
-Each evaluator contract must declare exactly one primary metric. Descriptor ids must be unique and path-safe. Returned summary metrics and per-run metrics must exactly match descriptor ids; window metric ids must be descriptor ids. Metric descriptors may also declare optimization direction for reporting and comparison.
-
-## Module Map
-
-```text
-evaluation/
-  config.py          evaluator config models
-  contracts.py       compiled evaluator contract and summary models
-  registry.py        public config coercion and contract compile helpers
-  temporal_replay_runner.py decoded validation, replay loop, summary conversion
-  _temporal_replay_metric_catalog.py private metric ids, descriptors, validation, aggregation facts, assembly, and extraction
-  temporal_replay_results.py private typed temporal replay results
-  poisson_replay.py  Poisson replay evaluator adapter and event selection policy
-  temporal_accounting.py temporal decision accounting math
-```
-
-## Extension Points
-
-Add another evaluator adapter only when it has distinct event-selection or scoring semantics. Workflows should keep calling `compile_evaluator_contract()`.
+Exact equations and claim limits are in the [theory](../../../docs/theory.md#evaluation-estimands); exact signatures and schemas are in the [reference](../../../docs/reference.md#evaluation-api).

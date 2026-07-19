@@ -1,61 +1,45 @@
-# Acquisition Architecture
+# Corpus Acquisition
 
-## Purpose
+FABLE (Fee Analysis through Blockchain Learning and Estimation) exposes one acquisition interface: `acquire_corpus(request, *, storage_root, rpc_url, poa)`. It turns one exact `CorpusRequest` into one finalized, canonical Corpus. Transport, resumable work, validation, finality, and publication stay behind that call.
 
-`acquisition` owns data collection mechanics. It turns block-window intent into ordered canonical block rows for caller-provided sinks. Corpus Split Materialization writes parquet; Corpus Assembly orchestrates and publishes corpus roots.
+## Contract
 
-## Theory
+The request fixes a UUIDv4, chain ID, and inclusive first/last block. Acquisition publishes to an initially absent destination under the explicit `storage_root`; `rpc_url` and `poa` stay at the invocation boundary.
 
-Training quality begins with data provenance. Acquisition records provider and runtime mechanics; corpus state records which chain, time windows, blocks, split outcomes, and validation status produced the corpus.
-
-## Boundaries
-
-Acquisition does not define ML targets, train models, score predictions, write parquet datasets, or publish corpus roots. It schedules block-source pulls and emits ordered canonical rows to a caller-provided sink. Corpus Assembly decides how fetched rows become a corpus root.
-
-Corpus planning owns source requirements. Acquisition adapters receive those requirements at construction and decide whether they can materially produce the requested source facts. For the RPC adapter, the generic `priority_fee_percentiles` enrichment maps to `eth_feeHistory`; unsupported enrichments fail before acquisition starts. The acquisition package still emits canonical rows and does not know why a feature set needed them.
-
-## Invariants
-
-Raw block rows must be canonical before persistence. Provider-specific transport details stay in provider-specific modules. Storage commit mechanics stay behind Corpus Assembly and storage lifecycle primitives.
-
-## Extension Points
-
-Add a new acquisition Adapter by keeping transport, provider client, and canonical row conversion separate. Preserve the same corpus contract so features and temporal compilers remain unchanged.
-
-## Data Flow
+The completed object contains:
 
 ```text
-AcquireConfig
-    |
-    v
-provider/chain endpoint
-    |
-    v
-adapter requirement binding
-    |
-    v
-block range plans
-    |
-    v
-block source fetch
-    |
-    v
-canonical block rows
-    |
-    v
-Corpus Split Materialization
-    |
-    v
-Corpus Acquisition Stage
-    |
-    v
-Corpus Assembly
+corpora/<corpus_id>/
+  corpus.json
+  blocks.parquet
 ```
 
-## Beginner Context
+`corpus.json` stores the exact request and one finalized anchor. `blocks.parquet` stores the requested contiguous rows in block-number order with the exact seven-column canonical schema documented in the [reference](../../../docs/reference.md#corpus-object).
 
-The model eventually trains on examples, but examples are only as trustworthy as the raw data underneath them. Acquisition is where external uncertainty enters the system: RPC latency, provider failures, missing blocks, and chain-specific payload shape. That uncertainty should be resolved before feature construction starts.
+## Hidden resumable prefix
 
-## Separation From Workflows
+Acquisition works in `corpora/.<corpus_id>/`. A request JSON binds that scratch directory to one request. Complete deterministic checkpoint chunks cover at most 4,096 consecutive blocks, and the chunk list must form an exact prefix from the requested first block. Scratch validation enforces the request binding, expected filenames, prefix continuity, complete chunks, schema, nonnull domains, and parent links.
 
-The acquisition package should answer "how do I fetch, retry, order, and canonicalize blocks?" Corpus Split Materialization answers "how do I resume, write, and validate parquet chunks?" Corpus Assembly answers "which windows do I fetch, how do I validate capability, and how do I commit the result?" The acquire workflow stays a thin caller.
+The scratch prefix records owner-local request binding and checkpoint progress. The completed Corpus directory is the published interface.
+
+## Ordered ordinary reads
+
+The RPC endpoint's chain ID must equal the request. Within a checkpoint, acquisition issues ordinary `eth_getBlockByNumber` reads in batches of four and consumes results in requested-number order. Every block must provide:
+
+- its requested number and normalized block/parent hashes;
+- a nonnegative, nondecreasing timestamp;
+- positive base fee and gas limit;
+- gas used in `[0, gas_limit]`;
+- a transaction sequence whose length becomes `tx_count`.
+
+Parent hashes must link across every read and checkpoint boundary. Rows enter the canonical object after all block facts pass validation.
+
+## Finality proof
+
+After the exact range is present, acquisition reads the provider's `finalized` tag. The finalized height must not precede the requested last block. If it is later, numbered headers must prove that the staged last block is its ancestor. The tagged anchor is then reread by number; number, hash, and parent hash must match the tagged response.
+
+Block and parent hashes are proof-only acquisition facts. The completed parquet drops them. The finalized anchor keeps only its number and normalized hash.
+
+## Publication
+
+Checkpoint rows stream into one canonical parquet file. The exact Corpus candidate is reloaded and validated for schema, nonnull domains, row count, requested endpoints, contiguity, chain ID, timestamp order, and finalized coverage. Publication then removes checkpoint metadata and renames the hidden sibling to the canonical directory.

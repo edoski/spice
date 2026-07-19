@@ -1,129 +1,93 @@
-# Spice Architecture Guide
+# FABLE (Fee Analysis through Blockchain Learning and Estimation) Architecture
 
-## Purpose
+FABLE is organized around strict request values, direct owner functions, native library objects, and UUID-addressed durable objects. Dependencies point from operator edges toward scientific owners.
 
-Spice is a modular machine-learning system for blockchain fee-decision research. It turns raw block history into temporal learning examples, trains models, decodes predictions into decisions, evaluates those decisions against fee outcomes, and persists the resulting datasets, studies, and artifacts.
-
-The architecture is intentionally split into generic domains. Concrete implementations exist, but workflows should usually see only configs, contracts, typed runtime objects, and storage roots.
-
-## End-To-End Shape
+## System shape
 
 ```text
-CLI / benchmark / remote runner
-  -> config resolution
-  -> workflow orchestration
-  -> corpus acquisition or corpus loading
-  -> feature table construction
-  -> temporal problem store construction
-  -> dataset-builder tensorization
-  -> model training or model inference
-  -> prediction-family loss/decode
-  -> evaluator scoring
-  -> storage commit / catalog reindex
-```
-
-For a beginner: the model does not learn directly from blockchain JSON. Blocks first become canonical rows. Rows become feature columns. Feature columns plus temporal rules become supervised examples. Dataset builders turn examples into tensors. Prediction families define what the model predicts. Evaluators score decoded decisions in economic terms.
-
-## Generic Seam Pattern
-
-Most modular domains follow the same pattern:
-
-```text
-human config or payload
+strict JSON request
         |
         v
-owner coercer validates concrete config
+CLI or direct Python call
+        |
+        +--> acquisition --> Corpus
+        +--> tuning ------> Study
+        +--> fitting -----> native Lightning artifact
+        +--> evaluation --> observations.parquet
         |
         v
-local spec table selects implementation
-        |
-        v
-compiled contract exposes behavior
-        |
-        v
-workflow uses contract, not concrete class
+transient reducers and caller-chosen TSV evidence
 ```
 
-Each spec table belongs to the package that owns the behavior. Implementation knowledge stays local:
+`fable.config` owns frozen Pydantic values and small discriminated unions. `fable.requests` mints fresh UUIDv4 instances. Each owning operation revalidates the complete request at its boundary.
+
+## Dependency direction
 
 ```text
-features       -> feature families
-temporal       -> compilers, execution policies, input normalization
-prediction     -> prediction families
-evaluation     -> evaluator adapters
-modeling       -> dataset builders and model families
-objectives     -> objective contracts
+CLI / serving / experiment scripts
+                |
+                v
+execution, acquisition, study, evaluation
+                |
+                v
+modeling, temporal, min_block_fee, corpus
+                |
+                v
+strict config values and canonical addresses
 ```
 
-Config validation and compile dispatch are separate. Coercers reconstruct concrete config models from YAML or persisted payloads. Compile registries then assert that the config object matches the selected spec type before calling the concrete compiler.
+Each package owns one system seam:
 
-## Boundary Rules
+- `corpus` owns canonical completed block data and exact validation.
+- `temporal` owns causal feature state, fixed-block context/outcome geometry, and lazy historical examples.
+- `min_block_fee` owns target state, classification support, loss, two-head output, and decode.
+- `modeling` owns the three concrete neural definitions, Lightning fitting, and native checkpoint loading.
+- `study` owns bounded candidate membership, ordered retained results, publication, and selected-result materialization.
+- `evaluation` owns canonical observations, one-evaluation reduction, and sealed report composition.
+- Top-level `experiments` owns the S16 and S18 experiment protocols.
 
-```text
-CLI owns user conveniences
-  -> config/execution receive explicit values
-  -> workflows receive hydrated configs
-  -> domains receive contracts and typed state
-```
+## Durable object flow
 
-`DEFAULT_REMOTE_TARGET = "disi_l40"` exists only at the CLI edge. Downstream execution and transfer APIs require an explicit target name. This makes the operator default convenient without leaking cluster-specific behavior into core workflow code.
+### Corpus
 
-Prediction and evaluation are separate. Prediction families produce decoded-result kinds, such as offset decisions. Evaluators declare which decoded-result id they accept. The modeling scoring service is the bridge that runs inference, checks the accepted result id, and calls the evaluator.
+`CorpusRequest` names an inclusive chain block range and its UUID. `acquire_corpus()` reads ordinary block RPC responses in deterministic order into an owner-local hidden sibling. It validates chain identity, links, timestamps, fee and gas domains, proves ancestry to a finalized anchor, writes the exact `corpus.json` and `blocks.parquet`, removes transport-only hashes, then renames the hidden directory to the canonical Corpus address.
 
-Storage is its own domain. Root kind, layout, root-local SQLite state, catalog indexing, root lifecycle, and persisted payload decoding live there. Remote transfer orchestration lives in execution. Workflows call storage primitives instead of moving directories or opening state databases ad hoc.
+### Study and artifact
 
-## Dependency Direction
+`TuneRequest` contains one `ExperimentSemantics` and a finite, family-specific `MethodSpace`. `run_candidate()` prepares training state, fits one supplied Method, and appends one successful `RetainedResult` to Study scratch. `publish_study()` renames the ordered result set to its canonical JSON file.
 
-```text
-core
-  ^
-  |
-domain configs / contracts / registries
-  ^
-  |
-modeling, storage, acquisition services
-  ^
-  |
-workflows
-  ^
-  |
-cli and remote runner
-```
+A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-Study request instead names the exact Study UUID and result index while carrying the experiment. Training loads that exact row, reconstructs the definition from its Method, fits through Lightning, and renames the native weights-only best checkpoint to the artifact UUID address. The checkpoint embeds the request, feature and target state, optional classification support, and—only for selected-Study training—the exact result index and Method.
 
-Lower layers may define shared vocabulary. Higher layers coordinate. Lower layers should not inspect CLI flags, resolve workflow surfaces, or know execution-target defaults.
+### Evaluation and derived evidence
 
-## Root Concepts
+`EvaluateRequest` names an artifact, same-source Corpus, validation or testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, writes one nonnull ordered observation per origin, and publishes `evaluation.json` with `observations.parquet`.
 
-```text
-corpus   raw canonical block data for one chain/dataset identity
-study    tuning/search state and provenance
-artifact trained model plus runtime summaries and evaluations
-```
+`reduce_evaluation()` reads that durable object and its artifact association to return one transient scientific row. `write_sealed_report()` combines explicit testing evaluation IDs in caller order and publishes a derived TSV. The context-history and fee-condition evidence writers live in `experiments/` with their fixed scientific matrices.
 
-These are separate storage root kinds because they have different lifecycle rules and state schemas. Root-local state is authoritative; the catalog is a searchable index that can be rebuilt.
+## Training and inference
 
-`config` describes user intent. `contract` describes executable meaning. `adapter`, `family`, `builder`, and `compiler` are local implementation selectors. A named YAML config may choose an adapter, but the named config is not itself the adapter.
+Historical preparation produces lazy datasets over contiguous feature, fee, and block-number backing.
 
-## Guide Index
+The model union is closed: LSTM, Transformer, or Transformer-LSTM. Every model consumes float32 `[B,C,F]` and returns action logits `[B,K]` plus a scalar standardized minimum-fee prediction `[B]`. The architecture is independent of target construction and evaluation accounting.
 
-```text
-src/spice/ARCHITECTURE.md                         package-level domain map
-src/spice/core/ARCHITECTURE.md                    shared primitives and spec helpers
-src/spice/config/ARCHITECTURE.md                  YAML, surfaces, resolved hydration
-src/spice/conf/ARCHITECTURE.md                    checked-in declarative specs
-src/spice/cli/ARCHITECTURE.md                     command edge and remote default
-src/spice/execution/ARCHITECTURE.md               remote targets and resolved execution
-src/spice/workflows/ARCHITECTURE.md               task orchestration
-src/spice/acquisition/ARCHITECTURE.md             raw block acquisition
-src/spice/corpus/ARCHITECTURE.md                  canonical block corpus
-src/spice/features/ARCHITECTURE.md                feature contracts and family internals
-src/spice/temporal/ARCHITECTURE.md                problem stores and temporal theory
-src/spice/modeling/ARCHITECTURE.md                tensorization, training, inference
-src/spice/prediction/ARCHITECTURE.md              targets, losses, decoding
-src/spice/evaluation/ARCHITECTURE.md              evaluator contracts and metrics
-src/spice/objectives/ARCHITECTURE.md              optimization objective selection
-src/spice/benchmarks/ARCHITECTURE.md              benchmark specs, plans, runs, collection
-src/spice/storage/ARCHITECTURE.md                 root state, catalog, lifecycle
-```
+Live serving loads cwd-local `SERVING.yaml` once, selects an exact artifact cell, freezes the latest closed head, reads its `C-1` predecessors, applies the checkpoint's ordered feature state, runs one CPU batch, and returns the decoded target coordinate.
 
-Subpackage guides document generic seams and enough theory to understand why the seam exists. Concrete implementation notes may appear where they clarify a generic pattern, but the primary goal is architecture and learning, not a catalog of every experiment setting.
+## External boundaries
+
+Acquisition and serving use ordinary Web3 RPC clients supplied at their operator boundaries.
+
+`fable.execution.submit()` is the boundary to native OpenSSH and Slurm execution. [ADR 0007](docs/adr/0007-native-external-execution-boundary.md) records that ownership decision.
+
+Completed objects have direct canonical addresses and own their exact requests once. UUIDs provide instance identity; associations provide meaning. See [ADR 0006](docs/adr/0006-direct-durable-object-authority.md).
+
+## Deep interfaces
+
+Five source guides document the deep interfaces:
+
+- [Acquisition](src/fable/acquisition/ARCHITECTURE.md)
+- [Temporal preparation](src/fable/temporal/ARCHITECTURE.md)
+- [Minimum-block-fee task](src/fable/min_block_fee/ARCHITECTURE.md)
+- [Study](src/fable/study/ARCHITECTURE.md)
+- [Evaluation](src/fable/evaluation/ARCHITECTURE.md)
+
+Exact request fields, addresses, commands, remote input, and schemas belong to the [reference](docs/reference.md). Scientific equations and claims belong to the [theory](docs/theory.md).
