@@ -10,9 +10,11 @@ import typer
 from ..config import WORKFLOW_REQUEST_ADAPTER, WorkflowRequest
 from ..execution import submit as submit_workflow
 from .commands.corpus import app as corpus_app
+from .commands.remote import app as remote_app
 
 app = typer.Typer(add_completion=False)
 app.add_typer(corpus_app, name="corpus")
+app.add_typer(remote_app, name="remote", hidden=True)
 
 
 @app.command("submit")
