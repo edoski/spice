@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import Self
-from urllib.parse import urlparse
 
 from pydantic import (
     Field,
@@ -21,27 +20,10 @@ from ..temporal.compilers import ProblemCompilerConfig
 from ..temporal.execution_policy import ExecutionPolicyConfig
 
 
-def _validate_http_endpoint_url(value: str, *, label: str) -> str:
-    parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError(f"{label} must be an http:// or https:// URL")
-    return value
-
-
 class ChainRuntimeSpec(_ConfigModel):
     chain_id: int = Field(gt=0)
     uses_poa_extra_data: bool
     nominal_block_time_seconds: float = Field(gt=0.0)
-
-
-class ChainSpec(_ConfigModel):
-    name: str
-    runtime: ChainRuntimeSpec
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, value: str) -> str:
-        return validate_path_segment(value, label="chain.name")
 
 
 class ProblemSpec(_ConfigModel):
@@ -139,22 +121,3 @@ def coerce_features_config(payload: object) -> FeaturesConfig:
         owner_payload(payload, owner="features", config_type=FeaturesConfig),
         FeaturesConfig,
     )
-
-
-class ResolvedRpcEndpointConfig(_ConfigModel):
-    provider_name: str
-    url: str
-    reference: str
-    timeout_seconds: float = Field(gt=0.0)
-    retry_count: int = Field(ge=0)
-    backoff_factor: float = Field(ge=0.0)
-
-    @field_validator("provider_name")
-    @classmethod
-    def validate_provider_name(cls, value: str) -> str:
-        return validate_path_segment(value, label="rpc_endpoint.provider_name")
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, value: str) -> str:
-        return _validate_http_endpoint_url(value, label="rpc_endpoint.url")

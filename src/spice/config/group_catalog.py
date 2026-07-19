@@ -7,14 +7,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Generic, TypeVar
 
-from .models import ChainSpec
-
 ConfigT = TypeVar("ConfigT")
 _ValidateGroupPayload = Callable[[dict[str, object]], ConfigT]
 
 
 class ConfigGroup(StrEnum):
-    CHAIN = "chain"
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,13 +33,4 @@ class GroupSpec(Generic[ConfigT]):
         return self.group.value
 
 
-GROUP_SPECS: tuple[GroupSpec[object], ...] = (
-    GroupSpec(
-        group=ConfigGroup.CHAIN,
-        seed_name="ethereum",
-        validate=ChainSpec.model_validate,
-        identity_field="name",
-        seed_from_requested_name=True,
-        public=True,
-    ),
-)
+GROUP_SPECS: tuple[GroupSpec[object], ...] = ()

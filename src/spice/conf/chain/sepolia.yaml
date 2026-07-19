@@ -1,5 +1,0 @@
-name: sepolia
-runtime:
-  chain_id: 11155111
-  uses_poa_extra_data: false
-  nominal_block_time_seconds: 12.0
