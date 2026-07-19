@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Literal
@@ -21,11 +22,26 @@ from spice.config import (
     TrainRequest,
     WorkflowRequest,
 )
+from spice.execution import submit
 
 CORPUS_ID = UUID("00000000-0000-4000-8000-000000000001")
 ARTIFACT_ID = UUID("00000000-0000-4000-8000-000000000002")
 EVALUATION_ID = UUID("00000000-0000-4000-8000-000000000003")
 STUDY_ID = UUID("00000000-0000-4000-8000-000000000004")
+DEPLOYMENT = {
+    "device": "cuda:0",
+    "precision": "32-true",
+    "evaluation_batch_size": 64,
+    "num_workers": 4,
+    "pin_memory": True,
+    "prefetch_factor": 2,
+    "persistent_workers": True,
+    "deterministic": True,
+    "benchmark": False,
+    "float32_matmul_precision": "high",
+    "cuda_matmul_allow_tf32": True,
+    "cudnn_allow_tf32": True,
+}
 
 
 def _window(role: Literal["training", "validation", "testing"]) -> OriginWindow:
@@ -83,54 +99,45 @@ def _write_remote(path: Path, *, executable: str = "/opt/spice executable") -> N
 executable: {executable}
 storage_root: /remote/storage root
 log_root: /remote/logs
-train:
-  partition: train-partition
+resources:
+  partition: thesis-partition
+  gres: gpu:a100:1
   cpus_per_task: 8
   memory_gb: 48
-  time_limit: "3-00:00:00"
-tune:
-  partition: tune-partition
-  cpus_per_task: 6
-  memory_gb: 36
-  time_limit: "2-00:00:00"
-evaluate:
-  partition: evaluate-partition
-  cpus_per_task: 4
-  memory_gb: 24
-  time_limit: "1-00:00:00"
+  time_limit: "17:23:45"
+deployment:
+  device: cuda:0
+  precision: 32-true
+  evaluation_batch_size: 64
+  num_workers: 4
+  pin_memory: true
+  prefetch_factor: 2
+  persistent_workers: true
+  deterministic: true
+  benchmark: false
+  float32_matmul_precision: high
+  cuda_matmul_allow_tf32: true
+  cudnn_allow_tf32: true
 """,
         encoding="utf-8",
     )
 
 
 @pytest.mark.parametrize(
-    ("workflow", "sbatch_output", "job_id", "resource_lines"),
+    ("workflow", "sbatch_output", "job_id"),
     [
-        (
-            "train",
-            "123\n",
-            123,
-            ("train-partition", "8", "48", "3-00:00:00"),
-        ),
-        (
-            "evaluate",
-            "456;university\n",
-            456,
-            ("evaluate-partition", "4", "24", "1-00:00:00"),
-        ),
+        ("train", "123\n", 123),
+        ("evaluate", "456;university\n", 456),
     ],
 )
-def test_submit_cli_sends_one_exact_typed_script(
+def test_submit_sends_one_shared_remote_profile(
     workflow: Literal["train", "evaluate"],
     sbatch_output: str,
     job_id: int,
-    resource_lines: tuple[str, str, str, str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request = _request(workflow)
-    request_path = tmp_path / "REQUEST.json"
-    request_path.write_bytes(WORKFLOW_REQUEST_ADAPTER.dump_json(request))
     _write_remote(tmp_path / "REMOTE.yaml")
     monkeypatch.chdir(tmp_path)
     calls: list[tuple[list[str], dict[str, object]]] = []
@@ -141,10 +148,9 @@ def test_submit_cli_sends_one_exact_typed_script(
 
     monkeypatch.setattr("spice.execution.submission.subprocess.run", fake_run)
 
-    result = CliRunner().invoke(app, ["submit", str(request_path)])
+    result = submit(request)
 
-    assert result.exit_code == 0
-    assert result.output == f"{job_id}\n"
+    assert result == job_id
     assert len(calls) == 1
     argv, kwargs = calls[0]
     assert argv == [
@@ -156,22 +162,27 @@ def test_submit_cli_sends_one_exact_typed_script(
         "sbatch",
         "--parsable",
     ]
-    partition, cpus, memory, time_limit = resource_lines
-    request_json = WORKFLOW_REQUEST_ADAPTER.dump_json(request).decode()
+    envelope_json = json.dumps(
+        {
+            "request": json.loads(WORKFLOW_REQUEST_ADAPTER.dump_json(request)),
+            "deployment": DEPLOYMENT,
+        },
+        separators=(",", ":"),
+    )
     assert kwargs == {
         "input": (
             "#!/bin/bash\n"
-            f"#SBATCH --partition={partition}\n"
+            "#SBATCH --partition=thesis-partition\n"
             "#SBATCH --nodes=1\n"
             "#SBATCH --ntasks=1\n"
-            "#SBATCH --gres=gpu:1\n"
-            f"#SBATCH --cpus-per-task={cpus}\n"
-            f"#SBATCH --mem={memory}G\n"
-            f"#SBATCH --time={time_limit}\n"
+            "#SBATCH --gres=gpu:a100:1\n"
+            "#SBATCH --cpus-per-task=8\n"
+            "#SBATCH --mem=48G\n"
+            "#SBATCH --time=17:23:45\n"
             "#SBATCH --output=/remote/logs/%j.out\n"
             "export STORAGE_ROOT='/remote/storage root'\n"
             "exec '/opt/spice executable' remote workflow <<'SPICE_REQUEST'\n"
-            f"{request_json}\n"
+            f"{envelope_json}\n"
             "SPICE_REQUEST\n"
         ),
         "text": True,
