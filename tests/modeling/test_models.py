@@ -160,9 +160,6 @@ def _corpus_request() -> CorpusRequest:
 
 def _deployment() -> FitDeployment:
     return FitDeployment(
-        accelerator="cpu",
-        devices=1,
-        precision="32-true",
         deterministic=True,
         benchmark=False,
         num_workers=0,
@@ -457,6 +454,7 @@ def test_transformer_encoder_layers_have_independent_matrix_initialization() -> 
 def test_all_three_models_train_load_and_apply_direct_loss(
     model: LstmDefinition | TransformerDefinition | TransformerLstmDefinition,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     prepared = prepare_fit_history(_corpus(), _experiment())
     artifact_id = UUID(
@@ -467,6 +465,13 @@ def test_all_three_models_train_load_and_apply_direct_loss(
         }[model.family]
     )
     request = _train_request(artifact_id, model)
+    real_trainer: Any = modeling_artifacts.pl.Trainer
+
+    def cpu_trainer(**kwargs: Any) -> Any:
+        kwargs["accelerator"] = "cpu"
+        return real_trainer(**kwargs)
+
+    monkeypatch.setattr(modeling_artifacts.pl, "Trainer", cpu_trainer)
 
     train(request, prepared, tmp_path, _deployment())
     association, loaded_model = load_artifact(tmp_path, artifact_id)
@@ -545,6 +550,10 @@ def test_request_and_deployment_drive_native_lightning_lifecycle(
     class TrainerSpy:
         def __init__(self, **kwargs: Any) -> None:
             trainer_kwargs.append(dict(kwargs))
+            assert kwargs["accelerator"] == "gpu"
+            assert kwargs["devices"] == 1
+            assert kwargs["precision"] == "32-true"
+            kwargs["accelerator"] = "cpu"
             self._trainer = real_trainer(**kwargs)
 
         def fit(self, module: Any, **kwargs: Any) -> None:
@@ -601,9 +610,6 @@ def test_request_and_deployment_drive_native_lightning_lifecycle(
     assert trainer_kwargs[0]["check_val_every_n_epoch"] == (
         method.fit.validate_every_completed_epoch
     )
-    assert trainer_kwargs[0]["accelerator"] == "cpu"
-    assert trainer_kwargs[0]["devices"] == 1
-    assert trainer_kwargs[0]["precision"] == "32-true"
     assert trainer_kwargs[0]["deterministic"] is True
     assert metric_dtypes and all(dtype == torch.float64 for dtype in metric_dtypes)
     assert clip_maxima and all(math.isinf(maximum) for maximum in clip_maxima)

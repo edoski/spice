@@ -81,9 +81,6 @@ REQUEST = TuneRequest(
     ),
 )
 DEPLOYMENT = FitDeployment(
-    accelerator="cpu",
-    devices=1,
-    precision="32-true",
     deterministic=True,
     benchmark=False,
     num_workers=0,

@@ -60,9 +60,6 @@ class _FrozenRecord(BaseModel):
 class FitDeployment(_FrozenRecord):
     """External host facts consumed by one fit invocation."""
 
-    accelerator: Literal["cpu", "gpu"]
-    devices: Literal[1] | tuple[int]
-    precision: Literal["32-true"]
     deterministic: bool | Literal["warn"]
     benchmark: bool
     num_workers: int
@@ -602,13 +599,9 @@ def _fit(
     )
     early_stopping, best, last = _callbacks(scratch, definition)
     trainer = pl.Trainer(
-        accelerator=deployment.accelerator,
-        devices=(
-            list(deployment.devices)
-            if isinstance(deployment.devices, tuple)
-            else deployment.devices
-        ),
-        precision=deployment.precision,
+        accelerator="gpu",
+        devices=1,
+        precision="32-true",
         max_epochs=definition.fit.max_epochs,
         check_val_every_n_epoch=definition.fit.validate_every_completed_epoch,
         accumulate_grad_batches=definition.fit.accumulation,
