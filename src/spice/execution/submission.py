@@ -16,7 +16,6 @@ from ..config import WorkflowRequest
 _NonEmptyString = Annotated[str, Field(strict=True, min_length=1)]
 _PositiveInt = Annotated[int, Field(strict=True, gt=0)]
 _NonNegativeInt = Annotated[int, Field(strict=True, ge=0)]
-_Device = Annotated[str, Field(strict=True, pattern=r"^(cpu|cuda:\d+)$")]
 _JOB_ID_PATTERN = re.compile(r"([0-9]+)(?:;[^;\r\n]+)?\n?")
 
 
@@ -31,15 +30,13 @@ class _Record(BaseModel):
 
 class _Resources(_Record):
     partition: _NonEmptyString
-    gres: _NonEmptyString
+    gres: str
     cpus_per_task: _PositiveInt
     memory_gb: _PositiveInt
     time_limit: _NonEmptyString
 
 
 class _Deployment(_Record):
-    device: _Device
-    precision: Literal["32-true"]
     evaluation_batch_size: _PositiveInt
     num_workers: _NonNegativeInt
     pin_memory: bool

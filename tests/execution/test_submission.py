@@ -29,8 +29,6 @@ ARTIFACT_ID = UUID("00000000-0000-4000-8000-000000000002")
 EVALUATION_ID = UUID("00000000-0000-4000-8000-000000000003")
 STUDY_ID = UUID("00000000-0000-4000-8000-000000000004")
 DEPLOYMENT = {
-    "device": "cuda:0",
-    "precision": "32-true",
     "evaluation_batch_size": 64,
     "num_workers": 4,
     "pin_memory": True,
@@ -106,8 +104,6 @@ resources:
   memory_gb: 48
   time_limit: "17:23:45"
 deployment:
-  device: cuda:0
-  precision: 32-true
   evaluation_batch_size: 64
   num_workers: 4
   pin_memory: true
