@@ -14,6 +14,7 @@ from fable.addresses import evaluation_directory
 from fable.config import (
     AdamWMethod,
     BaselineSource,
+    BlockWindow,
     CorpusDefinition,
     CorpusRequest,
     EvaluateRequest,
@@ -23,7 +24,6 @@ from fable.config import (
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
-    OriginWindow,
     SelectedStudySource,
     TrainingDefinition,
     TrainRequest,
@@ -157,15 +157,13 @@ def _loss(weighting: _Weighting) -> LossDefinition:
 
 def _experiment(weighting: _Weighting) -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=OriginWindow(
-            role="training",
+        training_window=BlockWindow(
             first_parent_block=1,
             last_parent_block=5,
         ),
-        validation_window=OriginWindow(
-            role="validation",
-            first_parent_block=20,
-            last_parent_block=24,
+        validation_window=BlockWindow(
+            first_parent_block=10,
+            last_parent_block=14,
         ),
         context_blocks=3,
         horizon_blocks=4,
@@ -266,14 +264,14 @@ def _request(
     *,
     evaluation_id: UUID = _EVALUATION_ID,
     corpus_id: UUID = _CORPUS_ID,
-    window: OriginWindow | None = None,
+    testing_window: BlockWindow | None = None,
 ) -> EvaluateRequest:
     return EvaluateRequest(
         workflow="evaluate",
         evaluation_id=evaluation_id,
         artifact_id=_ARTIFACT_ID,
         corpus_id=corpus_id,
-        window=window or _experiment("unweighted").validation_window,
+        testing_window=testing_window or BlockWindow(first_parent_block=20, last_parent_block=24),
     )
 
 
@@ -402,8 +400,8 @@ def test_reduce_evaluation_keeps_only_captured_opportunity_nullable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    window = OriginWindow(role="testing", first_parent_block=30, last_parent_block=30)
-    request = _request(window=window)
+    testing_window = BlockWindow(first_parent_block=30, last_parent_block=30)
+    request = _request(testing_window=testing_window)
     fee = 100_000_000_000
     observations = pl.DataFrame(
         {
@@ -452,7 +450,7 @@ def test_reduce_evaluation_keeps_only_captured_opportunity_nullable(
     [
         "evaluation_id",
         "source_corpus",
-        "window",
+        "testing_window",
         "schema",
         "null",
         "origins",
@@ -478,10 +476,9 @@ def test_reduce_evaluation_rejects_owned_invalid_facts(
         request = _request(evaluation_id=_OTHER_EVALUATION_ID)
     elif case == "source_corpus":
         association = _association("baseline", "unweighted", corpus_id=_OTHER_CORPUS_ID)
-    elif case == "window":
+    elif case == "testing_window":
         request = _request(
-            window=OriginWindow(
-                role="validation",
+            testing_window=BlockWindow(
                 first_parent_block=19,
                 last_parent_block=23,
             )

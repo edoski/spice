@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Literal
 from uuid import UUID
 
 import pytest
@@ -11,6 +10,7 @@ from fable.config import (
     METHOD_ADAPTER,
     WORKFLOW_REQUEST_ADAPTER,
     AdamWMethod,
+    BlockWindow,
     CorpusDefinition,
     EvaluateRequest,
     ExperimentSemantics,
@@ -19,7 +19,6 @@ from fable.config import (
     LstmCapacity,
     LstmMethod,
     LstmMethodSpace,
-    OriginWindow,
     StudyDefinition,
     TransformerCapacity,
 )
@@ -30,16 +29,8 @@ ARTIFACT_ID = UUID("00000000-0000-4000-8000-000000000003")
 EVALUATION_ID = UUID("00000000-0000-4000-8000-000000000004")
 
 
-def _window(
-    role: Literal["training", "validation", "testing"] = "validation",
-) -> OriginWindow:
-    first, last = {
-        "training": (100, 199),
-        "validation": (210, 249),
-        "testing": (300, 349),
-    }[role]
-    return OriginWindow(
-        role=role,
+def _window(first: int = 210, last: int = 249) -> BlockWindow:
+    return BlockWindow(
         first_parent_block=first,
         last_parent_block=last,
     )
@@ -58,7 +49,7 @@ def _loss() -> LossDefinition:
 
 def _experiment() -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=_window("training"),
+        training_window=_window(100, 199),
         validation_window=_window(),
         context_blocks=20,
         horizon_blocks=10,
@@ -151,31 +142,14 @@ def _invalid_cases() -> tuple[tuple[Callable[..., object], dict[str, object], st
         ),
         (
             ExperimentSemantics,
-            {**experiment.model_dump(), "validation_window": _window("testing")},
-            "validation_window must carry role='validation'",
-        ),
-        (
-            ExperimentSemantics,
             {
                 **experiment.model_dump(),
-                "validation_window": OriginWindow(
-                    role="validation",
+                "validation_window": BlockWindow(
                     first_parent_block=209,
                     last_parent_block=249,
                 ),
             },
             "validation_window must follow complete training outcomes",
-        ),
-        (
-            EvaluateRequest,
-            {
-                "workflow": "evaluate",
-                "evaluation_id": EVALUATION_ID,
-                "artifact_id": ARTIFACT_ID,
-                "corpus_id": CORPUS_ID,
-                "window": _window("training"),
-            },
-            "evaluation window must carry role='validation' or role='testing'",
         ),
     )
 
@@ -188,3 +162,18 @@ def test_domain_contract_rejects_invalid_values(
 ) -> None:
     with pytest.raises(ValidationError, match=message):
         value_type(**payload)
+
+
+def test_evaluate_request_serializes_only_a_testing_window() -> None:
+    request = EvaluateRequest(
+        workflow="evaluate",
+        evaluation_id=EVALUATION_ID,
+        artifact_id=ARTIFACT_ID,
+        corpus_id=CORPUS_ID,
+        testing_window=_window(300, 349),
+    )
+
+    assert request.model_dump()["testing_window"] == {
+        "first_parent_block": 300,
+        "last_parent_block": 349,
+    }

@@ -8,11 +8,11 @@ from pydantic import UUID4, TypeAdapter
 from torch.utils.data import DataLoader
 
 from fable.config import (
+    BlockWindow,
     CorpusDefinition,
     CorpusRequest,
     ExperimentSemantics,
     LossDefinition,
-    OriginWindow,
 )
 from fable.corpus import BlockFrame, Corpus, FinalizedAnchor
 from fable.min_block_fee import ClassificationLossState
@@ -58,13 +58,11 @@ def _corpus(first_block: int = 10, last_block: int = 29) -> Corpus:
 
 def _experiment() -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=OriginWindow(
-            role="training",
+        training_window=BlockWindow(
             first_parent_block=12,
             last_parent_block=15,
         ),
-        validation_window=OriginWindow(
-            role="validation",
+        validation_window=BlockWindow(
             first_parent_block=20,
             last_parent_block=21,
         ),
@@ -145,8 +143,7 @@ def test_fit_history_preserves_geometry_statistics_and_collation() -> None:
     testing = prepare_historical_window(
         _corpus(),
         _experiment(),
-        OriginWindow(
-            role="testing",
+        BlockWindow(
             first_parent_block=25,
             last_parent_block=26,
         ),
@@ -168,25 +165,6 @@ def test_fit_history_requires_complete_context_and_outcome_support(corpus: Corpu
         prepare_fit_history(corpus, _experiment())
 
 
-def test_historical_validation_window_must_match_experiment() -> None:
-    corpus = _corpus()
-    experiment = _experiment()
-    preparation = prepare_fit_history(corpus, experiment)
-
-    with pytest.raises(ValueError, match="match experiment.validation_window"):
-        prepare_historical_window(
-            corpus,
-            experiment,
-            OriginWindow(
-                role="validation",
-                first_parent_block=19,
-                last_parent_block=20,
-            ),
-            feature_state=preparation.feature_state,
-            target_state=preparation.target_state,
-        )
-
-
 def test_testing_window_must_follow_complete_validation_outcomes() -> None:
     corpus = _corpus()
     experiment = _experiment()
@@ -196,8 +174,7 @@ def test_testing_window_must_follow_complete_validation_outcomes() -> None:
         prepare_historical_window(
             corpus,
             experiment,
-            OriginWindow(
-                role="testing",
+            BlockWindow(
                 first_parent_block=24,
                 last_parent_block=25,
             ),

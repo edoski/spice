@@ -17,6 +17,7 @@ from experiments.context_history import write_context_history_evidence
 from fable.config import (
     AdamWMethod,
     BaselineSource,
+    BlockWindow,
     CorpusDefinition,
     CorpusRequest,
     EvaluateRequest,
@@ -26,7 +27,6 @@ from fable.config import (
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
-    OriginWindow,
     SelectedStudySource,
     TrainingDefinition,
     TrainRequest,
@@ -157,13 +157,11 @@ def _features(chain_id: int) -> tuple[str, ...]:
 
 def _experiment(first_block: int, context: int, horizon: int, chain_id: int) -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=OriginWindow(
-            role="training",
+        training_window=BlockWindow(
             first_parent_block=first_block + context - 1,
             last_parent_block=first_block + 448,
         ),
-        validation_window=OriginWindow(
-            role="validation",
+        validation_window=BlockWindow(
             first_parent_block=first_block + 700,
             last_parent_block=first_block + 703,
         ),
@@ -295,8 +293,7 @@ def _matrix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Matrix:
                 evaluation_id=evaluation_id,
                 artifact_id=artifact_id,
                 corpus_id=corpus_id,
-                window=OriginWindow(
-                    role="testing",
+                testing_window=BlockWindow(
                     first_parent_block=first_block + 900,
                     last_parent_block=first_block + 903,
                 ),
@@ -597,8 +594,7 @@ def test_write_context_history_evidence_rejects_invalid_matrix(
         assert isinstance(source, SelectedStudySource)
         experiment = source.experiment
         changed = ExperimentSemantics(
-            training_window=OriginWindow(
-                role="training",
+            training_window=BlockWindow(
                 first_parent_block=experiment.training_window.first_parent_block + 1,
                 last_parent_block=experiment.training_window.last_parent_block,
             ),

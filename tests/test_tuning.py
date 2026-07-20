@@ -8,13 +8,13 @@ from pytest import MonkeyPatch
 from fable import tuning
 from fable.config import (
     AdamWMethod,
+    BlockWindow,
     ExperimentSemantics,
     FitMethod,
     LossDefinition,
     LstmCapacity,
     LstmMethod,
     LstmMethodSpace,
-    OriginWindow,
     StudyDefinition,
     TuneRequest,
 )
@@ -45,13 +45,11 @@ METHOD = LstmMethod(
     fit=FIT,
 )
 EXPERIMENT = ExperimentSemantics(
-    training_window=OriginWindow(
-        role="training",
+    training_window=BlockWindow(
         first_parent_block=10,
         last_parent_block=20,
     ),
-    validation_window=OriginWindow(
-        role="validation",
+    validation_window=BlockWindow(
         first_parent_block=30,
         last_parent_block=35,
     ),

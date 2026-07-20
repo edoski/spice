@@ -17,7 +17,6 @@ _CONTEXT_SCHEMA = pl.Schema(
         "artifact_id": pl.String,
         "corpus_id": pl.String,
         "chain_id": pl.Int64,
-        "window_role": pl.String,
         "first_parent_block": pl.Int64,
         "last_parent_block": pl.Int64,
         "corpus_endpoint_block": pl.Int64,
@@ -53,9 +52,6 @@ def write_sealed_report(
     resolved_evaluations = resolve_evaluations(storage_root, evaluation_ids)
     for resolved in resolved_evaluations:
         request = resolved.request
-        if request.window.role != "testing":
-            raise ValueError("sealed report evaluations must use testing windows")
-
         source = resolved.training_source
         definition = resolved.training_definition
         if isinstance(source, BaselineSource):
@@ -67,8 +63,8 @@ def write_sealed_report(
 
         corpus = resolved.corpus
         corpus_definition = corpus.request.definition
-        first_parent_block = request.window.first_parent_block
-        last_parent_block = request.window.last_parent_block
+        first_parent_block = request.testing_window.first_parent_block
+        last_parent_block = request.testing_window.last_parent_block
         corpus_endpoint_block = corpus_definition.last_block
         timestamps = corpus.blocks.select_range(
             first_parent_block,
@@ -84,7 +80,6 @@ def write_sealed_report(
                     str(request.artifact_id),
                     str(request.corpus_id),
                     corpus_definition.chain_id,
-                    request.window.role,
                     first_parent_block,
                     last_parent_block,
                     corpus_endpoint_block,

@@ -14,12 +14,12 @@ from fable.cli.app import app
 from fable.config import (
     AdamWMethod,
     BaselineSource,
+    BlockWindow,
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
     LossDefinition,
     LstmDefinition,
-    OriginWindow,
     SelectedStudySource,
     TrainingDefinition,
     TrainRequest,
@@ -47,10 +47,8 @@ DEPLOYMENT = {
 }
 
 
-def _window(role: Literal["training", "validation", "testing"]) -> OriginWindow:
-    first = {"training": 100, "validation": 210, "testing": 300}[role]
-    return OriginWindow(
-        role=role,
+def _window(first: int) -> BlockWindow:
+    return BlockWindow(
         first_parent_block=first,
         last_parent_block=first + 9,
     )
@@ -58,8 +56,8 @@ def _window(role: Literal["training", "validation", "testing"]) -> OriginWindow:
 
 def _experiment() -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=_window("training"),
-        validation_window=_window("validation"),
+        training_window=_window(100),
+        validation_window=_window(210),
         context_blocks=20,
         horizon_blocks=10,
         ordered_features=("log_base_fee_per_gas",),
@@ -81,7 +79,7 @@ def _request(kind: Literal["baseline", "selected", "evaluate"]) -> WorkflowReque
             evaluation_id=EVALUATION_ID,
             artifact_id=ARTIFACT_ID,
             corpus_id=CORPUS_ID,
-            window=_window("testing"),
+            testing_window=_window(300),
         )
     if kind == "selected":
         source = SelectedStudySource(

@@ -9,7 +9,7 @@ import torch
 from numpy.typing import NDArray
 from torch.utils.data import Dataset
 
-from ..config import ExperimentSemantics, OriginWindow
+from ..config import BlockWindow, ExperimentSemantics
 from ..corpus.contract import Corpus
 from ..min_block_fee import (
     ClassificationLossState,
@@ -148,20 +148,15 @@ def prepare_fit_history(
 def prepare_historical_window(
     corpus: Corpus,
     experiment: ExperimentSemantics,
-    window: OriginWindow,
+    window: BlockWindow,
     *,
     feature_state: FeatureState,
     target_state: TargetState,
 ) -> HistoricalDataset:
-    """Prepare one validation or testing window without fitting state."""
+    """Prepare one testing window without fitting state."""
 
-    if window.role == "training":
-        raise ValueError("prepare_historical_window accepts validation or testing windows")
-    if window.role == "validation" and window != experiment.validation_window:
-        raise ValueError("validation window must match experiment.validation_window")
     if (
-        window.role == "testing"
-        and experiment.validation_window.last_parent_block + experiment.horizon_blocks
+        experiment.validation_window.last_parent_block + experiment.horizon_blocks
         >= window.first_parent_block
     ):
         raise ValueError("testing window must follow complete validation outcomes")
@@ -179,7 +174,7 @@ def prepare_historical_window(
 def _require_complete_support(
     corpus: Corpus,
     experiment: ExperimentSemantics,
-    window: OriginWindow,
+    window: BlockWindow,
 ) -> None:
     required_first = window.first_parent_block - experiment.context_blocks + 1
     required_last = window.last_parent_block + experiment.horizon_blocks
@@ -223,7 +218,7 @@ def _build_backing(
     )
 
 
-def _origin_rows(backing: _HistoricalBacking, window: OriginWindow) -> _IntVector:
+def _origin_rows(backing: _HistoricalBacking, window: BlockWindow) -> _IntVector:
     return np.arange(
         window.first_parent_block - backing.first_block,
         window.last_parent_block - backing.first_block + 1,
@@ -252,7 +247,7 @@ def _minimum_outcomes(
 def _build_dataset(
     backing: _HistoricalBacking,
     experiment: ExperimentSemantics,
-    window: OriginWindow,
+    window: BlockWindow,
     target_state: TargetState,
     *,
     outcomes: tuple[_IntVector, _IntVector] | None = None,

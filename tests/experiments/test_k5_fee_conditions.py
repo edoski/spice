@@ -14,12 +14,12 @@ from experiments.k5_fee_conditions import write_k5_fee_condition_evidence
 from fable.config import (
     AdamWMethod,
     BaselineSource,
+    BlockWindow,
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
     LossDefinition,
     LstmDefinition,
-    OriginWindow,
     SelectedStudySource,
     TrainingDefinition,
 )
@@ -90,13 +90,11 @@ def _source(corpus_id: UUID, *, context: int = 200, horizon: int = 5) -> Selecte
         study_id=_uuid(4, corpus_id.int % 1_000),
         study_result_index=0,
         experiment=ExperimentSemantics(
-            training_window=OriginWindow(
-                role="training",
+            training_window=BlockWindow(
                 first_parent_block=200,
                 last_parent_block=600,
             ),
-            validation_window=OriginWindow(
-                role="validation",
+            validation_window=BlockWindow(
                 first_parent_block=700,
                 last_parent_block=800,
             ),
@@ -179,8 +177,7 @@ def test_write_k5_fee_condition_evidence(
             evaluation_id=evaluation_id,
             artifact_id=artifact_id,
             corpus_id=corpus_id,
-            window=OriginWindow(
-                role="testing",
+            testing_window=BlockWindow(
                 first_parent_block=1_000 + index * 100,
                 last_parent_block=1_007 + index * 100,
             ),
@@ -346,13 +343,6 @@ def test_write_k5_fee_condition_evidence(
 
     fails("duplicate", "distinct", (evaluation_ids[0], evaluation_ids[0], evaluation_ids[2]))
     fails("order", "chain", (evaluation_ids[1], evaluation_ids[0], evaluation_ids[2]))
-
-    first_request = requests[evaluation_ids[0]]
-    requests[evaluation_ids[0]] = first_request.model_copy(
-        update={"window": first_request.window.model_copy(update={"role": "validation"})}
-    )
-    fails("request", "testing")
-    requests[evaluation_ids[0]] = first_request
 
     original_source = sources[artifact_ids[0]]
     sources[artifact_ids[0]] = BaselineSource(

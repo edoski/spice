@@ -17,11 +17,11 @@ from fable import serving
 from fable.config import (
     AdamWMethod,
     BaselineSource,
+    BlockWindow,
     ExperimentSemantics,
     FitMethod,
     LossDefinition,
     LstmDefinition,
-    OriginWindow,
     SelectedStudySource,
     TrainingDefinition,
     TrainRequest,
@@ -73,13 +73,11 @@ def _write_config(root: Path) -> dict[tuple[str, int], UUID]:
 
 def _experiment(*, context_blocks: int = 3, horizon_blocks: int = 2) -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=OriginWindow(
-            role="training",
+        training_window=BlockWindow(
             first_parent_block=0,
             last_parent_block=4,
         ),
-        validation_window=OriginWindow(
-            role="validation",
+        validation_window=BlockWindow(
             first_parent_block=10,
             last_parent_block=12,
         ),

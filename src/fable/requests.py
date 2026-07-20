@@ -5,10 +5,10 @@ from __future__ import annotations
 from uuid import UUID, uuid4
 
 from .config import (
+    BlockWindow,
     CorpusDefinition,
     CorpusRequest,
     EvaluateRequest,
-    OriginWindow,
     StudyDefinition,
     TrainingSource,
     TrainRequest,
@@ -36,12 +36,12 @@ def fresh_tune_request(corpus_id: UUID, study_definition: StudyDefinition) -> Tu
 def fresh_evaluate_request(
     artifact_id: UUID,
     corpus_id: UUID,
-    window: OriginWindow,
+    testing_window: BlockWindow,
 ) -> EvaluateRequest:
     return EvaluateRequest(
         workflow="evaluate",
         evaluation_id=uuid4(),
         artifact_id=artifact_id,
         corpus_id=corpus_id,
-        window=window,
+        testing_window=testing_window,
     )

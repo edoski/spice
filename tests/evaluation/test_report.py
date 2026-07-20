@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
@@ -13,6 +12,7 @@ import fable.evaluation.report as report_module
 from fable.config import (
     AdamWMethod,
     BaselineSource,
+    BlockWindow,
     CorpusDefinition,
     CorpusRequest,
     EvaluateRequest,
@@ -22,7 +22,6 @@ from fable.config import (
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
-    OriginWindow,
     SelectedStudySource,
     TrainingDefinition,
     TrainRequest,
@@ -58,7 +57,6 @@ _CONTEXT_SCHEMA = pl.Schema(
         "artifact_id": pl.String,
         "corpus_id": pl.String,
         "chain_id": pl.Int64,
-        "window_role": pl.String,
         "first_parent_block": pl.Int64,
         "last_parent_block": pl.Int64,
         "corpus_endpoint_block": pl.Int64,
@@ -196,13 +194,11 @@ def _experiment(
     weighting: _Weighting,
 ) -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=OriginWindow(
-            role="training",
+        training_window=BlockWindow(
             first_parent_block=first_block,
             last_parent_block=first_block + 1,
         ),
-        validation_window=OriginWindow(
-            role="validation",
+        validation_window=BlockWindow(
             first_parent_block=first_block + 5,
             last_parent_block=first_block + 6,
         ),
@@ -398,8 +394,7 @@ def _arrange_report(
             evaluation_id=evaluation_id,
             artifact_id=artifact_id,
             corpus_id=corpus_id,
-            window=OriginWindow(
-                role="testing",
+            testing_window=BlockWindow(
                 first_parent_block=experiment.training_window.first_parent_block + 10,
                 last_parent_block=experiment.training_window.first_parent_block + 12,
             ),
@@ -555,7 +550,6 @@ def test_write_sealed_report_preserves_order_and_publishes_exact_tsv(
     [
         ("empty", ValueError),
         ("duplicate", ValueError),
-        ("non_testing", ValueError),
         ("destination", FileExistsError),
         ("hidden", FileExistsError),
         ("later_row", RuntimeError),
@@ -575,19 +569,6 @@ def test_write_sealed_report_rejects_invalid_input_without_partial_publication(
         evaluation_ids = ()
     elif case == "duplicate":
         evaluation_ids = (_EVALUATION_IDS[0], _EVALUATION_IDS[0])
-    elif case == "non_testing":
-        resolved_by_id[_EVALUATION_IDS[0]] = replace(
-            resolved_by_id[_EVALUATION_IDS[0]],
-            request=requests[0].model_copy(
-                update={
-                    "window": OriginWindow(
-                        role="validation",
-                        first_parent_block=105,
-                        last_parent_block=106,
-                    )
-                }
-            ),
-        )
     elif case == "destination":
         destination.write_text("existing", encoding="utf-8")
     elif case == "hidden":

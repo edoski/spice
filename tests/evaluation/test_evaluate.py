@@ -25,6 +25,7 @@ from fable.addresses import (
 from fable.config import (
     AdamWMethod,
     BaselineSource,
+    BlockWindow,
     CorpusDefinition,
     CorpusRequest,
     EvaluateRequest,
@@ -34,7 +35,6 @@ from fable.config import (
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
-    OriginWindow,
     SelectedStudySource,
     TrainingDefinition,
     TrainRequest,
@@ -131,15 +131,13 @@ def _loss(weighting: _Weighting) -> LossDefinition:
 
 def _experiment(weighting: _Weighting = "unweighted") -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=OriginWindow(
-            role="training",
-            first_parent_block=12,
-            last_parent_block=15,
+        training_window=BlockWindow(
+            first_parent_block=10,
+            last_parent_block=11,
         ),
-        validation_window=OriginWindow(
-            role="validation",
-            first_parent_block=20,
-            last_parent_block=24,
+        validation_window=BlockWindow(
+            first_parent_block=15,
+            last_parent_block=16,
         ),
         context_blocks=3,
         horizon_blocks=3,
@@ -274,14 +272,14 @@ def _write_corpus(storage_root: Path, corpus_id: UUID) -> None:
 def _request(
     *,
     corpus_id: UUID = _CORPUS_ID,
-    window: OriginWindow | None = None,
+    testing_window: BlockWindow | None = None,
 ) -> EvaluateRequest:
     return EvaluateRequest(
         workflow="evaluate",
         evaluation_id=_EVALUATION_ID,
         artifact_id=_ARTIFACT_ID,
         corpus_id=corpus_id,
-        window=window or _experiment().validation_window,
+        testing_window=testing_window or BlockWindow(first_parent_block=20, last_parent_block=24),
     )
 
 
@@ -435,13 +433,11 @@ def test_evaluate_rejects_owned_association_and_publication_conflicts(
     _write_corpus(tmp_path, corpus_id)
     if case == "previous_parent":
         experiment = ExperimentSemantics(
-            training_window=OriginWindow(
-                role="training",
+            training_window=BlockWindow(
                 first_parent_block=0,
                 last_parent_block=1,
             ),
-            validation_window=OriginWindow(
-                role="validation",
+            validation_window=BlockWindow(
                 first_parent_block=10,
                 last_parent_block=10,
             ),
@@ -466,10 +462,10 @@ def test_evaluate_rejects_owned_association_and_publication_conflicts(
     )
     monkeypatch.setattr(evaluation_module, "_DEVICE", torch.device("cpu"))
     if case == "previous_parent":
-        window = experiment.validation_window
+        testing_window = BlockWindow(first_parent_block=10, last_parent_block=10)
     else:
-        window = _experiment().validation_window
-    request = _request(corpus_id=corpus_id, window=window)
+        testing_window = BlockWindow(first_parent_block=20, last_parent_block=24)
+    request = _request(corpus_id=corpus_id, testing_window=testing_window)
     if case == "occupied_canonical":
         evaluation_directory(tmp_path, _EVALUATION_ID).mkdir(parents=True)
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Literal
 from uuid import UUID
 
 import pytest
@@ -15,13 +14,13 @@ import fable.execution as execution
 from fable.cli.app import app
 from fable.config import (
     AdamWMethod,
+    BlockWindow,
     ExperimentSemantics,
     FitMethod,
     LossDefinition,
     LstmCapacity,
     LstmMethod,
     LstmMethodSpace,
-    OriginWindow,
     StudyDefinition,
     TuneRequest,
 )
@@ -55,10 +54,8 @@ FIT_DEPLOYMENT = FitDeployment(
 )
 
 
-def _window(role: Literal["training", "validation"]) -> OriginWindow:
-    first = 100 if role == "training" else 210
-    return OriginWindow(
-        role=role,
+def _window(first: int) -> BlockWindow:
+    return BlockWindow(
         first_parent_block=first,
         last_parent_block=first + 9,
     )
@@ -89,8 +86,8 @@ REQUEST = TuneRequest(
     corpus_id=CORPUS_ID,
     study_definition=StudyDefinition(
         experiment=ExperimentSemantics(
-            training_window=_window("training"),
-            validation_window=_window("validation"),
+            training_window=_window(100),
+            validation_window=_window(210),
             context_blocks=20,
             horizon_blocks=10,
             ordered_features=("base_fee",),

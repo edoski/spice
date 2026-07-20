@@ -51,8 +51,7 @@ class CorpusRequest(_FrozenRecord):
     definition: CorpusDefinition
 
 
-class OriginWindow(_FrozenRecord):
-    role: Literal["training", "validation", "testing"]
+class BlockWindow(_FrozenRecord):
     first_parent_block: _NonNegativeInt
     last_parent_block: _NonNegativeInt
 
@@ -73,8 +72,8 @@ class LossDefinition(_FrozenRecord):
 
 
 class ExperimentSemantics(_FrozenRecord):
-    training_window: OriginWindow
-    validation_window: OriginWindow
+    training_window: BlockWindow
+    validation_window: BlockWindow
     context_blocks: _PositiveInt
     horizon_blocks: _PositiveInt
     ordered_features: Annotated[tuple[_FeatureName, ...], Field(min_length=1)]
@@ -82,10 +81,6 @@ class ExperimentSemantics(_FrozenRecord):
 
     @model_validator(mode="after")
     def validate_semantics(self) -> Self:
-        if self.training_window.role != "training":
-            raise ValueError("training_window must carry role='training'")
-        if self.validation_window.role != "validation":
-            raise ValueError("validation_window must carry role='validation'")
         if (
             self.training_window.last_parent_block + self.horizon_blocks
             >= self.validation_window.first_parent_block
@@ -314,13 +309,7 @@ class EvaluateRequest(_FrozenRecord):
     evaluation_id: UUID4
     artifact_id: UUID4
     corpus_id: UUID4
-    window: OriginWindow
-
-    @model_validator(mode="after")
-    def validate_window_role(self) -> Self:
-        if self.window.role == "training":
-            raise ValueError("evaluation window must carry role='validation' or role='testing'")
-        return self
+    testing_window: BlockWindow
 
 
 WorkflowRequest: TypeAlias = Annotated[
@@ -334,6 +323,7 @@ METHOD_ADAPTER = TypeAdapter(Method)
 __all__ = [
     "AdamWMethod",
     "BaselineSource",
+    "BlockWindow",
     "CorpusDefinition",
     "CorpusRequest",
     "EvaluateRequest",
@@ -348,7 +338,6 @@ __all__ = [
     "Method",
     "MethodSpace",
     "ModelDefinition",
-    "OriginWindow",
     "SelectedStudySource",
     "StudyDefinition",
     "TrainRequest",

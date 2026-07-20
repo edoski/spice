@@ -85,12 +85,13 @@ def evaluate(
         if isinstance(source, BaselineSource)
         else source.experiment
     )
-    if request.window.first_parent_block <= corpus.request.definition.first_block:
+    testing_window = request.testing_window
+    if testing_window.first_parent_block <= corpus.request.definition.first_block:
         raise ValueError("Corpus must include the previous closed parent")
     dataset = prepare_historical_window(
         corpus,
         experiment,
-        request.window,
+        testing_window,
         feature_state=association.feature_state,
         target_state=association.target_state,
     )
@@ -98,8 +99,8 @@ def evaluate(
     _configure_execution(deployment)
     observations = _collect_observations(
         corpus.blocks.select_range(
-            request.window.first_parent_block - 1,
-            request.window.last_parent_block + experiment.horizon_blocks,
+            testing_window.first_parent_block - 1,
+            testing_window.last_parent_block + experiment.horizon_blocks,
         ),
         dataset,
         experiment,

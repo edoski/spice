@@ -16,6 +16,7 @@ from fable.addresses import (
 from fable.config import (
     AdamWMethod,
     BaselineSource,
+    BlockWindow,
     CorpusDefinition,
     ExperimentSemantics,
     FitMethod,
@@ -24,7 +25,6 @@ from fable.config import (
     LstmDefinition,
     LstmMethod,
     LstmMethodSpace,
-    OriginWindow,
     StudyDefinition,
     TrainingDefinition,
 )
@@ -58,13 +58,11 @@ def _fit() -> FitMethod:
 
 def _experiment() -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=OriginWindow(
-            role="training",
+        training_window=BlockWindow(
             first_parent_block=100,
             last_parent_block=199,
         ),
-        validation_window=OriginWindow(
-            role="validation",
+        validation_window=BlockWindow(
             first_parent_block=210,
             last_parent_block=249,
         ),
@@ -128,8 +126,7 @@ def test_request_constructors_mint_one_id_each(monkeypatch) -> None:
     evaluate = fresh_evaluate_request(
         train.artifact_id,
         corpus.corpus_id,
-        OriginWindow(
-            role="testing",
+        BlockWindow(
             first_parent_block=300,
             last_parent_block=349,
         ),

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from fable.addresses import study_json_path
 from fable.config import (
     AdamWMethod,
+    BlockWindow,
     ExperimentSemantics,
     FitMethod,
     LossDefinition,
@@ -18,7 +19,6 @@ from fable.config import (
     LstmMethodSpace,
     Method,
     MethodSpace,
-    OriginWindow,
     SelectedStudySource,
     StudyDefinition,
     TrainingDefinition,
@@ -124,13 +124,11 @@ RESULT = RetainedResult(
 
 def _experiment(*, shift: int = 0) -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=OriginWindow(
-            role="training",
+        training_window=BlockWindow(
             first_parent_block=100 + shift,
             last_parent_block=199 + shift,
         ),
-        validation_window=OriginWindow(
-            role="validation",
+        validation_window=BlockWindow(
             first_parent_block=220 + shift,
             last_parent_block=249 + shift,
         ),

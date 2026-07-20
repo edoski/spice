@@ -60,8 +60,6 @@ def _evaluation_rows(
     expected_chain_id: int,
 ) -> list[dict[str, Any]]:
     request = resolved.request
-    if request.window.role != "testing":
-        raise ValueError("fee-condition evidence requires a testing evaluation")
 
     reduced = resolved.reduction.row(0, named=True)
     source = resolved.training_source
@@ -156,8 +154,8 @@ def _evaluation_rows(
                     "artifact_id": str(request.artifact_id),
                     "corpus_id": str(request.corpus_id),
                     "chain_id": chain_id,
-                    "first_parent_block": request.window.first_parent_block,
-                    "last_parent_block": request.window.last_parent_block,
+                    "first_parent_block": request.testing_window.first_parent_block,
+                    "last_parent_block": request.testing_window.last_parent_block,
                     "horizon_blocks": experiment.horizon_blocks,
                     "descriptor": descriptor,
                     "quartile": quartile,

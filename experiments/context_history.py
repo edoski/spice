@@ -12,8 +12,8 @@ from uuid import UUID
 
 from fable.config import (
     BaselineSource,
+    BlockWindow,
     Method,
-    OriginWindow,
     SelectedStudySource,
 )
 from fable.corpus import Corpus
@@ -107,7 +107,7 @@ class _ContextCell:
     chain_id: int
     context_blocks: int
     corpus_id: UUID
-    training_window: OriginWindow
+    training_window: BlockWindow
     ordered_features: tuple[str, ...]
     metrics: dict[str, float | None]
     row: dict[str, object]
@@ -129,8 +129,8 @@ def write_context_history_evidence(
     cells: list[_ContextCell] = []
     cells_by_coordinate: dict[tuple[int, int], _ContextCell] = {}
     chain_corpus_ids: dict[int, UUID] = {}
-    chain_validation_windows: dict[int, OriginWindow] = {}
-    chain_testing_windows: dict[int, OriginWindow] = {}
+    chain_validation_windows: dict[int, BlockWindow] = {}
+    chain_testing_windows: dict[int, BlockWindow] = {}
     chain_training_ends: dict[int, int] = {}
     selected_family: str | None = None
     selected_feature_route: tuple[str, ...] | None = None
@@ -141,8 +141,6 @@ def write_context_history_evidence(
         expected_chain = _CHAIN_IDS[index // len(_CONTEXT_BLOCKS)]
         expected_context = _CONTEXT_BLOCKS[index % len(_CONTEXT_BLOCKS)]
         request = resolved.request
-        if request.window.role != "testing":
-            raise ValueError("context evidence requires testing evaluations")
         if not isinstance(resolved.training_source, BaselineSource):
             raise ValueError("context artifacts must use BaselineSource")
 
@@ -180,8 +178,8 @@ def write_context_history_evidence(
         )
         if previous_validation != experiment.validation_window:
             raise ValueError("each chain must use one context validation window")
-        previous_testing = chain_testing_windows.setdefault(chain_id, request.window)
-        if previous_testing != request.window:
+        previous_testing = chain_testing_windows.setdefault(chain_id, request.testing_window)
+        if previous_testing != request.testing_window:
             raise ValueError("each chain must use one context testing window")
         previous_training_end = chain_training_ends.setdefault(
             chain_id,
@@ -215,7 +213,7 @@ def write_context_history_evidence(
                 expected_context,
                 "validation",
             ),
-            **_period_geometry(corpus, request.window, expected_context, "testing"),
+            **_period_geometry(corpus, request.testing_window, expected_context, "testing"),
         }
         metrics = {name: cast(float | None, reduced[name]) for name in _REDUCTION_METRICS}
         cell = _ContextCell(
@@ -307,15 +305,15 @@ def _require_same(
     return actual
 
 
-def _origin_count(window: OriginWindow) -> int:
+def _origin_count(window: BlockWindow) -> int:
     return window.last_parent_block - window.first_parent_block + 1
 
 
 def _period_geometry(
     corpus: Corpus,
-    window: OriginWindow,
+    window: BlockWindow,
     context_blocks: int,
-    role: str,
+    period: str,
 ) -> dict[str, int | float]:
     count = _origin_count(window)
     timestamps = corpus.blocks.select_range(
@@ -324,13 +322,13 @@ def _period_geometry(
     ).to_polars()["timestamp"]
     spans = timestamps.slice(context_blocks - 1, count) - timestamps.slice(0, count)
     return {
-        f"{role}_first_parent_block": window.first_parent_block,
-        f"{role}_last_parent_block": window.last_parent_block,
-        f"{role}_origin_count": count,
-        f"{role}_context_span_seconds_minimum": int(cast(int, spans.min())),
-        f"{role}_context_span_seconds_median": float(cast(float, spans.median())),
-        f"{role}_context_span_seconds_mean": float(cast(float, spans.mean())),
-        f"{role}_context_span_seconds_maximum": int(cast(int, spans.max())),
+        f"{period}_first_parent_block": window.first_parent_block,
+        f"{period}_last_parent_block": window.last_parent_block,
+        f"{period}_origin_count": count,
+        f"{period}_context_span_seconds_minimum": int(cast(int, spans.min())),
+        f"{period}_context_span_seconds_median": float(cast(float, spans.median())),
+        f"{period}_context_span_seconds_mean": float(cast(float, spans.mean())),
+        f"{period}_context_span_seconds_maximum": int(cast(int, spans.max())),
     }
 
 

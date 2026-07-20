@@ -17,6 +17,7 @@ from fable.addresses import artifact_checkpoint_path
 from fable.config import (
     AdamWMethod,
     BaselineSource,
+    BlockWindow,
     CorpusDefinition,
     CorpusRequest,
     ExperimentSemantics,
@@ -26,7 +27,6 @@ from fable.config import (
     LstmDefinition,
     LstmMethod,
     LstmMethodSpace,
-    OriginWindow,
     StudyDefinition,
     TrainingDefinition,
     TrainRequest,
@@ -59,13 +59,11 @@ _BASE_FEES = np.array(
 
 def _experiment() -> ExperimentSemantics:
     return ExperimentSemantics(
-        training_window=OriginWindow(
-            role="training",
+        training_window=BlockWindow(
             first_parent_block=12,
             last_parent_block=15,
         ),
-        validation_window=OriginWindow(
-            role="validation",
+        validation_window=BlockWindow(
             first_parent_block=20,
             last_parent_block=21,
         ),

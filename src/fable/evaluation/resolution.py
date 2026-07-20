@@ -203,12 +203,9 @@ def _resolve_reduction(
         raise ValueError("artifact source Corpus must match the evaluation Corpus")
     definition = artifact.training_definition
     experiment = definition.experiment
-    if request.window.role == "validation":
-        if request.window != experiment.validation_window:
-            raise ValueError("validation window must match the artifact experiment")
-    elif (
+    if (
         experiment.validation_window.last_parent_block + experiment.horizon_blocks
-        >= request.window.first_parent_block
+        >= request.testing_window.first_parent_block
     ):
         raise ValueError("testing window must follow complete validation outcomes")
 
@@ -259,7 +256,8 @@ def _reduce_observations(
     observations: pl.LazyFrame,
 ) -> pl.DataFrame:
 
-    expected_origin_count = request.window.last_parent_block - request.window.first_parent_block + 1
+    testing_window = request.testing_window
+    expected_origin_count = testing_window.last_parent_block - testing_window.first_parent_block + 1
     horizon_blocks = experiment.horizon_blocks
     loss_definition = experiment.loss
 
@@ -325,7 +323,7 @@ def _reduce_observations(
         pl.sum_horizontal([pl.col(name).null_count() for name in _OBSERVATION_SCHEMA.names()]) == 0
     )
     expected_origins = pl.int_range(0, pl.len(), dtype=pl.Int64) + pl.lit(
-        request.window.first_parent_block,
+        testing_window.first_parent_block,
         dtype=pl.Int64,
     )
     valid_inputs = pl.all_horizontal(
