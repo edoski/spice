@@ -278,7 +278,43 @@ def _encoder(
     return encoder
 
 
-class _TransformerModel(nn.Module):
+class _TransformerBackbone(nn.Module):
+    def __init__(
+        self,
+        definition: TransformerDefinition | TransformerLstmDefinition,
+        *,
+        context_blocks: int,
+        feature_count: int,
+    ) -> None:
+        super().__init__()
+        self.context_blocks = context_blocks
+        self.feature_count = feature_count
+        self.projection = nn.Linear(feature_count, definition.model_width)
+        self.register_buffer(
+            "positions",
+            _sinusoidal_positions(context_blocks, definition.model_width),
+            persistent=False,
+        )
+        self.encoder: nn.TransformerEncoder = _encoder(
+            width=definition.model_width,
+            heads=definition.attention_heads,
+            feedforward=definition.feedforward_width,
+            layers=definition.transformer_layers,
+            dropout=definition.dropout,
+        )
+
+    def _encode(self, inputs: torch.Tensor) -> torch.Tensor:
+        _require_inputs(
+            inputs,
+            context_blocks=self.context_blocks,
+            feature_count=self.feature_count,
+        )
+        projected = self.projection(inputs)
+        positions = cast(torch.Tensor, self.positions).to(dtype=projected.dtype)
+        return self.encoder(projected + torch.unsqueeze(positions, 0))
+
+
+class _TransformerModel(_TransformerBackbone):
     def __init__(
         self,
         definition: TransformerDefinition,
@@ -287,42 +323,16 @@ class _TransformerModel(nn.Module):
         feature_count: int,
         actions: int,
     ) -> None:
-        super().__init__()
-        self.context_blocks = context_blocks
-        self.feature_count = feature_count
-        self.projection = nn.Linear(feature_count, definition.model_width)
-        self.register_buffer(
-            "positions",
-            _sinusoidal_positions(context_blocks, definition.model_width),
-            persistent=False,
-        )
-        self.encoder: nn.TransformerEncoder = _encoder(
-            width=definition.model_width,
-            heads=definition.attention_heads,
-            feedforward=definition.feedforward_width,
-            layers=definition.transformer_layers,
-            dropout=definition.dropout,
-        )
+        super().__init__(definition, context_blocks=context_blocks, feature_count=feature_count)
         self.heads = _Heads(
-            definition.model_width,
-            definition.head_hidden,
-            actions,
-            definition.dropout,
+            definition.model_width, definition.head_hidden, actions, definition.dropout
         )
 
     def forward(self, inputs: torch.Tensor) -> MinBlockFeeOutput:
-        _require_inputs(
-            inputs,
-            context_blocks=self.context_blocks,
-            feature_count=self.feature_count,
-        )
-        projected = self.projection(inputs)
-        positions = cast(torch.Tensor, self.positions).to(dtype=projected.dtype)
-        encoded = self.encoder(projected + torch.unsqueeze(positions, 0))
-        return self.heads(encoded[:, -1])
+        return self.heads(self._encode(inputs)[:, -1])
 
 
-class _TransformerLstmModel(nn.Module):
+class _TransformerLstmModel(_TransformerBackbone):
     def __init__(
         self,
         definition: TransformerLstmDefinition,
@@ -331,22 +341,7 @@ class _TransformerLstmModel(nn.Module):
         feature_count: int,
         actions: int,
     ) -> None:
-        super().__init__()
-        self.context_blocks = context_blocks
-        self.feature_count = feature_count
-        self.projection = nn.Linear(feature_count, definition.model_width)
-        self.register_buffer(
-            "positions",
-            _sinusoidal_positions(context_blocks, definition.model_width),
-            persistent=False,
-        )
-        self.encoder: nn.TransformerEncoder = _encoder(
-            width=definition.model_width,
-            heads=definition.attention_heads,
-            feedforward=definition.feedforward_width,
-            layers=definition.transformer_layers,
-            dropout=definition.dropout,
-        )
+        super().__init__(definition, context_blocks=context_blocks, feature_count=feature_count)
         self.lstm = nn.LSTM(
             input_size=definition.model_width,
             hidden_size=definition.lstm_hidden,
@@ -355,22 +350,11 @@ class _TransformerLstmModel(nn.Module):
             batch_first=True,
         )
         self.heads = _Heads(
-            definition.lstm_hidden,
-            definition.head_hidden,
-            actions,
-            definition.dropout,
+            definition.lstm_hidden, definition.head_hidden, actions, definition.dropout
         )
 
     def forward(self, inputs: torch.Tensor) -> MinBlockFeeOutput:
-        _require_inputs(
-            inputs,
-            context_blocks=self.context_blocks,
-            feature_count=self.feature_count,
-        )
-        projected = self.projection(inputs)
-        positions = cast(torch.Tensor, self.positions).to(dtype=projected.dtype)
-        encoded = self.encoder(projected + torch.unsqueeze(positions, 0))
-        sequence, _ = self.lstm(encoded)
+        sequence, _ = self.lstm(self._encode(inputs))
         return self.heads(sequence[:, -1])
 
 
