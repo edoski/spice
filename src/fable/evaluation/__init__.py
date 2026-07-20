@@ -1,12 +1,10 @@
 """Direct native artifact evaluation."""
 
 from .evaluate import EvaluationDeployment, evaluate
-from .resolution import ResolvedEvaluation, reduce_evaluation, resolve_evaluations
+from .resolution import reduce_evaluation
 
 __all__ = [
     "EvaluationDeployment",
-    "ResolvedEvaluation",
     "evaluate",
     "reduce_evaluation",
-    "resolve_evaluations",
 ]

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import math
 from pathlib import Path
 from typing import Any, Self
 from uuid import UUID
@@ -95,18 +94,8 @@ _PREDICTED_Z = torch.tensor([0.5, -0.5, 1.0, 0.0, 2.0], dtype=torch.float32)
 _OBSERVATION_SCHEMA = pl.Schema(
     {
         "origin_block": pl.Int64,
-        "origin_timestamp": pl.Int64,
-        "selected_action_k": pl.Int64,
-        "earliest_hindsight_action_k": pl.Int64,
-        "classification_loss_contribution": pl.Float64,
-        "predicted_hindsight_minimum_base_fee_z": pl.Float32,
-        "previous_closed_parent_base_fee_per_gas": pl.Int64,
-        "closed_parent_base_fee_per_gas": pl.Int64,
-        "immediate_k0_base_fee_per_gas": pl.Int64,
-        "selected_target_base_fee_per_gas": pl.Int64,
-        "hindsight_minimum_base_fee_per_gas": pl.Int64,
-        "selected_action_wait_seconds": pl.Int64,
-        "full_horizon_elapsed_seconds": pl.Int64,
+        "predicted_action_k": pl.Int64,
+        "predicted_minimum_log_base_fee_z": pl.Float32,
     }
 )
 
@@ -299,14 +288,6 @@ class _Model(nn.Module):
         )
 
 
-def _classification_contributions() -> list[float]:
-    labels = [2, 2, 1, 2, 1]
-    return [
-        (math.log(sum(math.exp(float(value)) for value in logits)) - float(logits[label]))
-        for logits, label in zip(_LOGITS.tolist(), labels, strict=True)
-    ]
-
-
 @pytest.mark.parametrize(
     "source_kind",
     ["baseline", "selected"],
@@ -337,30 +318,10 @@ def test_evaluate_publishes_exact_observations_through_one_full_and_tail_path(
     assert observations.schema == _OBSERVATION_SCHEMA
     assert observations.null_count().row(0) == (0,) * len(_OBSERVATION_SCHEMA)
     assert observations["origin_block"].to_list() == [20, 21, 22, 23, 24]
-    assert observations["origin_timestamp"].to_list() == [220, 232, 232, 256, 268]
-    assert observations["selected_action_k"].to_list() == [0, 2, 1, 0, 2]
-    assert observations["earliest_hindsight_action_k"].to_list() == [2, 2, 1, 2, 1]
-    assert observations["predicted_hindsight_minimum_base_fee_z"].to_list() == pytest.approx(
+    assert observations["predicted_action_k"].to_list() == [0, 2, 1, 0, 2]
+    assert observations["predicted_minimum_log_base_fee_z"].to_list() == pytest.approx(
         [0.5, -0.5, 1.0, 0.0, 2.0]
     )
-    assert observations["classification_loss_contribution"].to_list() == pytest.approx(
-        _classification_contributions()
-    )
-    assert observations.select(
-        "previous_closed_parent_base_fee_per_gas",
-        "closed_parent_base_fee_per_gas",
-        "immediate_k0_base_fee_per_gas",
-        "selected_target_base_fee_per_gas",
-        "hindsight_minimum_base_fee_per_gas",
-        "selected_action_wait_seconds",
-        "full_horizon_elapsed_seconds",
-    ).rows() == [
-        (90, 80, 60, 60, 50, 0, 36),
-        (80, 60, 70, 40, 40, 24, 36),
-        (60, 70, 50, 40, 40, 24, 48),
-        (70, 50, 40, 40, 30, 0, 36),
-        (50, 40, 55, 30, 30, 24, 24),
-    ]
 
 
 @pytest.mark.parametrize(

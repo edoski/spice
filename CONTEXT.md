@@ -26,11 +26,9 @@ FABLE derives from and extends selected temporal work from *SPICE: A Predictive 
 
 **Native Lightning artifact.** A weights-only best checkpoint carrying the exact TrainRequest, fitted state, and any selected-Study association.
 
-**EvaluateRequest.** The complete typed instruction for one explicit post-fit validation or testing evaluation.
+**EvaluateRequest.** The complete typed instruction for one explicit post-fit testing evaluation.
 
-**Evaluation observation.** One canonical scalar row produced by an EvaluateRequest and trusted after canonical evaluation validation.
-
-**ResolvedEvaluation.** Trusted request, training source and definition, Corpus, lazy observations, transient reduction, and trainable parameter count for one evaluation UUID; it carries no neural module or fitted-state internals.
+**Evaluation observation.** One canonical prediction row containing an origin, decoded action, and standardized natural-log minimum-fee prediction.
 
 **Method.** One complete model and training choice.
 

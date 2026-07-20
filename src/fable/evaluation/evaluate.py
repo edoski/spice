@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal
 
 import numpy as np
 import polars as pl
@@ -13,33 +13,16 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from ..addresses import evaluation_directory
-from ..config import BaselineSource, EvaluateRequest, ExperimentSemantics
-from ..corpus import BlockFrame, load_corpus
-from ..min_block_fee import decode_action, min_block_fee_loss
-from ..modeling import ArtifactAssociation, load_artifact
+from ..config import EvaluateRequest
+from ..corpus import load_corpus
+from ..min_block_fee import decode_action
+from ..modeling import load_artifact
 from ..temporal.history import HistoricalDataset, prepare_historical_window
+from .contract import OBSERVATION_SCHEMA, validate_request_artifact
 
 _PositiveInt = Annotated[int, Field(strict=True, gt=0)]
 _NonNegativeInt = Annotated[int, Field(strict=True, ge=0)]
 _DEVICE = torch.device("cuda:0")
-
-_OBSERVATION_SCHEMA = pl.Schema(
-    {
-        "origin_block": pl.Int64,
-        "origin_timestamp": pl.Int64,
-        "selected_action_k": pl.Int64,
-        "earliest_hindsight_action_k": pl.Int64,
-        "classification_loss_contribution": pl.Float64,
-        "predicted_hindsight_minimum_base_fee_z": pl.Float32,
-        "previous_closed_parent_base_fee_per_gas": pl.Int64,
-        "closed_parent_base_fee_per_gas": pl.Int64,
-        "immediate_k0_base_fee_per_gas": pl.Int64,
-        "selected_target_base_fee_per_gas": pl.Int64,
-        "hindsight_minimum_base_fee_per_gas": pl.Int64,
-        "selected_action_wait_seconds": pl.Int64,
-        "full_horizon_elapsed_seconds": pl.Int64,
-    }
-)
 
 
 class EvaluationDeployment(BaseModel):
@@ -77,14 +60,8 @@ def evaluate(
 
     corpus = load_corpus(storage_root, request.corpus_id)
     association, model = load_artifact(storage_root, request.artifact_id)
-    source = association.request.source
-    if source.corpus_id != request.corpus_id:
-        raise ValueError("artifact source Corpus must match the evaluation Corpus")
-    experiment = (
-        source.training_definition.experiment
-        if isinstance(source, BaselineSource)
-        else source.experiment
-    )
+    validate_request_artifact(request, association)
+    experiment = association.training_definition.experiment
     testing_window = request.testing_window
     if testing_window.first_parent_block <= corpus.request.definition.first_block:
         raise ValueError("Corpus must include the previous closed parent")
@@ -98,13 +75,7 @@ def evaluate(
 
     _configure_execution(deployment)
     observations = _collect_observations(
-        corpus.blocks.select_range(
-            testing_window.first_parent_block - 1,
-            testing_window.last_parent_block + experiment.horizon_blocks,
-        ),
         dataset,
-        experiment,
-        association,
         model,
         deployment,
     )
@@ -133,24 +104,14 @@ def _configure_execution(deployment: EvaluationDeployment) -> None:
 
 
 def _collect_observations(
-    blocks: BlockFrame,
     dataset: HistoricalDataset,
-    experiment: ExperimentSemantics,
-    association: ArtifactAssociation,
     model: nn.Module,
     deployment: EvaluationDeployment,
 ) -> pl.DataFrame:
-    frame = blocks.to_polars()
-    first_block = blocks.definition.first_block
     count = len(dataset)
     origin_blocks = np.empty(count, dtype=np.int64)
-    selected_actions = np.empty(count, dtype=np.int64)
-    hindsight_actions = np.empty(count, dtype=np.int64)
-    classification = np.empty(count, dtype=np.float64)
+    predicted_actions = np.empty(count, dtype=np.int64)
     predicted_z = np.empty(count, dtype=np.float32)
-    immediate_fees = np.empty(count, dtype=np.int64)
-    selected_fees = np.empty(count, dtype=np.int64)
-    hindsight_fees = np.empty(count, dtype=np.int64)
 
     loader = DataLoader(
         dataset,
@@ -167,60 +128,32 @@ def _collect_observations(
     with torch.inference_mode():
         for batch in loader:
             inputs = batch["inputs"].to(_DEVICE)
-            labels = batch["label"].to(_DEVICE)
-            targets = batch["target"].to(_DEVICE)
             output = model(inputs)
-            loss = min_block_fee_loss(
-                output,
-                label=labels,
-                target=targets,
-            )
             actions = decode_action(output).to(device="cpu", dtype=torch.int64)
-            contributions = loss.classification_by_origin.to(
-                device="cpu",
-                dtype=torch.float64,
-            )
-            minimum_fee_z = output.minimum_fee_z.to(device="cpu", dtype=torch.float32)
+            minimum_fee_z = output.minimum_fee_z
+            if (
+                minimum_fee_z.ndim != 1
+                or minimum_fee_z.shape[0] != actions.shape[0]
+                or not minimum_fee_z.is_floating_point()
+                or not torch.isfinite(minimum_fee_z).all()
+            ):
+                raise ValueError("minimum_fee_z must be a finite floating vector matching actions")
+            minimum_fee_z = minimum_fee_z.to(device="cpu", dtype=torch.float32)
 
             size = actions.shape[0]
             destination = slice(cursor, cursor + size)
-            outcomes = batch["base_fees"].numpy()
-            cpu_labels = batch["label"].numpy()
-            rows = np.arange(size)
             origin_blocks[destination] = batch["origin_block"].numpy()
-            selected_actions[destination] = actions.numpy()
-            hindsight_actions[destination] = cpu_labels
-            classification[destination] = contributions.numpy()
+            predicted_actions[destination] = actions.numpy()
             predicted_z[destination] = minimum_fee_z.numpy()
-            immediate_fees[destination] = outcomes[:, 0]
-            selected_fees[destination] = outcomes[rows, actions.numpy()]
-            hindsight_fees[destination] = outcomes[rows, cpu_labels]
             cursor += size
 
-    base_fees = cast(np.ndarray, frame["base_fee_per_gas"].to_numpy())
-    timestamps = cast(np.ndarray, frame["timestamp"].to_numpy())
-    origin_rows = origin_blocks - first_block
     return pl.DataFrame(
         {
             "origin_block": origin_blocks,
-            "origin_timestamp": timestamps[origin_rows],
-            "selected_action_k": selected_actions,
-            "earliest_hindsight_action_k": hindsight_actions,
-            "classification_loss_contribution": classification,
-            "predicted_hindsight_minimum_base_fee_z": predicted_z,
-            "previous_closed_parent_base_fee_per_gas": base_fees[origin_rows - 1],
-            "closed_parent_base_fee_per_gas": base_fees[origin_rows],
-            "immediate_k0_base_fee_per_gas": immediate_fees,
-            "selected_target_base_fee_per_gas": selected_fees,
-            "hindsight_minimum_base_fee_per_gas": hindsight_fees,
-            "selected_action_wait_seconds": (
-                timestamps[origin_rows + selected_actions] - timestamps[origin_rows]
-            ),
-            "full_horizon_elapsed_seconds": (
-                timestamps[origin_rows + experiment.horizon_blocks] - timestamps[origin_rows]
-            ),
+            "predicted_action_k": predicted_actions,
+            "predicted_minimum_log_base_fee_z": predicted_z,
         },
-        schema=_OBSERVATION_SCHEMA,
+        schema=OBSERVATION_SCHEMA,
     )
 
 

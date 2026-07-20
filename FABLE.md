@@ -31,7 +31,7 @@ CLI or direct Python call
         +--> evaluation --> observations.parquet
         |
         v
-resolved evaluation facts and transient reductions
+transient Corpus-derived reductions
 ```
 
 `fable.config` owns frozen Pydantic values and small discriminated unions. `fable.requests` mints fresh UUIDv4 instances. A boundary receiving raw JSON or durable bytes hydrates the owning typed value once; downstream code trusts that value.
@@ -58,7 +58,7 @@ Each owner has one system seam:
 - `min_block_fee` owns target state, classification support, loss, two-head output, and decode.
 - `modeling` owns the three concrete neural definitions, Lightning fitting, and native checkpoint loading.
 - `study` owns bounded candidate membership, ordered retained results, publication, and selected-result materialization.
-- `evaluation` owns canonical observations, resolved evaluation facts, and transient reduction.
+- `evaluation` owns canonical prediction observations and transient Corpus-derived reduction.
 
 ### Durable object flow
 
@@ -74,9 +74,9 @@ A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-S
 
 #### Evaluation
 
-`EvaluateRequest` names an artifact, same-source Corpus, validation or testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, writes one nonnull ordered observation per origin, and publishes `evaluation.json` with `observations.parquet`.
+`EvaluateRequest` names an artifact, same-source Corpus, testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, and publishes `evaluation.json` with `observations.parquet`. Each ordered observation stores only the origin, decoded action, and standardized natural-log minimum-fee prediction.
 
-`resolve_evaluations()` reads explicit evaluation IDs into ordered trusted facts: request, training source and definition, Corpus, lazy observations, transient reduction, and trainable parameter count. Repeated evaluation, artifact, and Corpus IDs share resolution within the call. `reduce_evaluation()` uses the same request, artifact, observation, and reduction authority without loading a Corpus.
+`reduce_evaluation()` validates those predictions, loads the associated Corpus, derives all outcome truth, and returns a transient one-row six-metric DataFrame. The reduction is never persisted.
 
 ### Training and inference
 
@@ -245,26 +245,27 @@ t           = c + r ≈ 0.813520
 
 For this one-origin batch, `mean_total = sum(t_i)/B = t`. In a larger batch every origin contributes one scaled classification term plus one scaled regression term, with sample count `B` as the denominator.
 
-### 6. Decode and account
+### 6. Decode and evaluate
 
 Native first-index `argmax` selects `k=3`; equal maximum logits would choose the first. The intended target is block `25,400,004`.
 
-For this outcome:
+For this outcome, let `B(k)` be the Corpus base fee at `h+1+k`:
 
 ```text
-B = immediate h+1 fee       = 25.5 gwei/gas
-R = selected h+1+k fee      = 20.0 gwei/gas
-O = hindsight minimum fee   = 20.0 gwei/gas
-
-S = B - R = 5.5
-G = B - O = 5.5
-Q = R - O = 0.0
-S + Q = G
+B(0) = 25.5 gwei/gas
+B(3) = 20.0 gwei/gas
+k*   = earliest argmin_k B(k) = 3
 ```
 
-This origin saves base fee per gas versus immediate action and captures all available hindsight opportunity. Across a declared evaluation window, FABLE first sums raw Int64 `S`, `G`, and `Q`, then forms Float64 ratio-of-sums.
+The durable observation stores only:
 
-The canonical observation also records `selected_action_wait_seconds = timestamp(h+3)-timestamp(h)` and `full_horizon_elapsed_seconds = timestamp(h+5)-timestamp(h)`. The selected wait is zero for `k=0`.
+```text
+origin_block                       = 25,400,000
+predicted_action_k                 = 3
+predicted_minimum_log_base_fee_z   = 0.7
+```
+
+Reduction reloads the Corpus. The selected-action savings fraction is `(25.5-20.0)/25.5 ≈ 0.215686`; the optimality gap is `(20.0-20.0)/20.0 = 0`. It reconstructs the predicted natural-log fee as `23.5 + 0.25×0.7 = 23.675`, so the absolute natural-log error is about `0.043998` and the squared error about `0.001936`. No labels, fees, losses, timestamps, waits, horizons, or derived economic facts are stored in the observation.
 
 ### 7. Carry the same contract into serving
 
@@ -438,7 +439,7 @@ t_i = c_i + r_i
 mean_total = (sum_i t_i) / B
 ```
 
-The denominator is the number of origins in the batch. Evaluation reconstructs Smooth L1 from persisted float32 z values in Float32, with the artifact's threshold and regression scale; the persisted classification contribution already includes classification weighting and scale. The operative functions match PyTorch's [`cross_entropy`](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.cross_entropy.html) and [`smooth_l1_loss`](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.smooth_l1_loss.html).
+The denominator is the number of origins in the batch. These are training and validation losses only. The operative functions match PyTorch's [`cross_entropy`](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.cross_entropy.html) and [`smooth_l1_loss`](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.smooth_l1_loss.html).
 
 Decode is native `argmax(action_logits, dim=-1)`. Equal maximum logits select the first index, and decode depends on the logits alone.
 
@@ -454,53 +455,35 @@ All three attach the same two MLP heads. Architecture capacity belongs to `Model
 
 ### Evaluation estimands
 
-For each eligible origin, define raw Int64 fee-per-gas values:
+For testing origin `i` and action `k∈{0,…,K-1}`, the reducer loads the Corpus and defines:
 
 ```text
-B_i = fee at immediate action k=0
-R_i = fee at selected action k_i
-O_i = minimum fee over the K-block horizon
-
-S_i = B_i - R_i             savings
-G_i = B_i - O_i             hindsight opportunity
-Q_i = R_i - O_i             hindsight regret
+B_i(k) = Corpus base fee at origin_block_i + 1 + k
+k_i*   = earliest argmin_k B_i(k)
 ```
 
-`O_i≤B_i` and `O_i≤R_i`, so `G_i,Q_i≥0`; `S_i` is signed. Exact identity:
+Tied minimum fees choose the smallest action. If `p_i` is the stored predicted action, then `B_i(p_i)` is the selected fee, `B_i(0)` is the immediate fee, and `B_i(k_i*)` is the optimum fee.
+
+The artifact's `TargetState` de-standardizes stored prediction `z_i` in natural-log fee space:
 
 ```text
-S_i + Q_i = G_i
+predicted_log_fee_i = target_mean + target_standard_deviation * z_i
+true_log_fee_i      = ln B_i(k_i*)
 ```
 
-Differences are computed before Float64 casting. Over `N` equally weighted origins:
+Over the testing origins, reduction returns exactly six Float64 metrics:
 
 ```text
-savings ratio       = sum(S) / sum(B)
-opportunity ratio   = sum(G) / sum(B)
-regret ratio        = sum(Q) / sum(B)
-captured opportunity = sum(S) / sum(G), only when exact sum(G) != 0
+accuracy                = mean_i[p_i = k_i*]
+log_fee_mae             = mean_i |predicted_log_fee_i - true_log_fee_i|
+log_fee_mse             = mean_i (predicted_log_fee_i - true_log_fee_i)^2
+base_fee_savings        = mean_i ((B_i(0) - B_i(p_i)) / B_i(0))
+base_fee_optimality_gap = mean_i ((B_i(p_i) - B_i(k_i*)) / B_i(k_i*))
 ```
 
-Captured opportunity is null iff exact raw-Int64 `sum(G)==0`. Every other reduction field is nonnull. Positive `B_i` and `O_i` make the per-origin views defined:
+`f1_macro` is standard unweighted macro-F1 over the union of action classes present in truth or predictions, with zero division equal to zero. Classes absent from both do not enter the mean.
 
-```text
-mean_i(S_i / B_i)
-mean_i(Q_i / O_i)
-mean_i(G_i / O_i)
-```
-
-Their zero-denominator exclusion counts are therefore zero. A harmful action has `R_i>B_i`. Selected action counts have length `K` and sum to `N`.
-
-Accuracy is the fraction `k_i=k_i*`. Macro-F1 averages over the union-active classes whose true support plus prediction count is positive; absent-from-both classes do not enter its denominator.
-
-The canonical time descriptions are:
-
-```text
-selected_action_wait_seconds = timestamp(h+k) - timestamp(h)
-full_horizon_elapsed_seconds = timestamp(h+K) - timestamp(h)
-```
-
-The first is zero at `k=0`.
+Both economic metrics are mean per-origin fractions, not ratios of fee sums. Positive required Corpus fees make their denominators defined. Positive `base_fee_savings` is better; negative values mean the selected fee exceeded the immediate fee. `base_fee_optimality_gap` is nonnegative and lower is better. Natural-log errors are in log wei/gas and lower is better. Accuracy and macro-F1 are unitless and higher is better. Economic values remain fractions for later percentage formatting.
 
 ### HPO interpretation
 
@@ -575,7 +558,7 @@ HistoricalPreparation
   classification_state: ClassificationLossState | None
 ```
 
-`prepare_historical_window(corpus, experiment, window, *, feature_state, target_state)` prepares an exact validation or testing window with persisted state. A validation window must equal the experiment's authored validation window. A testing window must begin after all validation outcomes are complete.
+`prepare_historical_window(corpus, experiment, window, *, feature_state, target_state)` prepares an exact testing window with persisted state. Testing must begin after all validation outcomes are complete.
 
 For origin `h`, support is exact by block number:
 
@@ -685,13 +668,13 @@ The resulting native artifact embeds the same result index and Method for later 
 
 ### Evaluation
 
-Evaluation separates canonical observations, resolved evaluation facts, and transient reductions. Explicit UUIDs connect durable objects to their trusted derived facts.
+Evaluation separates canonical prediction observations from transient Corpus-derived metrics. Explicit UUIDs connect the request, artifact, Corpus, and predictions.
 
 #### Canonical evaluation
 
-`evaluate(request, storage_root, deployment)` loads the exact Corpus and native artifact, requires the artifact's source Corpus to equal the evaluation Corpus, prepares the authored validation or testing origin window with persisted state, and performs CUDA inference.
+`evaluate(request, storage_root, deployment)` loads the exact Corpus and native artifact, requires the artifact's source Corpus to equal the evaluation Corpus, prepares the testing origin window with persisted state, and performs CUDA inference.
 
-For every eligible origin it writes one ordered, nonnull observation containing the decision coordinate, target and decoded actions, scaled classification contribution, auxiliary z prediction, raw fee facts, and elapsed-time descriptions. Work is written under `evaluations/.<evaluation_id>/` and renamed to:
+For every eligible origin it writes one ordered, nonnull observation containing only the origin, decoded action, and standardized natural-log minimum-fee prediction. Work is written under `evaluations/.<evaluation_id>/` and renamed to:
 
 ```text
 evaluations/<evaluation_id>/
@@ -699,15 +682,11 @@ evaluations/<evaluation_id>/
   observations.parquet
 ```
 
-The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical 13-column contract in the [reference](#canonical-observations).
+The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical three-column contract in the [reference](#canonical-observations).
 
-#### Resolved evaluation and reduction
+#### Transient reduction
 
-`resolve_evaluations(storage_root, evaluation_ids)` resolves each first occurrence in caller order. It strictly hydrates and checks the request ID, loads and validates one artifact association per artifact ID, derives the baseline or selected training definition, checks Corpus association and evaluation-window geometry, validates and reduces the canonical observations, then loads one Corpus per Corpus ID. Empty input returns an empty tuple; duplicates retain their caller positions and share the same resolved value.
-
-`ResolvedEvaluation` carries only the typed request, training source, training definition, Corpus, lazy canonical observations, 43-field reduction, and trainable parameter count. Neural modules and fitted-state internals do not cross this interface. The observation validation requires exact origin coverage, nonnegative origin timestamps, nonnull inputs, action bounds, positive previous/closed/target fees, wait bounds, finite values, and scientific identities.
-
-`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` uses the same request, artifact, observation, and scientific-reduction core without acquiring a Corpus. Regression target and Smooth-L1 use the artifact's `TargetState` and authored loss. Economic differences begin in raw Int64 before Float64 aggregation. The sole nullable result is captured opportunity when exact total opportunity is zero.
+`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` strictly hydrates the request, validates request/artifact/Corpus identity and testing-window separation, loads the Corpus, validates the exact observation schema and predictions, and derives truth from Corpus fees. It returns one row with exactly six nonnull Float64 metrics. The result has no evaluation ID, count, sums, supports, arrays, or auxiliary fields and is not persisted.
 
 ## Exact reference
 
@@ -747,8 +726,7 @@ fresh_corpus_request(definition: CorpusDefinition) -> CorpusRequest
 
 | Record | Ordered field | Type and rule |
 | --- | --- | --- |
-| `OriginWindow` | `role` | `"training" | "validation" | "testing"` |
-|  | `first_parent_block` | NonNegativeInt |
+| `BlockWindow` | `first_parent_block` | NonNegativeInt |
 |  | `last_parent_block` | NonNegativeInt, not before first |
 | `LossDefinition` | `classification_algorithm` | exactly `"cross_entropy"` |
 |  | `classification_weighting` | `"unweighted" | "corrected_inverse_frequency"` |
@@ -756,8 +734,8 @@ fresh_corpus_request(definition: CorpusDefinition) -> CorpusRequest
 |  | `regression_threshold` | finite float `>0` |
 |  | `classification_scale` | finite float `≥0` |
 |  | `regression_scale` | finite float `≥0` |
-| `ExperimentSemantics` | `training_window` | `OriginWindow(role="training")` |
-|  | `validation_window` | `OriginWindow(role="validation")` |
+| `ExperimentSemantics` | `training_window` | `BlockWindow` |
+|  | `validation_window` | `BlockWindow` |
 |  | `context_blocks` | PositiveInt `C` |
 |  | `horizon_blocks` | PositiveInt `K` |
 |  | `ordered_features` | nonempty unique tuple of nonempty strings |
@@ -834,7 +812,7 @@ Transformer capacity obeys the same even/divisible width constraints. A `MethodS
 |  | `evaluation_id` | UUIDv4 |
 |  | `artifact_id` | UUIDv4 |
 |  | `corpus_id` | UUIDv4 |
-|  | `window` | validation or testing `OriginWindow`; training is rejected |
+|  | `testing_window` | `BlockWindow`; must follow complete validation outcomes |
 
 `WorkflowRequest` is exactly `TrainRequest | EvaluateRequest`. `TuneRequest` is intentionally separate.
 
@@ -846,7 +824,7 @@ fresh_tune_request(corpus_id: UUID, study_definition: StudyDefinition) -> TuneRe
 fresh_evaluate_request(
     artifact_id: UUID,
     corpus_id: UUID,
-    window: OriginWindow,
+    testing_window: BlockWindow,
 ) -> EvaluateRequest
 ```
 
@@ -1059,16 +1037,6 @@ class EvaluationDeployment:
     cuda_matmul_allow_tf32: bool
     cudnn_allow_tf32: bool
 
-@dataclass(frozen=True, slots=True)
-class ResolvedEvaluation:
-    request: EvaluateRequest
-    training_source: TrainingSource
-    training_definition: TrainingDefinition
-    corpus: Corpus
-    observations: polars.LazyFrame
-    reduction: polars.DataFrame
-    trainable_parameter_count: int
-
 evaluate(
     request: EvaluateRequest,
     storage_root: Path,
@@ -1079,11 +1047,6 @@ reduce_evaluation(
     storage_root: Path,
     evaluation_id: UUID,
 ) -> polars.DataFrame
-
-resolve_evaluations(
-    storage_root: Path,
-    evaluation_ids: tuple[UUID, ...],
-) -> tuple[ResolvedEvaluation, ...]
 ```
 
 #### Canonical observations
@@ -1093,70 +1056,25 @@ Destination: `evaluations/<evaluation_id>/observations.parquet`. Status: canonic
 | # | Field | Type | Unit/meaning |
 | ---: | --- | --- | --- |
 | 1 | `origin_block` | Int64 | closed parent `h` |
-| 2 | `origin_timestamp` | Int64 | `timestamp(h)`, seconds |
-| 3 | `selected_action_k` | Int64 | decoded `k∈[0,K)` |
-| 4 | `earliest_hindsight_action_k` | Int64 | first raw-fee argmin |
-| 5 | `classification_loss_contribution` | Float64 | per-origin CE after weighting and classification scale |
-| 6 | `predicted_hindsight_minimum_base_fee_z` | Float32 | auxiliary standardized log-minimum prediction |
-| 7 | `previous_closed_parent_base_fee_per_gas` | Int64 | fee at `h-1`, wei/gas |
-| 8 | `closed_parent_base_fee_per_gas` | Int64 | fee at `h`, wei/gas |
-| 9 | `immediate_k0_base_fee_per_gas` | Int64 | fee at `h+1`, wei/gas |
-| 10 | `selected_target_base_fee_per_gas` | Int64 | fee at `h+1+k`, wei/gas |
-| 11 | `hindsight_minimum_base_fee_per_gas` | Int64 | raw minimum over `h+1…h+K`, wei/gas |
-| 12 | `selected_action_wait_seconds` | Int64 | `timestamp(h+k)-timestamp(h)`; zero for `k=0` |
-| 13 | `full_horizon_elapsed_seconds` | Int64 | `timestamp(h+K)-timestamp(h)` |
+| 2 | `predicted_action_k` | Int64 | decoded `k∈[0,K)` |
+| 3 | `predicted_minimum_log_base_fee_z` | Float32 | standardized natural-log minimum-fee prediction |
+
+The file contains predictions only. Labels, losses, fees, timestamps, waits, horizons, and derived truth or economic facts remain absent; reduction derives truth from the Corpus.
 
 #### Transient reduction
 
-Destination: none. `reduce_evaluation()` returns a one-row DataFrame. Status: derived, transient, noncanonical. Every field is nonnull except field 22, whose null rule is exact `sum(G)==0`. `selected_action_count_by_k` is a native `List(Int64)` of length `K` whose values sum to the eligible count.
+Destination: none. `reduce_evaluation()` returns a one-row DataFrame. Status: derived, transient, noncanonical, nonnull. The row does not store `evaluation_id`, `n`, counts, sums, supports, arrays, or auxiliary fields.
 
-| # | Field | Type |
-| ---: | --- | --- |
-| 1 | `evaluation_id` | String |
-| 2 | `eligible_origin_count` | Int64 |
-| 3 | `earliest_hindsight_label_correct_count` | Int64 |
-| 4 | `earliest_hindsight_label_cross_entropy_loss_sum` | Float64 |
-| 5 | `hindsight_minimum_base_fee_per_gas_within_k_smooth_l1_loss_sum` | Float64 |
-| 6 | `hindsight_minimum_base_fee_per_gas_within_k_natural_log_absolute_error_sum` | Float64 |
-| 7 | `hindsight_minimum_base_fee_per_gas_within_k_natural_log_squared_error_sum` | Float64 |
-| 8 | `earliest_hindsight_label_cross_entropy_loss` | Float64 |
-| 9 | `hindsight_minimum_base_fee_per_gas_within_k_smooth_l1_loss` | Float64 |
-| 10 | `hindsight_minimum_base_fee_per_gas_within_k_natural_log_mae` | Float64 |
-| 11 | `hindsight_minimum_base_fee_per_gas_within_k_natural_log_mse` | Float64 |
-| 12 | `multitask_total_loss` | Float64 |
-| 13 | `earliest_hindsight_label_accuracy` | Float64 |
-| 14 | `earliest_hindsight_label_macro_f1` | Float64 |
-| 15 | `immediate_k0_base_fee_per_gas_sum` | Float64 |
-| 16 | `finite_target_base_fee_per_gas_savings_sum` | Float64 |
-| 17 | `finite_target_base_fee_per_gas_hindsight_opportunity_sum` | Float64 |
-| 18 | `finite_target_base_fee_per_gas_hindsight_regret_sum` | Float64 |
-| 19 | `finite_target_base_fee_per_gas_savings_ratio_vs_immediate_k0` | Float64 |
-| 20 | `finite_target_base_fee_per_gas_hindsight_opportunity_ratio_vs_immediate_k0` | Float64 |
-| 21 | `finite_target_base_fee_per_gas_hindsight_regret_ratio_vs_immediate_k0` | Float64 |
-| 22 | `signed_captured_hindsight_opportunity_ratio` | nullable Float64 |
-| 23 | `target_base_fee_per_gas_savings_fraction_vs_immediate_k0_sum` | Float64 |
-| 24 | `target_base_fee_per_gas_savings_fraction_vs_immediate_k0_defined_origin_count` | Int64 |
-| 25 | `target_base_fee_per_gas_savings_fraction_vs_immediate_k0_zero_denominator_exclusion_count` | Int64 |
-| 26 | `mean_origin_target_base_fee_per_gas_savings_fraction_vs_immediate_k0` | Float64 |
-| 27 | `selected_target_base_fee_per_gas_increase_fraction_vs_hindsight_best_within_k_sum` | Float64 |
-| 28 | `selected_target_base_fee_per_gas_increase_fraction_vs_hindsight_best_within_k_defined_origin_count` | Int64 |
-| 29 | `selected_target_base_fee_per_gas_increase_fraction_vs_hindsight_best_within_k_zero_denominator_exclusion_count` | Int64 |
-| 30 | `mean_origin_selected_target_base_fee_per_gas_increase_fraction_vs_hindsight_best_within_k` | Float64 |
-| 31 | `immediate_k0_base_fee_per_gas_increase_fraction_vs_hindsight_best_within_k_sum` | Float64 |
-| 32 | `immediate_k0_base_fee_per_gas_increase_fraction_vs_hindsight_best_within_k_defined_origin_count` | Int64 |
-| 33 | `immediate_k0_base_fee_per_gas_increase_fraction_vs_hindsight_best_within_k_zero_denominator_exclusion_count` | Int64 |
-| 34 | `mean_origin_immediate_k0_base_fee_per_gas_increase_fraction_vs_hindsight_best_within_k` | Float64 |
-| 35 | `harmful_action_count` | Int64 |
-| 36 | `harmful_action_rate` | Float64 |
-| 37 | `selected_action_count_by_k` | List(Int64) |
-| 38 | `extra_wait_block_opportunities_vs_immediate_k0_sum` | Float64 |
-| 39 | `mean_extra_wait_block_opportunities_vs_immediate_k0` | Float64 |
-| 40 | `selected_action_wait_seconds_sum` | Float64 |
-| 41 | `mean_selected_action_wait_seconds` | Float64 |
-| 42 | `full_horizon_elapsed_seconds_sum` | Float64 |
-| 43 | `mean_full_horizon_elapsed_seconds` | Float64 |
+| # | Field | Type | Unit/direction |
+| ---: | --- | --- | --- |
+| 1 | `accuracy` | Float64 | unitless; higher is better |
+| 2 | `f1_macro` | Float64 | unitless; higher is better |
+| 3 | `log_fee_mae` | Float64 | natural-log wei/gas error; lower is better |
+| 4 | `log_fee_mse` | Float64 | squared natural-log wei/gas error; lower is better |
+| 5 | `base_fee_savings` | Float64 | mean per-origin fraction versus immediate; higher is better |
+| 6 | `base_fee_optimality_gap` | Float64 | mean per-origin fraction above optimum; lower is better |
 
-Fields 15–18 and 38, 40, 42 are sums in their named units; their ratios/means use one eligible origin as the unit. Fee sums are wei/gas represented as Float64 after exact Int64 differences.
+`accuracy` uses the earliest Corpus-fee minimum as truth. `f1_macro` averages over the union of classes appearing in truth or predictions with zero division zero. Regression first de-standardizes the prediction through the artifact `TargetState`. Economic fields are fractions, not percentages or ratios of sums.
 
 ## Limitations and sources
 
