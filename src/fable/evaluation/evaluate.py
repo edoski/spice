@@ -174,8 +174,6 @@ def _collect_observations(
                 output,
                 label=labels,
                 target=targets,
-                loss_definition=experiment.loss,
-                classification_state=association.classification_state,
             )
             actions = decode_action(output).to(device="cpu", dtype=torch.int64)
             contributions = loss.classification_by_origin.to(

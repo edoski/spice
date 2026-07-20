@@ -4,7 +4,7 @@ import importlib
 import json
 import math
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Any, Self
 from uuid import UUID
 
 import numpy as np
@@ -31,7 +31,6 @@ from fable.config import (
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
-    LossDefinition,
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
@@ -40,17 +39,11 @@ from fable.config import (
     TrainRequest,
 )
 from fable.evaluation import EvaluationDeployment, evaluate
-from fable.min_block_fee import (
-    ClassificationLossState,
-    MinBlockFeeOutput,
-    TargetState,
-)
+from fable.min_block_fee import MinBlockFeeOutput, TargetState
 from fable.modeling import ArtifactAssociation
 from fable.temporal.features import FeatureState
 
 evaluation_module = importlib.import_module("fable.evaluation.evaluate")
-
-_Weighting = Literal["unweighted", "corrected_inverse_frequency"]
 
 _CORPUS_ID = UUID("10000000-0000-4000-8000-000000000001")
 _OTHER_CORPUS_ID = UUID("10000000-0000-4000-8000-000000000002")
@@ -118,18 +111,7 @@ _OBSERVATION_SCHEMA = pl.Schema(
 )
 
 
-def _loss(weighting: _Weighting) -> LossDefinition:
-    return LossDefinition(
-        classification_algorithm="cross_entropy",
-        classification_weighting=weighting,
-        regression_algorithm="smooth_l1",
-        regression_threshold=1.0,
-        classification_scale=2.0,
-        regression_scale=0.5,
-    )
-
-
-def _experiment(weighting: _Weighting = "unweighted") -> ExperimentSemantics:
+def _experiment() -> ExperimentSemantics:
     return ExperimentSemantics(
         training_window=BlockWindow(
             first_parent_block=10,
@@ -142,7 +124,6 @@ def _experiment(weighting: _Weighting = "unweighted") -> ExperimentSemantics:
         context_blocks=3,
         horizon_blocks=3,
         ordered_features=("log_base_fee_per_gas",),
-        loss=_loss(weighting),
     )
 
 
@@ -170,14 +151,10 @@ def _method() -> LstmMethod:
 
 def _association(
     source_kind: str,
-    weighting: _Weighting,
     *,
     experiment: ExperimentSemantics | None = None,
 ) -> ArtifactAssociation:
-    experiment = experiment or _experiment(weighting)
-    classification_state = (
-        None if weighting == "unweighted" else ClassificationLossState(class_support=(5, 10, 20))
-    )
+    experiment = experiment or _experiment()
     if source_kind == "baseline":
         source = BaselineSource(
             kind="baseline",
@@ -204,7 +181,6 @@ def _association(
             ),
             feature_state=FeatureState(means=(0.0,), standard_deviations=(1.0,)),
             target_state=TargetState(mean=0.0, standard_deviation=1.0),
-            classification_state=classification_state,
         )
 
     method = _method()
@@ -222,7 +198,6 @@ def _association(
         ),
         feature_state=FeatureState(means=(0.0,), standard_deviations=(1.0,)),
         target_state=TargetState(mean=0.0, standard_deviation=1.0),
-        classification_state=classification_state,
         study_result_index=2,
         method=method,
     )
@@ -329,29 +304,25 @@ class _Model(nn.Module):
         )
 
 
-def _classification_contributions(weighting: _Weighting) -> list[float]:
+def _classification_contributions() -> list[float]:
     labels = [2, 2, 1, 2, 1]
-    weights = {0: 7 / 3, 1: 7 / 6, 2: 7 / 12}
     return [
         (math.log(sum(math.exp(float(value)) for value in logits)) - float(logits[label]))
-        * (1.0 if weighting == "unweighted" else weights[label])
-        * 2.0
         for logits, label in zip(_LOGITS.tolist(), labels, strict=True)
     ]
 
 
 @pytest.mark.parametrize(
-    ("source_kind", "weighting"),
-    [("baseline", "corrected_inverse_frequency"), ("selected", "unweighted")],
+    "source_kind",
+    ["baseline", "selected"],
 )
 def test_evaluate_publishes_exact_observations_through_one_full_and_tail_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     source_kind: str,
-    weighting: _Weighting,
 ) -> None:
     _write_corpus(tmp_path, _CORPUS_ID)
-    association = _association(source_kind, weighting)
+    association = _association(source_kind)
     model = _Model()
     monkeypatch.setattr(
         evaluation_module,
@@ -378,7 +349,7 @@ def test_evaluate_publishes_exact_observations_through_one_full_and_tail_path(
         [0.5, -0.5, 1.0, 0.0, 2.0]
     )
     assert observations["classification_loss_contribution"].to_list() == pytest.approx(
-        _classification_contributions(weighting)
+        _classification_contributions()
     )
     assert observations.select(
         "previous_closed_parent_base_fee_per_gas",
@@ -444,16 +415,14 @@ def test_evaluate_rejects_owned_association_and_publication_conflicts(
             context_blocks=1,
             horizon_blocks=3,
             ordered_features=("log_base_fee_per_gas",),
-            loss=_loss("unweighted"),
         )
         association = _association(
             "baseline",
-            "unweighted",
             experiment=experiment,
         )
     else:
         experiment = _experiment()
-        association = _association("baseline", "unweighted")
+        association = _association("baseline")
     model = _Model()
     monkeypatch.setattr(
         evaluation_module,

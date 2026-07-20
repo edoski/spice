@@ -30,7 +30,6 @@ _CONTEXT_SCHEMA = pl.Schema(
         "context_blocks": pl.Int64,
         "horizon_blocks": pl.Int64,
         "ordered_features": pl.List(pl.String),
-        "classification_loss": pl.String,
         "trainable_parameter_count": pl.Int64,
     }
 )
@@ -93,7 +92,6 @@ def write_sealed_report(
                     experiment.context_blocks,
                     experiment.horizon_blocks,
                     list(experiment.ordered_features),
-                    experiment.loss.classification_weighting,
                     resolved.trainable_parameter_count,
                 )
             ],

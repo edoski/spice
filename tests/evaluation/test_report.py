@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
-from typing import Literal
 from uuid import UUID
 
 import polars as pl
@@ -18,7 +17,6 @@ from fable.config import (
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
-    LossDefinition,
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
@@ -29,7 +27,7 @@ from fable.config import (
 )
 from fable.corpus import BlockFrame, Corpus, FinalizedAnchor
 from fable.evaluation import ResolvedEvaluation, write_sealed_report
-from fable.min_block_fee import ClassificationLossState, TargetState
+from fable.min_block_fee import TargetState
 from fable.modeling import ArtifactAssociation
 from fable.temporal.features import FeatureState
 
@@ -48,8 +46,6 @@ _CORPUS_IDS = (
     UUID("30000000-0000-4000-8000-000000000002"),
 )
 _STUDY_ID = UUID("40000000-0000-4000-8000-000000000001")
-
-_Weighting = Literal["unweighted", "corrected_inverse_frequency"]
 
 _CONTEXT_SCHEMA = pl.Schema(
     {
@@ -70,7 +66,6 @@ _CONTEXT_SCHEMA = pl.Schema(
         "context_blocks": pl.Int64,
         "horizon_blocks": pl.Int64,
         "ordered_features": pl.List(pl.String),
-        "classification_loss": pl.String,
         "trainable_parameter_count": pl.Int64,
     }
 )
@@ -159,17 +154,6 @@ _TSV_SCHEMA = pl.Schema(
 )
 
 
-def _loss(weighting: _Weighting) -> LossDefinition:
-    return LossDefinition(
-        classification_algorithm="cross_entropy",
-        classification_weighting=weighting,
-        regression_algorithm="smooth_l1",
-        regression_threshold=1.0,
-        classification_scale=1.0,
-        regression_scale=1.0,
-    )
-
-
 def _fit() -> FitMethod:
     return FitMethod(
         accumulation=1,
@@ -191,7 +175,6 @@ def _experiment(
     context_blocks: int,
     horizon_blocks: int,
     ordered_features: tuple[str, ...],
-    weighting: _Weighting,
 ) -> ExperimentSemantics:
     return ExperimentSemantics(
         training_window=BlockWindow(
@@ -205,7 +188,6 @@ def _experiment(
         context_blocks=context_blocks,
         horizon_blocks=horizon_blocks,
         ordered_features=ordered_features,
-        loss=_loss(weighting),
     )
 
 
@@ -228,20 +210,12 @@ def _association(
     selected: bool,
     transformer: bool = False,
 ) -> ArtifactAssociation:
-    classification_state = (
-        None
-        if experiment.loss.classification_weighting == "unweighted"
-        else ClassificationLossState(
-            class_support=(1,) * experiment.horizon_blocks,
-        )
-    )
     common = {
         "feature_state": FeatureState(
             means=(0.0,) * len(experiment.ordered_features),
             standard_deviations=(1.0,) * len(experiment.ordered_features),
         ),
         "target_state": TargetState(mean=0.0, standard_deviation=1.0),
-        "classification_state": classification_state,
     }
     if selected:
         method = _method()
@@ -370,21 +344,18 @@ def _arrange_report(
             context_blocks=5,
             horizon_blocks=3,
             ordered_features=("log_base_fee_per_gas", "gas_utilization"),
-            weighting="corrected_inverse_frequency",
         ),
         _experiment(
             200,
             context_blocks=7,
             horizon_blocks=3,
             ordered_features=("log_base_fee_per_gas",),
-            weighting="unweighted",
         ),
         _experiment(
             100,
             context_blocks=9,
             horizon_blocks=3,
             ordered_features=("log_base_fee_per_gas", "gas_utilization"),
-            weighting="unweighted",
         ),
     )
     corpus_ids = (_CORPUS_IDS[0], _CORPUS_IDS[1], _CORPUS_IDS[0])
@@ -515,11 +486,6 @@ def test_write_sealed_report_preserves_order_and_publishes_exact_tsv(
         '["log_base_fee_per_gas","gas_utilization"]',
         '["log_base_fee_per_gas"]',
         '["log_base_fee_per_gas","gas_utilization"]',
-    ]
-    assert [row["classification_loss"] for row in rows] == [
-        "corrected_inverse_frequency",
-        "unweighted",
-        "unweighted",
     ]
     assert [row["trainable_parameter_count"] for row in rows] == ["6", "16", "4"]
     assert [row["corpus_endpoint_block"] for row in rows] == ["114", "214", "114"]

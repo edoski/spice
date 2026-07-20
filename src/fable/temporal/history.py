@@ -12,9 +12,7 @@ from torch.utils.data import Dataset
 from ..config import BlockWindow, ExperimentSemantics
 from ..corpus.contract import Corpus
 from ..min_block_fee import (
-    ClassificationLossState,
     TargetState,
-    fit_classification_loss_state,
     fit_target_state,
     standardize_target,
 )
@@ -82,7 +80,6 @@ class HistoricalPreparation:
     validation: HistoricalDataset
     feature_state: FeatureState
     target_state: TargetState
-    classification_state: ClassificationLossState | None
 
 
 def prepare_fit_history(
@@ -119,11 +116,6 @@ def prepare_fit_history(
         horizon_blocks=experiment.horizon_blocks,
     )
     target_state = fit_target_state(training_minima)
-    classification_state = fit_classification_loss_state(
-        training_labels,
-        horizon_blocks=experiment.horizon_blocks,
-        loss_definition=experiment.loss,
-    )
 
     return HistoricalPreparation(
         training=_build_dataset(
@@ -141,7 +133,6 @@ def prepare_fit_history(
         ),
         feature_state=feature_state,
         target_state=target_state,
-        classification_state=classification_state,
     )
 
 

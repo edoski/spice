@@ -20,7 +20,6 @@ from fable.config import (
     BlockWindow,
     ExperimentSemantics,
     FitMethod,
-    LossDefinition,
     LstmDefinition,
     SelectedStudySource,
     TrainingDefinition,
@@ -84,14 +83,6 @@ def _experiment(*, context_blocks: int = 3, horizon_blocks: int = 2) -> Experime
         context_blocks=context_blocks,
         horizon_blocks=horizon_blocks,
         ordered_features=("log_base_fee_per_gas", "gas_utilization"),
-        loss=LossDefinition(
-            classification_algorithm="cross_entropy",
-            classification_weighting="unweighted",
-            regression_algorithm="smooth_l1",
-            regression_threshold=1.0,
-            classification_scale=1.0,
-            regression_scale=1.0,
-        ),
     )
 
 

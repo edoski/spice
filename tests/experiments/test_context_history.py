@@ -23,7 +23,6 @@ from fable.config import (
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
-    LossDefinition,
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
@@ -70,7 +69,6 @@ _COLUMNS = (
     "context_blocks",
     "horizon_blocks",
     "ordered_features",
-    "classification_loss",
     "training_first_parent_block",
     "training_last_parent_block",
     "training_origin_count",
@@ -137,17 +135,6 @@ def _optimizer() -> AdamWMethod:
     return AdamWMethod(learning_rate=0.0003, weight_decay=0.0001)
 
 
-def _loss() -> LossDefinition:
-    return LossDefinition(
-        classification_algorithm="cross_entropy",
-        classification_weighting="unweighted",
-        regression_algorithm="smooth_l1",
-        regression_threshold=1.0,
-        classification_scale=1.0,
-        regression_scale=1.0,
-    )
-
-
 def _features(chain_id: int) -> tuple[str, ...]:
     common = ("log_base_fee_per_gas", "gas_utilization")
     if chain_id == 1:
@@ -168,7 +155,6 @@ def _experiment(first_block: int, context: int, horizon: int, chain_id: int) -> 
         context_blocks=context,
         horizon_blocks=horizon,
         ordered_features=_features(chain_id),
-        loss=_loss(),
     )
 
 
@@ -396,7 +382,6 @@ def _replace_context_definition(
         ),
         feature_state=current.feature_state,
         target_state=current.target_state,
-        classification_state=current.classification_state,
     )
 
 
@@ -431,20 +416,19 @@ def test_write_context_history_evidence(
             "context_blocks": pl.Int64,
             "horizon_blocks": pl.Int64,
             "ordered_features": pl.String,
-            "classification_loss": pl.String,
-            **{name: pl.Int64 for name in _COLUMNS[9:16]},
+            **{name: pl.Int64 for name in _COLUMNS[8:15]},
             "training_context_span_seconds_median": pl.Float64,
             "training_context_span_seconds_mean": pl.Float64,
             "training_context_span_seconds_maximum": pl.Int64,
-            **{name: pl.Int64 for name in _COLUMNS[19:23]},
+            **{name: pl.Int64 for name in _COLUMNS[18:22]},
             "validation_context_span_seconds_median": pl.Float64,
             "validation_context_span_seconds_mean": pl.Float64,
             "validation_context_span_seconds_maximum": pl.Int64,
-            **{name: pl.Int64 for name in _COLUMNS[26:30]},
+            **{name: pl.Int64 for name in _COLUMNS[25:29]},
             "testing_context_span_seconds_median": pl.Float64,
             "testing_context_span_seconds_mean": pl.Float64,
             "testing_context_span_seconds_maximum": pl.Int64,
-            **{name: pl.Float64 for name in _COLUMNS[33:69]},
+            **{name: pl.Float64 for name in _COLUMNS[32:68]},
             "final_k_horizon_blocks": pl.String,
             "final_k_artifact_ids": pl.String,
         }
@@ -461,7 +445,6 @@ def test_write_context_history_evidence(
         assert int(row["context_blocks"]) == context
         assert int(row["horizon_blocks"]) == 5
         assert json.loads(row["ordered_features"]) == list(_features(chain_id))
-        assert row["classification_loss"] == "unweighted"
         assert int(row["training_first_parent_block"]) == first_block + context - 1
         assert int(row["training_last_parent_block"]) == first_block + 448
         assert int(row["training_origin_count"]) == 450 - context
@@ -602,7 +585,6 @@ def test_write_context_history_evidence_rejects_invalid_matrix(
             context_blocks=experiment.context_blocks,
             horizon_blocks=experiment.horizon_blocks,
             ordered_features=experiment.ordered_features,
-            loss=experiment.loss,
         )
         matrix.artifacts[final_id] = _final_association(
             final_id,

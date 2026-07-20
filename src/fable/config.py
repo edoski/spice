@@ -62,22 +62,12 @@ class BlockWindow(_FrozenRecord):
         return self
 
 
-class LossDefinition(_FrozenRecord):
-    classification_algorithm: Literal["cross_entropy"]
-    classification_weighting: Literal["unweighted", "corrected_inverse_frequency"]
-    regression_algorithm: Literal["smooth_l1"]
-    regression_threshold: _PositiveFloat
-    classification_scale: _NonNegativeFloat
-    regression_scale: _NonNegativeFloat
-
-
 class ExperimentSemantics(_FrozenRecord):
     training_window: BlockWindow
     validation_window: BlockWindow
     context_blocks: _PositiveInt
     horizon_blocks: _PositiveInt
     ordered_features: Annotated[tuple[_FeatureName, ...], Field(min_length=1)]
-    loss: LossDefinition
 
     @model_validator(mode="after")
     def validate_semantics(self) -> Self:
@@ -333,7 +323,6 @@ __all__ = [
     "LstmDefinition",
     "LstmMethod",
     "LstmMethodSpace",
-    "LossDefinition",
     "METHOD_ADAPTER",
     "Method",
     "MethodSpace",

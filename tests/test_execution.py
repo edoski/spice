@@ -16,7 +16,6 @@ from fable.config import (
     BlockWindow,
     EvaluateRequest,
     ExperimentSemantics,
-    LossDefinition,
     SelectedStudySource,
     TrainRequest,
     WorkflowRequest,
@@ -55,14 +54,6 @@ def _experiment() -> ExperimentSemantics:
         context_blocks=20,
         horizon_blocks=10,
         ordered_features=("base_fee",),
-        loss=LossDefinition(
-            classification_algorithm="cross_entropy",
-            classification_weighting="unweighted",
-            regression_algorithm="smooth_l1",
-            regression_threshold=1.0,
-            classification_scale=1.0,
-            regression_scale=1.0,
-        ),
     )
 
 

@@ -12,10 +12,8 @@ from fable.config import (
     CorpusDefinition,
     CorpusRequest,
     ExperimentSemantics,
-    LossDefinition,
 )
 from fable.corpus import BlockFrame, Corpus, FinalizedAnchor
-from fable.min_block_fee import ClassificationLossState
 from fable.temporal.history import prepare_fit_history, prepare_historical_window
 
 _CORPUS_ID = TypeAdapter(UUID4).validate_python("11111111-1111-4111-8111-111111111111")
@@ -69,21 +67,11 @@ def _experiment() -> ExperimentSemantics:
         context_blocks=3,
         horizon_blocks=3,
         ordered_features=("log_base_fee_per_gas", "gas_utilization"),
-        loss=LossDefinition(
-            classification_algorithm="cross_entropy",
-            classification_weighting="corrected_inverse_frequency",
-            regression_algorithm="smooth_l1",
-            regression_threshold=1.0,
-            classification_scale=1.0,
-            regression_scale=1.0,
-        ),
     )
 
 
 def test_fit_history_preserves_geometry_statistics_and_collation() -> None:
     preparation = prepare_fit_history(_corpus(), _experiment())
-
-    assert preparation.classification_state == ClassificationLossState(class_support=(1, 2, 1))
 
     support_fees = _BASE_FEES[:6].astype(np.float64)
     support_raw = np.column_stack(

@@ -18,7 +18,6 @@ from fable.config import (
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
-    LossDefinition,
     LstmDefinition,
     SelectedStudySource,
     TrainingDefinition,
@@ -76,14 +75,6 @@ def _uuid(namespace: int, index: int) -> UUID:
 
 
 def _source(corpus_id: UUID, *, context: int = 200, horizon: int = 5) -> SelectedStudySource:
-    loss = LossDefinition(
-        classification_algorithm="cross_entropy",
-        classification_weighting="unweighted",
-        regression_algorithm="smooth_l1",
-        regression_threshold=1.0,
-        classification_scale=1.0,
-        regression_scale=1.0,
-    )
     return SelectedStudySource(
         kind="selected_study",
         corpus_id=corpus_id,
@@ -101,7 +92,6 @@ def _source(corpus_id: UUID, *, context: int = 200, horizon: int = 5) -> Selecte
             context_blocks=context,
             horizon_blocks=horizon,
             ordered_features=("log_base_fee_per_gas",),
-            loss=loss,
         ),
     )
 

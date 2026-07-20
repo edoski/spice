@@ -259,7 +259,6 @@ def _reduce_observations(
     testing_window = request.testing_window
     expected_origin_count = testing_window.last_parent_block - testing_window.first_parent_block + 1
     horizon_blocks = experiment.horizon_blocks
-    loss_definition = experiment.loss
 
     immediate_fee = pl.col("immediate_k0_base_fee_per_gas")
     selected_fee = pl.col("selected_target_base_fee_per_gas")
@@ -273,13 +272,8 @@ def _reduce_observations(
     error = predicted_z - pl.col("_target_z")
     absolute_error = error.abs()
     half = pl.lit(0.5, dtype=pl.Float32)
-    threshold = pl.lit(loss_definition.regression_threshold, dtype=pl.Float32)
-    regression_scale = pl.lit(loss_definition.regression_scale, dtype=pl.Float32)
     smooth_l1 = (
-        pl.when(absolute_error < threshold)
-        .then(half * error * error / threshold)
-        .otherwise(absolute_error - half * threshold)
-        * regression_scale
+        pl.when(absolute_error < 1.0).then(half * error * error).otherwise(absolute_error - half)
     )
     predicted_log = pl.lit(target_mean, dtype=pl.Float64) + pl.lit(
         target_standard_deviation,

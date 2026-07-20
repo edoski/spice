@@ -15,7 +15,6 @@ from fable.config import (
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
-    LossDefinition,
     LstmCapacity,
     LstmMethod,
     LstmMethodSpace,
@@ -36,17 +35,6 @@ def _window(first: int = 210, last: int = 249) -> BlockWindow:
     )
 
 
-def _loss() -> LossDefinition:
-    return LossDefinition(
-        classification_algorithm="cross_entropy",
-        classification_weighting="unweighted",
-        regression_algorithm="smooth_l1",
-        regression_threshold=0.75,
-        classification_scale=1.25,
-        regression_scale=0.5,
-    )
-
-
 def _experiment() -> ExperimentSemantics:
     return ExperimentSemantics(
         training_window=_window(100, 199),
@@ -54,7 +42,6 @@ def _experiment() -> ExperimentSemantics:
         context_blocks=20,
         horizon_blocks=10,
         ordered_features=("base_fee", "gas_utilization"),
-        loss=_loss(),
     )
 
 
@@ -134,11 +121,6 @@ def _invalid_cases() -> tuple[tuple[Callable[..., object], dict[str, object], st
             LstmMethodSpace,
             {**method_space.model_dump(), "methods": (method, method)},
             "methods must not contain duplicates",
-        ),
-        (
-            LossDefinition,
-            {**_loss().model_dump(), "classification_algorithm": "focal"},
-            "cross_entropy",
         ),
         (
             ExperimentSemantics,

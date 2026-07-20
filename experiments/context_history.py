@@ -67,7 +67,6 @@ _EVIDENCE_COLUMNS = (
     "context_blocks",
     "horizon_blocks",
     "ordered_features",
-    "classification_loss",
     "training_first_parent_block",
     "training_last_parent_block",
     "training_origin_count",
@@ -134,7 +133,6 @@ def write_context_history_evidence(
     chain_training_ends: dict[int, int] = {}
     selected_family: str | None = None
     selected_feature_route: tuple[str, ...] | None = None
-    selected_classification_loss: str | None = None
 
     resolved_evaluations = resolve_evaluations(storage_root, context_evaluation_ids)
     for index, resolved in enumerate(resolved_evaluations):
@@ -157,17 +155,11 @@ def write_context_history_evidence(
 
         family = definition.model.family
         feature_route = _feature_route(chain_id, experiment.ordered_features)
-        classification_loss = experiment.loss.classification_weighting
         selected_family = _require_same("model family", selected_family, family)
         selected_feature_route = _require_same(
             "ordered feature route",
             selected_feature_route,
             feature_route,
-        )
-        selected_classification_loss = _require_same(
-            "classification loss",
-            selected_classification_loss,
-            classification_loss,
         )
         previous_corpus_id = chain_corpus_ids.setdefault(chain_id, request.corpus_id)
         if previous_corpus_id != request.corpus_id:
@@ -202,7 +194,6 @@ def write_context_history_evidence(
             "context_blocks": experiment.context_blocks,
             "horizon_blocks": experiment.horizon_blocks,
             "ordered_features": experiment.ordered_features,
-            "classification_loss": classification_loss,
             "training_examples_per_epoch": training_count,
             "training_minibatches_per_epoch": updates_per_epoch,
             "training_optimizer_updates_per_epoch": updates_per_epoch,
@@ -253,8 +244,6 @@ def write_context_history_evidence(
             raise ValueError("final-K artifacts must use the globally selected family")
         if experiment.ordered_features != c200.ordered_features:
             raise ValueError("final-K artifacts must use the same-chain selected features")
-        if experiment.loss.classification_weighting != selected_classification_loss:
-            raise ValueError("final-K artifacts must use the globally selected classification loss")
         final_ids_by_chain[expected_chain].append(artifact_id)
 
     for cell in cells:

@@ -20,7 +20,6 @@ from fable.config import (
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
-    LossDefinition,
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
@@ -30,7 +29,7 @@ from fable.config import (
 )
 from fable.corpus import BlockFrame, Corpus, FinalizedAnchor
 from fable.evaluation import reduce_evaluation, resolve_evaluations
-from fable.min_block_fee import ClassificationLossState, TargetState
+from fable.min_block_fee import TargetState
 from fable.modeling import ArtifactAssociation
 from fable.temporal.features import FeatureState
 
@@ -40,8 +39,6 @@ _ARTIFACT_ID = UUID("20000000-0000-4000-8000-000000000001")
 _CORPUS_ID = UUID("30000000-0000-4000-8000-000000000001")
 _OTHER_CORPUS_ID = UUID("30000000-0000-4000-8000-000000000002")
 _STUDY_ID = UUID("40000000-0000-4000-8000-000000000001")
-
-_Weighting = Literal["unweighted", "corrected_inverse_frequency"]
 
 _LOG_ABSOLUTE_SUM = "hindsight_minimum_base_fee_per_gas_within_k_natural_log_absolute_error_sum"
 _LOG_SQUARED_SUM = "hindsight_minimum_base_fee_per_gas_within_k_natural_log_squared_error_sum"
@@ -144,18 +141,7 @@ _OBSERVATION_SCHEMA = pl.Schema(
 )
 
 
-def _loss(weighting: _Weighting) -> LossDefinition:
-    return LossDefinition(
-        classification_algorithm="cross_entropy",
-        classification_weighting=weighting,
-        regression_algorithm="smooth_l1",
-        regression_threshold=0.75,
-        classification_scale=2.0,
-        regression_scale=0.5,
-    )
-
-
-def _experiment(weighting: _Weighting) -> ExperimentSemantics:
+def _experiment() -> ExperimentSemantics:
     return ExperimentSemantics(
         training_window=BlockWindow(
             first_parent_block=1,
@@ -168,7 +154,6 @@ def _experiment(weighting: _Weighting) -> ExperimentSemantics:
         context_blocks=3,
         horizon_blocks=4,
         ordered_features=("log_base_fee_per_gas",),
-        loss=_loss(weighting),
     )
 
 
@@ -196,12 +181,11 @@ def _method() -> LstmMethod:
 
 def _association(
     source_kind: Literal["baseline", "selected"],
-    weighting: _Weighting,
     *,
     corpus_id: UUID = _CORPUS_ID,
     target_state: TargetState | None = None,
 ) -> ArtifactAssociation:
-    experiment = _experiment(weighting)
+    experiment = _experiment()
     if source_kind == "baseline":
         source = BaselineSource(
             kind="baseline",
@@ -228,11 +212,6 @@ def _association(
             ),
             feature_state=FeatureState(means=(0.0,), standard_deviations=(1.0,)),
             target_state=target_state or TargetState(mean=0.0, standard_deviation=math.log(2.0)),
-            classification_state=(
-                None
-                if weighting == "unweighted"
-                else ClassificationLossState(class_support=(2, 3, 4, 5))
-            ),
         )
     else:
         source = SelectedStudySource(
@@ -243,9 +222,6 @@ def _association(
             experiment=experiment,
         )
         study_result_index = 2
-    classification_state = (
-        None if weighting == "unweighted" else ClassificationLossState(class_support=(2, 3, 4, 5))
-    )
     return ArtifactAssociation(
         request=TrainRequest(
             workflow="train",
@@ -254,7 +230,6 @@ def _association(
         ),
         feature_state=FeatureState(means=(0.0,), standard_deviations=(1.0,)),
         target_state=target_state or TargetState(mean=0.0, standard_deviation=math.log(2.0)),
-        classification_state=classification_state,
         study_result_index=study_result_index,
         method=_method(),
     )
@@ -324,18 +299,17 @@ def _stub_artifact(
 
 
 @pytest.mark.parametrize(
-    ("source_kind", "weighting"),
-    [("baseline", "corrected_inverse_frequency"), ("selected", "unweighted")],
+    "source_kind",
+    ["baseline", "selected"],
 )
 def test_reduce_evaluation_returns_all_scientific_facts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     source_kind: Literal["baseline", "selected"],
-    weighting: _Weighting,
 ) -> None:
     request = _request()
     _publish_evaluation(tmp_path, request, _observations())
-    artifact_calls = _stub_artifact(monkeypatch, _association(source_kind, weighting))
+    artifact_calls = _stub_artifact(monkeypatch, _association(source_kind))
 
     result = reduce_evaluation(tmp_path, _EVALUATION_ID)
 
@@ -347,14 +321,14 @@ def test_reduce_evaluation_returns_all_scientific_facts(
         "eligible_origin_count": 5,
         "earliest_hindsight_label_correct_count": 2,
         "earliest_hindsight_label_cross_entropy_loss_sum": 15.0,
-        "hindsight_minimum_base_fee_per_gas_within_k_smooth_l1_loss_sum": 1.4166666697710752,
+        "hindsight_minimum_base_fee_per_gas_within_k_smooth_l1_loss_sum": 2.4375,
         _LOG_ABSOLUTE_SUM: 3.1191623125197543,
         _LOG_SQUARED_SUM: 2.8226614567694335,
         "earliest_hindsight_label_cross_entropy_loss": 3.0,
-        "hindsight_minimum_base_fee_per_gas_within_k_smooth_l1_loss": 0.28333333395421506,
+        "hindsight_minimum_base_fee_per_gas_within_k_smooth_l1_loss": 0.4875,
         "hindsight_minimum_base_fee_per_gas_within_k_natural_log_mae": 0.6238324625039509,
         "hindsight_minimum_base_fee_per_gas_within_k_natural_log_mse": 0.5645322913538867,
-        "multitask_total_loss": 3.283333333954215,
+        "multitask_total_loss": 3.4875,
         "earliest_hindsight_label_accuracy": 0.4,
         "earliest_hindsight_label_macro_f1": 2.0 / 9.0,
         "immediate_k0_base_fee_per_gas_sum": 2_148.0,
@@ -429,7 +403,6 @@ def test_reduce_evaluation_keeps_only_captured_opportunity_nullable(
     )
     association = _association(
         "selected",
-        "unweighted",
         target_state=TargetState(mean=math.log(fee), standard_deviation=1.0),
     )
     _stub_artifact(monkeypatch, association)
@@ -470,12 +443,12 @@ def test_reduce_evaluation_rejects_owned_invalid_facts(
 ) -> None:
     request = _request()
     observations = _observations()
-    association = _association("baseline", "unweighted")
+    association = _association("baseline")
 
     if case == "evaluation_id":
         request = _request(evaluation_id=_OTHER_EVALUATION_ID)
     elif case == "source_corpus":
-        association = _association("baseline", "unweighted", corpus_id=_OTHER_CORPUS_ID)
+        association = _association("baseline", corpus_id=_OTHER_CORPUS_ID)
     elif case == "testing_window":
         request = _request(
             testing_window=BlockWindow(
@@ -528,7 +501,6 @@ def test_reduce_evaluation_rejects_owned_invalid_facts(
     elif case == "derived_nonfinite":
         association = _association(
             "baseline",
-            "unweighted",
             target_state=TargetState(mean=0.0, standard_deviation=1e308),
         )
     elif case == "origin_timestamp":
@@ -564,7 +536,7 @@ def test_resolve_evaluations_preserves_order_and_shares_durable_loads(
     second_request = _request(evaluation_id=_OTHER_EVALUATION_ID)
     _publish_evaluation(tmp_path, first_request, _observations())
     _publish_evaluation(tmp_path, second_request, _observations())
-    association = _association("baseline", "unweighted")
+    association = _association("baseline")
     artifact_calls = _stub_artifact(monkeypatch, association)
     definition = CorpusDefinition(chain_id=1, first_block=1, last_block=30)
     corpus = Corpus(

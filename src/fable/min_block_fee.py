@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import typing
 from dataclasses import dataclass
 from typing import Annotated, NamedTuple, TypeAlias
 
@@ -12,16 +11,12 @@ import torch.nn.functional as F
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict, Field
 
-from .config import LossDefinition
-
 __all__ = [
     "TargetState",
-    "ClassificationLossState",
     "MinBlockFeeOutput",
     "MinBlockFeeLoss",
     "fit_target_state",
     "standardize_target",
-    "fit_classification_loss_state",
     "min_block_fee_loss",
     "decode_action",
 ]
@@ -34,7 +29,6 @@ _StrictPositiveFloat: TypeAlias = Annotated[
     float,
     Field(strict=True, gt=0.0, allow_inf_nan=False),
 ]
-_StrictPositiveInt: TypeAlias = Annotated[int, Field(strict=True, gt=0)]
 
 
 class _State(BaseModel):
@@ -49,10 +43,6 @@ class _State(BaseModel):
 class TargetState(_State):
     mean: _StrictFiniteFloat
     standard_deviation: _StrictPositiveFloat
-
-
-class ClassificationLossState(_State):
-    class_support: Annotated[tuple[_StrictPositiveInt, ...], Field(min_length=1)]
 
 
 class MinBlockFeeOutput(NamedTuple):
@@ -125,30 +115,6 @@ def _require_floating_vector(values: object, name: str) -> torch.Tensor:
     return values
 
 
-def fit_classification_loss_state(
-    labels: NDArray[np.int64],
-    *,
-    horizon_blocks: int,
-    loss_definition: LossDefinition,
-) -> ClassificationLossState | None:
-    label_values = _require_int64_vector(labels, "labels")
-    if type(horizon_blocks) is not int:
-        raise TypeError("horizon_blocks must be an int")
-    if horizon_blocks <= 0:
-        raise ValueError("horizon_blocks must be positive")
-    if np.any(label_values < 0) or np.any(label_values >= horizon_blocks):
-        raise ValueError("labels must be in [0, horizon_blocks)")
-    if loss_definition.classification_weighting == "unweighted":
-        return None
-
-    support = np.bincount(label_values, minlength=horizon_blocks)
-    if np.any(support == 0):
-        raise ValueError(
-            "corrected_inverse_frequency classification loss requires support for every class"
-        )
-    return ClassificationLossState(class_support=tuple(int(count) for count in support))
-
-
 def _require_action_logits(logits: torch.Tensor) -> tuple[torch.Tensor, int, int]:
     if logits.ndim != 2:
         raise ValueError("action_logits must have shape [B, K]")
@@ -193,8 +159,6 @@ def min_block_fee_loss(
     *,
     label: torch.Tensor,
     target: torch.Tensor,
-    loss_definition: LossDefinition,
-    classification_state: ClassificationLossState | None,
 ) -> MinBlockFeeLoss:
     logits, minimum_fee_z, batch_size, class_count = _require_output(output)
     label_values = _require_labels(
@@ -206,29 +170,16 @@ def min_block_fee_loss(
     if target_values.shape[0] != batch_size:
         raise ValueError("target must have shape [B]")
 
-    if loss_definition.classification_weighting == "unweighted":
-        weights = None
-    else:
-        state = typing.cast(ClassificationLossState, classification_state)
-        support = state.class_support
-        total_support = sum(support)
-        width = len(support)
-        weights = logits.new_tensor([total_support / (width * count) for count in support])
-
     classification = F.cross_entropy(
         logits,
         label_values,
-        weight=weights,
         reduction="none",
     )
-    classification = classification * loss_definition.classification_scale
     regression = F.smooth_l1_loss(
         minimum_fee_z,
         target_values,
         reduction="none",
-        beta=loss_definition.regression_threshold,
     )
-    regression = regression * loss_definition.regression_scale
     total = classification + regression
     return MinBlockFeeLoss(
         mean_total=total.sum() / batch_size,

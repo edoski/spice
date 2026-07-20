@@ -34,7 +34,6 @@ from .config import (
     TuneRequest,
 )
 from .min_block_fee import (
-    ClassificationLossState,
     MinBlockFeeLoss,
     MinBlockFeeOutput,
     TargetState,
@@ -81,7 +80,6 @@ class ArtifactAssociation(_FrozenRecord):
     request: TrainRequest
     feature_state: FeatureState
     target_state: TargetState
-    classification_state: ClassificationLossState | None = None
     study_result_index: _NonNegativeInt | None = None
     method: Method | None = None
 
@@ -106,10 +104,9 @@ class ArtifactAssociation(_FrozenRecord):
                 raise ValueError("selected Study artifacts require result index and Method")
             if self.study_result_index != source.study_result_index:
                 raise ValueError("artifact Study result index must match the TrainRequest")
-        _validate_state_association(
+        _validate_feature_state_association(
             self.training_definition,
             self.feature_state,
-            self.classification_state,
         )
         return self
 
@@ -119,14 +116,12 @@ class _CandidateAssociation(_FrozenRecord):
     method: Method
     feature_state: FeatureState
     target_state: TargetState
-    classification_state: ClassificationLossState | None = None
 
     @model_validator(mode="after")
     def validate_association(self) -> Self:
-        _validate_state_association(
+        _validate_feature_state_association(
             apply_method(self.request, self.method),
             self.feature_state,
-            self.classification_state,
         )
         return self
 
@@ -134,24 +129,13 @@ class _CandidateAssociation(_FrozenRecord):
 _Association = ArtifactAssociation | _CandidateAssociation
 
 
-def _validate_state_association(
+def _validate_feature_state_association(
     definition: TrainingDefinition,
     feature_state: FeatureState,
-    classification_state: ClassificationLossState | None,
 ) -> None:
     experiment = definition.experiment
     if len(feature_state.means) != len(experiment.ordered_features):
         raise ValueError("feature state width must match the ordered features")
-
-    weighting = experiment.loss.classification_weighting
-    if weighting == "unweighted":
-        if classification_state is not None:
-            raise ValueError("unweighted classification requires no classification state")
-        return
-    if classification_state is None:
-        raise ValueError("corrected classification requires classification state")
-    if len(classification_state.class_support) != experiment.horizon_blocks:
-        raise ValueError("classification support width must match the horizon")
 
 
 def _training_definition(association: _Association) -> TrainingDefinition:
@@ -395,8 +379,6 @@ class _FitModule(pl.LightningModule):
             self(batch["inputs"]),
             label=batch["label"],
             target=batch["target"],
-            loss_definition=self.definition.experiment.loss,
-            classification_state=self.association.classification_state,
         )
 
     def _log_epoch_loss(
@@ -746,7 +728,6 @@ def train(
             request=request,
             feature_state=prepared.feature_state,
             target_state=prepared.target_state,
-            classification_state=prepared.classification_state,
         )
     else:
         selected = materialize_selected_training(storage_root, source)
@@ -754,7 +735,6 @@ def train(
             request=request,
             feature_state=prepared.feature_state,
             target_state=prepared.target_state,
-            classification_state=prepared.classification_state,
             study_result_index=selected.study_result_index,
             method=selected.method,
         )
@@ -779,7 +759,6 @@ def _run_candidate(
         method=method,
         feature_state=prepared.feature_state,
         target_state=prepared.target_state,
-        classification_state=prepared.classification_state,
     )
     outcome = _fit(association, prepared, candidate_scratch, deployment)
     return RetainedResult(

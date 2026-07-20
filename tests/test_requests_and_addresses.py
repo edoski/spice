@@ -22,7 +22,6 @@ from fable.config import (
     CorpusDefinition,
     ExperimentSemantics,
     FitMethod,
-    LossDefinition,
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
@@ -71,14 +70,6 @@ def _experiment() -> ExperimentSemantics:
         context_blocks=20,
         horizon_blocks=10,
         ordered_features=("base_fee", "gas_utilization"),
-        loss=LossDefinition(
-            classification_algorithm="cross_entropy",
-            classification_weighting="unweighted",
-            regression_algorithm="smooth_l1",
-            regression_threshold=0.75,
-            classification_scale=1.25,
-            regression_scale=0.5,
-        ),
     )
 
 

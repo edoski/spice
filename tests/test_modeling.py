@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -25,7 +26,6 @@ from fable.config import (
     CorpusRequest,
     ExperimentSemantics,
     FitMethod,
-    LossDefinition,
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
@@ -38,11 +38,7 @@ from fable.config import (
     TuneRequest,
 )
 from fable.corpus import BlockFrame, Corpus, FinalizedAnchor
-from fable.min_block_fee import (
-    ClassificationLossState,
-    TargetState,
-    min_block_fee_loss,
-)
+from fable.min_block_fee import TargetState, min_block_fee_loss
 from fable.modeling import (
     ArtifactAssociation,
     FitDeployment,
@@ -73,14 +69,6 @@ def _experiment() -> ExperimentSemantics:
         context_blocks=3,
         horizon_blocks=2,
         ordered_features=("log_base_fee_per_gas", "gas_utilization"),
-        loss=LossDefinition(
-            classification_algorithm="cross_entropy",
-            classification_weighting="unweighted",
-            regression_algorithm="smooth_l1",
-            regression_threshold=0.6,
-            classification_scale=1.2,
-            regression_scale=0.7,
-        ),
     )
 
 
@@ -170,27 +158,8 @@ def _candidate_request(method: LstmMethod) -> TuneRequest:
         study_id=UUID("40000000-0000-4000-8000-000000000001"),
         corpus_id=CORPUS_ID,
         study_definition=StudyDefinition(
-            experiment=method_experiment(),
+            experiment=_experiment(),
             method_space=LstmMethodSpace(family="lstm", methods=(method,)),
-        ),
-    )
-
-
-def method_experiment() -> ExperimentSemantics:
-    experiment = _experiment()
-    return ExperimentSemantics(
-        training_window=experiment.training_window,
-        validation_window=experiment.validation_window,
-        context_blocks=experiment.context_blocks,
-        horizon_blocks=experiment.horizon_blocks,
-        ordered_features=experiment.ordered_features,
-        loss=LossDefinition(
-            classification_algorithm="cross_entropy",
-            classification_weighting="unweighted",
-            regression_algorithm="smooth_l1",
-            regression_threshold=0.6,
-            classification_scale=0.0,
-            regression_scale=0.0,
         ),
     )
 
@@ -296,51 +265,6 @@ def test_artifact_association_rejects_only_owned_mismatches() -> None:
             target_state=target_state,
         )
 
-    experiment = _experiment()
-    corrected_experiment = ExperimentSemantics(
-        training_window=experiment.training_window,
-        validation_window=experiment.validation_window,
-        context_blocks=experiment.context_blocks,
-        horizon_blocks=experiment.horizon_blocks,
-        ordered_features=experiment.ordered_features,
-        loss=LossDefinition(
-            classification_algorithm="cross_entropy",
-            classification_weighting="corrected_inverse_frequency",
-            regression_algorithm="smooth_l1",
-            regression_threshold=0.6,
-            classification_scale=1.2,
-            regression_scale=0.7,
-        ),
-    )
-    corrected_request = TrainRequest(
-        workflow="train",
-        artifact_id=ARTIFACT_ID,
-        source=BaselineSource(
-            kind="baseline",
-            corpus_id=CORPUS_ID,
-            training_definition=TrainingDefinition(
-                experiment=corrected_experiment,
-                model=LstmDefinition(
-                    family="lstm",
-                    hidden=5,
-                    layers=1,
-                    head_hidden=3,
-                    dropout=0.1,
-                ),
-                optimizer=method.optimizer,
-                training_batch=method.training_batch,
-                fit=method.fit,
-            ),
-        ),
-    )
-    with pytest.raises(ValidationError, match="support width"):
-        ArtifactAssociation(
-            request=corrected_request,
-            feature_state=feature_state,
-            target_state=target_state,
-            classification_state=ClassificationLossState(class_support=(2,)),
-        )
-
 
 def test_transformer_encoder_layers_have_independent_matrix_initialization() -> None:
     torch.manual_seed(71)
@@ -371,7 +295,6 @@ def test_epoch_logs_weight_short_batches_in_float64(
         request=_request(),
         feature_state=prepared.feature_state,
         target_state=prepared.target_state,
-        classification_state=prepared.classification_state,
     )
     torch.manual_seed(89)
     module = modeling._FitModule(modeling._json_association(association)).eval()
@@ -491,8 +414,6 @@ def test_all_three_models_train_load_and_apply_direct_loss(
             output,
             label=batch["label"],
             target=batch["target"],
-            loss_definition=_experiment().loss,
-            classification_state=None,
         )
         assert torch.isfinite(loss.mean_total)
 
@@ -554,27 +475,41 @@ def test_full_checkpoint_resume_restores_fit_history(
         method=method,
         feature_state=prepared.feature_state,
         target_state=prepared.target_state,
-        classification_state=prepared.classification_state,
     )
 
     first = modeling._fit(association, prepared, scratch, _deployment())
     second = modeling._fit(association, prepared, scratch, _deployment())
 
-    assert first.objective == 0.0
+    first_validation = first.fit_history[1].validation_total_loss
+    assert first_validation is not None
+    assert first.objective == first_validation
     assert first.selected_epoch == 2
     assert first.completed_epochs == 2
-    assert second.objective == first.objective
-    assert second.selected_epoch == first.selected_epoch
     assert second.completed_epochs == method.fit.max_epochs
     assert [row.epoch for row in first.fit_history] == [1, 2]
     assert [row.epoch for row in second.fit_history] == [1, 2, 3, 4]
-    assert [row.validation_total_loss for row in second.fit_history] == [None, 0.0, None, 0.0]
-    assert all(row.training_total_loss == 0.0 for row in second.fit_history)
+    assert [row.validation_total_loss is None for row in second.fit_history] == [
+        True,
+        False,
+        True,
+        False,
+    ]
+    validation_history = [
+        (row.epoch, row.validation_total_loss)
+        for row in second.fit_history
+        if row.validation_total_loss is not None
+    ]
+    assert second.objective == min(loss for _, loss in validation_history)
+    assert second.selected_epoch == next(
+        epoch for epoch, loss in validation_history if loss == second.objective
+    )
+    assert all(math.isfinite(row.training_total_loss) for row in second.fit_history)
     assert fit_kwargs[0]["ckpt_path"] is None
     assert fit_kwargs[1]["ckpt_path"] == scratch / "last.ckpt"
     assert "weights_only" not in fit_kwargs[1]
-    assert sorted(path.name for path in scratch.iterdir()) == ["best-01.ckpt", "last.ckpt"]
-    best_checkpoint = torch.load(scratch / "best-01.ckpt", map_location="cpu", weights_only=True)
+    best_path = scratch / f"best-{second.selected_epoch - 1:02d}.ckpt"
+    assert sorted(path.name for path in scratch.iterdir()) == [best_path.name, "last.ckpt"]
+    best_checkpoint = torch.load(best_path, map_location="cpu", weights_only=True)
     last_checkpoint = torch.load(scratch / "last.ckpt", map_location="cpu", weights_only=True)
     assert "optimizer_states" not in best_checkpoint
     assert "optimizer_states" in last_checkpoint

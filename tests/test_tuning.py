@@ -11,7 +11,6 @@ from fable.config import (
     BlockWindow,
     ExperimentSemantics,
     FitMethod,
-    LossDefinition,
     LstmCapacity,
     LstmMethod,
     LstmMethodSpace,
@@ -56,14 +55,6 @@ EXPERIMENT = ExperimentSemantics(
     context_blocks=3,
     horizon_blocks=2,
     ordered_features=("log_base_fee_per_gas",),
-    loss=LossDefinition(
-        classification_algorithm="cross_entropy",
-        classification_weighting="unweighted",
-        regression_algorithm="smooth_l1",
-        regression_threshold=0.75,
-        classification_scale=1.0,
-        regression_scale=1.0,
-    ),
 )
 REQUEST = TuneRequest(
     workflow="tune",
