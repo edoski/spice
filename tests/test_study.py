@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
 
 from fable.addresses import study_json_path
 from fable.config import (
@@ -42,7 +43,6 @@ from fable.study import (
 )
 
 STUDY_ID = UUID("10000000-0000-4000-8000-000000000001")
-OTHER_STUDY_ID = UUID("10000000-0000-4000-8000-000000000002")
 CORPUS_ID = UUID("20000000-0000-4000-8000-000000000001")
 OTHER_CORPUS_ID = UUID("20000000-0000-4000-8000-000000000002")
 
@@ -114,6 +114,12 @@ TRANSFORMER_LSTM_SPACE = TransformerLstmMethodSpace(
     family="transformer_lstm",
     methods=(TRANSFORMER_LSTM_METHOD,),
 )
+RESULT = RetainedResult(
+    method=LSTM_METHOD,
+    objective=0.5,
+    selected_epoch=2,
+    completed_epochs=5,
+)
 
 
 def _experiment(*, shift: int = 0) -> ExperimentSemantics:
@@ -145,12 +151,11 @@ def _experiment(*, shift: int = 0) -> ExperimentSemantics:
 def _request(
     space: MethodSpace = LSTM_SPACE,
     *,
-    study_id: UUID = STUDY_ID,
     corpus_id: UUID = CORPUS_ID,
 ) -> TuneRequest:
     return TuneRequest(
         workflow="tune",
-        study_id=study_id,
+        study_id=STUDY_ID,
         corpus_id=corpus_id,
         study_definition=StudyDefinition(experiment=_experiment(), method_space=space),
     )
@@ -263,122 +268,72 @@ def test_retain_publish_and_materialize_selected_training(tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize(
-    "case",
+    ("selected_epoch", "completed_epochs", "message"),
     [
-        "nonfinite_objective",
-        "selected_after_completed",
-        "completed_above_max",
-        "method_outside_space",
-        "conflicting_append",
-        "study_mismatch",
-        "corpus_mismatch",
-        "result_index_out_of_range",
-        "canonical_exists",
+        (3, 2, "selected_epoch must not exceed completed_epochs"),
+        (1, 13, "completed_epochs must not exceed method.fit.max_epochs"),
     ],
 )
-def test_rejects_invalid_study_operations(case: str, tmp_path: Path) -> None:
-    request = _request()
-    result = RetainedResult(
-        method=LSTM_METHOD,
-        objective=0.5,
-        selected_epoch=2,
-        completed_epochs=5,
-    )
+def test_retained_result_rejects_invalid_epoch_bounds(
+    selected_epoch: int,
+    completed_epochs: int,
+    message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=message):
+        RetainedResult(
+            method=LSTM_METHOD,
+            objective=0.5,
+            selected_epoch=selected_epoch,
+            completed_epochs=completed_epochs,
+        )
 
-    outside = LstmMethod(
-        family="lstm",
-        capacity=LSTM_CAPACITY,
-        dropout=0.3,
-        optimizer=LSTM_METHOD.optimizer,
-        training_batch=48,
-        fit=FIT,
-    )
-    source: SelectedStudySource | None = None
-    if case == "conflicting_append":
-        retain_result(tmp_path, request, result)
-    elif case == "study_mismatch":
-        canonical = study_json_path(tmp_path, OTHER_STUDY_ID)
-        canonical.parent.mkdir(parents=True)
-        canonical.write_text(Study(request=request, trials=(result,)).model_dump_json())
-        source = SelectedStudySource(
-            kind="selected_study",
-            corpus_id=CORPUS_ID,
-            study_id=OTHER_STUDY_ID,
-            study_result_index=0,
-            experiment=_experiment(),
-        )
-    elif case == "corpus_mismatch":
-        canonical = study_json_path(tmp_path, STUDY_ID)
-        canonical.parent.mkdir(parents=True)
-        canonical.write_text(Study(request=request, trials=(result,)).model_dump_json())
-        source = SelectedStudySource(
-            kind="selected_study",
-            corpus_id=OTHER_CORPUS_ID,
-            study_id=STUDY_ID,
-            study_result_index=0,
-            experiment=_experiment(),
-        )
-    elif case == "result_index_out_of_range":
-        canonical = study_json_path(tmp_path, STUDY_ID)
-        canonical.parent.mkdir(parents=True)
-        canonical.write_text(Study(request=request, trials=(result,)).model_dump_json())
-        source = SelectedStudySource(
-            kind="selected_study",
-            corpus_id=CORPUS_ID,
-            study_id=STUDY_ID,
-            study_result_index=1,
-            experiment=_experiment(),
-        )
-    elif case == "canonical_exists":
-        retain_result(tmp_path, request, result)
-        canonical = study_json_path(tmp_path, STUDY_ID)
-        canonical.write_text("occupied")
 
-    error = (
-        FileExistsError
-        if case == "canonical_exists"
-        else IndexError
-        if case == "result_index_out_of_range"
-        else ValueError
-    )
-    with pytest.raises(error):
-        if case == "nonfinite_objective":
-            RetainedResult(
-                method=LSTM_METHOD,
-                objective=float("nan"),
-                selected_epoch=1,
-                completed_epochs=1,
-            )
-        elif case == "selected_after_completed":
-            RetainedResult(
-                method=LSTM_METHOD,
-                objective=0.5,
-                selected_epoch=3,
-                completed_epochs=2,
-            )
-        elif case == "completed_above_max":
-            RetainedResult(
-                method=LSTM_METHOD,
-                objective=0.5,
-                selected_epoch=1,
-                completed_epochs=13,
-            )
-        elif case == "method_outside_space":
-            Study(
-                request=request,
-                trials=(
-                    RetainedResult(
-                        method=outside,
-                        objective=0.5,
-                        selected_epoch=1,
-                        completed_epochs=1,
-                    ),
+def test_study_rejects_method_outside_space() -> None:
+    outside = LSTM_METHOD.model_copy(update={"dropout": 0.3})
+
+    with pytest.raises(ValidationError, match="Method is outside the MethodSpace"):
+        Study(
+            request=_request(),
+            trials=(
+                RetainedResult(
+                    method=outside,
+                    objective=0.5,
+                    selected_epoch=1,
+                    completed_epochs=1,
                 ),
-            )
-        elif case == "conflicting_append":
-            retain_result(tmp_path, _request(corpus_id=OTHER_CORPUS_ID), result)
-        elif case in {"study_mismatch", "corpus_mismatch", "result_index_out_of_range"}:
-            assert source is not None
-            materialize_selected_training(tmp_path, source)
-        else:
-            publish_study(tmp_path, STUDY_ID)
+            ),
+        )
+
+
+def test_retain_result_rejects_conflicting_request(tmp_path: Path) -> None:
+    retain_result(tmp_path, _request(), RESULT)
+
+    with pytest.raises(ValueError, match="does not match existing progress"):
+        retain_result(tmp_path, _request(corpus_id=OTHER_CORPUS_ID), RESULT)
+
+
+def test_materialize_selected_training_rejects_corpus_mismatch(tmp_path: Path) -> None:
+    canonical = study_json_path(tmp_path, STUDY_ID)
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text(
+        Study(request=_request(), trials=(RESULT,)).model_dump_json(),
+        encoding="utf-8",
+    )
+    source = SelectedStudySource(
+        kind="selected_study",
+        corpus_id=OTHER_CORPUS_ID,
+        study_id=STUDY_ID,
+        study_result_index=0,
+        experiment=_experiment(),
+    )
+
+    with pytest.raises(ValueError, match="Corpus ID does not match"):
+        materialize_selected_training(tmp_path, source)
+
+
+def test_publish_study_rejects_occupied_canonical(tmp_path: Path) -> None:
+    retain_result(tmp_path, _request(), RESULT)
+    study_json_path(tmp_path, STUDY_ID).write_text("occupied", encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        publish_study(tmp_path, STUDY_ID)

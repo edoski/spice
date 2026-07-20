@@ -28,7 +28,7 @@ from fable.config import (
 )
 from fable.evaluation import reduce_evaluation
 from fable.min_block_fee import ClassificationLossState, TargetState
-from fable.modeling.artifacts import ArtifactAssociation
+from fable.modeling import ArtifactAssociation
 from fable.temporal.features import FeatureState
 
 _EVALUATION_ID = UUID("10000000-0000-4000-8000-000000000001")
@@ -461,7 +461,8 @@ def test_reduce_evaluation_keeps_only_captured_opportunity_nullable(
         "null",
         "origins",
         "action",
-        "fee_wait",
+        "fee",
+        "wait",
         "stored_nonfinite",
         "derived_nonfinite",
     ],
@@ -509,13 +510,16 @@ def test_reduce_evaluation_rejects_owned_invalid_facts(
         observations = observations.with_columns(
             pl.Series("selected_action_k", [4, 2, 0, 2, 0], dtype=pl.Int64)
         )
-    elif case == "fee_wait":
+    elif case == "fee":
         observations = observations.with_columns(
             pl.Series(
                 "selected_target_base_fee_per_gas",
                 [63, 144, 300, 650, 1_024],
                 dtype=pl.Int64,
-            ),
+            )
+        )
+    elif case == "wait":
+        observations = observations.with_columns(
             pl.Series("selected_action_wait_seconds", [-1, 20, 0, 24, 0], dtype=pl.Int64),
         )
     elif case == "stored_nonfinite":

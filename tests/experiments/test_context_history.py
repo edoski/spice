@@ -35,7 +35,7 @@ from fable.config import (
 )
 from fable.corpus import Corpus, FinalizedAnchor
 from fable.min_block_fee import TargetState
-from fable.modeling.artifacts import ArtifactAssociation
+from fable.modeling import ArtifactAssociation
 from fable.temporal.features import FeatureState
 
 _CHAINS = (1, 137, 43_114)
@@ -376,13 +376,6 @@ def _matrix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Matrix:
     )
 
 
-def _write_request(matrix: _Matrix, request: EvaluateRequest) -> None:
-    evaluation_json_path(matrix.storage_root, request.evaluation_id).write_text(
-        request.model_dump_json(),
-        encoding="utf-8",
-    )
-
-
 def _replace_context_definition(
     matrix: _Matrix,
     index: int,
@@ -513,7 +506,6 @@ def test_write_context_history_evidence(
         ("incomplete_context", ValueError),
         ("context_order", ValueError),
         ("final_k_order", ValueError),
-        ("context_corpus", ValueError),
         ("context_family", ValueError),
         ("context_c", ValueError),
         ("context_k", ValueError),
@@ -540,9 +532,6 @@ def test_write_context_history_evidence_rejects_invalid_matrix(
         context_ids[0], context_ids[1] = context_ids[1], context_ids[0]
     elif case == "final_k_order":
         final_ids[0], final_ids[1] = final_ids[1], final_ids[0]
-    elif case == "context_corpus":
-        request = matrix.context_requests[0]
-        _write_request(matrix, request.model_copy(update={"corpus_id": _uuid(8, 1)}))
     elif case == "context_family":
         request = matrix.context_requests[0]
         association = matrix.artifacts[request.artifact_id]

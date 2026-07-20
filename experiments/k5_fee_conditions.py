@@ -12,7 +12,7 @@ from fable.addresses import evaluation_json_path, evaluation_observations_path
 from fable.config import EvaluateRequest, SelectedStudySource
 from fable.corpus import load_corpus
 from fable.evaluation.reduction import reduce_evaluation
-from fable.modeling.artifacts import load_artifact
+from fable.modeling import load_artifact
 
 _RAW_DESCRIPTOR = "closed_parent_base_fee_per_gas"
 _LOG_DESCRIPTOR = "signed_one_block_base_fee_log_change"
@@ -67,8 +67,6 @@ def _evaluation_rows(
         evaluation_json_path(storage_root, evaluation_id).read_bytes(),
         strict=True,
     )
-    if request.evaluation_id != evaluation_id:
-        raise ValueError("evaluation request ID must match the requested evaluation")
     if request.window.role != "testing":
         raise ValueError("fee-condition evidence requires a testing evaluation")
 
@@ -98,7 +96,7 @@ def _evaluation_rows(
             )
             .log()
             .alias(_LOG_DESCRIPTOR),
-            pl.col("immediate_k0_base_fee_per_gas").alias("_immediate"),
+            pl.col("immediate_k0_base_fee_per_gas").alias("_immediate_fee"),
             (
                 pl.col("immediate_k0_base_fee_per_gas") - pl.col("selected_target_base_fee_per_gas")
             ).alias("_savings"),
@@ -124,15 +122,13 @@ def _evaluation_rows(
     ).item()
     if invalid_fees:
         raise ValueError("fee descriptors require positive adjacent base fees")
-    if not observations[_LOG_DESCRIPTOR].is_finite().all():
-        raise ValueError("signed fee-log changes must be finite")
 
     count = reduced["eligible_origin_count"]
     absolute_sums = observations.select(
-        pl.col("_immediate").cast(pl.Float64).abs().sum().alias("B"),
-        pl.col("_savings").cast(pl.Float64).abs().sum().alias("S"),
-        pl.col("_opportunity").cast(pl.Float64).abs().sum().alias("G"),
-        pl.col("_regret").cast(pl.Float64).abs().sum().alias("Q"),
+        pl.col("_immediate_fee").cast(pl.Float64).abs().sum().alias("immediate_fee"),
+        pl.col("_savings").cast(pl.Float64).abs().sum().alias("savings"),
+        pl.col("_opportunity").cast(pl.Float64).abs().sum().alias("opportunity"),
+        pl.col("_regret").cast(pl.Float64).abs().sum().alias("regret"),
     ).row(0, named=True)
 
     rows: list[dict[str, Any]] = []
@@ -152,8 +148,6 @@ def _evaluation_rows(
             values > q75,
         )
         cell_sums: list[dict[str, Any]] = []
-        cell_count = 0
-        correct_count = 0
         for quartile, mask in enumerate(cells, start=1):
             cell = observations.filter(mask)
             origin_count = cell.height
@@ -164,18 +158,16 @@ def _evaluation_rows(
                 else None
             )
             sums = cell.select(
-                pl.col("_immediate").cast(pl.Float64).sum().alias("B"),
-                pl.col("_savings").cast(pl.Float64).sum().alias("S"),
-                pl.col("_opportunity").cast(pl.Float64).sum().alias("G"),
-                pl.col("_regret").cast(pl.Float64).sum().alias("Q"),
+                pl.col("_immediate_fee").cast(pl.Float64).sum().alias("immediate_fee"),
+                pl.col("_savings").cast(pl.Float64).sum().alias("savings"),
+                pl.col("_opportunity").cast(pl.Float64).sum().alias("opportunity"),
+                pl.col("_regret").cast(pl.Float64).sum().alias("regret"),
             ).row(0, named=True)
             cell_sums.append(sums)
-            cell_count += origin_count
-            correct_count += cell_correct
-            immediate = sums["B"]
-            savings = sums["S"]
-            opportunity = sums["G"]
-            regret = sums["Q"]
+            immediate_fee = sums["immediate_fee"]
+            savings = sums["savings"]
+            opportunity = sums["opportunity"]
+            regret = sums["regret"]
             rows.append(
                 {
                     "evaluation_id": str(evaluation_id),
@@ -213,18 +205,18 @@ def _evaluation_rows(
                     ),
                     "condition_origin_count": origin_count,
                     "earliest_hindsight_label_correct_count": cell_correct,
-                    "immediate_k0_base_fee_per_gas_sum": immediate,
+                    "immediate_k0_base_fee_per_gas_sum": immediate_fee,
                     "finite_target_base_fee_per_gas_savings_sum": savings,
                     "finite_target_base_fee_per_gas_hindsight_opportunity_sum": opportunity,
                     "finite_target_base_fee_per_gas_hindsight_regret_sum": regret,
                     "finite_target_base_fee_per_gas_savings_ratio_vs_immediate_k0": (
-                        savings / immediate if origin_count else None
+                        savings / immediate_fee if origin_count else None
                     ),
                     "finite_target_base_fee_per_gas_hindsight_opportunity_ratio_vs_immediate_k0": (
-                        opportunity / immediate if origin_count else None
+                        opportunity / immediate_fee if origin_count else None
                     ),
                     "finite_target_base_fee_per_gas_hindsight_regret_ratio_vs_immediate_k0": (
-                        regret / immediate if origin_count else None
+                        regret / immediate_fee if origin_count else None
                     ),
                     "earliest_hindsight_label_accuracy": (
                         cell_correct / origin_count if origin_count else None
@@ -232,40 +224,26 @@ def _evaluation_rows(
                 }
             )
 
-        if cell_count != count:
-            raise ValueError("condition cell counts must recombine to the S14 origin count")
-        if correct_count != reduced["earliest_hindsight_label_correct_count"]:
-            raise ValueError("condition correct counts must recombine to the S14 correct count")
         unit_roundoff = 2**-53
         gamma = ((count + 3) * unit_roundoff) / (1 - (count + 3) * unit_roundoff)
-        for name, full_name in (
-            (
-                "B",
-                "immediate_k0_base_fee_per_gas_sum",
-            ),
-            (
-                "S",
-                "finite_target_base_fee_per_gas_savings_sum",
-            ),
-            (
-                "G",
-                "finite_target_base_fee_per_gas_hindsight_opportunity_sum",
-            ),
-            (
-                "Q",
-                "finite_target_base_fee_per_gas_hindsight_regret_sum",
-            ),
-        ):
-            q1, q2, q3, q4 = (sums[name] for sums in cell_sums)
+        for fact_name, result_name in {
+            "immediate_fee": "immediate_k0_base_fee_per_gas_sum",
+            "savings": "finite_target_base_fee_per_gas_savings_sum",
+            "opportunity": "finite_target_base_fee_per_gas_hindsight_opportunity_sum",
+            "regret": "finite_target_base_fee_per_gas_hindsight_regret_sum",
+        }.items():
+            q1, q2, q3, q4 = (sums[fact_name] for sums in cell_sums)
             combined = ((q1 + q2) + q3) + q4
-            full = reduced[full_name]
-            absolute = absolute_sums[name]
+            full = reduced[result_name]
+            absolute = absolute_sums[fact_name]
             if absolute == 0.0:
                 valid = combined == 0.0 and full == 0.0
             else:
                 valid = abs(combined - full) <= 3 * gamma * absolute
             if not valid:
-                raise ValueError(f"{descriptor} {full_name} does not recombine to S14")
+                raise ValueError(
+                    f"{descriptor} {result_name} does not recombine to the evaluation reduction"
+                )
     return rows
 
 

@@ -10,7 +10,7 @@ from uuid import UUID
 import typer
 
 from ...config import METHOD_ADAPTER, TuneRequest
-from ...execution.submission import _submit_candidate
+from ...execution import _submit_candidate
 from ...study import publish_study
 
 app = typer.Typer(add_completion=False)

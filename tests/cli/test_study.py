@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal
@@ -12,10 +11,9 @@ from typer.testing import CliRunner
 
 import fable.cli.commands.remote as remote
 import fable.cli.commands.study as study
-import fable.execution.submission as submission
+import fable.execution as execution
 from fable.cli.app import app
 from fable.config import (
-    METHOD_ADAPTER,
     AdamWMethod,
     ExperimentSemantics,
     FitMethod,
@@ -138,7 +136,7 @@ deployment:
     )
 
 
-def test_study_run_submits_one_strict_candidate(
+def test_study_run_hydrates_and_submits_one_candidate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -149,33 +147,20 @@ def test_study_run_submits_one_strict_candidate(
     _write_remote(tmp_path / "REMOTE.yaml")
     monkeypatch.chdir(tmp_path)
     events: list[str] = []
-    calls: list[tuple[list[str], dict[str, object]]] = []
+    scripts: list[str] = []
     read_bytes = Path.read_bytes
 
     def recording_read_bytes(path: Path) -> bytes:
         events.append(f"read:{path.name}")
         return read_bytes(path)
 
-    class RecordingTuneRequest:
-        @classmethod
-        def model_validate_json(_cls, payload: bytes, *, strict: bool) -> TuneRequest:
-            events.append(f"hydrate:request:{strict}")
-            return TuneRequest.model_validate_json(payload, strict=strict)
-
-    class RecordingMethodAdapter:
-        def validate_json(_self, payload: bytes, *, strict: bool) -> LstmMethod:
-            events.append(f"hydrate:method:{strict}")
-            return METHOD_ADAPTER.validate_json(payload, strict=strict)
-
-    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        events.append("subprocess")
-        calls.append((argv, kwargs))
-        return subprocess.CompletedProcess(argv, 0, stdout="123;cluster\n")
+    def fake_invoke_sbatch(_remote: object, script: str) -> int:
+        events.append("submit")
+        scripts.append(script)
+        return 123
 
     monkeypatch.setattr(Path, "read_bytes", recording_read_bytes)
-    monkeypatch.setattr(study, "TuneRequest", RecordingTuneRequest)
-    monkeypatch.setattr(study, "METHOD_ADAPTER", RecordingMethodAdapter())
-    monkeypatch.setattr("fable.execution.submission.subprocess.run", fake_run)
+    monkeypatch.setattr(execution, "_invoke_sbatch", fake_invoke_sbatch)
 
     result = CliRunner().invoke(
         app,
@@ -186,51 +171,23 @@ def test_study_run_submits_one_strict_candidate(
     assert result.output == "123\n"
     assert events == [
         "read:TUNE_REQUEST.json",
-        "hydrate:request:True",
         "read:METHOD.json",
-        "hydrate:method:True",
         "read:REMOTE.yaml",
-        "subprocess",
-    ]
-    assert len(calls) == 1
-    argv, kwargs = calls[0]
-    assert argv == [
-        "ssh",
-        "-T",
-        "-o",
-        "BatchMode=yes",
-        "university-alias",
-        "sbatch",
-        "--parsable",
+        "submit",
     ]
     envelope_json = json.dumps(
         {
-            "request": json.loads(REQUEST.model_dump_json()),
-            "method": json.loads(METHOD.model_dump_json()),
+            "request": REQUEST.model_dump(mode="json"),
+            "method": METHOD.model_dump(mode="json"),
             "deployment": DEPLOYMENT,
         },
         separators=(",", ":"),
     )
-    assert kwargs == {
-        "input": (
-            "#!/bin/bash\n"
-            "#SBATCH --partition=thesis-partition\n"
-            "#SBATCH --nodes=1\n"
-            "#SBATCH --ntasks=1\n"
-            "#SBATCH --gres=gpu:a100:1\n"
-            "#SBATCH --cpus-per-task=8\n"
-            "#SBATCH --mem=48G\n"
-            "#SBATCH --time=17:23:45\n"
-            "#SBATCH --output=/remote/logs/%j.out\n"
-            "export STORAGE_ROOT='/remote/storage root'\n"
-            "exec '/opt/fable executable' remote candidate <<'FABLE_REQUEST'\n"
-            f"{envelope_json}\n"
-            "FABLE_REQUEST\n"
-        ),
-        "text": True,
-        "stdout": subprocess.PIPE,
-        "check": True,
-    }
+    assert scripts[0].splitlines()[-3:] == [
+        "exec '/opt/fable executable' remote candidate <<'FABLE_REQUEST'",
+        envelope_json,
+        "FABLE_REQUEST",
+    ]
 
 
 class _InputBuffer:
@@ -254,14 +211,14 @@ class _Environment:
 
 
 @pytest.mark.parametrize("owner_fails", [False, True])
-def test_remote_candidate_forwards_one_strict_input(
+def test_remote_candidate_forwards_input(
     owner_fails: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     payload = json.dumps(
         {
-            "request": json.loads(REQUEST.model_dump_json()),
-            "method": json.loads(METHOD.model_dump_json()),
+            "request": REQUEST.model_dump(mode="json"),
+            "method": METHOD.model_dump(mode="json"),
             "deployment": DEPLOYMENT,
         },
         separators=(",", ":"),
@@ -269,20 +226,6 @@ def test_remote_candidate_forwards_one_strict_input(
     events: list[str] = []
     calls: list[tuple[Path, TuneRequest, LstmMethod, FitDeployment]] = []
     failure = RuntimeError("candidate failed")
-
-    class RecordingCandidateInput:
-        @classmethod
-        def model_validate_json(
-            _cls,
-            candidate_payload: bytes,
-            *,
-            strict: bool,
-        ):
-            events.append(f"hydrate:{strict}")
-            return submission._CandidateProcessInput.model_validate_json(
-                candidate_payload,
-                strict=strict,
-            )
 
     def fake_run_candidate(
         storage_root: Path,
@@ -305,7 +248,6 @@ def test_remote_candidate_forwards_one_strict_input(
         "os",
         SimpleNamespace(environ=_Environment(STORAGE_ROOT, events)),
     )
-    monkeypatch.setattr(remote, "_CandidateProcessInput", RecordingCandidateInput)
     monkeypatch.setattr(remote, "run_candidate", fake_run_candidate)
 
     result = CliRunner().invoke(app, ["remote", "candidate"])
@@ -316,7 +258,6 @@ def test_remote_candidate_forwards_one_strict_input(
     assert result.output == ""
     assert events == [
         "stdin",
-        "hydrate:True",
         "environment:STORAGE_ROOT",
         "run_candidate",
     ]

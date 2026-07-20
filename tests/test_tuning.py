@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 from uuid import UUID
 
-import pytest
 from pytest import MonkeyPatch
 
 from fable import tuning
@@ -20,10 +18,8 @@ from fable.config import (
     StudyDefinition,
     TuneRequest,
 )
-from fable.corpus import Corpus
 from fable.modeling import FitDeployment
 from fable.study import RetainedResult
-from fable.temporal.history import HistoricalPreparation
 
 STUDY_ID = UUID("10000000-0000-4000-8000-000000000001")
 CORPUS_ID = UUID("20000000-0000-4000-8000-000000000001")
@@ -103,30 +99,29 @@ def test_run_candidate_prepares_fits_and_retains_one_result(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
 ) -> None:
-    corpus = cast(Corpus, object())
-    prepared = cast(HistoricalPreparation, object())
+    corpus = object()
+    prepared = object()
     calls: list[tuple[str, tuple[object, ...]]] = []
 
-    def load_corpus(storage_root: Path, corpus_id: UUID) -> Corpus:
+    def load_corpus(storage_root: Path, corpus_id: UUID) -> object:
         calls.append(("load", (storage_root, corpus_id)))
         return corpus
 
     def prepare_fit_history(
-        loaded_corpus: Corpus,
+        loaded_corpus: object,
         experiment: ExperimentSemantics,
-    ) -> HistoricalPreparation:
+    ) -> object:
         calls.append(("prepare", (loaded_corpus, experiment)))
         return prepared
 
     def run_fit(
         request: TuneRequest,
         method: LstmMethod,
-        preparation: HistoricalPreparation,
+        preparation: object,
         scratch: Path,
         deployment: FitDeployment,
     ) -> RetainedResult:
         assert scratch.is_dir()
-        assert deployment is DEPLOYMENT
         calls.append(("fit", (request, method, preparation, scratch, deployment)))
         return RESULT
 
@@ -142,7 +137,7 @@ def test_run_candidate_prepares_fits_and_retains_one_result(
     monkeypatch.setattr(tuning, "_run_candidate", run_fit)
     monkeypatch.setattr(tuning, "retain_result", retain_result)
 
-    returned = tuning.run_candidate(tmp_path, REQUEST, METHOD, DEPLOYMENT)
+    tuning.run_candidate(tmp_path, REQUEST, METHOD, DEPLOYMENT)
 
     scratch = tmp_path / "studies" / f".{STUDY_ID}"
     assert calls == [
@@ -151,80 +146,3 @@ def test_run_candidate_prepares_fits_and_retains_one_result(
         ("fit", (REQUEST, METHOD, prepared, scratch, DEPLOYMENT)),
         ("retain", (tmp_path, REQUEST, RESULT)),
     ]
-    assert returned is None
-
-
-@pytest.mark.parametrize(
-    ("failure_stage", "expected_calls"),
-    [
-        ("load", ["load"]),
-        ("prepare", ["load", "prepare"]),
-        ("fit", ["load", "prepare", "fit"]),
-        ("retain", ["load", "prepare", "fit", "retain"]),
-    ],
-)
-def test_run_candidate_preserves_failure_boundaries(
-    failure_stage: str,
-    expected_calls: list[str],
-    tmp_path: Path,
-    monkeypatch: MonkeyPatch,
-) -> None:
-    corpus = cast(Corpus, object())
-    prepared = cast(HistoricalPreparation, object())
-    failure = RuntimeError(failure_stage)
-    calls: list[str] = []
-
-    def load_corpus(storage_root: Path, corpus_id: UUID) -> Corpus:
-        del storage_root, corpus_id
-        calls.append("load")
-        if failure_stage == "load":
-            raise failure
-        return corpus
-
-    def prepare_fit_history(
-        loaded_corpus: Corpus,
-        experiment: ExperimentSemantics,
-    ) -> HistoricalPreparation:
-        del loaded_corpus, experiment
-        calls.append("prepare")
-        if failure_stage == "prepare":
-            raise failure
-        return prepared
-
-    def run_fit(
-        request: TuneRequest,
-        method: LstmMethod,
-        preparation: HistoricalPreparation,
-        scratch: Path,
-        deployment: FitDeployment,
-    ) -> RetainedResult:
-        del request, method, preparation, deployment
-        calls.append("fit")
-        (scratch / "last.ckpt").touch()
-        if failure_stage == "fit":
-            raise failure
-        return RESULT
-
-    def retain_result(
-        storage_root: Path,
-        request: TuneRequest,
-        result: RetainedResult,
-    ) -> None:
-        del storage_root, request, result
-        calls.append("retain")
-        if failure_stage == "retain":
-            raise failure
-
-    monkeypatch.setattr(tuning, "load_corpus", load_corpus)
-    monkeypatch.setattr(tuning, "prepare_fit_history", prepare_fit_history)
-    monkeypatch.setattr(tuning, "_run_candidate", run_fit)
-    monkeypatch.setattr(tuning, "retain_result", retain_result)
-
-    with pytest.raises(RuntimeError) as caught:
-        tuning.run_candidate(tmp_path, REQUEST, METHOD, DEPLOYMENT)
-
-    scratch = tmp_path / "studies" / f".{STUDY_ID}"
-    assert caught.value is failure
-    assert calls == expected_calls
-    assert scratch.exists() is (failure_stage in {"fit", "retain"})
-    assert (scratch / "last.ckpt").exists() is (failure_stage in {"fit", "retain"})

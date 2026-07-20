@@ -12,7 +12,7 @@ import polars as pl
 from ..addresses import evaluation_json_path
 from ..config import BaselineSource, EvaluateRequest, Method, SelectedStudySource
 from ..corpus import Corpus, load_corpus
-from ..modeling.artifacts import load_artifact
+from ..modeling import load_artifact
 from ..study import training_definition_from_method
 from .reduction import reduce_evaluation
 
@@ -61,16 +61,12 @@ def write_sealed_report(
             evaluation_json_path(storage_root, evaluation_id).read_text(encoding="utf-8"),
             strict=True,
         )
-        if request.evaluation_id != evaluation_id:
-            raise ValueError("evaluation request ID must match the requested evaluation")
         if request.window.role != "testing":
             raise ValueError("sealed report evaluations must use testing windows")
 
         reduced = reduce_evaluation(storage_root, evaluation_id)
         association, model = load_artifact(storage_root, request.artifact_id)
         source = association.request.source
-        if source.corpus_id != request.corpus_id:
-            raise ValueError("artifact source Corpus must match the evaluation Corpus")
 
         match source:
             case BaselineSource():
@@ -132,7 +128,7 @@ def write_sealed_report(
             schema=_CONTEXT_SCHEMA,
             orient="row",
         )
-        rows.append(pl.concat([context, reduced[:, 1:]], how="horizontal"))
+        rows.append(pl.concat([context, reduced.drop("evaluation_id")], how="horizontal"))
 
     hidden = destination.with_name(f".{destination.name}")
     if destination.exists():

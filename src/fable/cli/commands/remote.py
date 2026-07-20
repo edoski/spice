@@ -11,7 +11,7 @@ import typer
 from ...config import BaselineSource, TrainRequest
 from ...corpus import load_corpus
 from ...evaluation import EvaluationDeployment, evaluate
-from ...execution.submission import (
+from ...execution import (
     _CandidateProcessInput,
     _Deployment,
     _WorkflowEnvelope,

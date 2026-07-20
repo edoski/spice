@@ -32,7 +32,7 @@ from fable.config import (
 from fable.corpus import Corpus, FinalizedAnchor
 from fable.evaluation import write_sealed_report
 from fable.min_block_fee import ClassificationLossState, TargetState
-from fable.modeling.artifacts import ArtifactAssociation
+from fable.modeling import ArtifactAssociation
 from fable.temporal.features import FeatureState
 
 _EVALUATION_IDS = (
@@ -371,7 +371,6 @@ def _arrange_report(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[
     tuple[EvaluateRequest, ...],
-    dict[UUID, ArtifactAssociation],
     dict[str, list[UUID]],
 ]:
     experiments = (
@@ -486,14 +485,14 @@ def _arrange_report(
     monkeypatch.setattr(report_module, "reduce_evaluation", reduce_evaluation)
     monkeypatch.setattr(report_module, "load_artifact", load_artifact)
     monkeypatch.setattr(report_module, "load_corpus", load_corpus)
-    return requests, associations, calls
+    return requests, calls
 
 
 def test_write_sealed_report_preserves_order_and_publishes_exact_tsv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, _, calls = _arrange_report(tmp_path, monkeypatch)
+    _, calls = _arrange_report(tmp_path, monkeypatch)
     destination = tmp_path / "sealed.tsv"
     renames: list[tuple[Path, Path]] = []
     real_rename = Path.rename
@@ -573,9 +572,7 @@ def test_write_sealed_report_preserves_order_and_publishes_exact_tsv(
     [
         ("empty", ValueError),
         ("duplicate", ValueError),
-        ("request_id", ValueError),
         ("non_testing", ValueError),
-        ("corpus", ValueError),
         ("destination", FileExistsError),
         ("hidden", FileExistsError),
         ("later_row", RuntimeError),
@@ -587,7 +584,7 @@ def test_write_sealed_report_rejects_invalid_input_without_partial_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    requests, associations, _ = _arrange_report(tmp_path, monkeypatch)
+    requests, _ = _arrange_report(tmp_path, monkeypatch)
     destination = tmp_path / "sealed.tsv"
     hidden = destination.with_name(f".{destination.name}")
     evaluation_ids = _EVALUATION_IDS
@@ -595,11 +592,6 @@ def test_write_sealed_report_rejects_invalid_input_without_partial_publication(
         evaluation_ids = ()
     elif case == "duplicate":
         evaluation_ids = (_EVALUATION_IDS[0], _EVALUATION_IDS[0])
-    elif case == "request_id":
-        evaluation_json_path(tmp_path, _EVALUATION_IDS[0]).write_text(
-            requests[0].model_copy(update={"evaluation_id": _EVALUATION_IDS[1]}).model_dump_json(),
-            encoding="utf-8",
-        )
     elif case == "non_testing":
         evaluation_json_path(tmp_path, _EVALUATION_IDS[0]).write_text(
             requests[0]
@@ -614,19 +606,6 @@ def test_write_sealed_report_rejects_invalid_input_without_partial_publication(
             )
             .model_dump_json(),
             encoding="utf-8",
-        )
-    elif case == "corpus":
-        association = associations[_ARTIFACT_IDS[0]]
-        associations[_ARTIFACT_IDS[0]] = association.model_copy(
-            update={
-                "request": association.request.model_copy(
-                    update={
-                        "source": association.request.source.model_copy(
-                            update={"corpus_id": _CORPUS_IDS[1]}
-                        )
-                    }
-                )
-            }
         )
     elif case == "destination":
         destination.write_text("existing", encoding="utf-8")

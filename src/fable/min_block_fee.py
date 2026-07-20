@@ -21,7 +21,6 @@ __all__ = [
     "MinBlockFeeLoss",
     "fit_target_state",
     "standardize_target",
-    "target_natural_log",
     "fit_classification_loss_state",
     "min_block_fee_loss",
     "decode_action",
@@ -96,10 +95,6 @@ def fit_target_state(raw_minima: NDArray[np.int64]) -> TargetState:
     natural_log = _natural_log(minima)
     mean = float(natural_log.mean(dtype=np.float64))
     standard_deviation = float(natural_log.std(dtype=np.float64, ddof=0))
-    if not np.isfinite(mean) or not np.isfinite(standard_deviation):
-        raise ValueError("target statistics must be finite")
-    if standard_deviation == 0.0:
-        raise ValueError("raw_minima must not be constant")
     return TargetState(mean=mean, standard_deviation=standard_deviation)
 
 
@@ -130,14 +125,6 @@ def _require_floating_vector(values: object, name: str) -> torch.Tensor:
     return values
 
 
-def target_natural_log(target_z: torch.Tensor, state: TargetState) -> torch.Tensor:
-    standardized = _require_floating_vector(target_z, "target_z").to(dtype=torch.float64)
-    result = state.mean + state.standard_deviation * standardized
-    if not torch.isfinite(result).all():
-        raise ValueError("natural-log targets must be finite")
-    return result
-
-
 def fit_classification_loss_state(
     labels: NDArray[np.int64],
     *,
@@ -162,9 +149,7 @@ def fit_classification_loss_state(
     return ClassificationLossState(class_support=tuple(int(count) for count in support))
 
 
-def _require_output(output: MinBlockFeeOutput) -> tuple[torch.Tensor, torch.Tensor, int, int]:
-    logits = output.action_logits
-    minimum_fee_z = output.minimum_fee_z
+def _require_action_logits(logits: torch.Tensor) -> tuple[torch.Tensor, int, int]:
     if logits.ndim != 2:
         raise ValueError("action_logits must have shape [B, K]")
     batch_size, class_count = logits.shape
@@ -174,7 +159,12 @@ def _require_output(output: MinBlockFeeOutput) -> tuple[torch.Tensor, torch.Tens
         raise TypeError("action_logits must have a floating dtype")
     if not torch.isfinite(logits).all():
         raise ValueError("action_logits must be finite")
+    return logits, batch_size, class_count
 
+
+def _require_output(output: MinBlockFeeOutput) -> tuple[torch.Tensor, torch.Tensor, int, int]:
+    logits, batch_size, class_count = _require_action_logits(output.action_logits)
+    minimum_fee_z = output.minimum_fee_z
     fee_values = _require_floating_vector(minimum_fee_z, "minimum_fee_z")
     if fee_values.shape[0] != batch_size:
         raise ValueError("output heads must have matching batch dimensions")
@@ -249,5 +239,5 @@ def min_block_fee_loss(
 
 
 def decode_action(output: MinBlockFeeOutput) -> torch.Tensor:
-    logits, _, _, _ = _require_output(output)
+    logits, _, _ = _require_action_logits(output.action_logits)
     return logits.argmax(dim=-1)

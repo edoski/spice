@@ -16,7 +16,6 @@ from typing import SupportsInt as _SupportsInt
 from typing import cast as _cast
 from uuid import UUID as _UUID
 
-import numpy as _np
 import polars as _pl
 import torch as _torch
 import yaml as _yaml
@@ -43,8 +42,7 @@ from web3.middleware import ExtraDataToPOAMiddleware as _ExtraDataToPOAMiddlewar
 
 from .config import SelectedStudySource as _SelectedStudySource
 from .min_block_fee import decode_action as _decode_action
-from .modeling.artifacts import load_artifact as _load_artifact
-from .temporal.features import FeatureState as _FeatureState
+from .modeling import load_artifact as _load_artifact
 from .temporal.features import transform_feature_rows as _transform_feature_rows
 
 _Chain = _Literal["ethereum", "polygon", "avalanche"]
@@ -79,25 +77,9 @@ class _ServingConfig(_BaseModel):
     avalanche_k5_artifact_id: _UUID4
 
     @_model_validator(mode="after")
-    def validate_serving_cells(self) -> _Self:
+    def validate_storage_root(self) -> _Self:
         if not self.storage_root.is_absolute():
             raise ValueError("storage_root must be absolute")
-        artifact_ids = (
-            self.ethereum_k2_artifact_id,
-            self.ethereum_k3_artifact_id,
-            self.ethereum_k4_artifact_id,
-            self.ethereum_k5_artifact_id,
-            self.polygon_k2_artifact_id,
-            self.polygon_k3_artifact_id,
-            self.polygon_k4_artifact_id,
-            self.polygon_k5_artifact_id,
-            self.avalanche_k2_artifact_id,
-            self.avalanche_k3_artifact_id,
-            self.avalanche_k4_artifact_id,
-            self.avalanche_k5_artifact_id,
-        )
-        if len(set(artifact_ids)) != len(artifact_ids):
-            raise ValueError("artifact IDs must be unique across serving cells")
         return self
 
 
@@ -220,10 +202,6 @@ def _live_row(block: object, chain_id: int) -> dict[str, int]:
 
 
 def _validate_live_frame(frame: _pl.DataFrame, *, first_block: int) -> None:
-    if frame.schema != _LIVE_SCHEMA:
-        raise ValueError("live frame must have the exact inference schema")
-    if frame.null_count().to_numpy().any():
-        raise ValueError("live frame must not contain nulls")
     expected_numbers = list(range(first_block, first_block + frame.height))
     if frame["block_number"].to_list() != expected_numbers:
         raise ValueError("live blocks must be consecutive and ascending")
@@ -244,29 +222,6 @@ def _validate_live_frame(frame: _pl.DataFrame, *, first_block: int) -> None:
         raise ValueError("live gas usage must be within the block gas limit")
     if any(value < 0 for value in tx_counts):
         raise ValueError("live transaction counts must be nonnegative")
-
-
-def _prepare_live(
-    blocks: _pl.DataFrame,
-    *,
-    context_blocks: int,
-    ordered_features: tuple[str, ...],
-    feature_state: _FeatureState,
-) -> _torch.Tensor:
-    transformed = _transform_feature_rows(
-        blocks,
-        ordered_features=ordered_features,
-        state=feature_state,
-    )
-    if transformed.shape != (context_blocks, len(ordered_features)):
-        raise ValueError("transformed live context has the wrong shape")
-    if transformed.dtype != _np.float32:
-        raise ValueError("transformed live context must be float32")
-    if not transformed.flags.c_contiguous:
-        raise ValueError("transformed live context must be C-contiguous")
-    if not _np.isfinite(transformed).all():
-        raise ValueError("transformed live context must be finite")
-    return _torch.from_numpy(transformed).unsqueeze(0)
 
 
 async def _infer(request: _InferenceRequest, state: _ServingState) -> _InferenceResponse:
@@ -298,12 +253,13 @@ async def _infer(request: _InferenceRequest, state: _ServingState) -> _Inference
     rows.append(latest)
     frame = _pl.DataFrame(rows, schema=_LIVE_SCHEMA)
     _validate_live_frame(frame, first_block=first_block)
-    model_input = _prepare_live(
-        frame,
-        context_blocks=context_blocks,
-        ordered_features=experiment.ordered_features,
-        feature_state=association.feature_state,
-    )
+    model_input = _torch.from_numpy(
+        _transform_feature_rows(
+            frame,
+            ordered_features=experiment.ordered_features,
+            state=association.feature_state,
+        )
+    ).unsqueeze(0)
     with _torch.inference_mode():
         output = model(model_input)
     selected_action_k = int(_decode_action(output).item())

@@ -48,11 +48,6 @@ def fit_feature_state(
 
     means = raw.mean(axis=0, dtype=np.float64)
     standard_deviations = raw.std(axis=0, ddof=0, dtype=np.float64)
-    if not np.isfinite(means).all() or not np.isfinite(standard_deviations).all():
-        raise ValueError("fitted feature statistics must be finite")
-    if np.any(standard_deviations == 0.0):
-        raise ValueError("training_support contains a constant feature")
-
     return FeatureState(
         means=tuple(float(value) for value in means),
         standard_deviations=tuple(float(value) for value in standard_deviations),

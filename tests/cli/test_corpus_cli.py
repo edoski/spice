@@ -4,17 +4,11 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-import typer
 from typer.testing import CliRunner
 
 import fable.cli.commands.corpus as cli
+from fable.cli.app import app
 from fable.config import CorpusDefinition, CorpusRequest
-
-
-def _app() -> typer.Typer:
-    app = typer.Typer()
-    app.add_typer(cli.app, name="corpus")
-    return app
 
 
 def _request() -> CorpusRequest:
@@ -46,7 +40,7 @@ def test_corpus_acquire_forwards_request_deployment_and_stays_silent(
     monkeypatch.setattr(cli, "acquire_corpus", fake_acquire_corpus)
 
     result = CliRunner().invoke(
-        _app(),
+        app,
         [
             "corpus",
             "acquire",
@@ -92,7 +86,7 @@ def test_corpus_acquire_propagates_native_failures(
     monkeypatch.setenv("STORAGE_ROOT", "relative" if case == "relative_root" else str(tmp_path))
 
     result = CliRunner().invoke(
-        _app(),
+        app,
         [
             "corpus",
             "acquire",

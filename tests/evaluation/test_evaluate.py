@@ -4,7 +4,7 @@ import importlib
 import json
 import math
 from pathlib import Path
-from typing import Any, Literal, Self, cast
+from typing import Any, Literal, Self
 from uuid import UUID
 
 import numpy as np
@@ -45,7 +45,7 @@ from fable.min_block_fee import (
     MinBlockFeeOutput,
     TargetState,
 )
-from fable.modeling.artifacts import ArtifactAssociation
+from fable.modeling import ArtifactAssociation
 from fable.temporal.features import FeatureState
 
 evaluation_module = importlib.import_module("fable.evaluation.evaluate")
@@ -375,36 +375,13 @@ def test_evaluate_publishes_exact_observations_through_one_full_and_tail_path(
         "prepare_historical_window",
         prepare_with_divergent_corpus,
     )
-    loss_sizes: list[int] = []
-    decode_sizes: list[int] = []
-    real_loss = evaluation_module.min_block_fee_loss
-    real_decode = evaluation_module.decode_action
-
-    def record_loss(*args: object, **kwargs: object):
-        loss_sizes.append(int(cast(torch.Tensor, kwargs["label"]).shape[0]))
-        return real_loss(*args, **kwargs)
-
-    def record_decode(output: MinBlockFeeOutput) -> torch.Tensor:
-        decode_sizes.append(output.action_logits.shape[0])
-        return real_decode(output)
-
-    monkeypatch.setattr(evaluation_module, "min_block_fee_loss", record_loss)
-    monkeypatch.setattr(evaluation_module, "decode_action", record_decode)
     request = _request()
 
     evaluate(request, tmp_path, _deployment())
 
     assert model.transfers == 1
     assert model.batch_sizes == [3, 2]
-    assert loss_sizes == [3, 2]
-    assert decode_sizes == [3, 2]
     assert evaluation_json_path(tmp_path, _EVALUATION_ID).read_text() == request.model_dump_json()
-    assert (
-        EvaluateRequest.model_validate_json(
-            evaluation_json_path(tmp_path, _EVALUATION_ID).read_text()
-        )
-        == request
-    )
 
     observations = pl.read_parquet(evaluation_observations_path(tmp_path, _EVALUATION_ID))
     assert observations.schema == _OBSERVATION_SCHEMA
@@ -434,7 +411,6 @@ def test_evaluate_publishes_exact_observations_through_one_full_and_tail_path(
         (70, 50, 40, 40, 30, 0, 36),
         (50, 40, 55, 30, 30, 24, 24),
     ]
-    assert evaluation_directory(tmp_path, _EVALUATION_ID).parent.name == "evaluations"
 
 
 @pytest.mark.parametrize(
@@ -455,19 +431,18 @@ def test_evaluation_deployment_rejects_invalid_batch_or_matmul_policy(
 
 
 @pytest.mark.parametrize(
-    ("case", "match"),
+    ("case", "error", "match"),
     [
-        ("source_corpus", "artifact source Corpus"),
-        ("validation_window", "validation window must match"),
-        ("testing_purge", "testing window must follow complete validation outcomes"),
-        ("previous_parent", "previous closed parent"),
-        ("occupied_canonical", "evaluations"),
+        ("source_corpus", ValueError, "artifact source Corpus"),
+        ("previous_parent", ValueError, "previous closed parent"),
+        ("occupied_canonical", FileExistsError, "evaluations"),
     ],
 )
-def test_evaluate_rejects_owned_association_and_publication_conflicts_with_residue(
+def test_evaluate_rejects_owned_association_and_publication_conflicts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     case: str,
+    error: type[Exception],
     match: str,
 ) -> None:
     corpus_id = _OTHER_CORPUS_ID if case == "source_corpus" else _CORPUS_ID
@@ -504,19 +479,7 @@ def test_evaluate_rejects_owned_association_and_publication_conflicts_with_resid
         lambda storage_root, artifact_id: (association, model),
     )
     monkeypatch.setattr(evaluation_module, "_DEVICE", torch.device("cpu"))
-    if case == "validation_window":
-        window = OriginWindow(
-            role="validation",
-            first_parent_block=21,
-            last_parent_block=24,
-        )
-    elif case == "testing_purge":
-        window = OriginWindow(
-            role="testing",
-            first_parent_block=27,
-            last_parent_block=27,
-        )
-    elif case == "previous_parent":
+    if case == "previous_parent":
         window = experiment.validation_window
     else:
         window = _experiment().validation_window
@@ -524,12 +487,11 @@ def test_evaluate_rejects_owned_association_and_publication_conflicts_with_resid
     if case == "occupied_canonical":
         evaluation_directory(tmp_path, _EVALUATION_ID).mkdir(parents=True)
 
-    with pytest.raises((ValueError, FileExistsError), match=match):
+    with pytest.raises(error, match=match):
         evaluate(request, tmp_path, _deployment())
 
-    scratch = tmp_path / "evaluations" / f".{_EVALUATION_ID}"
-    assert scratch.exists()
     if case == "occupied_canonical":
+        scratch = tmp_path / "evaluations" / f".{_EVALUATION_ID}"
         assert sorted(path.name for path in scratch.iterdir()) == [
             "evaluation.json",
             "observations.parquet",

@@ -163,7 +163,6 @@ def test_write_k5_fee_condition_evidence(
         evaluation_id: pl.DataFrame(
             {
                 "eligible_origin_count": [8],
-                "earliest_hindsight_label_correct_count": [4],
                 "immediate_k0_base_fee_per_gas_sum": [8_000.0],
                 "finite_target_base_fee_per_gas_savings_sum": [math.nextafter(0.0, math.inf)],
                 "finite_target_base_fee_per_gas_hindsight_opportunity_sum": [520.0],

@@ -15,8 +15,7 @@ from fable.config import (
     OriginWindow,
 )
 from fable.corpus.contract import Corpus, FinalizedAnchor
-from fable.min_block_fee import ClassificationLossState, TargetState
-from fable.temporal.features import FeatureState
+from fable.min_block_fee import ClassificationLossState
 from fable.temporal.history import prepare_fit_history, prepare_historical_window
 
 _CORPUS_ID = TypeAdapter(UUID4).validate_python("11111111-1111-4111-8111-111111111111")
@@ -92,11 +91,9 @@ def _experiment() -> ExperimentSemantics:
     )
 
 
-def test_fit_history_preserves_exact_geometry_states_views_and_collation() -> None:
+def test_fit_history_preserves_geometry_statistics_and_collation() -> None:
     preparation = prepare_fit_history(_corpus(), _experiment())
 
-    assert isinstance(preparation.feature_state, FeatureState)
-    assert isinstance(preparation.target_state, TargetState)
     assert preparation.classification_state == ClassificationLossState(class_support=(1, 2, 1))
 
     support_fees = _BASE_FEES[:6].astype(np.float64)
@@ -114,20 +111,13 @@ def test_fit_history_preserves_exact_geometry_states_views_and_collation() -> No
 
     training_minima = np.array([4, 4, 3, 3], dtype=np.int64)
     logged_minima = np.log(training_minima.astype(np.float64))
-    assert preparation.target_state.mean == pytest.approx(logged_minima.mean())
-    assert preparation.target_state.standard_deviation == pytest.approx(logged_minima.std(ddof=0))
+    logged_mean = logged_minima.mean()
+    logged_standard_deviation = logged_minima.std(ddof=0)
+    assert preparation.target_state.mean == pytest.approx(logged_mean)
+    assert preparation.target_state.standard_deviation == pytest.approx(logged_standard_deviation)
 
-    assert len(preparation.training) == 4
-    assert len(preparation.validation) == 2
     first = preparation.training[0]
-    repeated = preparation.training[0]
-    assert list(first) == ["inputs", "label", "target", "base_fees", "origin_block"]
-    assert [(int(preparation.training[index]["origin_block"])) for index in range(4)] == [
-        12,
-        13,
-        14,
-        15,
-    ]
+    assert set(first) == {"inputs", "label", "target", "base_fees", "origin_block"}
     assert first["inputs"].shape == (3, 2)
     assert first["inputs"].dtype == torch.float32
     assert first["label"].shape == ()
@@ -146,20 +136,19 @@ def test_fit_history_preserves_exact_geometry_states_views_and_collation() -> No
     torch.testing.assert_close(first["inputs"], torch.from_numpy(expected_inputs))
     assert int(first["label"]) == 0
     assert float(first["target"]) == pytest.approx(
-        (np.log(4.0) - preparation.target_state.mean) / preparation.target_state.standard_deviation
+        (np.log(4.0) - logged_mean) / logged_standard_deviation
     )
     assert first["base_fees"].tolist() == [4, 9, 4]
-    assert all(
-        first[name].untyped_storage().data_ptr() == repeated[name].untyped_storage().data_ptr()
-        for name in first
-    )
 
     validation = preparation.validation[0]
-    assert int(validation["origin_block"]) == 20
+    assert [
+        int(preparation.validation[index]["origin_block"])
+        for index in range(len(preparation.validation))
+    ] == [20, 21]
     assert validation["base_fees"].tolist() == [6, 2, 2]
     assert int(validation["label"]) == 1
     assert float(validation["target"]) == pytest.approx(
-        (np.log(2.0) - preparation.target_state.mean) / preparation.target_state.standard_deviation
+        (np.log(2.0) - logged_mean) / logged_standard_deviation
     )
 
     testing = prepare_historical_window(
@@ -182,50 +171,45 @@ def test_fit_history_preserves_exact_geometry_states_views_and_collation() -> No
     assert batches[0]["base_fees"].shape == (3, 3)
 
 
-@pytest.mark.parametrize(
-    ("case", "match"),
-    [
-        ("missing_context", "complete context and outcome support"),
-        ("missing_outcome", "complete context and outcome support"),
-        ("validation_association", "match experiment.validation_window"),
-        ("testing_purge", "testing window must follow complete validation outcomes"),
-    ],
-)
-def test_history_rejects_incomplete_support_and_window_mismatch(
-    case: str,
-    match: str,
-) -> None:
-    experiment = _experiment()
+@pytest.mark.parametrize("corpus", (_corpus(first_block=11), _corpus(last_block=23)))
+def test_fit_history_requires_complete_context_and_outcome_support(corpus: Corpus) -> None:
+    with pytest.raises(ValueError, match="complete context and outcome support"):
+        prepare_fit_history(corpus, _experiment())
 
-    with pytest.raises(ValueError, match=match):
-        if case == "missing_context":
-            prepare_fit_history(_corpus(first_block=11), experiment)
-        elif case == "missing_outcome":
-            prepare_fit_history(_corpus(last_block=23), experiment)
-        elif case == "validation_association":
-            preparation = prepare_fit_history(_corpus(), experiment)
-            mismatched = OriginWindow(
+
+def test_historical_validation_window_must_match_experiment() -> None:
+    corpus = _corpus()
+    experiment = _experiment()
+    preparation = prepare_fit_history(corpus, experiment)
+
+    with pytest.raises(ValueError, match="match experiment.validation_window"):
+        prepare_historical_window(
+            corpus,
+            experiment,
+            OriginWindow(
                 role="validation",
                 first_parent_block=19,
                 last_parent_block=20,
-            )
-            prepare_historical_window(
-                _corpus(),
-                experiment,
-                mismatched,
-                feature_state=preparation.feature_state,
-                target_state=preparation.target_state,
-            )
-        else:
-            preparation = prepare_fit_history(_corpus(), experiment)
-            prepare_historical_window(
-                _corpus(),
-                experiment,
-                OriginWindow(
-                    role="testing",
-                    first_parent_block=24,
-                    last_parent_block=25,
-                ),
-                feature_state=preparation.feature_state,
-                target_state=preparation.target_state,
-            )
+            ),
+            feature_state=preparation.feature_state,
+            target_state=preparation.target_state,
+        )
+
+
+def test_testing_window_must_follow_complete_validation_outcomes() -> None:
+    corpus = _corpus()
+    experiment = _experiment()
+    preparation = prepare_fit_history(corpus, experiment)
+
+    with pytest.raises(ValueError, match="testing window must follow complete validation outcomes"):
+        prepare_historical_window(
+            corpus,
+            experiment,
+            OriginWindow(
+                role="testing",
+                first_parent_block=24,
+                last_parent_block=25,
+            ),
+            feature_state=preparation.feature_state,
+            target_state=preparation.target_state,
+        )

@@ -2,7 +2,7 @@
 
 FABLE learns from finalized block history to choose a low-base-fee block within a short future [horizon](CONTEXT.md). It compares LSTM, Transformer, and Transformer-LSTM models and can serve a trained model through a small inference API.
 
-Its scientific lineage is the temporal experiment in *SPICE: A Predictive Framework for Cost-Optimization in Multichain Environments*: a future minimum-block decision paired with an auxiliary fee prediction. FABLE's current equations and claim limits are documented in the [theory](docs/theory.md). The [glossary](CONTEXT.md) defines its domain terms.
+Its scientific lineage is the temporal experiment in *SPICE: A Predictive Framework for Cost-Optimization in Multichain Environments*: a future minimum-block decision paired with an auxiliary fee prediction. FABLE's current equations and claim limits are documented in the [manual](FABLE.md#scientific-contract). The [glossary](CONTEXT.md) defines its domain terms.
 
 ## Hosts and responsibilities
 
@@ -12,7 +12,7 @@ The repository supports three explicit operating locations:
 - A GPU server fits, tunes, and evaluates through Slurm jobs.
 - A Mac runs the CPU inference API used by the Expo mobile demo.
 
-The [reference](docs/reference.md#remote-submission) defines remote submission and host configuration.
+The [manual](FABLE.md#remote-submission) defines remote submission and host configuration.
 
 ## Install
 
@@ -30,7 +30,7 @@ uv sync --extra serve
 
 ## Quick start
 
-Create the required JSON files from the [request reference](docs/reference.md#requests-and-definitions).
+Create the required JSON files from the [request reference](FABLE.md#requests-and-definitions).
 
 Acquire an inclusive block range. `STORAGE_ROOT` must be absolute; this Ethereum example uses `--no-poa`:
 
@@ -57,7 +57,7 @@ Publish the collected tuning results:
 STORAGE_ROOT=/absolute/storage fable study finalize STUDY_ID
 ```
 
-The [CLI reference](docs/reference.md#cli) defines the exact command contracts.
+The [CLI reference](FABLE.md#cli) defines the exact command contracts.
 
 ## Serving and mobile demo
 
@@ -67,7 +67,7 @@ Place cwd-local `SERVING.yaml` beside the serving process, then start the factor
 uv run uvicorn fable.serving:create_app --factory
 ```
 
-The FABLE Inference API accepts `POST /inference`. The [serving reference](docs/reference.md#serving-and-mobile) defines its request, response, and configuration.
+The FABLE Inference API accepts `POST /inference`. The [serving reference](FABLE.md#serving-and-mobile) defines its request, response, and configuration.
 
 The private Expo app lives in `apps/mobile`. Set its only backend variable to the API origin before starting Expo:
 
@@ -78,15 +78,15 @@ EXPO_PUBLIC_FABLE_BACKEND_URL=http://HOST:PORT npm start
 
 ## Read next
 
-Start with the [worked tutorial](docs/tutorial.md), then use the [theory](docs/theory.md), [system architecture](ARCHITECTURE.md), and [exact reference](docs/reference.md). Hard-to-reverse decisions are in [docs/adr](docs/adr/).
+Read the [FABLE manual](FABLE.md) from its worked decision through the scientific contract, architecture, and exact reference. Hard-to-reverse decisions are in [docs/adr](docs/adr/).
 
 ## Where do I look?
 
 | Question | Owner |
 | --- | --- |
-| How does one decision work end to end? | [Tutorial](docs/tutorial.md) |
-| Why are the inputs causal, and what do the equations mean? | [Theory](docs/theory.md) |
-| Which component owns each object and boundary? | [Architecture](ARCHITECTURE.md) |
-| What are the exact requests, paths, commands, and schemas? | [Reference](docs/reference.md) |
+| How does one decision work end to end? | [Worked decision](FABLE.md#one-decision-end-to-end) |
+| Why are the inputs causal, and what do the equations mean? | [Scientific contract](FABLE.md#scientific-contract) |
+| Which module owns each object and seam? | [Architecture](FABLE.md#architecture-and-deep-interfaces) |
+| What are the exact requests, paths, commands, and schemas? | [Exact reference](FABLE.md#exact-reference) |
 | What does a domain term mean? | [Context](CONTEXT.md) |
-| How does one deep interface work internally? | Architecture guides linked from the [system architecture](ARCHITECTURE.md#deep-interfaces) |
+| How does one deep interface work internally? | [Architecture and deep interfaces](FABLE.md#architecture-and-deep-interfaces) |

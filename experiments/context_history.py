@@ -21,7 +21,7 @@ from fable.config import (
 )
 from fable.corpus import Corpus, load_corpus
 from fable.evaluation.reduction import reduce_evaluation
-from fable.modeling.artifacts import ArtifactAssociation, load_artifact
+from fable.modeling import ArtifactAssociation, load_artifact
 from fable.study import training_definition_from_method
 
 _CHAIN_IDS = (1, 137, 43_114)
@@ -40,7 +40,7 @@ _CHAIN_FEATURE_PREFIXES = {
     43_114: ("log_base_fee_per_gas", "gas_utilization"),
 }
 
-_METRICS = (
+_REDUCTION_METRICS = (
     "earliest_hindsight_label_cross_entropy_loss",
     "hindsight_minimum_base_fee_per_gas_within_k_smooth_l1_loss",
     "hindsight_minimum_base_fee_per_gas_within_k_natural_log_mae",
@@ -61,7 +61,7 @@ _METRICS = (
     "mean_full_horizon_elapsed_seconds",
 )
 
-_COLUMNS = (
+_EVIDENCE_COLUMNS = (
     "evaluation_id",
     "artifact_id",
     "corpus_id",
@@ -95,7 +95,11 @@ _COLUMNS = (
     "testing_context_span_seconds_median",
     "testing_context_span_seconds_mean",
     "testing_context_span_seconds_maximum",
-    *(name for metric in _METRICS for name in (metric, f"{metric}_delta_vs_same_chain_c200")),
+    *(
+        name
+        for metric in _REDUCTION_METRICS
+        for name in (metric, f"{metric}_delta_vs_same_chain_c200")
+    ),
     "final_k_horizon_blocks",
     "final_k_artifact_ids",
 )
@@ -143,14 +147,12 @@ def write_context_history_evidence(
             evaluation_json_path(storage_root, evaluation_id).read_text(encoding="utf-8"),
             strict=True,
         )
-        if request.evaluation_id != evaluation_id:
-            raise ValueError("context evaluation request ID must match its supplied ID")
         if request.window.role != "testing":
             raise ValueError("context evidence requires testing evaluations")
 
         reduced = reduce_evaluation(storage_root, evaluation_id).row(0, named=True)
         association, _ = load_artifact(storage_root, request.artifact_id)
-        definition = _context_definition(request, association)
+        definition = _context_definition(association)
         experiment = definition.experiment
 
         corpus = corpora.get(request.corpus_id)
@@ -223,7 +225,7 @@ def write_context_history_evidence(
             ),
             **_period_geometry(corpus, request.window, expected_context, "testing"),
         }
-        metrics = {name: cast(float | None, reduced[name]) for name in _METRICS}
+        metrics = {name: cast(float | None, reduced[name]) for name in _REDUCTION_METRICS}
         cell = _ContextCell(
             chain_id=chain_id,
             context_blocks=expected_context,
@@ -267,7 +269,7 @@ def write_context_history_evidence(
 
     for cell in cells:
         baseline = cells_by_coordinate[(cell.chain_id, 200)]
-        for metric in _METRICS:
+        for metric in _REDUCTION_METRICS:
             value = cell.metrics[metric]
             reference = baseline.metrics[metric]
             cell.row[metric] = value
@@ -290,19 +292,14 @@ def write_context_history_evidence(
         raise FileExistsError(hidden)
     with hidden.open("x", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        writer.writerow(_COLUMNS)
+        writer.writerow(_EVIDENCE_COLUMNS)
         for cell in cells:
-            writer.writerow([_tsv_value(cell.row[name]) for name in _COLUMNS])
+            writer.writerow([_tsv_value(cell.row[name]) for name in _EVIDENCE_COLUMNS])
     hidden.rename(destination)
 
 
-def _context_definition(
-    request: EvaluateRequest,
-    association: ArtifactAssociation,
-) -> TrainingDefinition:
+def _context_definition(association: ArtifactAssociation) -> TrainingDefinition:
     source = association.request.source
-    if source.corpus_id != request.corpus_id:
-        raise ValueError("context artifact Corpus must match the evaluation Corpus")
     if not isinstance(source, BaselineSource):
         raise ValueError("context artifacts must use BaselineSource")
     return source.training_definition

@@ -153,15 +153,16 @@ class _Environment:
 
 
 @pytest.mark.parametrize(
-    "kind",
+    ("kind", "expected_experiment"),
     [
-        pytest.param("baseline", id="baseline-train"),
-        pytest.param("selected", id="selected-train"),
-        pytest.param("evaluate", id="evaluate"),
+        pytest.param("baseline", _experiment(), id="baseline-train"),
+        pytest.param("selected", _experiment(), id="selected-train"),
+        pytest.param("evaluate", None, id="evaluate"),
     ],
 )
-def test_remote_workflow_executes_one_strict_envelope(
+def test_remote_workflow_executes_one_envelope(
     kind: Literal["baseline", "selected", "evaluate"],
+    expected_experiment: ExperimentSemantics | None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request = _request(kind)
@@ -219,9 +220,8 @@ def test_remote_workflow_executes_one_strict_envelope(
     result = CliRunner().invoke(app, ["remote", "workflow"])
 
     assert result.exit_code == 0
-    assert result.return_value is None
     assert result.output == ""
-    if kind == "evaluate":
+    if expected_experiment is None:
         assert events == [
             "stdin",
             "environment:STORAGE_ROOT",
@@ -250,12 +250,6 @@ def test_remote_workflow_executes_one_strict_envelope(
         ]
         return
 
-    assert isinstance(request, TrainRequest)
-    expected_experiment = (
-        request.source.training_definition.experiment
-        if isinstance(request.source, BaselineSource)
-        else request.source.experiment
-    )
     expected_deployment = FitDeployment(
         deterministic="warn",
         benchmark=False,

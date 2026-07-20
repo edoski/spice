@@ -6,8 +6,7 @@ from pathlib import Path
 
 from .config import Method, TuneRequest
 from .corpus import load_corpus
-from .modeling import FitDeployment
-from .modeling.artifacts import _run_candidate
+from .modeling import FitDeployment, _run_candidate
 from .study import retain_result
 from .temporal.history import prepare_fit_history
 

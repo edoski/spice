@@ -1,1 +1,1 @@
-"""Corpus CLI command."""
+"""FABLE CLI commands."""
