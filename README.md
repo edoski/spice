@@ -69,10 +69,10 @@ uv run uvicorn fable.serving:create_app --factory
 
 The FABLE Inference API accepts `POST /inference`. The [serving reference](FABLE.md#serving-and-mobile) defines its request, response, and configuration.
 
-The private Expo app lives in `apps/mobile`. Set its only backend variable to the API origin before starting Expo:
+The private Expo app lives in `app`. Set its only backend variable to the API origin before starting Expo:
 
 ```bash
-cd apps/mobile
+cd app
 EXPO_PUBLIC_FABLE_BACKEND_URL=http://HOST:PORT npm start
 ```
 

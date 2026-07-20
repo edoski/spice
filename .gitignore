@@ -14,7 +14,7 @@ __pycache__/
 coverage.xml
 build/
 dist/
-/apps/mobile/node_modules/
-/apps/mobile/.expo/
+/app/node_modules/
+/app/.expo/
 .idea/
 .vscode/
