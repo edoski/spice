@@ -19,10 +19,10 @@ UUIDv4 values identify instances. Each completed object owns its exact typed req
 
 Typed requests, embedded associations, and the selected Study result index plus exact Method establish meaning. Completed objects are loaded directly and validated against the requested UUID and association.
 
-Selection, metrics, and report views are recomputed from canonical objects.
+Selection and transient evaluation reductions are recomputed from canonical objects.
 
 Owner-local hidden siblings support resumable work and publish canonical objects by direct rename.
 
 ## Consequences
 
-Callers supply the typed UUID they intend to use. Durable schemas stay small, while derived evidence requires the canonical source objects to remain available.
+Callers supply the typed UUID they intend to use. Durable schemas stay small, while transient reductions require the canonical source objects to remain available.

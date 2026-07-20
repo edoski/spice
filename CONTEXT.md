@@ -46,6 +46,6 @@ FABLE derives from and extends selected temporal work from *SPICE: A Predictive 
 
 **Action.** Zero-based offset `k` selecting target block `b = h+1+k` within the horizon.
 
-**Role.** One of training, validation, or testing. Training fits weights and data-dependent state, validation selects, and testing reports.
+**Role.** One of training, validation, or testing. Training fits weights and data-dependent state, validation selects, and testing measures.
 
 **ExperimentSemantics.** The complete scientific role, feature, target, loss, and evaluation contract carried where an owning request needs it.

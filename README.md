@@ -8,7 +8,7 @@ Its scientific lineage is the temporal experiment in *SPICE: A Predictive Framew
 
 The repository supports three explicit operating locations:
 
-- A workstation creates requests, acquires finalized block history, submits work, publishes tuning results, and writes reports.
+- A workstation creates requests, acquires finalized block history, submits work, publishes tuning results, and computes transient evaluation reductions.
 - A GPU server fits, tunes, and evaluates through Slurm jobs.
 - A Mac runs the CPU inference API used by the Expo mobile demo.
 
