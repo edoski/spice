@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import json
-import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar, cast
@@ -18,7 +17,7 @@ from fable.config import (
 )
 from fable.corpus import Corpus
 from fable.evaluation import resolve_evaluations
-from fable.modeling import _FIT_BATCH_SIZE, load_artifact
+from fable.modeling import fit_minibatches_per_epoch, load_artifact
 from fable.study import training_definition_from_method
 
 _CHAIN_IDS = (1, 137, 43_114)
@@ -183,7 +182,7 @@ def write_context_history_evidence(
             raise ValueError("context training windows must use their natural starts")
 
         training_count = _origin_count(experiment.training_window)
-        updates_per_epoch = math.ceil(training_count / _FIT_BATCH_SIZE)
+        updates_per_epoch = fit_minibatches_per_epoch(training_count)
         row: dict[str, object] = {
             "evaluation_id": str(request.evaluation_id),
             "artifact_id": str(request.artifact_id),

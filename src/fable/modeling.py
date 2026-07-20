@@ -538,6 +538,12 @@ def _configure_numerical_policy(deployment: FitDeployment) -> None:
     torch.backends.cudnn.allow_tf32 = deployment.cudnn_allow_tf32
 
 
+def fit_minibatches_per_epoch(training_examples: int) -> int:
+    """Return the minibatch count imposed by the fit implementation."""
+
+    return math.ceil(training_examples / _FIT_BATCH_SIZE)
+
+
 def _loaders(
     prepared: HistoricalPreparation,
     deployment: FitDeployment,
@@ -787,4 +793,10 @@ def load_artifact(
     return association, module.model
 
 
-__all__ = ["ArtifactAssociation", "FitDeployment", "load_artifact", "train"]
+__all__ = [
+    "ArtifactAssociation",
+    "FitDeployment",
+    "fit_minibatches_per_epoch",
+    "load_artifact",
+    "train",
+]
