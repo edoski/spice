@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 import polars as pl
 import pytest
-from torch import nn
 
 import fable.evaluation.report as report_module
-from fable.addresses import evaluation_json_path
 from fable.config import (
     AdamWMethod,
     BaselineSource,
@@ -23,6 +22,7 @@ from fable.config import (
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
+    Method,
     OriginWindow,
     SelectedStudySource,
     TrainingDefinition,
@@ -30,9 +30,10 @@ from fable.config import (
     TransformerDefinition,
 )
 from fable.corpus import Corpus, FinalizedAnchor
-from fable.evaluation import write_sealed_report
+from fable.evaluation import ResolvedEvaluation, write_sealed_report
 from fable.min_block_fee import ClassificationLossState, TargetState
 from fable.modeling import ArtifactAssociation
+from fable.study import training_definition_from_method
 from fable.temporal.features import FeatureState
 
 _EVALUATION_IDS = (
@@ -371,7 +372,8 @@ def _arrange_report(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[
     tuple[EvaluateRequest, ...],
-    dict[str, list[UUID]],
+    dict[str, list[tuple[UUID, ...]]],
+    dict[UUID, ResolvedEvaluation],
 ]:
     experiments = (
         _experiment(
@@ -417,11 +419,6 @@ def _arrange_report(
             strict=True,
         )
     )
-    for request in requests:
-        path = evaluation_json_path(tmp_path, request.evaluation_id)
-        path.parent.mkdir(parents=True)
-        path.write_text(request.model_dump_json(), encoding="utf-8")
-
     associations = {
         _ARTIFACT_IDS[0]: _association(
             _ARTIFACT_IDS[0],
@@ -443,16 +440,6 @@ def _arrange_report(
             selected=False,
         ),
     }
-    frozen = nn.Embedding(2, 3)
-    frozen.weight.requires_grad_(False)
-    models: dict[UUID, nn.Module] = {
-        _ARTIFACT_IDS[0]: nn.ModuleList([nn.Linear(2, 3, bias=False), frozen]),
-        _ARTIFACT_IDS[1]: nn.Linear(3, 4),
-        _ARTIFACT_IDS[2]: nn.Sequential(
-            nn.Linear(1, 2, bias=False),
-            nn.Linear(2, 1, bias=False),
-        ),
-    }
     corpora = {
         _CORPUS_IDS[0]: _corpus(_CORPUS_IDS[0], chain_id=1, first_block=100),
         _CORPUS_IDS[1]: _corpus(_CORPUS_IDS[1], chain_id=137, first_block=200),
@@ -465,34 +452,48 @@ def _arrange_report(
         )
         for marker, evaluation_id in enumerate(_EVALUATION_IDS, start=1)
     }
-    calls: dict[str, list[UUID]] = {"reduce": [], "artifact": [], "corpus": []}
+    parameter_counts = dict(zip(_ARTIFACT_IDS, (6, 16, 4), strict=True))
+    resolved_by_id: dict[UUID, ResolvedEvaluation] = {}
+    for request in requests:
+        association = associations[request.artifact_id]
+        source = association.request.source
+        definition = (
+            source.training_definition
+            if isinstance(source, BaselineSource)
+            else training_definition_from_method(
+                source.experiment,
+                cast(Method, association.method),
+            )
+        )
+        resolved_by_id[request.evaluation_id] = ResolvedEvaluation(
+            request=request,
+            training_source=source,
+            training_definition=definition,
+            corpus=corpora[request.corpus_id],
+            observations=pl.LazyFrame(),
+            reduction=reductions[request.evaluation_id],
+            trainable_parameter_count=parameter_counts[request.artifact_id],
+        )
 
-    def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
+    calls: dict[str, list[tuple[UUID, ...]]] = {"resolve": []}
+
+    def resolve_evaluations(
+        storage_root: Path,
+        evaluation_ids: tuple[UUID, ...],
+    ) -> tuple[ResolvedEvaluation, ...]:
         assert storage_root == tmp_path
-        calls["reduce"].append(evaluation_id)
-        return reductions[evaluation_id]
+        calls["resolve"].append(evaluation_ids)
+        return tuple(resolved_by_id[evaluation_id] for evaluation_id in evaluation_ids)
 
-    def load_artifact(storage_root: Path, artifact_id: UUID):
-        assert storage_root == tmp_path
-        calls["artifact"].append(artifact_id)
-        return associations[artifact_id], models[artifact_id]
-
-    def load_corpus(storage_root: Path, corpus_id: UUID) -> Corpus:
-        assert storage_root == tmp_path
-        calls["corpus"].append(corpus_id)
-        return corpora[corpus_id]
-
-    monkeypatch.setattr(report_module, "reduce_evaluation", reduce_evaluation)
-    monkeypatch.setattr(report_module, "load_artifact", load_artifact)
-    monkeypatch.setattr(report_module, "load_corpus", load_corpus)
-    return requests, calls
+    monkeypatch.setattr(report_module, "resolve_evaluations", resolve_evaluations)
+    return requests, calls, resolved_by_id
 
 
 def test_write_sealed_report_preserves_order_and_publishes_exact_tsv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, calls = _arrange_report(tmp_path, monkeypatch)
+    _, calls, _ = _arrange_report(tmp_path, monkeypatch)
     destination = tmp_path / "sealed.tsv"
     renames: list[tuple[Path, Path]] = []
     real_rename = Path.rename
@@ -508,11 +509,7 @@ def test_write_sealed_report_preserves_order_and_publishes_exact_tsv(
     hidden = destination.with_name(f".{destination.name}")
     assert renames == [(hidden, destination)]
     assert not hidden.exists()
-    assert calls == {
-        "reduce": list(_EVALUATION_IDS),
-        "artifact": list(_ARTIFACT_IDS),
-        "corpus": [_CORPUS_IDS[0], _CORPUS_IDS[1]],
-    }
+    assert calls == {"resolve": [_EVALUATION_IDS]}
 
     report = pl.read_csv(destination, separator="\t", null_values="")
     assert report.schema == _TSV_SCHEMA
@@ -584,7 +581,7 @@ def test_write_sealed_report_rejects_invalid_input_without_partial_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    requests, _ = _arrange_report(tmp_path, monkeypatch)
+    requests, _, resolved_by_id = _arrange_report(tmp_path, monkeypatch)
     destination = tmp_path / "sealed.tsv"
     hidden = destination.with_name(f".{destination.name}")
     evaluation_ids = _EVALUATION_IDS
@@ -593,9 +590,9 @@ def test_write_sealed_report_rejects_invalid_input_without_partial_publication(
     elif case == "duplicate":
         evaluation_ids = (_EVALUATION_IDS[0], _EVALUATION_IDS[0])
     elif case == "non_testing":
-        evaluation_json_path(tmp_path, _EVALUATION_IDS[0]).write_text(
-            requests[0]
-            .model_copy(
+        resolved_by_id[_EVALUATION_IDS[0]] = replace(
+            resolved_by_id[_EVALUATION_IDS[0]],
+            request=requests[0].model_copy(
                 update={
                     "window": OriginWindow(
                         role="validation",
@@ -603,23 +600,21 @@ def test_write_sealed_report_rejects_invalid_input_without_partial_publication(
                         last_parent_block=106,
                     )
                 }
-            )
-            .model_dump_json(),
-            encoding="utf-8",
+            ),
         )
     elif case == "destination":
         destination.write_text("existing", encoding="utf-8")
     elif case == "hidden":
         hidden.write_text("existing", encoding="utf-8")
     elif case == "later_row":
-        original = report_module.reduce_evaluation
 
-        def fail_later(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
-            if evaluation_id == _EVALUATION_IDS[1]:
-                raise RuntimeError("later row failed")
-            return original(storage_root, evaluation_id)
+        def fail_later(
+            storage_root: Path,
+            evaluation_ids: tuple[UUID, ...],
+        ) -> tuple[ResolvedEvaluation, ...]:
+            raise RuntimeError("later row failed")
 
-        monkeypatch.setattr(report_module, "reduce_evaluation", fail_later)
+        monkeypatch.setattr(report_module, "resolve_evaluations", fail_later)
 
     with pytest.raises(error):
         write_sealed_report(tmp_path, evaluation_ids, destination)

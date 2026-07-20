@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 from itertools import accumulate
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 import polars as pl
@@ -14,7 +15,6 @@ from torch import nn
 
 import experiments.context_history as context_history_module
 from experiments.context_history import write_context_history_evidence
-from fable.addresses import evaluation_directory, evaluation_json_path
 from fable.config import (
     AdamWMethod,
     BaselineSource,
@@ -27,6 +27,7 @@ from fable.config import (
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
+    Method,
     OriginWindow,
     SelectedStudySource,
     TrainingDefinition,
@@ -34,8 +35,10 @@ from fable.config import (
     TransformerDefinition,
 )
 from fable.corpus import Corpus, FinalizedAnchor
+from fable.evaluation import ResolvedEvaluation
 from fable.min_block_fee import TargetState
 from fable.modeling import ArtifactAssociation
+from fable.study import training_definition_from_method
 from fable.temporal.features import FeatureState
 
 _CHAINS = (1, 137, 43_114)
@@ -111,8 +114,7 @@ class _Matrix:
     corpora: dict[UUID, Corpus]
     reductions: dict[UUID, pl.DataFrame]
     artifact_calls: list[UUID]
-    corpus_calls: list[UUID]
-    reduction_calls: list[UUID]
+    resolution_calls: list[tuple[UUID, ...]]
 
 
 def _uuid(namespace: int, index: int) -> UUID:
@@ -308,11 +310,6 @@ def _matrix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Matrix:
                 ),
             )
             context_requests.append(request)
-            evaluation_directory(tmp_path, evaluation_id).mkdir(parents=True)
-            evaluation_json_path(tmp_path, evaluation_id).write_text(
-                request.model_dump_json(),
-                encoding="utf-8",
-            )
             metric_values = {
                 metric: (
                     None
@@ -341,8 +338,7 @@ def _matrix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Matrix:
             )
 
     artifact_calls: list[UUID] = []
-    corpus_calls: list[UUID] = []
-    reduction_calls: list[UUID] = []
+    resolution_calls: list[tuple[UUID, ...]] = []
 
     def load_artifact(
         _storage_root: Path,
@@ -351,17 +347,41 @@ def _matrix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Matrix:
         artifact_calls.append(artifact_id)
         return artifacts[artifact_id], nn.Identity().eval()
 
-    def load_corpus(_storage_root: Path, corpus_id: UUID) -> Corpus:
-        corpus_calls.append(corpus_id)
-        return corpora[corpus_id]
+    requests_by_id = {request.evaluation_id: request for request in context_requests}
 
-    def reduce_evaluation(_storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
-        reduction_calls.append(evaluation_id)
-        return reductions[evaluation_id]
+    def resolve_evaluations(
+        _storage_root: Path,
+        evaluation_ids: tuple[UUID, ...],
+    ) -> tuple[ResolvedEvaluation, ...]:
+        resolution_calls.append(evaluation_ids)
+        resolved: list[ResolvedEvaluation] = []
+        for evaluation_id in evaluation_ids:
+            request = requests_by_id[evaluation_id]
+            association = artifacts[request.artifact_id]
+            source = association.request.source
+            definition = (
+                source.training_definition
+                if isinstance(source, BaselineSource)
+                else training_definition_from_method(
+                    source.experiment,
+                    cast(Method, association.method),
+                )
+            )
+            resolved.append(
+                ResolvedEvaluation(
+                    request=request,
+                    training_source=source,
+                    training_definition=definition,
+                    corpus=corpora[request.corpus_id],
+                    observations=pl.LazyFrame(),
+                    reduction=reductions[evaluation_id],
+                    trainable_parameter_count=0,
+                )
+            )
+        return tuple(resolved)
 
     monkeypatch.setattr(context_history_module, "load_artifact", load_artifact)
-    monkeypatch.setattr(context_history_module, "load_corpus", load_corpus)
-    monkeypatch.setattr(context_history_module, "reduce_evaluation", reduce_evaluation)
+    monkeypatch.setattr(context_history_module, "resolve_evaluations", resolve_evaluations)
     return _Matrix(
         storage_root=tmp_path,
         context_ids=tuple(context_ids),
@@ -371,8 +391,7 @@ def _matrix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _Matrix:
         corpora=corpora,
         reductions=reductions,
         artifact_calls=artifact_calls,
-        corpus_calls=corpus_calls,
-        reduction_calls=reduction_calls,
+        resolution_calls=resolution_calls,
     )
 
 
@@ -413,12 +432,8 @@ def test_write_context_history_evidence(
         destination,
     )
 
-    assert matrix.reduction_calls == list(matrix.context_ids)
-    assert matrix.artifact_calls == [
-        *(request.artifact_id for request in matrix.context_requests),
-        *matrix.final_ids,
-    ]
-    assert matrix.corpus_calls == list(matrix.corpora)
+    assert matrix.resolution_calls == [matrix.context_ids]
+    assert matrix.artifact_calls == list(matrix.final_ids)
     assert not destination.with_name(f".{destination.name}").exists()
 
     with destination.open(newline="", encoding="utf-8") as handle:

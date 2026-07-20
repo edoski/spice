@@ -1,15 +1,26 @@
-"""Reduction of one canonical evaluation to transient scientific facts."""
+"""Resolved evaluation facts and canonical scientific reduction."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 import polars as pl
 
 from ..addresses import evaluation_json_path, evaluation_observations_path
-from ..config import BaselineSource, EvaluateRequest
+from ..config import (
+    BaselineSource,
+    EvaluateRequest,
+    ExperimentSemantics,
+    Method,
+    TrainingDefinition,
+    TrainingSource,
+)
+from ..corpus import Corpus, load_corpus
 from ..modeling import load_artifact
+from ..study import training_definition_from_method
 
 _OBSERVATION_SCHEMA = pl.Schema(
     {
@@ -104,9 +115,82 @@ _RESULT_COLUMNS = tuple(_RESULT_SCHEMA.names())
 _FLOAT_RESULT_COLUMNS = tuple(name for name, dtype in _RESULT_SCHEMA.items() if dtype == pl.Float64)
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedEvaluation:
+    """Trusted facts needed by evaluation evidence consumers."""
+
+    request: EvaluateRequest
+    training_source: TrainingSource
+    training_definition: TrainingDefinition
+    corpus: Corpus
+    observations: pl.LazyFrame
+    reduction: pl.DataFrame
+    trainable_parameter_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ArtifactResolution:
+    training_source: TrainingSource
+    training_definition: TrainingDefinition
+    target_mean: float
+    target_standard_deviation: float
+    trainable_parameter_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ReductionResolution:
+    request: EvaluateRequest
+    training_source: TrainingSource
+    training_definition: TrainingDefinition
+    observations: pl.LazyFrame
+    reduction: pl.DataFrame
+    trainable_parameter_count: int
+
+
 def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
     """Reduce one canonical evaluation to one fixed scientific-facts row."""
 
+    return _resolve_reduction(storage_root, evaluation_id, {}).reduction
+
+
+def resolve_evaluations(
+    storage_root: Path,
+    evaluation_ids: tuple[UUID, ...],
+) -> tuple[ResolvedEvaluation, ...]:
+    """Resolve ordered evaluation IDs into trusted shared evidence state."""
+
+    artifacts: dict[UUID, _ArtifactResolution] = {}
+    corpora: dict[UUID, Corpus] = {}
+    evaluations: dict[UUID, ResolvedEvaluation] = {}
+    resolved: list[ResolvedEvaluation] = []
+    for evaluation_id in evaluation_ids:
+        evaluation = evaluations.get(evaluation_id)
+        if evaluation is None:
+            reduction = _resolve_reduction(storage_root, evaluation_id, artifacts)
+            corpus_id = reduction.request.corpus_id
+            corpus = corpora.get(corpus_id)
+            if corpus is None:
+                corpus = load_corpus(storage_root, corpus_id)
+                corpora[corpus_id] = corpus
+            evaluation = ResolvedEvaluation(
+                request=reduction.request,
+                training_source=reduction.training_source,
+                training_definition=reduction.training_definition,
+                corpus=corpus,
+                observations=reduction.observations,
+                reduction=reduction.reduction,
+                trainable_parameter_count=reduction.trainable_parameter_count,
+            )
+            evaluations[evaluation_id] = evaluation
+        resolved.append(evaluation)
+    return tuple(resolved)
+
+
+def _resolve_reduction(
+    storage_root: Path,
+    evaluation_id: UUID,
+    artifacts: dict[UUID, _ArtifactResolution],
+) -> _ReductionResolution:
     request = EvaluateRequest.model_validate_json(
         evaluation_json_path(storage_root, evaluation_id).read_text(encoding="utf-8"),
         strict=True,
@@ -114,15 +198,15 @@ def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
     if request.evaluation_id != evaluation_id:
         raise ValueError("evaluation request ID must match the requested evaluation")
 
-    association, _ = load_artifact(storage_root, request.artifact_id)
-    source = association.request.source
+    artifact = artifacts.get(request.artifact_id)
+    if artifact is None:
+        artifact = _resolve_artifact(storage_root, request.artifact_id)
+        artifacts[request.artifact_id] = artifact
+    source = artifact.training_source
     if source.corpus_id != request.corpus_id:
         raise ValueError("artifact source Corpus must match the evaluation Corpus")
-    experiment = (
-        source.training_definition.experiment
-        if isinstance(source, BaselineSource)
-        else source.experiment
-    )
+    definition = artifact.training_definition
+    experiment = definition.experiment
     if request.window.role == "validation":
         if request.window != experiment.validation_window:
             raise ValueError("validation window must match the artifact experiment")
@@ -136,19 +220,64 @@ def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
     if pl.read_parquet_schema(observations_path) != _OBSERVATION_SCHEMA:
         raise ValueError("observations must have the canonical ordered schema")
     observations = pl.scan_parquet(observations_path)
+    reduction = _reduce_observations(
+        evaluation_id,
+        request,
+        experiment,
+        artifact.target_mean,
+        artifact.target_standard_deviation,
+        observations,
+    )
+    return _ReductionResolution(
+        request=request,
+        training_source=source,
+        training_definition=definition,
+        observations=observations,
+        reduction=reduction,
+        trainable_parameter_count=artifact.trainable_parameter_count,
+    )
+
+
+def _resolve_artifact(storage_root: Path, artifact_id: UUID) -> _ArtifactResolution:
+    association, model = load_artifact(storage_root, artifact_id)
+    source = association.request.source
+    definition = (
+        source.training_definition
+        if isinstance(source, BaselineSource)
+        else training_definition_from_method(source.experiment, cast(Method, association.method))
+    )
+    trainable_parameter_count = sum(
+        parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+    )
+    return _ArtifactResolution(
+        training_source=source,
+        training_definition=definition,
+        target_mean=association.target_state.mean,
+        target_standard_deviation=association.target_state.standard_deviation,
+        trainable_parameter_count=trainable_parameter_count,
+    )
+
+
+def _reduce_observations(
+    evaluation_id: UUID,
+    request: EvaluateRequest,
+    experiment: ExperimentSemantics,
+    target_mean: float,
+    target_standard_deviation: float,
+    observations: pl.LazyFrame,
+) -> pl.DataFrame:
 
     expected_origin_count = request.window.last_parent_block - request.window.first_parent_block + 1
     horizon_blocks = experiment.horizon_blocks
     loss_definition = experiment.loss
-    target_state = association.target_state
 
     immediate_fee = pl.col("immediate_k0_base_fee_per_gas")
     selected_fee = pl.col("selected_target_base_fee_per_gas")
     hindsight_fee = pl.col("hindsight_minimum_base_fee_per_gas")
     target_log = hindsight_fee.cast(pl.Float64).log()
     target_z = (
-        (target_log - pl.lit(target_state.mean, dtype=pl.Float64))
-        / pl.lit(target_state.standard_deviation, dtype=pl.Float64)
+        (target_log - pl.lit(target_mean, dtype=pl.Float64))
+        / pl.lit(target_standard_deviation, dtype=pl.Float64)
     ).cast(pl.Float32)
     predicted_z = pl.col("predicted_hindsight_minimum_base_fee_z")
     error = predicted_z - pl.col("_target_z")
@@ -162,8 +291,8 @@ def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
         .otherwise(absolute_error - half * threshold)
         * regression_scale
     )
-    predicted_log = pl.lit(target_state.mean, dtype=pl.Float64) + pl.lit(
-        target_state.standard_deviation,
+    predicted_log = pl.lit(target_mean, dtype=pl.Float64) + pl.lit(
+        target_standard_deviation,
         dtype=pl.Float64,
     ) * predicted_z.cast(pl.Float64)
 
@@ -211,6 +340,7 @@ def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
         pl.len() == expected_origin_count,
         no_nulls,
         (pl.col("origin_block") == expected_origins).all(),
+        (pl.col("origin_timestamp") >= 0).all(),
         pl.col("classification_loss_contribution").is_finite().all(),
         (pl.col("classification_loss_contribution") >= 0.0).all(),
         predicted_z.is_finite().all(),
@@ -218,6 +348,8 @@ def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
         (pl.col("selected_action_k") < horizon_blocks).all(),
         (pl.col("earliest_hindsight_action_k") >= 0).all(),
         (pl.col("earliest_hindsight_action_k") < horizon_blocks).all(),
+        (pl.col("previous_closed_parent_base_fee_per_gas") > 0).all(),
+        (pl.col("closed_parent_base_fee_per_gas") > 0).all(),
         (immediate_fee > 0).all(),
         (selected_fee > 0).all(),
         (hindsight_fee > 0).all(),
@@ -417,4 +549,4 @@ def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
     return result
 
 
-__all__ = ["reduce_evaluation"]
+__all__ = ["ResolvedEvaluation", "reduce_evaluation", "resolve_evaluations"]

@@ -31,7 +31,7 @@ CLI or direct Python call
         +--> evaluation --> observations.parquet
         |
         v
-transient reducers and caller-chosen TSV evidence
+resolved evaluation facts and caller-chosen TSV evidence
 ```
 
 `fable.config` owns frozen Pydantic values and small discriminated unions. `fable.requests` mints fresh UUIDv4 instances. A boundary receiving raw JSON or durable bytes hydrates the owning typed value once; downstream code trusts that value.
@@ -58,7 +58,7 @@ Each owner has one system seam:
 - `min_block_fee` owns target state, classification support, loss, two-head output, and decode.
 - `modeling` owns the three concrete neural definitions, Lightning fitting, and native checkpoint loading.
 - `study` owns bounded candidate membership, ordered retained results, publication, and selected-result materialization.
-- `evaluation` owns canonical observations, one-evaluation reduction, and sealed report composition.
+- `evaluation` owns canonical observations, resolved evaluation facts, reduction, and sealed report composition.
 - Top-level `experiments` owns the context-history and K=5 fee-condition protocols.
 
 ### Durable object flow
@@ -77,7 +77,7 @@ A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-S
 
 `EvaluateRequest` names an artifact, same-source Corpus, validation or testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, writes one nonnull ordered observation per origin, and publishes `evaluation.json` with `observations.parquet`.
 
-`reduce_evaluation()` reads that durable object and its artifact association to return one transient scientific row. `write_sealed_report()` combines explicit testing evaluation IDs in caller order and publishes a derived TSV. The context-history and fee-condition evidence writers live in `experiments/` with their fixed scientific matrices.
+`resolve_evaluations()` reads explicit evaluation IDs into ordered trusted facts: request, training source and definition, Corpus, lazy observations, transient reduction, and trainable parameter count. Repeated evaluation, artifact, and Corpus IDs share resolution within the call. `reduce_evaluation()` uses the same request, artifact, observation, and reduction authority without loading a Corpus. `write_sealed_report()` and the evidence writers consume resolved evaluations before composing their fixed TSVs.
 
 ### Training and inference
 
@@ -719,7 +719,7 @@ The resulting native artifact embeds the same result index and Method for later 
 
 ### Evaluation
 
-Evaluation separates canonical observations, transient reductions, sealed reports, and experiment-specific evidence. Explicit UUIDs and paths connect these operations.
+Evaluation separates canonical observations, resolved evaluation facts, transient reductions, sealed reports, and experiment-specific evidence. Explicit UUIDs connect durable objects to their trusted derived facts.
 
 #### Canonical evaluation
 
@@ -735,15 +735,17 @@ evaluations/<evaluation_id>/
 
 The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical 13-column contract in the [reference](#canonical-observations).
 
-#### One-evaluation reduction
+#### Resolved evaluation and reduction
 
-`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` loads and cross-checks the request, artifact association, window, and ordered observation schema. It returns one transient 43-field row.
+`resolve_evaluations(storage_root, evaluation_ids)` resolves each first occurrence in caller order. It strictly hydrates and checks the request ID, loads and validates one artifact association per artifact ID, derives the baseline or selected training definition, checks Corpus association and evaluation-window geometry, validates and reduces the canonical observations, then loads one Corpus per Corpus ID. Empty input returns an empty tuple; duplicates retain their caller positions and share the same resolved value.
 
-The reducer validates exact origin coverage, nonnull inputs, action bounds, positive fee denominators, wait bounds, finite values, and scientific identities. It reconstructs regression target and Smooth-L1 using the artifact's `TargetState` and authored loss. Economic differences begin in raw Int64 before Float64 aggregation. The sole nullable result is captured opportunity when exact total opportunity is zero.
+`ResolvedEvaluation` carries only the typed request, training source, training definition, Corpus, lazy canonical observations, 43-field reduction, and trainable parameter count. Neural modules and fitted-state internals do not cross this interface. The observation validation requires exact origin coverage, nonnegative origin timestamps, nonnull inputs, action bounds, positive previous/closed/target fees, wait bounds, finite values, and scientific identities.
+
+`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` uses the same request, artifact, observation, and scientific-reduction core without acquiring a Corpus. Regression target and Smooth-L1 use the artifact's `TargetState` and authored loss. Economic differences begin in raw Int64 before Float64 aggregation. The sole nullable result is captured opportunity when exact total opportunity is zero.
 
 #### Derived report composition
 
-`write_sealed_report(storage_root, evaluation_ids, destination)` accepts a nonempty, duplicate-free tuple of testing evaluation UUIDs. In caller order it joins each transient reduction with exact artifact, Corpus, window, model, experiment, and coverage context, then publishes the 62-column sealed testing TSV through a hidden sibling.
+`write_sealed_report(storage_root, evaluation_ids, destination)` accepts a nonempty, duplicate-free tuple of testing evaluation UUIDs. It resolves the tuple once, then joins each reduction with its trusted Corpus, window, training, experiment, and coverage facts in caller order before publishing the 62-column sealed testing TSV through a hidden sibling.
 
 Top-level `experiments` owns two fixed protocols:
 
@@ -1118,6 +1120,16 @@ class EvaluationDeployment:
     cuda_matmul_allow_tf32: bool
     cudnn_allow_tf32: bool
 
+@dataclass(frozen=True, slots=True)
+class ResolvedEvaluation:
+    request: EvaluateRequest
+    training_source: TrainingSource
+    training_definition: TrainingDefinition
+    corpus: Corpus
+    observations: polars.LazyFrame
+    reduction: polars.DataFrame
+    trainable_parameter_count: int
+
 evaluate(
     request: EvaluateRequest,
     storage_root: Path,
@@ -1128,6 +1140,11 @@ reduce_evaluation(
     storage_root: Path,
     evaluation_id: UUID,
 ) -> polars.DataFrame
+
+resolve_evaluations(
+    storage_root: Path,
+    evaluation_ids: tuple[UUID, ...],
+) -> tuple[ResolvedEvaluation, ...]
 
 write_sealed_report(
     storage_root: Path,

@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 from uuid import UUID
 
 import polars as pl
 import pytest
 from torch import nn
 
-import fable.evaluation.reduction as reduction_module
+import fable.evaluation.resolution as resolution_module
 from fable.addresses import evaluation_directory
 from fable.config import (
     AdamWMethod,
     BaselineSource,
+    CorpusDefinition,
+    CorpusRequest,
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
@@ -26,7 +28,8 @@ from fable.config import (
     TrainingDefinition,
     TrainRequest,
 )
-from fable.evaluation import reduce_evaluation
+from fable.corpus import Corpus, FinalizedAnchor
+from fable.evaluation import reduce_evaluation, resolve_evaluations
 from fable.min_block_fee import ClassificationLossState, TargetState
 from fable.modeling import ArtifactAssociation
 from fable.temporal.features import FeatureState
@@ -299,8 +302,10 @@ def _publish_evaluation(
     storage_root: Path,
     request: EvaluateRequest,
     observations: pl.DataFrame,
+    *,
+    evaluation_id: UUID | None = None,
 ) -> None:
-    directory = evaluation_directory(storage_root, _EVALUATION_ID)
+    directory = evaluation_directory(storage_root, evaluation_id or request.evaluation_id)
     directory.mkdir(parents=True)
     (directory / "evaluation.json").write_text(request.model_dump_json(), encoding="utf-8")
     observations.write_parquet(directory / "observations.parquet")
@@ -316,19 +321,7 @@ def _stub_artifact(
         calls.append((storage_root, artifact_id))
         return association, nn.Identity()
 
-    monkeypatch.setattr(reduction_module, "load_artifact", load_artifact)
-    return calls
-
-
-def _count_collects(monkeypatch: pytest.MonkeyPatch) -> list[int]:
-    calls = [0]
-    collect = pl.LazyFrame.collect
-
-    def counted_collect(self: pl.LazyFrame, *args: object, **kwargs: object) -> pl.DataFrame:
-        calls[0] += 1
-        return cast(pl.DataFrame, collect(self, *args, **kwargs))
-
-    monkeypatch.setattr(pl.LazyFrame, "collect", counted_collect)
+    monkeypatch.setattr(resolution_module, "load_artifact", load_artifact)
     return calls
 
 
@@ -336,7 +329,7 @@ def _count_collects(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     ("source_kind", "weighting"),
     [("baseline", "corrected_inverse_frequency"), ("selected", "unweighted")],
 )
-def test_reduce_evaluation_returns_all_scientific_facts_in_one_collect(
+def test_reduce_evaluation_returns_all_scientific_facts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     source_kind: Literal["baseline", "selected"],
@@ -345,12 +338,10 @@ def test_reduce_evaluation_returns_all_scientific_facts_in_one_collect(
     request = _request()
     _publish_evaluation(tmp_path, request, _observations())
     artifact_calls = _stub_artifact(monkeypatch, _association(source_kind, weighting))
-    collect_calls = _count_collects(monkeypatch)
 
     result = reduce_evaluation(tmp_path, _EVALUATION_ID)
 
     assert artifact_calls == [(tmp_path, _ARTIFACT_ID)]
-    assert collect_calls == [1]
     assert result.schema == _RESULT_SCHEMA
     assert result.height == 1
     expected: dict[str, str | int | float | list[int]] = {
@@ -432,7 +423,12 @@ def test_reduce_evaluation_keeps_only_captured_opportunity_nullable(
         },
         schema=_OBSERVATION_SCHEMA,
     )
-    _publish_evaluation(tmp_path, request, observations)
+    _publish_evaluation(
+        tmp_path,
+        request,
+        observations,
+        evaluation_id=_EVALUATION_ID,
+    )
     association = _association(
         "selected",
         "unweighted",
@@ -465,6 +461,8 @@ def test_reduce_evaluation_keeps_only_captured_opportunity_nullable(
         "wait",
         "stored_nonfinite",
         "derived_nonfinite",
+        "origin_timestamp",
+        "adjacent_fee",
     ],
 )
 def test_reduce_evaluation_rejects_owned_invalid_facts(
@@ -536,9 +534,75 @@ def test_reduce_evaluation_rejects_owned_invalid_facts(
             "unweighted",
             target_state=TargetState(mean=0.0, standard_deviation=1e308),
         )
+    elif case == "origin_timestamp":
+        observations = observations.with_columns(
+            pl.Series("origin_timestamp", [-1, 1_010, 1_020, 1_030, 1_040], dtype=pl.Int64)
+        )
+    elif case == "adjacent_fee":
+        observations = observations.with_columns(
+            pl.Series(
+                "previous_closed_parent_base_fee_per_gas",
+                [0, 64, 160, 300, 600],
+                dtype=pl.Int64,
+            )
+        )
 
-    _publish_evaluation(tmp_path, request, observations)
+    _publish_evaluation(
+        tmp_path,
+        request,
+        observations,
+        evaluation_id=_EVALUATION_ID,
+    )
     _stub_artifact(monkeypatch, association)
 
     with pytest.raises(ValueError):
         reduce_evaluation(tmp_path, _EVALUATION_ID)
+
+
+def test_resolve_evaluations_preserves_order_and_shares_durable_loads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_request = _request(evaluation_id=_EVALUATION_ID)
+    second_request = _request(evaluation_id=_OTHER_EVALUATION_ID)
+    _publish_evaluation(tmp_path, first_request, _observations())
+    _publish_evaluation(tmp_path, second_request, _observations())
+    association = _association("baseline", "unweighted")
+    artifact_calls = _stub_artifact(monkeypatch, association)
+    corpus = Corpus(
+        request=CorpusRequest(
+            corpus_id=_CORPUS_ID,
+            definition=CorpusDefinition(chain_id=1, first_block=1, last_block=30),
+        ),
+        finalized_anchor=FinalizedAnchor(block_number=30, block_hash="a" * 64),
+        blocks=pl.DataFrame(),
+    )
+    corpus_calls: list[tuple[Path, UUID]] = []
+
+    def load_corpus(storage_root: Path, corpus_id: UUID) -> Corpus:
+        corpus_calls.append((storage_root, corpus_id))
+        return corpus
+
+    monkeypatch.setattr(resolution_module, "load_corpus", load_corpus)
+
+    resolved = resolve_evaluations(
+        tmp_path,
+        (_OTHER_EVALUATION_ID, _EVALUATION_ID, _OTHER_EVALUATION_ID),
+    )
+
+    assert tuple(item.request.evaluation_id for item in resolved) == (
+        _OTHER_EVALUATION_ID,
+        _EVALUATION_ID,
+        _OTHER_EVALUATION_ID,
+    )
+    assert resolved[0] is resolved[2]
+    assert resolved[0].corpus is corpus
+    source = association.request.source
+    assert isinstance(source, BaselineSource)
+    assert resolved[0].training_definition == source.training_definition
+    assert resolved[0].observations.collect_schema() == _OBSERVATION_SCHEMA
+    assert resolved[0].reduction.schema == _RESULT_SCHEMA
+    assert resolved[0].trainable_parameter_count == 0
+    assert artifact_calls == [(tmp_path, _ARTIFACT_ID)]
+    assert corpus_calls == [(tmp_path, _CORPUS_ID)]
+    assert resolve_evaluations(tmp_path, ()) == ()

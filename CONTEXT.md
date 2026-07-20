@@ -26,7 +26,9 @@ FABLE derives from and extends selected temporal work from *SPICE: A Predictive 
 
 **EvaluateRequest.** The complete typed instruction for one explicit post-fit validation or testing evaluation.
 
-**Evaluation observation.** One canonical scalar row produced by an EvaluateRequest and consumed by evaluation reducers.
+**Evaluation observation.** One canonical scalar row produced by an EvaluateRequest and trusted after canonical evaluation validation.
+
+**ResolvedEvaluation.** Trusted request, training source and definition, Corpus, lazy observations, transient reduction, and trainable parameter count for one evaluation UUID; it carries no neural module or fitted-state internals.
 
 **Method.** One complete model and training choice.
 

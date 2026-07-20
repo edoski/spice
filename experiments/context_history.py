@@ -10,18 +10,15 @@ from pathlib import Path
 from typing import TypeVar, cast
 from uuid import UUID
 
-from fable.addresses import evaluation_json_path
 from fable.config import (
     BaselineSource,
-    EvaluateRequest,
     Method,
     OriginWindow,
     SelectedStudySource,
-    TrainingDefinition,
 )
-from fable.corpus import Corpus, load_corpus
-from fable.evaluation.reduction import reduce_evaluation
-from fable.modeling import ArtifactAssociation, load_artifact
+from fable.corpus import Corpus
+from fable.evaluation import resolve_evaluations
+from fable.modeling import load_artifact
 from fable.study import training_definition_from_method
 
 _CHAIN_IDS = (1, 137, 43_114)
@@ -129,7 +126,6 @@ def write_context_history_evidence(
     if len(final_k_artifact_ids) != len(_CHAIN_IDS) * len(_FINAL_K_HORIZONS):
         raise ValueError("final-K artifact IDs must contain the exact thirty-cell matrix")
 
-    corpora: dict[UUID, Corpus] = {}
     cells: list[_ContextCell] = []
     cells_by_coordinate: dict[tuple[int, int], _ContextCell] = {}
     chain_corpus_ids: dict[int, UUID] = {}
@@ -140,25 +136,21 @@ def write_context_history_evidence(
     selected_feature_route: tuple[str, ...] | None = None
     selected_classification_loss: str | None = None
 
-    for index, evaluation_id in enumerate(context_evaluation_ids):
+    resolved_evaluations = resolve_evaluations(storage_root, context_evaluation_ids)
+    for index, resolved in enumerate(resolved_evaluations):
         expected_chain = _CHAIN_IDS[index // len(_CONTEXT_BLOCKS)]
         expected_context = _CONTEXT_BLOCKS[index % len(_CONTEXT_BLOCKS)]
-        request = EvaluateRequest.model_validate_json(
-            evaluation_json_path(storage_root, evaluation_id).read_text(encoding="utf-8"),
-            strict=True,
-        )
+        request = resolved.request
         if request.window.role != "testing":
             raise ValueError("context evidence requires testing evaluations")
+        if not isinstance(resolved.training_source, BaselineSource):
+            raise ValueError("context artifacts must use BaselineSource")
 
-        reduced = reduce_evaluation(storage_root, evaluation_id).row(0, named=True)
-        association, _ = load_artifact(storage_root, request.artifact_id)
-        definition = _context_definition(association)
+        reduced = resolved.reduction.row(0, named=True)
+        definition = resolved.training_definition
         experiment = definition.experiment
 
-        corpus = corpora.get(request.corpus_id)
-        if corpus is None:
-            corpus = load_corpus(storage_root, request.corpus_id)
-            corpora[request.corpus_id] = corpus
+        corpus = resolved.corpus
         chain_id = corpus.request.definition.chain_id
         if (chain_id, experiment.context_blocks) != (expected_chain, expected_context):
             raise ValueError("context evaluations must use exact chain-major C order")
@@ -204,7 +196,7 @@ def write_context_history_evidence(
         training_count = _origin_count(experiment.training_window)
         updates_per_epoch = math.ceil(training_count / _TRAINING_BATCH)
         row: dict[str, object] = {
-            "evaluation_id": str(evaluation_id),
+            "evaluation_id": str(request.evaluation_id),
             "artifact_id": str(request.artifact_id),
             "corpus_id": str(request.corpus_id),
             "chain_id": chain_id,
@@ -296,13 +288,6 @@ def write_context_history_evidence(
         for cell in cells:
             writer.writerow([_tsv_value(cell.row[name]) for name in _EVIDENCE_COLUMNS])
     hidden.rename(destination)
-
-
-def _context_definition(association: ArtifactAssociation) -> TrainingDefinition:
-    source = association.request.source
-    if not isinstance(source, BaselineSource):
-        raise ValueError("context artifacts must use BaselineSource")
-    return source.training_definition
 
 
 def _feature_route(chain_id: int, ordered_features: tuple[str, ...]) -> tuple[str, ...]:

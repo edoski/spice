@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 import json
-import typing
 from pathlib import Path
 from uuid import UUID
 
 import polars as pl
 
-from ..addresses import evaluation_json_path
-from ..config import BaselineSource, EvaluateRequest, Method, SelectedStudySource
-from ..corpus import Corpus, load_corpus
-from ..modeling import load_artifact
-from ..study import training_definition_from_method
-from .reduction import reduce_evaluation
+from ..config import BaselineSource
+from .resolution import resolve_evaluations
 
 _CONTEXT_SCHEMA = pl.Schema(
     {
@@ -54,40 +49,23 @@ def write_sealed_report(
     if len(set(evaluation_ids)) != len(evaluation_ids):
         raise ValueError("evaluation IDs must not contain duplicates")
 
-    corpora: dict[UUID, Corpus] = {}
     rows: list[pl.DataFrame] = []
-    for evaluation_id in evaluation_ids:
-        request = EvaluateRequest.model_validate_json(
-            evaluation_json_path(storage_root, evaluation_id).read_text(encoding="utf-8"),
-            strict=True,
-        )
+    resolved_evaluations = resolve_evaluations(storage_root, evaluation_ids)
+    for resolved in resolved_evaluations:
+        request = resolved.request
         if request.window.role != "testing":
             raise ValueError("sealed report evaluations must use testing windows")
 
-        reduced = reduce_evaluation(storage_root, evaluation_id)
-        association, model = load_artifact(storage_root, request.artifact_id)
-        source = association.request.source
+        source = resolved.training_source
+        definition = resolved.training_definition
+        if isinstance(source, BaselineSource):
+            study_id = None
+            study_result_index = None
+        else:
+            study_id = source.study_id
+            study_result_index = source.study_result_index
 
-        match source:
-            case BaselineSource():
-                definition = source.training_definition
-                study_id = None
-                study_result_index = None
-            case SelectedStudySource():
-                definition = training_definition_from_method(
-                    source.experiment,
-                    typing.cast(Method, association.method),
-                )
-                study_id = source.study_id
-                study_result_index = association.study_result_index
-
-        trainable_parameter_count = sum(
-            parameter.numel() for parameter in model.parameters() if parameter.requires_grad
-        )
-
-        if request.corpus_id not in corpora:
-            corpora[request.corpus_id] = load_corpus(storage_root, request.corpus_id)
-        corpus = corpora[request.corpus_id]
+        corpus = resolved.corpus
         corpus_definition = corpus.request.definition
         first_parent_block = request.window.first_parent_block
         last_parent_block = request.window.last_parent_block
@@ -103,7 +81,7 @@ def write_sealed_report(
         context = pl.DataFrame(
             [
                 (
-                    str(evaluation_id),
+                    str(request.evaluation_id),
                     str(request.artifact_id),
                     str(request.corpus_id),
                     corpus_definition.chain_id,
@@ -122,13 +100,15 @@ def write_sealed_report(
                     experiment.horizon_blocks,
                     list(experiment.ordered_features),
                     experiment.loss.classification_weighting,
-                    trainable_parameter_count,
+                    resolved.trainable_parameter_count,
                 )
             ],
             schema=_CONTEXT_SCHEMA,
             orient="row",
         )
-        rows.append(pl.concat([context, reduced.drop("evaluation_id")], how="horizontal"))
+        rows.append(
+            pl.concat([context, resolved.reduction.drop("evaluation_id")], how="horizontal")
+        )
 
     hidden = destination.with_name(f".{destination.name}")
     if destination.exists():

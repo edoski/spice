@@ -8,11 +8,8 @@ from uuid import UUID
 
 import polars as pl
 
-from fable.addresses import evaluation_json_path, evaluation_observations_path
-from fable.config import EvaluateRequest, SelectedStudySource
-from fable.corpus import load_corpus
-from fable.evaluation.reduction import reduce_evaluation
-from fable.modeling import load_artifact
+from fable.config import SelectedStudySource
+from fable.evaluation import ResolvedEvaluation, resolve_evaluations
 
 _RAW_DESCRIPTOR = "closed_parent_base_fee_per_gas"
 _LOG_DESCRIPTOR = "signed_one_block_base_fee_log_change"
@@ -59,36 +56,30 @@ _SCHEMA = pl.Schema(
 
 
 def _evaluation_rows(
-    storage_root: Path,
-    evaluation_id: UUID,
+    resolved: ResolvedEvaluation,
     expected_chain_id: int,
 ) -> list[dict[str, Any]]:
-    request = EvaluateRequest.model_validate_json(
-        evaluation_json_path(storage_root, evaluation_id).read_bytes(),
-        strict=True,
-    )
+    request = resolved.request
     if request.window.role != "testing":
         raise ValueError("fee-condition evidence requires a testing evaluation")
 
-    reduced = reduce_evaluation(storage_root, evaluation_id).row(0, named=True)
-    association, _ = load_artifact(storage_root, request.artifact_id)
-    source = association.request.source
+    reduced = resolved.reduction.row(0, named=True)
+    source = resolved.training_source
     if not isinstance(source, SelectedStudySource):
         raise ValueError("fee-condition evidence requires a SelectedStudySource")
-    experiment = source.experiment
+    experiment = resolved.training_definition.experiment
     if experiment.context_blocks != 200:
         raise ValueError("fee-condition evidence requires C200")
     if experiment.horizon_blocks != 5:
         raise ValueError("fee-condition evidence requires K=5")
 
-    corpus = load_corpus(storage_root, request.corpus_id)
+    corpus = resolved.corpus
     chain_id = corpus.request.definition.chain_id
     if chain_id != expected_chain_id:
         raise ValueError("evaluation chain does not match the required caller order")
 
     observations = (
-        pl.scan_parquet(evaluation_observations_path(storage_root, evaluation_id))
-        .select(_OBSERVATION_COLUMNS)
+        resolved.observations.select(_OBSERVATION_COLUMNS)
         .with_columns(
             (
                 pl.col(_RAW_DESCRIPTOR).cast(pl.Float64)
@@ -114,15 +105,6 @@ def _evaluation_rows(
         )
         .collect()
     )
-    invalid_fees = observations.select(
-        (
-            (pl.col("previous_closed_parent_base_fee_per_gas") <= 0)
-            | (pl.col(_RAW_DESCRIPTOR) <= 0)
-        ).any()
-    ).item()
-    if invalid_fees:
-        raise ValueError("fee descriptors require positive adjacent base fees")
-
     count = reduced["eligible_origin_count"]
     absolute_sums = observations.select(
         pl.col("_immediate_fee").cast(pl.Float64).abs().sum().alias("immediate_fee"),
@@ -170,7 +152,7 @@ def _evaluation_rows(
             regret = sums["regret"]
             rows.append(
                 {
-                    "evaluation_id": str(evaluation_id),
+                    "evaluation_id": str(request.evaluation_id),
                     "artifact_id": str(request.artifact_id),
                     "corpus_id": str(request.corpus_id),
                     "chain_id": chain_id,
@@ -259,10 +241,11 @@ def write_k5_fee_condition_evidence(
     if len(set(evaluation_ids)) != 3:
         raise ValueError("fee-condition evaluation IDs must be distinct")
 
+    resolved_evaluations = resolve_evaluations(storage_root, evaluation_ids)
     rows = [
         row
         for index, chain_id in enumerate((1, 137, 43_114))
-        for row in _evaluation_rows(storage_root, evaluation_ids[index], chain_id)
+        for row in _evaluation_rows(resolved_evaluations[index], chain_id)
     ]
     evidence = pl.from_dicts(rows, schema=_SCHEMA)
     for name, dtype in _SCHEMA.items():

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from uuid import UUID
 
 import polars as pl
@@ -10,11 +11,6 @@ import pytest
 
 import experiments.k5_fee_conditions as fee_conditions_module
 from experiments.k5_fee_conditions import write_k5_fee_condition_evidence
-from fable.addresses import (
-    evaluation_directory,
-    evaluation_json_path,
-    evaluation_observations_path,
-)
 from fable.config import (
     AdamWMethod,
     BaselineSource,
@@ -27,6 +23,8 @@ from fable.config import (
     SelectedStudySource,
     TrainingDefinition,
 )
+from fable.corpus import Corpus
+from fable.evaluation import ResolvedEvaluation
 
 _COLUMNS = (
     "evaluation_id",
@@ -149,13 +147,14 @@ def test_write_k5_fee_condition_evidence(
             )
         },
     )
-    sources: dict[UUID, object] = {
+    sources: dict[UUID, BaselineSource | SelectedStudySource] = {
         artifact_id: _source(corpus_id)
         for artifact_id, corpus_id in zip(artifact_ids, corpus_ids, strict=True)
     }
-    corpora = {
-        corpus_id: SimpleNamespace(
-            request=SimpleNamespace(definition=SimpleNamespace(chain_id=chain_id))
+    corpora: dict[UUID, Corpus] = {
+        corpus_id: cast(
+            Corpus,
+            SimpleNamespace(request=SimpleNamespace(definition=SimpleNamespace(chain_id=chain_id))),
         )
         for corpus_id, chain_id in zip(corpus_ids, _CHAINS, strict=True)
     }
@@ -187,39 +186,64 @@ def test_write_k5_fee_condition_evidence(
             ),
         )
         requests[evaluation_id] = request
-        evaluation_directory(tmp_path, evaluation_id).mkdir(parents=True)
-        evaluation_json_path(tmp_path, evaluation_id).write_text(
-            request.model_dump_json(),
-            encoding="utf-8",
-        )
-        observations.write_parquet(evaluation_observations_path(tmp_path, evaluation_id))
+    resolution_calls: list[tuple[UUID, ...]] = []
 
-    reduction_calls: list[UUID] = []
-    artifact_calls: list[UUID] = []
-    corpus_calls: list[UUID] = []
+    def resolve_evaluations(
+        _storage_root: Path,
+        selected_ids: tuple[UUID, ...],
+    ) -> tuple[ResolvedEvaluation, ...]:
+        resolution_calls.append(selected_ids)
+        resolved: list[ResolvedEvaluation] = []
+        for evaluation_id in selected_ids:
+            request = requests[evaluation_id]
+            source = sources[request.artifact_id]
+            definition = (
+                source.training_definition
+                if isinstance(source, BaselineSource)
+                else TrainingDefinition(
+                    experiment=source.experiment,
+                    model=LstmDefinition(
+                        family="lstm",
+                        hidden=1,
+                        layers=1,
+                        head_hidden=1,
+                        dropout=0.0,
+                    ),
+                    optimizer=AdamWMethod(learning_rate=0.001, weight_decay=0.0),
+                    training_batch=1,
+                    fit=FitMethod(
+                        accumulation=1,
+                        gradient_clip_norm=1.0,
+                        scheduler="none",
+                        seed=1,
+                        max_epochs=1,
+                        validate_every_completed_epoch=1,
+                        patience=0,
+                        min_delta=0.0,
+                        improvement="strict_lower",
+                        restore="earliest_best",
+                    ),
+                )
+            )
+            resolved.append(
+                ResolvedEvaluation(
+                    request=request,
+                    training_source=source,
+                    training_definition=definition,
+                    corpus=corpora[request.corpus_id],
+                    observations=observations.lazy(),
+                    reduction=reductions[evaluation_id],
+                    trainable_parameter_count=0,
+                )
+            )
+        return tuple(resolved)
 
-    def reduce_evaluation(_storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
-        reduction_calls.append(evaluation_id)
-        return reductions[evaluation_id]
-
-    def load_artifact(_storage_root: Path, artifact_id: UUID) -> tuple[object, object]:
-        artifact_calls.append(artifact_id)
-        return SimpleNamespace(request=SimpleNamespace(source=sources[artifact_id])), object()
-
-    def load_corpus(_storage_root: Path, corpus_id: UUID) -> object:
-        corpus_calls.append(corpus_id)
-        return corpora[corpus_id]
-
-    monkeypatch.setattr(fee_conditions_module, "reduce_evaluation", reduce_evaluation)
-    monkeypatch.setattr(fee_conditions_module, "load_artifact", load_artifact)
-    monkeypatch.setattr(fee_conditions_module, "load_corpus", load_corpus)
+    monkeypatch.setattr(fee_conditions_module, "resolve_evaluations", resolve_evaluations)
 
     destination = tmp_path / "k5-fee-conditions.tsv"
     write_k5_fee_condition_evidence(tmp_path, evaluation_ids, destination)
 
-    assert reduction_calls == list(evaluation_ids)
-    assert artifact_calls == list(artifact_ids)
-    assert corpus_calls == list(corpus_ids)
+    assert resolution_calls == [evaluation_ids]
     assert not destination.with_name(f".{destination.name}").exists()
     evidence = pl.read_csv(destination, separator="\t", null_values="")
     assert evidence.schema == _SCHEMA
@@ -324,16 +348,11 @@ def test_write_k5_fee_condition_evidence(
     fails("order", "chain", (evaluation_ids[1], evaluation_ids[0], evaluation_ids[2]))
 
     first_request = requests[evaluation_ids[0]]
-    evaluation_json_path(tmp_path, evaluation_ids[0]).write_text(
-        first_request.model_copy(
-            update={"window": first_request.window.model_copy(update={"role": "validation"})}
-        ).model_dump_json(),
-        encoding="utf-8",
+    requests[evaluation_ids[0]] = first_request.model_copy(
+        update={"window": first_request.window.model_copy(update={"role": "validation"})}
     )
     fails("request", "testing")
-    evaluation_json_path(tmp_path, evaluation_ids[0]).write_text(
-        first_request.model_dump_json(), encoding="utf-8"
-    )
+    requests[evaluation_ids[0]] = first_request
 
     original_source = sources[artifact_ids[0]]
     sources[artifact_ids[0]] = BaselineSource(
@@ -374,16 +393,6 @@ def test_write_k5_fee_condition_evidence(
     corpora[corpus_ids[0]].request.definition.chain_id = 137
     fails("chain", "chain")
     corpora[corpus_ids[0]].request.definition.chain_id = 1
-
-    invalid_observations = observations.with_columns(
-        pl.when(pl.int_range(pl.len()) == 0)
-        .then(0)
-        .otherwise(pl.col("previous_closed_parent_base_fee_per_gas"))
-        .alias("previous_closed_parent_base_fee_per_gas")
-    )
-    invalid_observations.write_parquet(evaluation_observations_path(tmp_path, evaluation_ids[0]))
-    fails("log", "positive|finite")
-    observations.write_parquet(evaluation_observations_path(tmp_path, evaluation_ids[0]))
 
     reductions[evaluation_ids[0]] = reductions[evaluation_ids[0]].with_columns(
         pl.lit(1.0).alias("finite_target_base_fee_per_gas_savings_sum")
