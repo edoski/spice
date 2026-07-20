@@ -55,7 +55,7 @@ Each owner has one system seam:
 
 - `corpus` owns canonical `BlockFrame` row truth and completed Corpus association.
 - `temporal` owns causal feature state, fixed-block context/outcome geometry, and lazy historical examples.
-- `min_block_fee` owns target state, classification support, loss, two-head output, and decode.
+- `min_block_fee` owns target state, the fixed training loss, two-head output, and decode.
 - `modeling` owns the three concrete neural definitions, Lightning fitting, and native checkpoint loading.
 - `study` owns bounded candidate membership, ordered retained results, publication, and selected-result materialization.
 - `evaluation` owns canonical prediction observations and transient Corpus-derived reduction.
@@ -70,7 +70,7 @@ Each owner has one system seam:
 
 `TuneRequest` contains one `ExperimentSemantics` and a finite, family-specific `MethodSpace`. `run_candidate()` prepares training state, fits one supplied Method, and appends one successful `RetainedResult` to Study scratch. `publish_study()` renames the ordered result set to its canonical JSON file.
 
-A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-Study request instead names the exact Study UUID and result index while carrying the experiment. Training loads that exact row, reconstructs the definition from its Method, fits through Lightning, and renames the native weights-only best checkpoint to the artifact UUID address. The checkpoint embeds the request, feature and target state, optional classification support, and—only for selected-Study training—the exact result index and Method.
+A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-Study request instead names the exact Study UUID and result index while carrying the experiment. Training loads that exact row, reconstructs the definition from its Method, fits through Lightning, and renames the native weights-only best checkpoint to the artifact UUID address. The checkpoint embeds the request, feature and target state, and—only for selected-Study training—the exact result index and Method.
 
 #### Evaluation
 
@@ -203,7 +203,7 @@ Real state is fitted once from all retained training-origin minima with Float64 
 
 Every retained origin must have its complete `K`-block outcome inside its role. If validation begins at parent block `V`, a training origin is eligible only when `h+K < V`. Testing starts only after `validation_last_parent + K`.
 
-Training fits feature state, target state, optional class support, and weights. Validation selects epochs and retained candidate objectives. Testing measures held-out behavior.
+Training fits feature state, target state, and weights. Validation selects epochs and retained candidate objectives. Testing measures held-out behavior.
 
 ### 5. Compute one two-head loss
 
@@ -214,36 +214,22 @@ action_logits = [0.2, 1.1, -0.1, 1.7, 0.5]
 minimum_fee_z = 0.7
 ```
 
-For the arithmetic, let the request supply:
-
-```text
-classification_weighting = unweighted
-classification_scale     = 1.0
-regression_threshold     = 1.0
-regression_scale         = 0.5
-```
-
-Another request may supply corrected inverse-frequency classification and other positive or nonnegative values.
-
 With label `3`, cross-entropy is:
 
 ```text
 CE = log(sum(exp(action_logits))) - action_logits[3]
    = log(exp(0.2)+exp(1.1)+exp(-0.1)+exp(1.7)+exp(0.5)) - 1.7
    ≈ 0.805777
-
-c = 1.0 * CE ≈ 0.805777
 ```
 
-The z error is `e = 0.7 - 0.875992 = -0.175992`. Because `|e| < beta=1`:
+The z error is `e = 0.7 - 0.875992 = -0.175992`. Native Smooth L1 uses its default transition at one standardized-target unit, so `|e| < 1`:
 
 ```text
-SmoothL1(e) = 0.5 * e^2 / beta ≈ 0.015487
-r           = 0.5 * SmoothL1(e) ≈ 0.007743
-t           = c + r ≈ 0.813520
+SmoothL1(e) = 0.5 * e^2 ≈ 0.015487
+total       = CE + SmoothL1(e) ≈ 0.821264
 ```
 
-For this one-origin batch, `mean_total = sum(t_i)/B = t`. In a larger batch every origin contributes one scaled classification term plus one scaled regression term, with sample count `B` as the denominator.
+For this one-origin batch, `mean_total = total`. In a larger batch every origin contributes native unweighted cross-entropy plus native default Smooth L1 once, with sample count `B` as the denominator. No loss definition, mode, scale, threshold, or fitted classification state is request or artifact authority.
 
 ### 6. Decode and evaluate
 
@@ -285,7 +271,7 @@ FABLE is a closed-parent, fixed-block-horizon temporal learning system. This doc
 
 The manuscript *SPICE: A Predictive Framework for Cost-Optimization in Multichain Environments* describes a broader spatial, temporal, and distributed-reputation system. Its temporal experiment motivates a future minimum-block decision, an associated scalar fee prediction, the LSTM/Transformer/Transformer-LSTM comparison, chronological roles, and a weighted cross-entropy plus Smooth-L1 lineage.
 
-FABLE specifies the current closed-parent origins, fixed block-count geometry, causal features, raw-integer target ties, training-fitted state, request-authored loss, exhaustive equal-origin evaluation, durable objects, and serving semantics.
+FABLE specifies the current closed-parent origins, fixed block-count geometry, causal features, raw-integer target ties, training-fitted state, fixed training loss, exhaustive equal-origin evaluation, durable objects, and serving semantics.
 
 ### Closed-parent causality
 
@@ -302,6 +288,8 @@ target block:  b = h+1+k
 
 Block number owns geometry. Timestamp spacing may vary while the number of context and outcome rows stays fixed.
 
+`C` and `K` are generic positive request values. Python owns no named study matrix, ordering, or staged stopping policy; external orchestration supplies actual runs, and persisted requests and artifacts record what ran.
+
 An origin is eligible only with all `C` context rows and all `K` outcome rows. At a boundary where the next role begins at parent `B`, an earlier origin must satisfy `h+K < B`. Therefore no training outcome reaches validation, and no validation outcome reaches testing.
 
 ### Role ownership and fitted populations
@@ -310,10 +298,9 @@ Training alone may fit:
 
 - feature population means and standard deviations;
 - target natural-log mean and standard deviation;
-- class support for corrected inverse-frequency loss;
 - neural weights.
 
-Validation selects the earliest best epoch and supplies candidate objectives. Testing measures only. Changing a method, feature route, loss choice, horizon, context, or other scientific decision after inspecting testing would turn that measurement into selection evidence.
+Validation selects the earliest best epoch and supplies candidate objectives. Testing measures only. Changing a method, feature route, horizon, context, or other scientific decision after inspecting testing would turn that measurement into selection evidence.
 
 #### Feature state
 
@@ -407,29 +394,23 @@ The first head scores actions. The second predicts the standardized natural log 
 
 #### Classification
 
-The request chooses `cross_entropy` and either unweighted or corrected inverse-frequency classification. For corrected weighting, training support for every class must be positive. With `N_train` labels, `K` actions, and support `n_k`:
-
-```text
-w_k = N_train / (K n_k)
-```
-
 For origin `i`, letting `a_i` be its logits and `k_i*` its label:
 
 ```text
-c_i = classification_scale * CE(a_i, k_i*; optional w)
+c_i = CE(a_i, k_i*)
 ```
 
-The corrected form weights that origin's negative log probability by `w_k`. Classification scale is finite and nonnegative.
+Classification is native unweighted cross-entropy. It has no weighting mode, scale, fitted support, or configuration field.
 
 #### Regression
 
-The request chooses Smooth L1, a positive threshold `beta`, and a finite nonnegative regression scale. For `e_i = predicted_z_i - target_z_i`:
+Regression is native Smooth L1 with its default transition at one standardized-target unit. For `e_i = predicted_z_i - target_z_i`:
 
 ```text
-smooth_l1_beta(e) = 0.5 e^2 / beta       if |e| < beta
-                    |e| - 0.5 beta       otherwise
+smooth_l1(e) = 0.5 e^2       if |e| < 1
+               |e| - 0.5     otherwise
 
-r_i = regression_scale * smooth_l1_beta(e_i)
+r_i = smooth_l1(e_i)
 ```
 
 #### Total
@@ -555,7 +536,6 @@ HistoricalPreparation
   validation: HistoricalDataset
   feature_state: FeatureState
   target_state: TargetState
-  classification_state: ClassificationLossState | None
 ```
 
 `prepare_historical_window(corpus, experiment, window, *, feature_state, target_state)` prepares an exact testing window with persisted state. Testing must begin after all validation outcomes are complete.
@@ -588,9 +568,9 @@ Exact formulas, units, causal availability, and the Ethereum forming-fee recurre
 
 #### Outcome preparation
 
-Historical outcomes remain positive int64 fees. For each origin, NumPy first-index `argmin` over `h+1 … h+K` produces the label; the selected raw minimum feeds the fitted target state. Training fits classification support only when the request asks for corrected inverse-frequency weighting.
+Historical outcomes remain positive int64 fees. For each origin, NumPy first-index `argmin` over `h+1 … h+K` produces the label; the selected raw minimum feeds the fitted target state.
 
-Role boundaries are complete-outcome boundaries. The training last parent plus `K` must be strictly before the first validation parent; an authored testing window obeys the same rule after validation. Training alone fits feature state, target state, classification support, and model weights.
+Role boundaries are complete-outcome boundaries. The training last parent plus `K` must be strictly before the first validation parent; an authored testing window obeys the same rule after validation. Training alone fits feature state, target state, and model weights.
 
 #### Live interface
 
@@ -606,8 +586,6 @@ Top-level `fable.min_block_fee` keeps the architecture-neutral target, loss, and
 
 `TargetState` contains the Float64 population mean and positive population standard deviation of `ln(raw horizon minimum)` over retained training origins.
 
-`ClassificationLossState` contains one positive support count per action for corrected inverse-frequency classification. Unweighted classification carries `None`.
-
 `MinBlockFeeOutput` has two tensors:
 
 ```text
@@ -621,11 +599,10 @@ The scalar head predicts the standardized natural log of the horizon minimum. It
 
 - `fit_target_state(raw_minima)` requires a nonempty positive int64 vector, computes Float64 `ln`, mean, and `ddof=0` standard deviation, and rejects constant targets.
 - `standardize_target(raw_minima, state)` returns finite contiguous float32 z values.
-- `fit_classification_loss_state(labels, *, horizon_blocks, loss_definition)` validates label range and, for corrected weighting, requires positive training support for every action.
-- `min_block_fee_loss(...)` validates both heads and targets, computes scaled per-origin classification and regression contributions, and returns their per-origin sum plus the sample-denominator mean.
+- `min_block_fee_loss(...)` validates both heads and targets, computes native unweighted cross-entropy and native default Smooth L1 once per origin, and returns their per-origin sum plus the sample-denominator mean.
 - `decode_action(output)` applies native first-index `argmax` along the action dimension.
 
-The exact equations and weighting alternatives are in the [theory](#targets-loss-and-decode).
+The exact equations are in the [theory](#targets-loss-and-decode).
 
 #### Boundaries
 
@@ -728,18 +705,11 @@ fresh_corpus_request(definition: CorpusDefinition) -> CorpusRequest
 | --- | --- | --- |
 | `BlockWindow` | `first_parent_block` | NonNegativeInt |
 |  | `last_parent_block` | NonNegativeInt, not before first |
-| `LossDefinition` | `classification_algorithm` | exactly `"cross_entropy"` |
-|  | `classification_weighting` | `"unweighted" | "corrected_inverse_frequency"` |
-|  | `regression_algorithm` | exactly `"smooth_l1"` |
-|  | `regression_threshold` | finite float `>0` |
-|  | `classification_scale` | finite float `≥0` |
-|  | `regression_scale` | finite float `≥0` |
 | `ExperimentSemantics` | `training_window` | `BlockWindow` |
 |  | `validation_window` | `BlockWindow` |
 |  | `context_blocks` | PositiveInt `C` |
 |  | `horizon_blocks` | PositiveInt `K` |
 |  | `ordered_features` | nonempty unique tuple of nonempty strings |
-|  | `loss` | `LossDefinition` |
 
 The training last parent plus `K` must be strictly less than the validation first parent.
 
@@ -901,7 +871,6 @@ Each `RetainedResult` has exact ordered fields:
 | `request` | exact `TrainRequest`; embedded artifact UUID must match path |
 | `feature_state` | Float64 means and positive standard deviations, equal feature width |
 | `target_state` | Float64 finite mean and positive standard deviation |
-| `classification_state` | null for unweighted; positive class-support tuple of length `K` for corrected weighting |
 | `study_result_index` | absent/null for baseline; exact nonnegative source index for selected Study |
 | `method` | absent/null for baseline; exact selected Method for selected Study |
 

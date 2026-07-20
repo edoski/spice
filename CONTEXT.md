@@ -46,4 +46,4 @@ FABLE derives from and extends selected temporal work from *SPICE: A Predictive 
 
 **Role.** One of training, validation, or testing. Training fits weights and data-dependent state, validation selects, and testing measures.
 
-**ExperimentSemantics.** The complete scientific role, feature, target, loss, and evaluation contract carried where an owning request needs it.
+**ExperimentSemantics.** The training and validation windows, generic context and horizon lengths, and ordered causal features carried where an owning request needs them.
