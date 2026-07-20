@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 from uuid import UUID
 
 import polars as pl
@@ -22,7 +22,6 @@ from fable.config import (
     LstmCapacity,
     LstmDefinition,
     LstmMethod,
-    Method,
     OriginWindow,
     SelectedStudySource,
     TrainingDefinition,
@@ -33,7 +32,6 @@ from fable.corpus import BlockFrame, Corpus, FinalizedAnchor
 from fable.evaluation import ResolvedEvaluation, write_sealed_report
 from fable.min_block_fee import ClassificationLossState, TargetState
 from fable.modeling import ArtifactAssociation
-from fable.study import training_definition_from_method
 from fable.temporal.features import FeatureState
 
 _EVALUATION_IDS = (
@@ -452,14 +450,7 @@ def _arrange_report(
     for request in requests:
         association = associations[request.artifact_id]
         source = association.request.source
-        definition = (
-            source.training_definition
-            if isinstance(source, BaselineSource)
-            else training_definition_from_method(
-                source.experiment,
-                cast(Method, association.method),
-            )
-        )
+        definition = association.training_definition
         resolved_by_id[request.evaluation_id] = ResolvedEvaluation(
             request=request,
             training_source=source,

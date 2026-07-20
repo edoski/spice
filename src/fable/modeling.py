@@ -81,21 +81,29 @@ class ArtifactAssociation(_FrozenRecord):
     study_result_index: _NonNegativeInt | None = None
     method: Method | None = None
 
+    @property
+    def training_definition(self) -> TrainingDefinition:
+        source = self.request.source
+        if isinstance(source, BaselineSource):
+            return source.training_definition
+        return training_definition_from_method(
+            source.experiment,
+            cast(Method, self.method),
+        )
+
     @model_validator(mode="after")
     def validate_association(self) -> Self:
         source = self.request.source
         if isinstance(source, BaselineSource):
             if self.study_result_index is not None or self.method is not None:
                 raise ValueError("baseline artifacts cannot contain selected Study fields")
-            definition = source.training_definition
         else:
             if self.study_result_index is None or self.method is None:
                 raise ValueError("selected Study artifacts require result index and Method")
             if self.study_result_index != source.study_result_index:
                 raise ValueError("artifact Study result index must match the TrainRequest")
-            definition = training_definition_from_method(source.experiment, self.method)
         _validate_state_association(
-            definition,
+            self.training_definition,
             self.feature_state,
             self.classification_state,
         )
@@ -145,13 +153,7 @@ def _validate_state_association(
 def _training_definition(association: _Association) -> TrainingDefinition:
     if isinstance(association, _CandidateAssociation):
         return apply_method(association.request, association.method)
-    source = association.request.source
-    if isinstance(source, BaselineSource):
-        return source.training_definition
-    return training_definition_from_method(
-        source.experiment,
-        cast(Method, association.method),
-    )
+    return association.training_definition
 
 
 def _json_association(association: _Association) -> dict[str, object]:

@@ -4,23 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 from uuid import UUID
 
 import polars as pl
 
 from ..addresses import evaluation_json_path, evaluation_observations_path
 from ..config import (
-    BaselineSource,
     EvaluateRequest,
     ExperimentSemantics,
-    Method,
     TrainingDefinition,
     TrainingSource,
 )
 from ..corpus import Corpus, load_corpus
 from ..modeling import load_artifact
-from ..study import training_definition_from_method
 
 _OBSERVATION_SCHEMA = pl.Schema(
     {
@@ -241,11 +237,7 @@ def _resolve_reduction(
 def _resolve_artifact(storage_root: Path, artifact_id: UUID) -> _ArtifactResolution:
     association, model = load_artifact(storage_root, artifact_id)
     source = association.request.source
-    definition = (
-        source.training_definition
-        if isinstance(source, BaselineSource)
-        else training_definition_from_method(source.experiment, cast(Method, association.method))
-    )
+    definition = association.training_definition
     trainable_parameter_count = sum(
         parameter.numel() for parameter in model.parameters() if parameter.requires_grad
     )
