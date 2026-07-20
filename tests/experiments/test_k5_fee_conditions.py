@@ -197,18 +197,14 @@ def test_write_k5_fee_condition_evidence(
                         dropout=0.0,
                     ),
                     optimizer=AdamWMethod(learning_rate=0.001, weight_decay=0.0),
-                    training_batch=1,
                     fit=FitMethod(
                         accumulation=1,
                         gradient_clip_norm=1.0,
-                        scheduler="none",
                         seed=1,
                         max_epochs=1,
                         validate_every_completed_epoch=1,
                         patience=0,
                         min_delta=0.0,
-                        improvement="strict_lower",
-                        restore="earliest_best",
                     ),
                 )
             )
@@ -348,18 +344,14 @@ def test_write_k5_fee_condition_evidence(
                 dropout=0.0,
             ),
             optimizer=AdamWMethod(learning_rate=0.001, weight_decay=0.0),
-            training_batch=1,
             fit=FitMethod(
                 accumulation=1,
                 gradient_clip_norm=1.0,
-                scheduler="none",
                 seed=1,
                 max_epochs=1,
                 validate_every_completed_epoch=1,
                 patience=0,
                 min_delta=0.0,
-                improvement="strict_lower",
-                restore="earliest_best",
             ),
         ),
     )

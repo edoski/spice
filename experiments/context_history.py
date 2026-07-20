@@ -18,13 +18,12 @@ from fable.config import (
 )
 from fable.corpus import Corpus
 from fable.evaluation import resolve_evaluations
-from fable.modeling import load_artifact
+from fable.modeling import _FIT_BATCH_SIZE, load_artifact
 from fable.study import training_definition_from_method
 
 _CHAIN_IDS = (1, 137, 43_114)
 _CONTEXT_BLOCKS = (50, 100, 200, 400)
 _FINAL_K_HORIZONS = (2, 3, 4, 5, 10, 15, 30, 50, 100, 200)
-_TRAINING_BATCH = 64
 _Comparable = TypeVar("_Comparable")
 
 _CHAIN_FEATURE_PREFIXES = {
@@ -184,7 +183,7 @@ def write_context_history_evidence(
             raise ValueError("context training windows must use their natural starts")
 
         training_count = _origin_count(experiment.training_window)
-        updates_per_epoch = math.ceil(training_count / _TRAINING_BATCH)
+        updates_per_epoch = math.ceil(training_count / _FIT_BATCH_SIZE)
         row: dict[str, object] = {
             "evaluation_id": str(request.evaluation_id),
             "artifact_id": str(request.artifact_id),

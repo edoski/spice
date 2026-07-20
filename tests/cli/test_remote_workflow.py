@@ -94,18 +94,14 @@ def _request(kind: Literal["baseline", "selected", "evaluate"]) -> WorkflowReque
                     dropout=0.1,
                 ),
                 optimizer=AdamWMethod(learning_rate=0.001, weight_decay=0.01),
-                training_batch=11,
                 fit=FitMethod(
                     accumulation=1,
                     gradient_clip_norm=1.0,
-                    scheduler="none",
                     seed=2026,
                     max_epochs=3,
                     validate_every_completed_epoch=1,
                     patience=2,
                     min_delta=0.0,
-                    improvement="strict_lower",
-                    restore="earliest_best",
                 ),
             ),
         )

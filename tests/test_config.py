@@ -51,18 +51,14 @@ def _method() -> LstmMethod:
         capacity=LstmCapacity(hidden=32, layers=1, head_hidden=16),
         dropout=0.2,
         optimizer=AdamWMethod(learning_rate=0.001, weight_decay=0.0),
-        training_batch=48,
         fit=FitMethod(
             accumulation=2,
             gradient_clip_norm=0.75,
-            scheduler="none",
             seed=17,
             max_epochs=9,
             validate_every_completed_epoch=2,
             patience=3,
             min_delta=0.01,
-            improvement="strict_lower",
-            restore="earliest_best",
         ),
     )
 

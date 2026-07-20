@@ -46,14 +46,11 @@ def _fit() -> FitMethod:
     return FitMethod(
         accumulation=1,
         gradient_clip_norm=0.75,
-        scheduler="none",
         seed=17,
         max_epochs=9,
         validate_every_completed_epoch=1,
         patience=3,
         min_delta=0.01,
-        improvement="strict_lower",
-        restore="earliest_best",
     )
 
 
@@ -87,7 +84,6 @@ def test_request_constructors_mint_one_id_each(monkeypatch) -> None:
         capacity=LstmCapacity(hidden=32, layers=1, head_hidden=16),
         dropout=0.2,
         optimizer=AdamWMethod(learning_rate=0.001, weight_decay=0.0),
-        training_batch=48,
         fit=fit,
     )
     tune = fresh_tune_request(
@@ -111,7 +107,6 @@ def test_request_constructors_mint_one_id_each(monkeypatch) -> None:
                     dropout=0.2,
                 ),
                 optimizer=method.optimizer,
-                training_batch=method.training_batch,
                 fit=fit,
             ),
         )

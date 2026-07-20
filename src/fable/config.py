@@ -169,20 +169,16 @@ class AdamWMethod(_FrozenRecord):
 class FitMethod(_FrozenRecord):
     accumulation: _PositiveInt
     gradient_clip_norm: _NonNegativeFloat
-    scheduler: Literal["none"]
     seed: _NonNegativeInt
     max_epochs: _PositiveInt
     validate_every_completed_epoch: _PositiveInt
     patience: _NonNegativeInt
     min_delta: _NonNegativeFloat
-    improvement: Literal["strict_lower"]
-    restore: Literal["earliest_best"]
 
 
 class _MethodFields(_FrozenRecord):
     dropout: _Dropout
     optimizer: AdamWMethod
-    training_batch: _PositiveInt
     fit: FitMethod
 
 
@@ -257,7 +253,6 @@ class TrainingDefinition(_FrozenRecord):
     experiment: ExperimentSemantics
     model: ModelDefinition
     optimizer: AdamWMethod
-    training_batch: _PositiveInt
     fit: FitMethod
 
 

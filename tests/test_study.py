@@ -48,14 +48,11 @@ OTHER_CORPUS_ID = UUID("20000000-0000-4000-8000-000000000002")
 FIT = FitMethod(
     accumulation=3,
     gradient_clip_norm=0.75,
-    scheduler="none",
     seed=17,
     max_epochs=12,
     validate_every_completed_epoch=2,
     patience=4,
     min_delta=0.01,
-    improvement="strict_lower",
-    restore="earliest_best",
 )
 
 LSTM_CAPACITY = LstmCapacity(hidden=256, layers=1, head_hidden=128)
@@ -81,7 +78,6 @@ LSTM_METHOD = LstmMethod(
     capacity=LSTM_CAPACITY,
     dropout=0.2,
     optimizer=AdamWMethod(learning_rate=3e-4, weight_decay=1e-4),
-    training_batch=48,
     fit=FIT,
 )
 TRANSFORMER_METHOD = TransformerMethod(
@@ -89,7 +85,6 @@ TRANSFORMER_METHOD = TransformerMethod(
     capacity=TRANSFORMER_CAPACITY,
     dropout=0.2,
     optimizer=AdamWMethod(learning_rate=1e-4, weight_decay=1e-4),
-    training_batch=48,
     fit=FIT,
 )
 TRANSFORMER_LSTM_METHOD = TransformerLstmMethod(
@@ -97,7 +92,6 @@ TRANSFORMER_LSTM_METHOD = TransformerLstmMethod(
     capacity=TRANSFORMER_LSTM_CAPACITY,
     dropout=0.2,
     optimizer=AdamWMethod(learning_rate=1e-4, weight_decay=1e-4),
-    training_batch=48,
     fit=FIT,
 )
 
@@ -207,7 +201,6 @@ def test_composes_all_three_method_families(
         experiment=request.study_definition.experiment,
         model=model,
         optimizer=method.optimizer,
-        training_batch=method.training_batch,
         fit=method.fit,
     )
     assert apply_method(request, method) == pure

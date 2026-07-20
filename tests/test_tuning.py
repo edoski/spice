@@ -26,21 +26,17 @@ CORPUS_ID = UUID("20000000-0000-4000-8000-000000000001")
 FIT = FitMethod(
     accumulation=1,
     gradient_clip_norm=0.75,
-    scheduler="none",
     seed=17,
     max_epochs=12,
     validate_every_completed_epoch=1,
     patience=4,
     min_delta=0.01,
-    improvement="strict_lower",
-    restore="earliest_best",
 )
 METHOD = LstmMethod(
     family="lstm",
     capacity=LstmCapacity(hidden=16, layers=1, head_hidden=8),
     dropout=0.2,
     optimizer=AdamWMethod(learning_rate=3e-4, weight_decay=1e-4),
-    training_batch=8,
     fit=FIT,
 )
 EXPERIMENT = ExperimentSemantics(

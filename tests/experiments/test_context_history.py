@@ -120,14 +120,11 @@ def _fit(*, accumulation: int = 1) -> FitMethod:
     return FitMethod(
         accumulation=accumulation,
         gradient_clip_norm=1.0,
-        scheduler="none",
         seed=2026,
         max_epochs=36,
         validate_every_completed_epoch=1,
         patience=8,
         min_delta=0.0,
-        improvement="strict_lower",
-        restore="earliest_best",
     )
 
 
@@ -198,7 +195,6 @@ def _context_association(
         experiment=experiment,
         model=LstmDefinition(family="lstm", hidden=4, layers=1, head_hidden=3, dropout=0.0),
         optimizer=_optimizer(),
-        training_batch=64,
         fit=_fit(),
     )
     return ArtifactAssociation(
@@ -230,7 +226,6 @@ def _final_association(
         capacity=LstmCapacity(hidden=8, layers=2, head_hidden=5),
         dropout=0.1,
         optimizer=AdamWMethod(learning_rate=0.0007, weight_decay=0.0002),
-        training_batch=32,
         fit=_fit(accumulation=2),
     )
     return ArtifactAssociation(
@@ -533,7 +528,6 @@ def test_write_context_history_evidence_rejects_invalid_matrix(
                     dropout=0.0,
                 ),
                 optimizer=current.optimizer,
-                training_batch=current.training_batch,
                 fit=current.fit,
             ),
         )
@@ -556,7 +550,6 @@ def test_write_context_history_evidence_rejects_invalid_matrix(
                 experiment=experiment,
                 model=definition.model,
                 optimizer=definition.optimizer,
-                training_batch=definition.training_batch,
                 fit=definition.fit,
             ),
         )

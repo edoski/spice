@@ -158,14 +158,11 @@ def _fit() -> FitMethod:
     return FitMethod(
         accumulation=1,
         gradient_clip_norm=1.0,
-        scheduler="none",
         seed=2026,
         max_epochs=3,
         validate_every_completed_epoch=1,
         patience=1,
         min_delta=0.0,
-        improvement="strict_lower",
-        restore="earliest_best",
     )
 
 
@@ -197,7 +194,6 @@ def _method() -> LstmMethod:
         capacity=LstmCapacity(hidden=4, layers=1, head_hidden=3),
         dropout=0.0,
         optimizer=AdamWMethod(learning_rate=0.01, weight_decay=0.0),
-        training_batch=8,
         fit=_fit(),
     )
 
@@ -266,7 +262,6 @@ def _association(
                     experiment=experiment,
                     model=model,
                     optimizer=AdamWMethod(learning_rate=0.01, weight_decay=0.0),
-                    training_batch=8,
                     fit=_fit(),
                 ),
             ),

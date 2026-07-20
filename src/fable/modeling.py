@@ -49,6 +49,7 @@ from .temporal.features import FeatureState
 from .temporal.history import HistoricalPreparation
 
 _NonNegativeInt = Annotated[int, Field(strict=True, ge=0)]
+_FIT_BATCH_SIZE = 64
 
 
 class _FrozenRecord(BaseModel):
@@ -539,12 +540,11 @@ def _configure_numerical_policy(deployment: FitDeployment) -> None:
 
 def _loaders(
     prepared: HistoricalPreparation,
-    definition: TrainingDefinition,
     deployment: FitDeployment,
     generator: torch.Generator,
 ) -> tuple[DataLoader[dict[str, torch.Tensor]], DataLoader[dict[str, torch.Tensor]]]:
     common = {
-        "batch_size": definition.training_batch,
+        "batch_size": _FIT_BATCH_SIZE,
         "drop_last": False,
         "num_workers": deployment.num_workers,
         "pin_memory": deployment.pin_memory,
@@ -627,7 +627,6 @@ def _fit(
     module = _FitModule(_json_association(association))
     training_loader, validation_loader = _loaders(
         prepared,
-        definition,
         deployment,
         generator,
     )

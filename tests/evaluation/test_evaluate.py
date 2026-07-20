@@ -133,18 +133,14 @@ def _method() -> LstmMethod:
         capacity=LstmCapacity(hidden=4, layers=1, head_hidden=3),
         dropout=0.0,
         optimizer=AdamWMethod(learning_rate=0.01, weight_decay=0.0),
-        training_batch=7,
         fit=FitMethod(
             accumulation=1,
             gradient_clip_norm=1.0,
-            scheduler="none",
             seed=17,
             max_epochs=2,
             validate_every_completed_epoch=1,
             patience=1,
             min_delta=0.0,
-            improvement="strict_lower",
-            restore="earliest_best",
         ),
     )
 
@@ -169,7 +165,6 @@ def _association(
                     dropout=0.0,
                 ),
                 optimizer=_method().optimizer,
-                training_batch=7,
                 fit=_method().fit,
             ),
         )

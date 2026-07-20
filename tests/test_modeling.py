@@ -83,18 +83,14 @@ def _request() -> TrainRequest:
             dropout=0.1,
         ),
         optimizer=AdamWMethod(learning_rate=0.002, weight_decay=0.003),
-        training_batch=3,
         fit=FitMethod(
             accumulation=2,
             gradient_clip_norm=0.4,
-            scheduler="none",
             seed=19,
             max_epochs=4,
             validate_every_completed_epoch=1,
             patience=1,
             min_delta=0.02,
-            improvement="strict_lower",
-            restore="earliest_best",
         ),
     )
     return TrainRequest(
@@ -171,18 +167,14 @@ def _definition(
         experiment=_experiment(),
         model=model,
         optimizer=AdamWMethod(learning_rate=0.002, weight_decay=0.003),
-        training_batch=3,
         fit=FitMethod(
             accumulation=1,
             gradient_clip_norm=0.8,
-            scheduler="none",
             seed=29,
             max_epochs=1,
             validate_every_completed_epoch=1,
             patience=0,
             min_delta=0.0,
-            improvement="strict_lower",
-            restore="earliest_best",
         ),
     )
 
@@ -232,18 +224,14 @@ def test_artifact_association_rejects_only_owned_mismatches() -> None:
         capacity=LstmCapacity(hidden=5, layers=1, head_hidden=3),
         dropout=0.1,
         optimizer=AdamWMethod(learning_rate=0.002, weight_decay=0.003),
-        training_batch=3,
         fit=FitMethod(
             accumulation=2,
             gradient_clip_norm=0.4,
-            scheduler="none",
             seed=19,
             max_epochs=4,
             validate_every_completed_epoch=1,
             patience=1,
             min_delta=0.02,
-            improvement="strict_lower",
-            restore="earliest_best",
         ),
     )
 
@@ -285,6 +273,19 @@ def test_transformer_encoder_layers_have_independent_matrix_initialization() -> 
         not torch.equal(first, second)
         for first, second in zip(matrices[0], matrices[1], strict=True)
     )
+
+
+def test_fit_loaders_use_fixed_implementation_batch_size() -> None:
+    prepared = prepare_fit_history(_corpus(), _experiment())
+
+    training, validation = modeling._loaders(
+        prepared,
+        _deployment(),
+        torch.Generator(device="cpu"),
+    )
+
+    assert training.batch_size == 64
+    assert validation.batch_size == 64
 
 
 def test_epoch_logs_weight_short_batches_in_float64(
@@ -435,18 +436,14 @@ def test_full_checkpoint_resume_restores_fit_history(
         capacity=LstmCapacity(hidden=5, layers=1, head_hidden=3),
         dropout=0.0,
         optimizer=AdamWMethod(learning_rate=0.004, weight_decay=0.002),
-        training_batch=3,
         fit=FitMethod(
             accumulation=1,
             gradient_clip_norm=0.0,
-            scheduler="none",
             seed=37,
             max_epochs=4,
             validate_every_completed_epoch=2,
             patience=10,
             min_delta=0.0,
-            improvement="strict_lower",
-            restore="earliest_best",
         ),
     )
     request = _candidate_request(method)

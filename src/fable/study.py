@@ -131,7 +131,6 @@ def training_definition_from_method(
         experiment=experiment,
         model=model,
         optimizer=method.optimizer,
-        training_batch=method.training_batch,
         fit=method.fit,
     )
 
