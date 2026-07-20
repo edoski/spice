@@ -22,8 +22,16 @@ def study_json_path(storage_root: Path, study_id: UUID) -> Path:
     return storage_root / "studies" / f"{study_id}.json"
 
 
+def artifact_directory(storage_root: Path, artifact_id: UUID) -> Path:
+    return storage_root / "artifacts" / str(artifact_id)
+
+
 def artifact_checkpoint_path(storage_root: Path, artifact_id: UUID) -> Path:
-    return storage_root / "artifacts" / f"{artifact_id}.ckpt"
+    return artifact_directory(storage_root, artifact_id) / "model.ckpt"
+
+
+def artifact_fit_history_path(storage_root: Path, artifact_id: UUID) -> Path:
+    return artifact_directory(storage_root, artifact_id) / "fit.csv"
 
 
 def evaluation_directory(storage_root: Path, evaluation_id: UUID) -> Path:

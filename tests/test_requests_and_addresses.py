@@ -5,6 +5,8 @@ from uuid import UUID
 
 from fable.addresses import (
     artifact_checkpoint_path,
+    artifact_directory,
+    artifact_fit_history_path,
     corpus_blocks_path,
     corpus_directory,
     corpus_json_path,
@@ -151,8 +153,16 @@ def test_addresses_map_ids_to_canonical_paths() -> None:
         ),
         (study_json_path(root, STUDY_ID), root / "studies" / f"{STUDY_ID}.json"),
         (
+            artifact_directory(root, ARTIFACT_ID),
+            root / "artifacts" / str(ARTIFACT_ID),
+        ),
+        (
             artifact_checkpoint_path(root, ARTIFACT_ID),
-            root / "artifacts" / f"{ARTIFACT_ID}.ckpt",
+            root / "artifacts" / str(ARTIFACT_ID) / "model.ckpt",
+        ),
+        (
+            artifact_fit_history_path(root, ARTIFACT_ID),
+            root / "artifacts" / str(ARTIFACT_ID) / "fit.csv",
         ),
         (
             evaluation_directory(root, EVALUATION_ID),

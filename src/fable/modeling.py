@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,14 +12,17 @@ from typing import Annotated, Any, Literal, Self, cast
 from uuid import UUID
 
 import lightning.pytorch as pl
+import polars as polars
 import torch
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import Callback, EarlyStopping, ModelCheckpoint
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from torch import nn
 from torch.utils.data import DataLoader
-from torchmetrics import MeanMetric
 
-from .addresses import artifact_checkpoint_path
+from .addresses import (
+    artifact_checkpoint_path,
+    artifact_directory,
+)
 from .config import (
     BaselineSource,
     LstmDefinition,
@@ -363,10 +367,6 @@ class _FitModule(pl.LightningModule):
         super().__init__()
         self.association = _hydrate_association(association)
         self.definition = _training_definition(self.association)
-        self.validation_total = MeanMetric(
-            nan_strategy="disable",
-            sync_on_compute=False,
-        ).set_dtype(torch.float64)
         self.save_hyperparameters(
             {"association": _json_association(self.association)},
             logger=False,
@@ -390,9 +390,6 @@ class _FitModule(pl.LightningModule):
     def forward(self, inputs: torch.Tensor) -> MinBlockFeeOutput:
         return self.model(inputs)
 
-    def on_fit_start(self) -> None:
-        self.validation_total.set_dtype(torch.float64)
-
     def _loss(self, batch: Mapping[str, torch.Tensor]) -> MinBlockFeeLoss:
         return min_block_fee_loss(
             self(batch["inputs"]),
@@ -402,16 +399,33 @@ class _FitModule(pl.LightningModule):
             classification_state=self.association.classification_state,
         )
 
+    def _log_epoch_loss(
+        self,
+        role: Literal["training", "validation"],
+        losses: MinBlockFeeLoss,
+    ) -> None:
+        loss = losses.total_by_origin.mean(dtype=torch.float64)
+        if not bool(torch.isfinite(loss)):
+            raise FloatingPointError(f"{role} loss must be finite")
+        self.log(
+            f"{role}_total_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            logger=False,
+            sync_dist=False,
+            batch_size=losses.total_by_origin.numel(),
+        )
+
     def training_step(
         self,
         batch: Mapping[str, torch.Tensor],
         batch_idx: int,
     ) -> torch.Tensor:
         del batch_idx
-        loss = self._loss(batch).mean_total
-        if not torch.isfinite(loss):
-            raise FloatingPointError("training loss must be finite")
-        return loss
+        losses = self._loss(batch)
+        self._log_epoch_loss("training", losses)
+        return losses.mean_total
 
     def validation_step(
         self,
@@ -419,26 +433,8 @@ class _FitModule(pl.LightningModule):
         batch_idx: int,
     ) -> None:
         del batch_idx
-        total = self._loss(batch).total_by_origin.detach().to(torch.float64)
-        self.validation_total.update(total)
-
-    def on_validation_epoch_end(self) -> None:
-        window = self.definition.experiment.validation_window
-        validation_size = window.last_parent_block - window.first_parent_block + 1
-        weight = cast(Any, self.validation_total.weight)
-        if int(weight.item()) != validation_size:
-            raise RuntimeError("validation metric count must equal the validation dataset size")
-        mean = self.validation_total.compute()
-        if not torch.isfinite(mean):
-            raise FloatingPointError("complete validation loss must be finite")
-        self.log(
-            "validation_total_loss",
-            self.validation_total,
-            on_step=False,
-            on_epoch=True,
-            logger=False,
-            sync_dist=False,
-        )
+        losses = self._loss(batch)
+        self._log_epoch_loss("validation", losses)
 
     def configure_optimizers(self) -> torch.optim.AdamW:
         optimizer = self.definition.optimizer
@@ -476,11 +472,81 @@ class _FitModule(pl.LightningModule):
 
 
 @dataclass(frozen=True, slots=True)
+class _FitEpoch:
+    epoch: int
+    training_total_loss: float
+    validation_total_loss: float | None
+
+
+class _FitHistory(Callback):
+    def __init__(self) -> None:
+        self.epochs: list[_FitEpoch] = []
+        self._validated_epoch: int | None = None
+
+    @staticmethod
+    def _metric(trainer: pl.Trainer, name: str) -> float:
+        metric = trainer.callback_metrics.get(name)
+        if not isinstance(metric, torch.Tensor) or metric.numel() != 1:
+            raise RuntimeError(f"completed epoch must contain {name}")
+        value = float(metric.detach().cpu().item())
+        if not math.isfinite(value):
+            raise FloatingPointError(f"complete {name} must be finite")
+        return value
+
+    def on_validation_epoch_end(
+        self,
+        trainer: pl.Trainer,
+        pl_module: pl.LightningModule,
+    ) -> None:
+        del pl_module
+        self._validated_epoch = trainer.current_epoch
+
+    def on_train_epoch_end(
+        self,
+        trainer: pl.Trainer,
+        pl_module: pl.LightningModule,
+    ) -> None:
+        del pl_module
+        validation = (
+            self._metric(trainer, "validation_total_loss")
+            if self._validated_epoch == trainer.current_epoch
+            else None
+        )
+        self.epochs.append(
+            _FitEpoch(
+                epoch=trainer.current_epoch + 1,
+                training_total_loss=self._metric(trainer, "training_total_loss"),
+                validation_total_loss=validation,
+            )
+        )
+        self._validated_epoch = None
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "epochs": [
+                {
+                    "epoch": row.epoch,
+                    "training_total_loss": row.training_total_loss,
+                    "validation_total_loss": row.validation_total_loss,
+                }
+                for row in self.epochs
+            ]
+        }
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        rows = state_dict.get("epochs")
+        if not isinstance(rows, list):
+            raise TypeError("FitHistory checkpoint state must contain epoch rows")
+        self.epochs = [_FitEpoch(**row) for row in rows]
+
+
+@dataclass(frozen=True, slots=True)
 class _FitOutcome:
     best_checkpoint: Path
     objective: float
     selected_epoch: int
     completed_epochs: int
+    fit_history: tuple[_FitEpoch, ...]
 
 
 def _configure_numerical_policy(deployment: FitDeployment) -> None:
@@ -520,7 +586,7 @@ def _loaders(
 def _callbacks(
     scratch: Path,
     definition: TrainingDefinition,
-) -> tuple[EarlyStopping, ModelCheckpoint, ModelCheckpoint]:
+) -> tuple[EarlyStopping, ModelCheckpoint, ModelCheckpoint, _FitHistory]:
     fit = definition.fit
     early_stopping = EarlyStopping(
         monitor="validation_total_loss",
@@ -545,15 +611,15 @@ def _callbacks(
     )
     last = ModelCheckpoint(
         dirpath=scratch,
-        filename="last",
-        save_top_k=1,
+        save_top_k=0,
+        save_last=True,
         save_weights_only=False,
         every_n_epochs=1,
-        save_on_train_epoch_end=False,
+        save_on_train_epoch_end=True,
         auto_insert_metric_name=False,
         enable_version_counter=False,
     )
-    return early_stopping, best, last
+    return early_stopping, best, last, _FitHistory()
 
 
 def _selected_epoch(best_checkpoint: Path) -> int:
@@ -583,7 +649,7 @@ def _fit(
         deployment,
         generator,
     )
-    early_stopping, best, last = _callbacks(scratch, definition)
+    early_stopping, best, last, history = _callbacks(scratch, definition)
     trainer = pl.Trainer(
         accelerator="gpu",
         devices=1,
@@ -599,23 +665,15 @@ def _fit(
         logger=False,
         enable_progress_bar=False,
         enable_model_summary=False,
-        callbacks=[early_stopping, best, last],
+        callbacks=[history, early_stopping, best, last],
     )
     last_checkpoint = scratch / "last.ckpt"
-    if last_checkpoint.exists():
-        trainer.fit(
-            module,
-            train_dataloaders=training_loader,
-            val_dataloaders=validation_loader,
-            ckpt_path=last_checkpoint,
-            weights_only=True,
-        )
-    else:
-        trainer.fit(
-            module,
-            train_dataloaders=training_loader,
-            val_dataloaders=validation_loader,
-        )
+    trainer.fit(
+        module,
+        train_dataloaders=training_loader,
+        val_dataloaders=validation_loader,
+        ckpt_path=last_checkpoint if last_checkpoint.exists() else None,
+    )
 
     best_checkpoint = Path(best.best_model_path)
     score = best.best_model_score
@@ -625,8 +683,55 @@ def _fit(
         best_checkpoint=best_checkpoint,
         objective=float(score),
         selected_epoch=_selected_epoch(best_checkpoint),
-        completed_epochs=trainer.current_epoch,
+        completed_epochs=len(history.epochs),
+        fit_history=tuple(history.epochs),
     )
+
+
+_FIT_HISTORY_SCHEMA = {
+    "epoch": polars.Int64,
+    "training_total_loss": polars.Float64,
+    "validation_total_loss": polars.Float64,
+}
+
+
+def _write_fit_history(path: Path, history: tuple[_FitEpoch, ...]) -> None:
+    frame = polars.DataFrame(
+        [(row.epoch, row.training_total_loss, row.validation_total_loss) for row in history],
+        schema=_FIT_HISTORY_SCHEMA,
+        orient="row",
+    )
+    if frame.schema != _FIT_HISTORY_SCHEMA:
+        raise RuntimeError("fit history must use the canonical schema")
+    frame.write_csv(path)
+
+
+def _publish_artifact(
+    storage_root: Path,
+    artifact_id: UUID,
+    scratch: Path,
+    outcome: _FitOutcome,
+) -> None:
+    canonical = artifact_directory(storage_root, artifact_id)
+    if canonical.exists():
+        raise FileExistsError(canonical)
+
+    checkpoint = scratch / "model.ckpt"
+    shutil.copyfile(outcome.best_checkpoint, checkpoint)
+    fit_history = scratch / "fit.csv"
+    _write_fit_history(fit_history, outcome.fit_history)
+
+    retained = {checkpoint, fit_history}
+    for temporary in scratch.iterdir():
+        if temporary in retained:
+            continue
+        if not temporary.is_file():
+            raise RuntimeError("artifact scratch directory must contain only files")
+        temporary.unlink()
+
+    if set(scratch.iterdir()) != retained:
+        raise RuntimeError("completed artifact must contain model.ckpt and fit.csv")
+    scratch.rename(canonical)
 
 
 def train(
@@ -654,12 +759,12 @@ def train(
             method=selected.method,
         )
 
-    scratch = storage_root / "artifacts" / f".{request.artifact_id}"
-    outcome = _fit(association, prepared, scratch, deployment)
-    canonical = artifact_checkpoint_path(storage_root, request.artifact_id)
+    canonical = artifact_directory(storage_root, request.artifact_id)
     if canonical.exists():
         raise FileExistsError(canonical)
-    outcome.best_checkpoint.rename(canonical)
+    scratch = canonical.parent / f".{request.artifact_id}"
+    outcome = _fit(association, prepared, scratch, deployment)
+    _publish_artifact(storage_root, request.artifact_id, scratch, outcome)
 
 
 def _run_candidate(

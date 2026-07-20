@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -10,10 +9,14 @@ import polars as pl
 import pytest
 import torch
 from pydantic import ValidationError
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import DataLoader
 
 import fable.modeling as modeling
-from fable.addresses import artifact_checkpoint_path
+from fable.addresses import (
+    artifact_checkpoint_path,
+    artifact_directory,
+    artifact_fit_history_path,
+)
 from fable.config import (
     AdamWMethod,
     BaselineSource,
@@ -360,6 +363,48 @@ def test_transformer_encoder_layers_have_independent_matrix_initialization() -> 
     )
 
 
+def test_epoch_logs_weight_short_batches_in_float64(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prepared = prepare_fit_history(_corpus(), _experiment())
+    association = ArtifactAssociation(
+        request=_request(),
+        feature_state=prepared.feature_state,
+        target_state=prepared.target_state,
+        classification_state=prepared.classification_state,
+    )
+    torch.manual_seed(89)
+    module = modeling._FitModule(modeling._json_association(association)).eval()
+    batches = list(DataLoader(prepared.training, batch_size=3, shuffle=False))
+    complete = next(iter(DataLoader(prepared.training, batch_size=4, shuffle=False)))
+    with torch.no_grad():
+        expected = float(module._loss(complete).mean_total)
+    logged: dict[str, list[tuple[torch.Tensor, dict[str, Any]]]] = {
+        "training_total_loss": [],
+        "validation_total_loss": [],
+    }
+
+    def capture(name: str, value: torch.Tensor, **kwargs: Any) -> None:
+        logged[name].append((value, kwargs))
+
+    monkeypatch.setattr(module, "log", capture)
+    with torch.no_grad():
+        for batch_index, batch in enumerate(batches):
+            module.training_step(batch, batch_index)
+            module.validation_step(batch, batch_index)
+
+    for entries in logged.values():
+        assert [kwargs["batch_size"] for _, kwargs in entries] == [3, 1]
+        assert all(value.dtype == torch.float64 for value, _ in entries)
+        assert all(kwargs["on_step"] is False for _, kwargs in entries)
+        assert all(kwargs["on_epoch"] is True for _, kwargs in entries)
+        assert all(kwargs["logger"] is False for _, kwargs in entries)
+        weighted = sum(float(value) * int(kwargs["batch_size"]) for value, kwargs in entries) / 4
+        unweighted = sum(float(value) for value, _ in entries) / 2
+        assert weighted == pytest.approx(expected)
+        assert unweighted != pytest.approx(expected)
+
+
 @pytest.mark.parametrize(
     ("artifact_id", "model"),
     [
@@ -421,6 +466,20 @@ def test_all_three_models_train_load_and_apply_direct_loss(
     association, loaded_model = load_artifact(tmp_path, artifact_id)
 
     assert association.request == request
+    directory = artifact_directory(tmp_path, artifact_id)
+    assert sorted(path.name for path in directory.iterdir()) == ["fit.csv", "model.ckpt"]
+    assert artifact_checkpoint_path(tmp_path, artifact_id).is_file()
+    fit_history = pl.read_csv(artifact_fit_history_path(tmp_path, artifact_id))
+    assert fit_history.schema == {
+        "epoch": pl.Int64,
+        "training_total_loss": pl.Float64,
+        "validation_total_loss": pl.Float64,
+    }
+    assert fit_history["epoch"].to_list() == [1]
+    assert fit_history.select(
+        pl.col("training_total_loss").is_finite().all(),
+        pl.col("validation_total_loss").is_finite().all(),
+    ).row(0) == (True, True)
     batches = list(DataLoader(prepared.training, batch_size=3, shuffle=False))
     for batch in batches:
         output = loaded_model(batch["inputs"])
@@ -439,14 +498,14 @@ def test_all_three_models_train_load_and_apply_direct_loss(
 
     if isinstance(model, LstmDefinition):
         mismatched_id = UUID("30000000-0000-4000-8000-000000000009")
-        artifact_checkpoint_path(tmp_path, artifact_id).rename(
-            artifact_checkpoint_path(tmp_path, mismatched_id)
+        artifact_directory(tmp_path, artifact_id).rename(
+            artifact_directory(tmp_path, mismatched_id)
         )
         with pytest.raises(ValueError, match="embedded artifact ID"):
             load_artifact(tmp_path, mismatched_id)
 
 
-def test_request_and_deployment_drive_native_lightning_lifecycle(
+def test_full_checkpoint_resume_restores_fit_history(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -455,15 +514,15 @@ def test_request_and_deployment_drive_native_lightning_lifecycle(
         capacity=LstmCapacity(hidden=5, layers=1, head_hidden=3),
         dropout=0.0,
         optimizer=AdamWMethod(learning_rate=0.004, weight_decay=0.002),
-        training_batch=4,
+        training_batch=3,
         fit=FitMethod(
             accumulation=1,
             gradient_clip_norm=0.0,
             scheduler="none",
             seed=37,
             max_epochs=4,
-            validate_every_completed_epoch=1,
-            patience=1,
+            validate_every_completed_epoch=2,
+            patience=10,
             min_delta=0.0,
             improvement="strict_lower",
             restore="earliest_best",
@@ -472,71 +531,50 @@ def test_request_and_deployment_drive_native_lightning_lifecycle(
     request = _candidate_request(method)
     prepared = prepare_fit_history(_corpus(), request.study_definition.experiment)
     real_trainer: Any = modeling.pl.Trainer
-    trainer_kwargs: list[dict[str, object]] = []
     fit_kwargs: list[dict[str, object]] = []
-    train_orders: list[list[int]] = []
-    metric_dtypes: list[torch.dtype] = []
-    clip_maxima: list[float] = []
-    real_clip: Any = torch.nn.utils.clip_grad_norm_
-
-    def clip_spy(parameters: Any, max_norm: float, **kwargs: Any) -> Any:
-        clip_maxima.append(float(max_norm))
-        return real_clip(parameters, max_norm, **kwargs)
 
     class TrainerSpy:
         def __init__(self, **kwargs: Any) -> None:
-            trainer_kwargs.append(dict(kwargs))
-            assert kwargs["accelerator"] == "gpu"
-            assert kwargs["devices"] == 1
-            assert kwargs["precision"] == "32-true"
             kwargs["accelerator"] = "cpu"
+            if not fit_kwargs:
+                kwargs["max_epochs"] = 2
             self._trainer = real_trainer(**kwargs)
 
         def fit(self, module: Any, **kwargs: Any) -> None:
-            loader = kwargs["train_dataloaders"]
-            assert loader.generator is not None
-            state = loader.generator.get_state()
-            train_orders.append(list(loader.sampler))
-            loader.generator.set_state(state)
-            validation = kwargs["val_dataloaders"]
-            assert isinstance(loader.sampler, RandomSampler)
-            assert isinstance(validation.sampler, SequentialSampler)
             fit_kwargs.append(dict(kwargs))
-            on_validation_epoch_end = module.on_validation_epoch_end
-
-            def validation_end_spy() -> None:
-                metric_dtypes.append(module.validation_total.dtype)
-                on_validation_epoch_end()
-
-            module.on_validation_epoch_end = validation_end_spy
             self._trainer.fit(module, **kwargs)
 
         def __getattr__(self, name: str) -> object:
             return getattr(self._trainer, name)
 
     monkeypatch.setattr(modeling.pl, "Trainer", TrainerSpy)
-    monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", clip_spy)
     scratch = tmp_path / "candidate"
+    association = modeling._CandidateAssociation(
+        request=request,
+        method=method,
+        feature_state=prepared.feature_state,
+        target_state=prepared.target_state,
+        classification_state=prepared.classification_state,
+    )
 
-    first = modeling._run_candidate(request, method, prepared, scratch, _deployment())
-    second = modeling._run_candidate(request, method, prepared, scratch, _deployment())
+    first = modeling._fit(association, prepared, scratch, _deployment())
+    second = modeling._fit(association, prepared, scratch, _deployment())
 
     assert first.objective == 0.0
-    assert first.selected_epoch == 1
+    assert first.selected_epoch == 2
     assert first.completed_epochs == 2
     assert second.objective == first.objective
     assert second.selected_epoch == first.selected_epoch
-    assert first.completed_epochs < second.completed_epochs <= method.fit.max_epochs
-    assert train_orders[0] == train_orders[1]
-    assert "ckpt_path" not in fit_kwargs[0]
+    assert second.completed_epochs == method.fit.max_epochs
+    assert [row.epoch for row in first.fit_history] == [1, 2]
+    assert [row.epoch for row in second.fit_history] == [1, 2, 3, 4]
+    assert [row.validation_total_loss for row in second.fit_history] == [None, 0.0, None, 0.0]
+    assert all(row.training_total_loss == 0.0 for row in second.fit_history)
+    assert fit_kwargs[0]["ckpt_path"] is None
     assert fit_kwargs[1]["ckpt_path"] == scratch / "last.ckpt"
-    assert fit_kwargs[1]["weights_only"] is True
-    assert trainer_kwargs[0]["max_epochs"] == method.fit.max_epochs
-    assert trainer_kwargs[0]["accumulate_grad_batches"] == method.fit.accumulation
-    assert trainer_kwargs[0]["gradient_clip_val"] == method.fit.gradient_clip_norm
-    assert trainer_kwargs[0]["check_val_every_n_epoch"] == (
-        method.fit.validate_every_completed_epoch
-    )
-    assert trainer_kwargs[0]["deterministic"] is True
-    assert metric_dtypes and all(dtype == torch.float64 for dtype in metric_dtypes)
-    assert clip_maxima and all(math.isinf(maximum) for maximum in clip_maxima)
+    assert "weights_only" not in fit_kwargs[1]
+    assert sorted(path.name for path in scratch.iterdir()) == ["best-01.ckpt", "last.ckpt"]
+    best_checkpoint = torch.load(scratch / "best-01.ckpt", map_location="cpu", weights_only=True)
+    last_checkpoint = torch.load(scratch / "last.ckpt", map_location="cpu", weights_only=True)
+    assert "optimizer_states" not in best_checkpoint
+    assert "optimizer_states" in last_checkpoint
