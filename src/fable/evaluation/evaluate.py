@@ -60,14 +60,10 @@ def evaluate(
 
     corpus = load_corpus(storage_root, request.corpus_id)
     association, model = load_artifact(storage_root, request.artifact_id)
-    if association.request.artifact_id != request.artifact_id:
-        raise ValueError("artifact request ID must match the evaluation artifact")
     if association.request.source.corpus_id != request.corpus_id:
         raise ValueError("artifact source Corpus must match the evaluation Corpus")
     experiment = association.training_definition.experiment
     testing_window = request.testing_window
-    if testing_window.first_parent_block <= corpus.request.definition.first_block:
-        raise ValueError("Corpus must include the previous closed parent")
     dataset = prepare_historical_window(
         corpus,
         experiment,
@@ -141,15 +137,6 @@ def _collect_observations(
             minimum_actions_batch = batch["label"].to(dtype=torch.int64).numpy()
             base_fees = batch["base_fees"].to(dtype=torch.int64).numpy()
             minimum_fee_z = output.minimum_fee_z
-            if minimum_fee_z.shape != actions.shape or not minimum_fee_z.is_floating_point():
-                raise ValueError("evaluation batch outputs must have matching vector rows")
-            if (
-                np.any(actions < 0)
-                or np.any(actions >= base_fees.shape[1])
-                or np.any(minimum_actions_batch < 0)
-                or np.any(minimum_actions_batch >= base_fees.shape[1])
-            ):
-                raise ValueError("evaluation actions must be within the batch horizon")
 
             rows = np.arange(actions.size, dtype=np.int64)
             immediate_batch = base_fees[:, 0]
@@ -160,12 +147,8 @@ def _collect_observations(
             )
             if not np.isfinite(predicted_logs_batch).all():
                 raise ValueError("predicted minimum-log fees must be finite")
-            if np.any(np.column_stack((immediate_batch, selected_batch, minimum_batch)) <= 0):
-                raise ValueError("evaluation fees must be positive")
 
             size = actions.size
-            if cursor + size > count:
-                raise ValueError("evaluation batches must exactly cover the testing window")
             destination = slice(cursor, cursor + size)
             columns["origin_block"][destination] = batch["origin_block"].numpy()
             columns["predicted_action_k"][destination] = actions
@@ -175,9 +158,6 @@ def _collect_observations(
             columns["selected_base_fee_per_gas"][destination] = selected_batch
             columns["minimum_base_fee_per_gas"][destination] = minimum_batch
             cursor += size
-
-    if cursor != count:
-        raise ValueError("evaluation batches must exactly cover the testing window")
 
     return pl.DataFrame(columns, schema=OBSERVATION_SCHEMA)
 

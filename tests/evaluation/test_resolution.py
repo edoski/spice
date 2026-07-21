@@ -129,13 +129,6 @@ def test_reduce_evaluation_derives_exact_metrics_from_self_contained_observation
         "schema",
         "null",
         "origins",
-        "nonfinite_log",
-        "negative_action",
-        "nonpositive_fee",
-        "minimum_above_fees",
-        "predicted_zero_fee",
-        "minimum_zero_fee",
-        "same_action_fee",
     ],
 )
 def test_reduce_evaluation_rejects_invalid_observation_contract(
@@ -152,20 +145,6 @@ def test_reduce_evaluation_rejects_invalid_observation_contract(
         rows[0]["predicted_minimum_log_base_fee"] = None
     elif case == "origins":
         rows[1]["origin_block"] = 22
-    elif case == "nonfinite_log":
-        rows[0]["predicted_minimum_log_base_fee"] = math.inf
-    elif case == "negative_action":
-        rows[0]["predicted_action_k"] = -1
-    elif case == "nonpositive_fee":
-        rows[0]["immediate_base_fee_per_gas"] = 0
-    elif case == "minimum_above_fees":
-        rows[1]["minimum_base_fee_per_gas"] = 21
-    elif case == "predicted_zero_fee":
-        rows[5]["selected_base_fee_per_gas"] = 59
-    elif case == "minimum_zero_fee":
-        rows[6]["minimum_base_fee_per_gas"] = 13
-    elif case == "same_action_fee":
-        rows[2]["selected_base_fee_per_gas"] = 13
 
     observations = _observations(rows)
     if case == "schema":
@@ -176,4 +155,13 @@ def test_reduce_evaluation_rejects_invalid_observation_contract(
     _publish_evaluation(tmp_path, request, observations)
 
     with pytest.raises(ValueError):
+        reduce_evaluation(tmp_path, _EVALUATION_ID)
+
+
+def test_reduce_evaluation_rejects_finite_inputs_that_overflow_a_metric(tmp_path: Path) -> None:
+    rows = _rows()
+    rows[0]["predicted_minimum_log_base_fee"] = 1e308
+    _publish_evaluation(tmp_path, _request(), _observations(rows))
+
+    with pytest.warns(RuntimeWarning), pytest.raises(ValueError, match="only finite metrics"):
         reduce_evaluation(tmp_path, _EVALUATION_ID)

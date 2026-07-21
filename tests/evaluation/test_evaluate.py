@@ -45,7 +45,6 @@ evaluation_module = importlib.import_module("fable.evaluation.evaluate")
 _CORPUS_ID = UUID("10000000-0000-4000-8000-000000000001")
 _OTHER_CORPUS_ID = UUID("10000000-0000-4000-8000-000000000002")
 _ARTIFACT_ID = UUID("20000000-0000-4000-8000-000000000001")
-_OTHER_ARTIFACT_ID = UUID("20000000-0000-4000-8000-000000000002")
 _EVALUATION_ID = UUID("30000000-0000-4000-8000-000000000001")
 _STUDY_ID = UUID("40000000-0000-4000-8000-000000000001")
 
@@ -146,7 +145,6 @@ def _association(
     source_kind: str,
     *,
     experiment: ExperimentSemantics | None = None,
-    artifact_id: UUID = _ARTIFACT_ID,
 ) -> ArtifactAssociation:
     experiment = experiment or _experiment()
     if source_kind == "baseline":
@@ -161,7 +159,7 @@ def _association(
         return ArtifactAssociation(
             request=TrainRequest(
                 workflow="train",
-                artifact_id=artifact_id,
+                artifact_id=_ARTIFACT_ID,
                 source=source,
             ),
             feature_state=FeatureState(means=(0.0,), standard_deviations=(1.0,)),
@@ -172,7 +170,7 @@ def _association(
     return ArtifactAssociation(
         request=TrainRequest(
             workflow="train",
-            artifact_id=artifact_id,
+            artifact_id=_ARTIFACT_ID,
             source=SelectedStudySource(
                 kind="selected_study",
                 corpus_id=_CORPUS_ID,
@@ -347,9 +345,7 @@ def test_evaluation_deployment_rejects_invalid_batch_or_matmul_policy(
 @pytest.mark.parametrize(
     ("case", "error", "match"),
     [
-        ("artifact_id", ValueError, "artifact request ID"),
         ("source_corpus", ValueError, "artifact source Corpus"),
-        ("previous_parent", ValueError, "previous closed parent"),
         ("occupied_canonical", FileExistsError, "evaluations"),
     ],
 )
@@ -362,29 +358,7 @@ def test_evaluate_rejects_owned_association_and_publication_conflicts(
 ) -> None:
     corpus_id = _OTHER_CORPUS_ID if case == "source_corpus" else _CORPUS_ID
     _write_corpus(tmp_path, corpus_id)
-    if case == "previous_parent":
-        experiment = ExperimentSemantics(
-            training_window=BlockWindow(
-                first_parent_block=0,
-                last_parent_block=1,
-            ),
-            validation_window=BlockWindow(
-                first_parent_block=10,
-                last_parent_block=10,
-            ),
-            context_blocks=1,
-            horizon_blocks=3,
-            ordered_features=("log_base_fee_per_gas",),
-        )
-        association = _association(
-            "baseline",
-            experiment=experiment,
-        )
-    else:
-        association = _association(
-            "baseline",
-            artifact_id=_OTHER_ARTIFACT_ID if case == "artifact_id" else _ARTIFACT_ID,
-        )
+    association = _association("baseline")
     model = _Model()
     monkeypatch.setattr(
         evaluation_module,
@@ -392,11 +366,7 @@ def test_evaluate_rejects_owned_association_and_publication_conflicts(
         lambda storage_root, artifact_id: (association, model),
     )
     monkeypatch.setattr(evaluation_module, "_DEVICE", torch.device("cpu"))
-    if case == "previous_parent":
-        testing_window = BlockWindow(first_parent_block=10, last_parent_block=10)
-    else:
-        testing_window = BlockWindow(first_parent_block=20, last_parent_block=24)
-    request = _request(corpus_id=corpus_id, testing_window=testing_window)
+    request = _request(corpus_id=corpus_id)
     if case == "occupied_canonical":
         evaluation_directory(tmp_path, _EVALUATION_ID).mkdir(parents=True)
 

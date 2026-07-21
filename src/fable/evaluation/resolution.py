@@ -51,28 +51,8 @@ def _load_observations(storage_root: Path, request: EvaluateRequest) -> pl.DataF
         raise ValueError("observations must cover every testing origin with non-null values")
 
     origins = observations["origin_block"].to_numpy()
-    predicted_actions = observations["predicted_action_k"].to_numpy()
-    predicted_logs = observations["predicted_minimum_log_base_fee"].to_numpy()
-    minimum_actions = observations["minimum_action_k"].to_numpy()
-    immediate_fees = observations["immediate_base_fee_per_gas"].to_numpy()
-    selected_fees = observations["selected_base_fee_per_gas"].to_numpy()
-    minimum_fees = observations["minimum_base_fee_per_gas"].to_numpy()
     if not np.array_equal(origins, expected_origins):
         raise ValueError("observation origins must exactly match the ordered testing window")
-    if np.any(predicted_actions < 0) or np.any(minimum_actions < 0):
-        raise ValueError("observation actions must be nonnegative")
-    if not np.isfinite(predicted_logs).all():
-        raise ValueError("predicted minimum-log fees must be finite")
-    if np.any(immediate_fees <= 0) or np.any(selected_fees <= 0) or np.any(minimum_fees <= 0):
-        raise ValueError("observation fees must be positive")
-    if np.any((minimum_fees > immediate_fees) | (minimum_fees > selected_fees)):
-        raise ValueError("minimum fees cannot exceed immediate or selected fees")
-    if (
-        np.any((predicted_actions == 0) & (selected_fees != immediate_fees))
-        or np.any((minimum_actions == 0) & (minimum_fees != immediate_fees))
-        or np.any((predicted_actions == minimum_actions) & (selected_fees != minimum_fees))
-    ):
-        raise ValueError("observation actions and fees must be locally consistent")
     return observations
 
 

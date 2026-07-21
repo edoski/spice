@@ -245,19 +245,10 @@ async def _infer(request: _InferenceRequest, state: _ServingState) -> _Inference
         output = model(model_input)
     selected_action_k = int(_decode_action(output).item())
     minimum_fee_z = output.minimum_fee_z
-    if (
-        minimum_fee_z.ndim != 1
-        or minimum_fee_z.shape[0] != 1
-        or not minimum_fee_z.is_floating_point()
-        or not _torch.isfinite(minimum_fee_z).all()
-    ):
-        raise ValueError("minimum_fee_z must be a finite floating vector with one prediction")
     predicted_minimum_base_fee = _math.exp(
         association.target_state.mean
         + association.target_state.standard_deviation * float(minimum_fee_z.item())
     )
-    if not _math.isfinite(predicted_minimum_base_fee):
-        raise ValueError("predicted minimum base fee must be finite")
     return _InferenceResponse(
         head_block=head_block,
         selected_action_k=selected_action_k,

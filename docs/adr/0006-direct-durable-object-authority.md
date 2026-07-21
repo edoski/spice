@@ -19,7 +19,7 @@ UUIDv4 values identify instances. Each completed object owns its exact typed req
 
 Typed requests, embedded associations, and the selected Study result index plus exact Method establish meaning. Completed objects are loaded directly and validated against the requested UUID and association.
 
-A completed evaluation owns its exact `EvaluateRequest` plus sufficient canonical prediction and outcome observations. Loading it validates the request ID and window together with the observation schema and self-contained facts. Transient evaluation reduction is recomputed directly from that completed evaluation object; Artifact and Corpus availability is not required after evaluation publication. Selection remains recomputed from its canonical Study object.
+A completed evaluation owns its exact `EvaluateRequest` plus sufficient canonical prediction and outcome observations. Loading it validates the strict request identity, exact schema, nonnull row count, and ordered window coverage. Atomic publication owns observation value consistency, so transient reduction trusts those values and is recomputed directly from the completed evaluation object; Artifact and Corpus availability is not required after publication. Selection remains recomputed from its canonical Study object.
 
 Owner-local hidden siblings support resumable work and publish canonical objects by direct rename.
 

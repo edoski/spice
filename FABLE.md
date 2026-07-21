@@ -76,7 +76,7 @@ A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-S
 
 `EvaluateRequest` names an artifact, same-source Corpus, testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, and publishes `evaluation.json` with `observations.parquet`. Each ordered observation stores `h_i`, `hat{k}_i`, `k_i*`, `hat{ell}_i`, `B_i(0)`, `B_i(hat{k}_i)`, and `m_i` under the exact field names in the [reference](#canonical-observations).
 
-`reduce_evaluation()` validates the self-contained observations and returns a transient one-row six-metric DataFrame without loading the artifact or Corpus. The reduction is never persisted.
+`reduce_evaluation()` validates the strict request and UUID, exact schema, nonnull row count, and ordered testing window, then trusts the published row values and returns a transient one-row six-metric DataFrame. All six metrics must be finite. The reduction does not load the artifact or Corpus and is never persisted.
 
 ### Training and inference
 
@@ -669,7 +669,7 @@ Evaluation separates canonical self-contained observations from transient metric
 
 `evaluate(request, storage_root, deployment)` loads the exact Corpus and native artifact, requires the artifact's source Corpus to equal the evaluation Corpus, prepares the testing origin window with persisted state, and performs CUDA inference.
 
-For every eligible origin it writes one ordered, nonnull observation containing `h_i`, `hat{k}_i`,
+For every eligible origin the evaluation publisher owns construction of one ordered, nonnull observation containing `h_i`, `hat{k}_i`,
 `k_i*`, `hat{ell}_i`, `B_i(0)`, `B_i(hat{k}_i)`, and `m_i` under the canonical field names. Work is
 written under `evaluations/.<evaluation_id>/` and renamed to:
 
@@ -683,7 +683,7 @@ The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical s
 
 #### Transient reduction
 
-`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` strictly hydrates the request, validates its evaluation identity and observation coverage of the testing window, then validates and reduces only `observations.parquet`. It does not reload the artifact or Corpus or externally authenticate the horizon or source. It returns one row with exactly six nonnull Float64 metrics. The result has no evaluation ID, count, sums, supports, arrays, or auxiliary fields and is not persisted.
+`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` strictly hydrates the request, validates its evaluation UUID, exact Parquet schema, expected nonnull row count, and ordered testing origins, then trusts the publisher-owned row values and reduces only `observations.parquet`. It requires all six computed metrics to be finite. It does not reload the artifact or Corpus or externally authenticate the horizon or source. The result has no evaluation ID, count, sums, supports, arrays, or auxiliary fields and is not persisted.
 
 ## Exact reference
 
@@ -1041,7 +1041,7 @@ The file contains predictions and the observed truth needed for local reduction.
 
 #### Transient reduction
 
-Destination: none. `reduce_evaluation()` returns a one-row DataFrame. Status: derived, transient, noncanonical, nonnull. The row does not store `evaluation_id`, `n`, counts, sums, supports, arrays, or auxiliary fields.
+Destination: none. `reduce_evaluation()` structurally validates the completed evaluation, trusts its publisher-owned observation values, and returns a one-row DataFrame whose six metrics must be finite. Status: derived, transient, noncanonical, nonnull. The row does not store `evaluation_id`, `n`, counts, sums, supports, arrays, or auxiliary fields.
 
 | # | Field | Type | Unit/direction |
 | ---: | --- | --- | --- |
