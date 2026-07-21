@@ -20,15 +20,14 @@ FABLE is organized around strict request values, direct owner functions, native 
 ### System shape
 
 ```text
-strict JSON request
+Blockweaver-produced Corpus
         |
         v
-CLI or direct Python call
+strict workflow request --> CLI or direct Python call
         |
-        +--> acquisition --> Corpus
-        +--> tuning ------> Study
-        +--> fitting -----> native Lightning artifact
-        +--> evaluation --> observations.parquet
+        +--> tuning -----> Study
+        +--> fitting ----> native Lightning artifact
+        +--> evaluation -> observations.parquet
         |
         v
 transient Corpus-derived reductions
@@ -42,7 +41,7 @@ transient Corpus-derived reductions
 CLI / serving / Python callers
                 |
                 v
-execution, acquisition, study, evaluation
+execution, study, evaluation
                 |
                 v
 modeling, temporal, min_block_fee, corpus
@@ -64,7 +63,10 @@ Each owner has one system seam:
 
 #### Corpus
 
-`CorpusRequest` names an inclusive chain block range and its UUID. `acquire_corpus()` reads ordinary block RPC responses in deterministic order into an owner-local hidden sibling. It validates chain identity, links, timestamps, fee and gas domains, proves ancestry to a finalized anchor, writes the exact `corpus.json` and `blocks.parquet`, removes transport-only hashes, then renames the hidden directory to the canonical Corpus address.
+`CorpusRequest` names an inclusive chain block range and its UUID. FABLE receives the completed
+`corpus.json` and `blocks.parquet` pair produced by
+[Blockweaver](https://github.com/edoski/blockweaver), then validates the durable association and
+canonical rows when loading the Corpus.
 
 #### Study and artifact
 
@@ -88,7 +90,8 @@ Live serving loads cwd-local `SERVING.yaml` once, selects an exact artifact cell
 
 ### External boundaries
 
-Acquisition and serving use ordinary Web3 RPC clients supplied at their operator boundaries.
+Corpus production is external to FABLE. Live serving uses ordinary Web3 RPC clients supplied by
+cwd-local configuration.
 
 `fable.execution.submit()` is the boundary to native OpenSSH and Slurm execution. [ADR 0007](docs/adr/0007-native-external-execution-boundary.md) records that ownership decision.
 
@@ -474,15 +477,10 @@ A `TuneRequest` freezes the experiment and one finite typed MethodSpace. An oper
 
 The sections below place each direct owner interface beside the scientific and durable-object contracts it serves. Exact public records, paths, commands, YAML fields, and schemas remain in [Exact reference](#exact-reference).
 
-### Acquisition
+### Corpus input
 
-Acquisition exposes one interface: `acquire_corpus(request, *, storage_root, rpc_url, poa)`. It turns one exact `CorpusRequest` into one finalized, canonical Corpus. Transport, resumable work, validation, finality, and publication stay behind that call.
-
-#### Contract
-
-The request fixes a UUIDv4, chain ID, and inclusive first/last block. Acquisition publishes to an initially absent destination under the explicit `storage_root`; `rpc_url` and `poa` stay at the invocation boundary.
-
-The completed object contains:
+[Blockweaver](https://github.com/edoski/blockweaver) supplies FABLE with one completed immutable
+Corpus pair:
 
 ```text
 corpora/<corpus_id>/
@@ -490,35 +488,11 @@ corpora/<corpus_id>/
   blocks.parquet
 ```
 
-`corpus.json` stores the exact request and one finalized anchor. `blocks.parquet` stores the requested contiguous rows in block-number order with the exact seven-column canonical schema documented in the [reference](#corpus-object).
-
-#### Hidden resumable prefix
-
-Acquisition works in `corpora/.<corpus_id>/`. A request JSON binds that scratch directory to one request. Complete deterministic checkpoint chunks cover at most 4,096 consecutive blocks, and the chunk list must form an exact prefix from the requested first block. Scratch validation enforces the request binding, expected filenames, prefix continuity, complete chunks, schema, nonnull domains, and parent links.
-
-The scratch prefix records owner-local request binding and checkpoint progress. The completed Corpus directory is the published interface.
-
-#### Ordered ordinary reads
-
-The RPC endpoint's chain ID must equal the request. Within a checkpoint, acquisition issues ordinary `eth_getBlockByNumber` reads in batches of four and consumes results in requested-number order. Every block must provide:
-
-- its requested number and normalized block/parent hashes;
-- a nonnegative, nondecreasing timestamp;
-- positive base fee and gas limit;
-- gas used in `[0, gas_limit]`;
-- a transaction sequence whose length becomes `tx_count`.
-
-Parent hashes must link across every read and checkpoint boundary. Rows enter the canonical object after all block facts pass validation.
-
-#### Finality proof
-
-After the exact range is present, acquisition reads the provider's `finalized` tag. The finalized height must not precede the requested last block. If it is later, numbered headers must prove that the staged last block is its ancestor. The tagged anchor is then reread by number; number, hash, and parent hash must match the tagged response.
-
-Block and parent hashes are proof-only acquisition facts. The completed parquet drops them. The finalized anchor keeps only its number and normalized hash.
-
-#### Publication
-
-Checkpoint rows stream into one canonical parquet file. The exact Corpus candidate is reloaded: `BlockFrame` validates schema, nonnull domains, row count, requested range, chain ID, timestamp order, and fee/gas/transaction domains; `Corpus` validates request association and finalized coverage. Publication then removes checkpoint metadata and renames the hidden sibling to the canonical directory.
+`corpus.json` stores the exact `CorpusRequest` and one finalized anchor. `blocks.parquet` stores the
+requested contiguous rows in block-number order with the exact seven-column canonical schema
+documented in the [reference](#corpus-object). `load_corpus()` strictly hydrates the request and
+anchor, checks the requested UUID, constructs the canonical `BlockFrame`, and requires the anchor
+to cover the completed range.
 
 `BlockFrame(frame, definition)` is the public canonical-row boundary. Its `definition` identifies the exact owned range, `select_range(first_block, last_block)` returns an inclusive trusted subrange, and `to_polars()` returns an isolated native frame. Construction and native access isolate caller mutation. Range selection is positional after the full frame has been validated; it does not rescan rows. The value carries neither hashes nor finality provenance.
 
@@ -692,12 +666,6 @@ Distribution name, import root, and installed executable are `fable`; the static
 |  | `last_block` | NonNegativeInt, `last_block≥first_block` |
 | `CorpusRequest` | `corpus_id` | UUIDv4 |
 |  | `definition` | `CorpusDefinition` |
-
-Fresh constructor:
-
-```python
-fresh_corpus_request(definition: CorpusDefinition) -> CorpusRequest
-```
 
 #### Scientific semantics
 
@@ -889,17 +857,15 @@ load_artifact(
 
 ### CLI
 
-Four public command leaves:
+Three public command leaves:
 
 ```text
 fable submit REQUEST.json [REQUEST.json ...]
-fable corpus acquire REQUEST.json --rpc-url URL --poa|--no-poa
 fable study run TUNE_REQUEST.json METHOD.json
 fable study finalize STUDY_ID
 ```
 
 - `submit` accepts one or more WorkflowRequest files and prints one positive Slurm job ID per request.
-- `corpus acquire` reads `STORAGE_ROOT`, requires an absolute path, and requires an explicit PoA choice.
 - `study run` validates one strict TuneRequest and one strict Method, then prints the candidate Slurm job ID.
 - `study finalize` requires UUIDv4, reads absolute `STORAGE_ROOT`, and publishes existing progress.
 
@@ -946,7 +912,8 @@ It reads cwd-local `REMOTE.yaml` with this exact strict schema:
 
 The generated script requests one node/task, writes `%j.out` under `log_root`, exports `STORAGE_ROOT`, and executes `fable remote workflow` or `fable remote candidate` with a stdin heredoc. Submission is one `ssh -T -o BatchMode=yes … sbatch --parsable` call.
 
-`STORAGE_ROOT`, `ETHEREUM_RPC_URL`, `POLYGON_RPC_URL`, and `AVALANCHE_RPC_URL` are the neutral operator spellings. `STORAGE_ROOT` is the implicit environment input to current CLI/remote Python paths. RPC endpoints arrive through explicit invocation or YAML values.
+`STORAGE_ROOT` is the neutral implicit environment input to current CLI and remote Python paths.
+Serving RPC endpoints arrive through cwd-local `SERVING.yaml` values.
 
 ### Serving and mobile
 

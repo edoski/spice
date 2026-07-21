@@ -19,7 +19,6 @@ from fable.config import (
     AdamWMethod,
     BaselineSource,
     BlockWindow,
-    CorpusDefinition,
     ExperimentSemantics,
     FitMethod,
     LstmCapacity,
@@ -30,7 +29,6 @@ from fable.config import (
     TrainingDefinition,
 )
 from fable.requests import (
-    fresh_corpus_request,
     fresh_evaluate_request,
     fresh_train_request,
     fresh_tune_request,
@@ -71,12 +69,10 @@ def _experiment() -> ExperimentSemantics:
 
 
 def test_request_constructors_mint_one_id_each(monkeypatch) -> None:
-    minted = (CORPUS_ID, STUDY_ID, ARTIFACT_ID, EVALUATION_ID)
+    minted = (STUDY_ID, ARTIFACT_ID, EVALUATION_ID)
     minted_ids = iter(minted)
     monkeypatch.setattr("fable.requests.uuid4", lambda: next(minted_ids))
 
-    definition = CorpusDefinition(chain_id=1, first_block=1, last_block=100)
-    corpus = fresh_corpus_request(definition)
     experiment = _experiment()
     fit = _fit()
     method = LstmMethod(
@@ -87,7 +83,7 @@ def test_request_constructors_mint_one_id_each(monkeypatch) -> None:
         fit=fit,
     )
     tune = fresh_tune_request(
-        corpus.corpus_id,
+        CORPUS_ID,
         StudyDefinition(
             experiment=experiment,
             method_space=LstmMethodSpace(family="lstm", methods=(method,)),
@@ -96,7 +92,7 @@ def test_request_constructors_mint_one_id_each(monkeypatch) -> None:
     train = fresh_train_request(
         BaselineSource(
             kind="baseline",
-            corpus_id=corpus.corpus_id,
+            corpus_id=CORPUS_ID,
             training_definition=TrainingDefinition(
                 experiment=experiment,
                 model=LstmDefinition(
@@ -113,7 +109,7 @@ def test_request_constructors_mint_one_id_each(monkeypatch) -> None:
     )
     evaluate = fresh_evaluate_request(
         train.artifact_id,
-        corpus.corpus_id,
+        CORPUS_ID,
         BlockWindow(
             first_parent_block=300,
             last_parent_block=349,
@@ -121,7 +117,6 @@ def test_request_constructors_mint_one_id_each(monkeypatch) -> None:
     )
 
     assert (
-        corpus.corpus_id,
         tune.study_id,
         train.artifact_id,
         evaluate.evaluation_id,

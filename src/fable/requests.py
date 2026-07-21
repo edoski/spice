@@ -6,18 +6,12 @@ from uuid import UUID, uuid4
 
 from .config import (
     BlockWindow,
-    CorpusDefinition,
-    CorpusRequest,
     EvaluateRequest,
     StudyDefinition,
     TrainingSource,
     TrainRequest,
     TuneRequest,
 )
-
-
-def fresh_corpus_request(definition: CorpusDefinition) -> CorpusRequest:
-    return CorpusRequest(corpus_id=uuid4(), definition=definition)
 
 
 def fresh_train_request(source: TrainingSource) -> TrainRequest:

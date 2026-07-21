@@ -8,7 +8,7 @@ Its scientific lineage is the temporal experiment in *SPICE: A Predictive Framew
 
 The repository supports three explicit operating locations:
 
-- A workstation creates requests, acquires finalized block history, submits work, publishes tuning results, and computes transient evaluation reductions.
+- A workstation consumes prepared block history, creates requests, submits work, publishes tuning results, and computes transient evaluation reductions.
 - A GPU server fits, tunes, and evaluates through Slurm jobs.
 - A Mac runs the CPU inference API used by the Expo mobile demo.
 
@@ -30,14 +30,9 @@ uv sync --extra serve
 
 ## Quick start
 
-Create the required JSON files from the [request reference](FABLE.md#requests-and-definitions).
-
-Acquire an inclusive block range. `STORAGE_ROOT` must be absolute; this Ethereum example uses `--no-poa`:
-
-```bash
-STORAGE_ROOT=/absolute/storage \
-  fable corpus acquire REQUEST.json --rpc-url URL --no-poa
-```
+Prepare each Corpus with [Blockweaver](https://github.com/edoski/blockweaver), then place its
+immutable pair at `STORAGE_ROOT/corpora/<UUID>/corpus.json` and `blocks.parquet`. Create FABLE
+workflow requests from the [request reference](FABLE.md#requests-and-definitions).
 
 Submit one or more training or evaluation requests:
 

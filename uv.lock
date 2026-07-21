@@ -363,13 +363,13 @@ dependencies = [
     { name = "torch", version = "2.7.1+cu118", source = { registry = "https://download.pytorch.org/whl/cu118" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "torchmetrics" },
     { name = "typer" },
-    { name = "web3" },
 ]
 
 [package.optional-dependencies]
 serve = [
     { name = "fastapi" },
     { name = "uvicorn" },
+    { name = "web3" },
 ]
 
 [package.dev-dependencies]
@@ -393,7 +393,7 @@ requires-dist = [
     { name = "torchmetrics", specifier = "==1.9.0" },
     { name = "typer", specifier = ">=0.16" },
     { name = "uvicorn", marker = "extra == 'serve'", specifier = ">=0.32" },
-    { name = "web3", specifier = ">=7.15" },
+    { name = "web3", marker = "extra == 'serve'", specifier = ">=7.15" },
 ]
 provides-extras = ["serve"]
 
