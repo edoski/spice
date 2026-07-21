@@ -140,7 +140,10 @@ def _validate_feature_state_association(
 
 def _training_definition(association: _Association) -> TrainingDefinition:
     if isinstance(association, _CandidateAssociation):
-        return apply_method(association.request, association.method)
+        return TrainingDefinition(
+            experiment=association.request.experiment,
+            method=association.method,
+        )
     return association.training_definition
 
 
@@ -181,18 +184,9 @@ def _head(input_width: int, hidden: int, output_width: int, dropout: float) -> n
     )
 
 
-def _require_inputs(
-    inputs: torch.Tensor,
-    *,
-    context_blocks: int,
-    feature_count: int,
-) -> None:
-    if inputs.ndim != 3:
-        raise ValueError("model inputs must have shape [B, C, F]")
-    if inputs.shape[1:] != (context_blocks, feature_count):
-        raise ValueError("model input trailing shape must match request C and F")
-    if inputs.dtype != torch.float32:
-        raise TypeError("model inputs must have dtype float32")
+def _require_inputs(inputs: torch.Tensor, *, context_blocks: int) -> None:
+    if inputs.ndim != 3 or inputs.shape[1] != context_blocks:
+        raise ValueError("model inputs must have rank 3 and exact configured context length")
 
 
 class _LstmModel(nn.Module):
@@ -206,7 +200,6 @@ class _LstmModel(nn.Module):
     ) -> None:
         super().__init__()
         self.context_blocks = context_blocks
-        self.feature_count = feature_count
         self.lstm = nn.LSTM(
             input_size=feature_count,
             hidden_size=definition.hidden,
@@ -222,11 +215,7 @@ class _LstmModel(nn.Module):
         )
 
     def forward(self, inputs: torch.Tensor) -> MinBlockFeeOutput:
-        _require_inputs(
-            inputs,
-            context_blocks=self.context_blocks,
-            feature_count=self.feature_count,
-        )
+        _require_inputs(inputs, context_blocks=self.context_blocks)
         sequence, _ = self.lstm(inputs)
         return self.heads(sequence[:, -1])
 
@@ -276,7 +265,6 @@ class _TransformerBackbone(nn.Module):
     ) -> None:
         super().__init__()
         self.context_blocks = context_blocks
-        self.feature_count = feature_count
         self.projection = nn.Linear(feature_count, definition.model_width)
         self.register_buffer(
             "positions",
@@ -292,11 +280,7 @@ class _TransformerBackbone(nn.Module):
         )
 
     def _encode(self, inputs: torch.Tensor) -> torch.Tensor:
-        _require_inputs(
-            inputs,
-            context_blocks=self.context_blocks,
-            feature_count=self.feature_count,
-        )
+        _require_inputs(inputs, context_blocks=self.context_blocks)
         projected = self.projection(inputs)
         positions = cast(torch.Tensor, self.positions).to(dtype=projected.dtype)
         return self.encoder(projected + torch.unsqueeze(positions, 0))
@@ -387,8 +371,6 @@ class _FitModule(pl.LightningModule):
         losses: MinBlockFeeLoss,
     ) -> None:
         loss = losses.total_by_origin.mean(dtype=torch.float64)
-        if not bool(torch.isfinite(loss)):
-            raise FloatingPointError(f"{role} loss must be finite")
         self.log(
             f"{role}_total_loss",
             loss,
@@ -467,9 +449,7 @@ class _FitHistory(Callback):
 
     @staticmethod
     def _metric(trainer: pl.Trainer, name: str) -> float:
-        metric = trainer.callback_metrics.get(name)
-        if not isinstance(metric, torch.Tensor) or metric.numel() != 1:
-            raise RuntimeError(f"completed epoch must contain {name}")
+        metric = trainer.callback_metrics[name]
         value = float(metric.detach().cpu().item())
         if not math.isfinite(value):
             raise FloatingPointError(f"complete {name} must be finite")
@@ -516,10 +496,7 @@ class _FitHistory(Callback):
         }
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
-        rows = state_dict.get("epochs")
-        if not isinstance(rows, list):
-            raise TypeError("FitHistory checkpoint state must contain epoch rows")
-        self.epochs = [_FitEpoch(**row) for row in rows]
+        self.epochs = [_FitEpoch(**row) for row in state_dict["epochs"]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -604,11 +581,7 @@ def _callbacks(
 
 
 def _selected_epoch(best_checkpoint: Path) -> int:
-    prefix = "best-"
-    stem = best_checkpoint.stem
-    if not stem.startswith(prefix):
-        raise RuntimeError("best checkpoint does not use the controlled filename")
-    return int(stem[len(prefix) :]) + 1
+    return int(best_checkpoint.stem.removeprefix("best-")) + 1
 
 
 def _fit(
@@ -682,8 +655,6 @@ def _write_fit_history(path: Path, history: tuple[_FitEpoch, ...]) -> None:
         schema=_FIT_HISTORY_SCHEMA,
         orient="row",
     )
-    if frame.schema != _FIT_HISTORY_SCHEMA:
-        raise RuntimeError("fit history must use the canonical schema")
     frame.write_csv(path)
 
 
