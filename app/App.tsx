@@ -1,170 +1,104 @@
-import { useState } from "react";
-import {
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { useState, useEffect, useCallback } from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { Ionicons } from "@expo/vector-icons";
 
-import {
-  CHAINS,
-  HORIZONS,
-  requestInference,
-  type Chain,
-  type Horizon,
-  type InferenceRequest,
-  type InferenceResponse,
-} from "./src/inference";
+import { InferenceScreen, type InferenceState } from "./src/screens/InferenceScreen";
+import { AnalyticsScreen } from "./src/screens/AnalyticsScreen";
+import { requestInference, type Chain, type Horizon } from "./src/inference";
+import { loadRuns, saveRuns, createRun, type InferenceRun } from "./src/history";
+
+const Tab = createBottomTabNavigator();
 
 export default function App() {
   const [chain, setChain] = useState<Chain>("ethereum");
-  const [K, setK] = useState<Horizon>(5);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<InferenceResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [horizon, setHorizon] = useState<Horizon>(5);
+  const [state, setState] = useState<InferenceState>({ status: "idle" });
+  
+  const [runs, setRuns] = useState<InferenceRun[]>([]);
+  const [storageError, setStorageError] = useState<string | null>(null);
 
-  function selectChain(nextChain: Chain) {
-    setChain(nextChain);
-    setResult(null);
-    setError(null);
-  }
+  useEffect(() => {
+    loadRuns()
+      .then(setRuns)
+      .catch((err) => setStorageError(err instanceof Error ? err.message : String(err)));
+  }, []);
 
-  function selectHorizon(nextHorizon: Horizon) {
-    setK(nextHorizon);
-    setResult(null);
-    setError(null);
-  }
-
-  async function runInference() {
-    const request: InferenceRequest = { chain, K };
-    setResult(null);
-    setError(null);
-    setLoading(true);
+  const handleRun = useCallback(async () => {
+    setState({ status: "loading" });
     try {
-      setResult(await requestInference(request));
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
+      const result = await requestInference({ chain, K: horizon });
+      setState({ status: "success", result });
+      
+      const newRun = createRun({ chain, K: horizon }, result);
+      setRuns((prev) => {
+        const next = [newRun, ...prev];
+        saveRuns(next).catch((err) => setStorageError(err instanceof Error ? err.message : String(err)));
+        return next;
+      });
+    } catch (err) {
+      setState({ status: "error", message: err instanceof Error ? err.message : String(err) });
     }
-  }
+  }, [chain, horizon]);
+
+  const handleRunAgain = useCallback(() => {
+    setState({ status: "idle" });
+  }, []);
+
+  const handleChainChange = useCallback((c: Chain) => {
+    setChain(c);
+    setState({ status: "idle" });
+  }, []);
+
+  const handleHorizonChange = useCallback((h: Horizon) => {
+    setHorizon(h);
+    setState({ status: "idle" });
+  }, []);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.page}>
-        <Text style={styles.title}>Inference</Text>
-
-        <View style={styles.section}>
-          <Text style={styles.label}>Chain</Text>
-          <View style={styles.choices}>
-            {CHAINS.map((choice) => (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ disabled: loading, selected: choice === chain }}
-                disabled={loading}
-                key={choice}
-                onPress={() => selectChain(choice)}
-                style={[styles.choice, choice === chain && styles.choiceSelected]}
-              >
-                <Text
-                  style={[
-                    styles.choiceText,
-                    choice === chain && styles.choiceTextSelected,
-                  ]}
-                >
-                  {choice}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.label}>K (blocks)</Text>
-          <View style={styles.choices}>
-            {HORIZONS.map((choice) => (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ disabled: loading, selected: choice === K }}
-                disabled={loading}
-                key={choice}
-                onPress={() => selectHorizon(choice)}
-                style={[styles.choice, choice === K && styles.choiceSelected]}
-              >
-                <Text
-                  style={[
-                    styles.choiceText,
-                    choice === K && styles.choiceTextSelected,
-                  ]}
-                >
-                  {choice} blocks
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={loading}
-          onPress={runInference}
-          style={[styles.runButton, loading && styles.runButtonDisabled]}
-        >
-          <Text style={styles.runButtonText}>
-            {loading ? "Running inference" : "Run inference"}
-          </Text>
-        </Pressable>
-
-        {result && (
-          <View style={styles.result}>
-            <Text>Head block: {result.head_block}</Text>
-            <Text>Selected action k: {result.selected_action_k}</Text>
-            <Text>Target block: {result.target_block}</Text>
-          </View>
-        )}
-
-        {error && <Text style={styles.error}>{error}</Text>}
-      </ScrollView>
-    </SafeAreaView>
+    <NavigationContainer>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarIcon: ({ focused, color, size }) => {
+            let iconName: keyof typeof Ionicons.glyphMap = "play";
+            if (route.name === "Inference") {
+              iconName = focused ? "play" : "play-outline";
+            } else if (route.name === "Analytics") {
+              iconName = focused ? "bar-chart" : "bar-chart-outline";
+            }
+            return <Ionicons name={iconName} size={size} color={color} />;
+          },
+          tabBarActiveTintColor: "#1f6feb",
+          tabBarInactiveTintColor: "gray",
+        })}
+      >
+        <Tab.Screen name="Inference">
+          {() => (
+            <InferenceScreen
+              chain={chain}
+              horizon={horizon}
+              state={state}
+              onChainChange={handleChainChange}
+              onHorizonChange={handleHorizonChange}
+              onRun={handleRun}
+              onRunAgain={handleRunAgain}
+            />
+          )}
+        </Tab.Screen>
+        <Tab.Screen name="Analytics">
+          {() => (
+            <AnalyticsScreen
+              runs={runs}
+              chain={chain}
+              horizon={horizon}
+              storageError={storageError}
+              onChainChange={handleChainChange}
+              onHorizonChange={handleHorizonChange}
+            />
+          )}
+        </Tab.Screen>
+      </Tab.Navigator>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { backgroundColor: "#f6f8fa", flex: 1 },
-  page: { gap: 18, padding: 20 },
-  title: { fontSize: 28, fontWeight: "700" },
-  section: { gap: 10 },
-  label: { fontSize: 16, fontWeight: "700" },
-  choices: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  choice: {
-    backgroundColor: "#ffffff",
-    borderColor: "#8c959f",
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  choiceSelected: { backgroundColor: "#1f6feb", borderColor: "#1f6feb" },
-  choiceText: { color: "#24292f", fontWeight: "600" },
-  choiceTextSelected: { color: "#ffffff" },
-  runButton: {
-    alignItems: "center",
-    backgroundColor: "#1f6feb",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  runButtonDisabled: { backgroundColor: "#8c959f" },
-  runButtonText: { color: "#ffffff", fontWeight: "700" },
-  result: {
-    backgroundColor: "#ffffff",
-    borderColor: "#d0d7de",
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 8,
-    padding: 14,
-  },
-  error: { color: "#cf222e" },
-});

@@ -171,8 +171,7 @@ h+1 ... h+5 = [25.5, 23, 21, 20, 22] gwei/gas
 They are stored and compared as positive Int64 wei/gas:
 
 ```text
-[25_500_000_000, 23_000_000_000, 21_000_000_000,
- 20_000_000_000, 22_000_000_000]
+[25_500_000_000, 23_000_000_000, 21_000_000_000, 20_000_000_000, 22_000_000_000]
 ```
 
 NumPy first-index `argmin` gives label `k*=3` and raw minimum

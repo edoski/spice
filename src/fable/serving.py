@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json as _json
+import math as _math
 from collections.abc import AsyncIterator as _AsyncIterator
 from collections.abc import Mapping as _Mapping
 from collections.abc import Sized as _Sized
@@ -48,6 +49,7 @@ _Chain = _Literal["ethereum", "polygon", "avalanche"]
 _Horizon = _Literal[2, 3, 4, 5]
 _NonEmptyString = _Annotated[str, _Field(min_length=1)]
 _NonNegativeInt = _Annotated[int, _Field(strict=True, ge=0)]
+_PositiveFiniteFloat = _Annotated[float, _Field(strict=True, gt=0.0, allow_inf_nan=False)]
 
 
 class _ChainConfig(_BaseModel):
@@ -99,6 +101,14 @@ class _InferenceResponse(_BaseModel):
     head_block: _NonNegativeInt
     selected_action_k: _NonNegativeInt
     target_block: _NonNegativeInt
+    predicted_minimum_base_fee_per_gas: _PositiveFiniteFloat
+
+
+class _HealthResponse(_BaseModel):
+    model_config = _ConfigDict(extra="forbid", strict=True)
+
+    chain: _Chain
+    head_block: _NonNegativeInt
 
 
 @_dataclass(frozen=True, slots=True)
@@ -139,18 +149,26 @@ async def _lifespan(app: _FastAPI) -> _AsyncIterator[None]:
         await avalanche.provider.disconnect()
 
 
+def _chain_cell(
+    state: _ServingState,
+    chain: _Chain,
+) -> tuple[_AsyncWeb3, int, _ChainConfig]:
+    match chain:
+        case "ethereum":
+            return state.ethereum, 1, state.config.ethereum
+        case "polygon":
+            return state.polygon, 137, state.config.polygon
+        case "avalanche":
+            return state.avalanche, 43114, state.config.avalanche
+
+
 def _serving_cell(
     state: _ServingState,
     chain: _Chain,
     horizon: _Horizon,
 ) -> tuple[_AsyncWeb3, int, _UUID]:
-    match chain:
-        case "ethereum":
-            return state.ethereum, 1, state.config.ethereum.artifact_id(horizon)
-        case "polygon":
-            return state.polygon, 137, state.config.polygon.artifact_id(horizon)
-        case "avalanche":
-            return state.avalanche, 43114, state.config.avalanche.artifact_id(horizon)
+    client, chain_id, config = _chain_cell(state, chain)
+    return client, chain_id, config.artifact_id(horizon)
 
 
 def _quantity(value: object) -> int:
@@ -170,6 +188,15 @@ def _live_row(block: object, chain_id: int) -> dict[str, int]:
         "gas_limit": _quantity(values["gasLimit"]),
         "tx_count": len(_cast(_Sized, values["transactions"])),
     }
+
+
+async def _health(chain: _Chain, state: _ServingState) -> _HealthResponse:
+    client, expected_chain_id, _ = _chain_cell(state, chain)
+    chain_id = await client.eth.chain_id
+    if chain_id != expected_chain_id:
+        raise ValueError("provider chain ID mismatch")
+    latest = _live_row(await client.eth.get_block("latest", False), chain_id)
+    return _HealthResponse(chain=chain, head_block=latest["block_number"])
 
 
 async def _infer(request: _InferenceRequest, state: _ServingState) -> _InferenceResponse:
@@ -217,10 +244,25 @@ async def _infer(request: _InferenceRequest, state: _ServingState) -> _Inference
     with _torch.inference_mode():
         output = model(model_input)
     selected_action_k = int(_decode_action(output).item())
+    minimum_fee_z = output.minimum_fee_z
+    if (
+        minimum_fee_z.ndim != 1
+        or minimum_fee_z.shape[0] != 1
+        or not minimum_fee_z.is_floating_point()
+        or not _torch.isfinite(minimum_fee_z).all()
+    ):
+        raise ValueError("minimum_fee_z must be a finite floating vector with one prediction")
+    predicted_minimum_base_fee = _math.exp(
+        association.target_state.mean
+        + association.target_state.standard_deviation * float(minimum_fee_z.item())
+    )
+    if not _math.isfinite(predicted_minimum_base_fee):
+        raise ValueError("predicted minimum base fee must be finite")
     return _InferenceResponse(
         head_block=head_block,
         selected_action_k=selected_action_k,
         target_block=head_block + 1 + selected_action_k,
+        predicted_minimum_base_fee_per_gas=predicted_minimum_base_fee,
     )
 
 
@@ -237,6 +279,10 @@ def create_app() -> _FastAPI:
     @app.post("/inference", response_model=_InferenceResponse)
     async def inference(payload: _InferenceRequest, request: _Request) -> _InferenceResponse:
         return await _infer(payload, _cast(_ServingState, request.app.state._serving))
+
+    @app.get("/health", response_model=_HealthResponse)
+    async def health(chain: _Chain, request: _Request) -> _HealthResponse:
+        return await _health(chain, _cast(_ServingState, request.app.state._serving))
 
     return app
 

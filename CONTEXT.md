@@ -1,6 +1,6 @@
 # FABLE (Fee Analysis through Blockchain Learning and Estimation) Context
 
-FABLE derives from and extends selected temporal work from *SPICE: A Predictive Framework for Cost-Optimization in Multichain Environments*. FABLE is neither SPICE nor a SPICE reproduction. This glossary defines FABLE's active domain language.
+This glossary defines FABLE's active domain language.
 
 ## Active glossary
 

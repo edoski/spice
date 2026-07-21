@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
@@ -25,6 +26,7 @@ from fable.config import (
     TrainingDefinition,
     TrainRequest,
 )
+from fable.min_block_fee import TargetState
 
 _CHAIN_IDS = {
     "https://ethereum.example": 1,
@@ -139,7 +141,14 @@ def _association(
                 ),
             ),
         )
-    return SimpleNamespace(request=request, feature_state=object())
+    return SimpleNamespace(
+        request=request,
+        feature_state=object(),
+        target_state=TargetState(
+            mean=math.log(12_400_000_000),
+            standard_deviation=1.0,
+        ),
+    )
 
 
 def _block(number: int) -> dict[str, object]:
@@ -230,7 +239,7 @@ class _FakeWeb3:
 class _FakeModel:
     def __init__(self) -> None:
         self.inputs: list[torch.Tensor] = []
-        self.output = object()
+        self.output = SimpleNamespace(minimum_fee_z=torch.tensor([0.0]))
 
     def __call__(self, values: torch.Tensor) -> object:
         self.inputs.append(values)
@@ -267,6 +276,40 @@ async def _post(app: Any, payload: dict[str, object]) -> tuple[int, dict[str, An
             "query_string": b"",
             "root_path": "",
             "headers": [(b"content-type", b"application/json")],
+            "client": ("test", 1),
+            "server": ("test", 80),
+        },
+        receive,
+        send,
+    )
+    start = next(message for message in sent if message["type"] == "http.response.start")
+    body = b"".join(
+        message.get("body", b"") for message in sent if message["type"] == "http.response.body"
+    )
+    return start["status"], json.loads(body)
+
+
+async def _get(app: Any, path: str, query: bytes = b"") -> tuple[int, dict[str, Any]]:
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    await app(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode(),
+            "query_string": query,
+            "root_path": "",
+            "headers": [],
             "client": ("test", 1),
             "server": ("test", 80),
         },
@@ -356,6 +399,7 @@ async def test_serves_one_selected_artifact_context_and_closes_clients(
             "head_block": 12,
             "selected_action_k": 1,
             "target_block": 14,
+            "predicted_minimum_base_fee_per_gas": pytest.approx(12_400_000_000),
         }
         assert config_loads == 1
         assert load_calls == [(tmp_path / "storage", artifact_id)]
@@ -380,6 +424,31 @@ async def test_serves_one_selected_artifact_context_and_closes_clients(
         assert decode_calls == [model.output]
 
     assert [provider.disconnect_calls for provider in _FakeProvider.instances] == [1, 1, 1]
+
+
+@_run_async
+async def test_health_reports_selected_live_chain_without_loading_an_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "storage"))
+    _install_web3(monkeypatch)
+    monkeypatch.setattr(
+        serving,
+        "_load_artifact",
+        lambda *_: pytest.fail("health must not load artifacts"),
+    )
+    app = serving.create_app()
+
+    async with app.router.lifespan_context(app):
+        status, body = await _get(app, "/health", b"chain=polygon")
+
+    assert status == 200
+    assert body == {"chain": "polygon", "head_block": 12}
+    assert _FakeWeb3.instances[1].eth.chain_id_calls == 1
+    assert _FakeWeb3.instances[1].eth.block_calls == ["latest"]
 
 
 @_run_async
