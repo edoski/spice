@@ -21,13 +21,13 @@ __all__ = [
     "decode_action",
 ]
 
-_StrictFiniteFloat: TypeAlias = Annotated[
+_FiniteFloat: TypeAlias = Annotated[
     float,
-    Field(strict=True, allow_inf_nan=False),
+    Field(allow_inf_nan=False),
 ]
-_StrictPositiveFloat: TypeAlias = Annotated[
+_PositiveFloat: TypeAlias = Annotated[
     float,
-    Field(strict=True, gt=0.0, allow_inf_nan=False),
+    Field(gt=0.0, allow_inf_nan=False),
 ]
 
 
@@ -41,8 +41,8 @@ class _State(BaseModel):
 
 
 class TargetState(_State):
-    mean: _StrictFiniteFloat
-    standard_deviation: _StrictPositiveFloat
+    mean: _FiniteFloat
+    standard_deviation: _PositiveFloat
 
 
 class MinBlockFeeOutput(NamedTuple):
@@ -58,31 +58,14 @@ class MinBlockFeeLoss:
     regression_by_origin: torch.Tensor
 
 
-def _require_int64_vector(values: object, name: str) -> NDArray[np.int64]:
-    if not isinstance(values, np.ndarray):
-        raise TypeError(f"{name} must be a numpy.ndarray")
-    if values.dtype != np.dtype(np.int64):
-        raise TypeError(f"{name} must have dtype int64")
-    if values.ndim != 1:
-        raise ValueError(f"{name} must be one-dimensional")
-    if values.size == 0:
-        raise ValueError(f"{name} must be nonempty")
-    return values
-
-
-def _require_positive(values: NDArray[np.int64], name: str) -> None:
-    if np.any(values <= 0):
-        raise ValueError(f"{name} must contain only positive values")
-
-
 def _natural_log(values: NDArray[np.int64]) -> NDArray[np.float64]:
+    if np.any(values <= 0):
+        raise ValueError("raw_minima must contain only positive values")
     return np.log(values.astype(np.float64, copy=False))
 
 
 def fit_target_state(raw_minima: NDArray[np.int64]) -> TargetState:
-    minima = _require_int64_vector(raw_minima, "raw_minima")
-    _require_positive(minima, "raw_minima")
-    natural_log = _natural_log(minima)
+    natural_log = _natural_log(raw_minima)
     mean = float(natural_log.mean(dtype=np.float64))
     standard_deviation = float(natural_log.std(dtype=np.float64, ddof=0))
     return TargetState(mean=mean, standard_deviation=standard_deviation)
@@ -92,66 +75,11 @@ def standardize_target(
     raw_minima: NDArray[np.int64],
     state: TargetState,
 ) -> NDArray[np.float32]:
-    minima = _require_int64_vector(raw_minima, "raw_minima")
-    _require_positive(minima, "raw_minima")
-    standardized = (_natural_log(minima) - state.mean) / state.standard_deviation
+    standardized = (_natural_log(raw_minima) - state.mean) / state.standard_deviation
     result = np.ascontiguousarray(standardized, dtype=np.float32)
     if not np.isfinite(result).all():
         raise ValueError("standardized targets must be finite")
     return result
-
-
-def _require_floating_vector(values: object, name: str) -> torch.Tensor:
-    if not isinstance(values, torch.Tensor):
-        raise TypeError(f"{name} must be a torch.Tensor")
-    if values.ndim != 1:
-        raise ValueError(f"{name} must be one-dimensional")
-    if values.numel() == 0:
-        raise ValueError(f"{name} must be nonempty")
-    if not values.is_floating_point():
-        raise TypeError(f"{name} must have a floating dtype")
-    if not torch.isfinite(values).all():
-        raise ValueError(f"{name} must be finite")
-    return values
-
-
-def _require_action_logits(logits: torch.Tensor) -> tuple[torch.Tensor, int, int]:
-    if logits.ndim != 2:
-        raise ValueError("action_logits must have shape [B, K]")
-    batch_size, class_count = logits.shape
-    if batch_size == 0 or class_count == 0:
-        raise ValueError("action_logits must have nonempty batch and class dimensions")
-    if not logits.is_floating_point():
-        raise TypeError("action_logits must have a floating dtype")
-    if not torch.isfinite(logits).all():
-        raise ValueError("action_logits must be finite")
-    return logits, batch_size, class_count
-
-
-def _require_output(output: MinBlockFeeOutput) -> tuple[torch.Tensor, torch.Tensor, int, int]:
-    logits, batch_size, class_count = _require_action_logits(output.action_logits)
-    minimum_fee_z = output.minimum_fee_z
-    fee_values = _require_floating_vector(minimum_fee_z, "minimum_fee_z")
-    if fee_values.shape[0] != batch_size:
-        raise ValueError("output heads must have matching batch dimensions")
-    return logits, fee_values, batch_size, class_count
-
-
-def _require_labels(
-    labels: object,
-    *,
-    batch_size: int,
-    class_count: int,
-) -> torch.Tensor:
-    if not isinstance(labels, torch.Tensor):
-        raise TypeError("labels must be a torch.Tensor")
-    if labels.ndim != 1 or labels.shape[0] != batch_size:
-        raise ValueError("labels must have shape [B]")
-    if labels.dtype != torch.int64:
-        raise TypeError("labels must have dtype int64")
-    if torch.any(labels < 0) or torch.any(labels >= class_count):
-        raise ValueError("labels must be valid class indices")
-    return labels
 
 
 def min_block_fee_loss(
@@ -160,29 +88,19 @@ def min_block_fee_loss(
     label: torch.Tensor,
     target: torch.Tensor,
 ) -> MinBlockFeeLoss:
-    logits, minimum_fee_z, batch_size, class_count = _require_output(output)
-    label_values = _require_labels(
-        label,
-        batch_size=batch_size,
-        class_count=class_count,
-    )
-    target_values = _require_floating_vector(target, "target")
-    if target_values.shape[0] != batch_size:
-        raise ValueError("target must have shape [B]")
-
     classification = F.cross_entropy(
-        logits,
-        label_values,
+        output.action_logits,
+        label,
         reduction="none",
     )
     regression = F.smooth_l1_loss(
-        minimum_fee_z,
-        target_values,
+        output.minimum_fee_z,
+        target,
         reduction="none",
     )
     total = classification + regression
     return MinBlockFeeLoss(
-        mean_total=total.sum() / batch_size,
+        mean_total=total.sum() / output.action_logits.shape[0],
         total_by_origin=total.detach(),
         classification_by_origin=classification.detach(),
         regression_by_origin=regression.detach(),
@@ -190,5 +108,7 @@ def min_block_fee_loss(
 
 
 def decode_action(output: MinBlockFeeOutput) -> torch.Tensor:
-    logits, _, _ = _require_action_logits(output.action_logits)
-    return logits.argmax(dim=-1)
+    action_logits = output.action_logits
+    if not torch.isfinite(action_logits).all():
+        raise ValueError("action_logits must be finite")
+    return action_logits.argmax(dim=-1)

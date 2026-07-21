@@ -34,6 +34,11 @@ def _validate_transformer_dimensions(model_width: int, attention_heads: int) -> 
         raise ValueError("model_width must be divisible by attention_heads")
 
 
+def _require_unique(label: str, values: tuple[object, ...]) -> None:
+    if len(set(values)) != len(values):
+        raise ValueError(f"{label} must not contain duplicates")
+
+
 class CorpusDefinition(_FrozenRecord):
     chain_id: _PositiveInt
     first_block: _NonNegativeInt
@@ -76,8 +81,7 @@ class ExperimentSemantics(_FrozenRecord):
             >= self.validation_window.first_parent_block
         ):
             raise ValueError("validation_window must follow complete training outcomes")
-        if len(set(self.ordered_features)) != len(self.ordered_features):
-            raise ValueError("ordered_features must not contain duplicates")
+        _require_unique("ordered_features", self.ordered_features)
         return self
 
 
@@ -142,11 +146,6 @@ class FitMethod(_FrozenRecord):
 class Method(_FrozenRecord):
     model: ModelDefinition
     fit: FitMethod
-
-
-def _require_unique(label: str, values: tuple[object, ...]) -> None:
-    if len(set(values)) != len(values):
-        raise ValueError(f"{label} must not contain duplicates")
 
 
 class TrainingDefinition(_FrozenRecord):

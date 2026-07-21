@@ -209,14 +209,6 @@ def _fit(
         ),
         pytest.param(
             lambda: _fit(
-                _valid_blocks(),
-                ordered_features=("log_base_fee_per_gas", "log_base_fee_per_gas"),
-            ),
-            "duplicates",
-            id="duplicate-name",
-        ),
-        pytest.param(
-            lambda: _fit(
                 _blocks(
                     base_fees=[10, 20],
                     gas_used=[0, 1],
@@ -233,15 +225,6 @@ def _fit(
             lambda: FeatureState(means=(0.0,), standard_deviations=(1.0, 2.0)),
             "equal widths",
             id="state-widths",
-        ),
-        pytest.param(
-            lambda: transform_feature_rows(
-                _valid_blocks(),
-                ordered_features=("log_base_fee_per_gas", "gas_utilization"),
-                state=FeatureState(means=(0.0,), standard_deviations=(1.0,)),
-            ),
-            "state width",
-            id="transform-state-width",
         ),
         pytest.param(
             lambda: transform_feature_rows(

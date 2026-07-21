@@ -615,7 +615,7 @@ minimum. Its scientific interpretation is defined in the [theory](#targets-loss-
 - `fit_target_state(raw_minima)` requires a nonempty positive int64 vector, computes Float64
   `ell_i`, `mu_ell`, and `sigma_ell` with `ddof=0`, and rejects constant targets.
 - `standardize_target(raw_minima, state)` returns finite contiguous float32 `z_i` values.
-- `min_block_fee_loss(...)` validates both heads and targets, computes native unweighted cross-entropy and native default Smooth L1 once per origin, and returns their per-origin sum plus the sample-denominator mean.
+- `min_block_fee_loss(...)` trusts tensors owned by model and historical-preparation internals. It directly computes native unweighted cross-entropy and native default Smooth L1 per origin, returning both per-origin components, their sum, and the sample-denominator mean.
 - `decode_action(output)` applies the canonical action decode.
 
 The exact equations are in the [theory](#targets-loss-and-decode).

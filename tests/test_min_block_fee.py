@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 
 import numpy as np
 import pytest
@@ -64,122 +63,17 @@ def test_target_and_native_loss_match_hand_derived_fixture() -> None:
     assert predictions.grad is not None
 
 
-def _valid_output() -> MinBlockFeeOutput:
-    return MinBlockFeeOutput(
-        action_logits=torch.zeros((2, 2), dtype=torch.float32),
-        minimum_fee_z=torch.zeros(2, dtype=torch.float32),
-    )
-
-
-@pytest.mark.parametrize(
-    "operation",
-    [
-        pytest.param(
-            lambda: fit_target_state(np.array([1, 2], dtype="int32")),
-            id="target-int64",
-        ),
-        pytest.param(
-            lambda: min_block_fee_loss(
-                _valid_output(),
-                label=torch.tensor([0.0, 1.0]),
-                target=torch.zeros(2),
-            ),
-            id="label-int64",
-        ),
-    ],
-)
-def test_owned_type_contracts_are_enforced(operation: Callable[[], object]) -> None:
-    with pytest.raises(TypeError):
-        operation()
-
-
-@pytest.mark.parametrize(
-    "operation",
-    [
-        pytest.param(
-            lambda: fit_target_state(np.array([1, 0], dtype=np.int64)),
-            id="target-positive",
-        ),
-        pytest.param(
-            lambda: fit_target_state(np.array([2, 2], dtype=np.int64)),
-            id="target-nonconstant",
-        ),
-        pytest.param(
-            lambda: standardize_target(
-                np.array([1, -1], dtype=np.int64),
-                TargetState(mean=0.0, standard_deviation=1.0),
-            ),
-            id="standardize-positive",
-        ),
-        pytest.param(
-            lambda: min_block_fee_loss(
-                MinBlockFeeOutput(
-                    action_logits=torch.tensor([[math.inf, 0.0], [0.0, 0.0]]),
-                    minimum_fee_z=torch.zeros(2),
-                ),
-                label=torch.tensor([0, 1]),
-                target=torch.zeros(2),
-            ),
-            id="finite-output",
-        ),
-        pytest.param(
-            lambda: min_block_fee_loss(
-                _valid_output(),
-                label=torch.tensor([0, 2]),
-                target=torch.zeros(2),
-            ),
-            id="label-range",
-        ),
-        pytest.param(
-            lambda: min_block_fee_loss(
-                _valid_output(),
-                label=torch.tensor([0, 1]),
-                target=torch.tensor([0.0, math.nan]),
-            ),
-            id="finite-target",
-        ),
-    ],
-)
-def test_owned_value_contracts_are_enforced(operation: Callable[[], object]) -> None:
+def test_target_minima_must_be_positive() -> None:
+    state = TargetState(mean=0.0, standard_deviation=1.0)
     with pytest.raises(ValueError):
-        operation()
-
-
-@pytest.mark.parametrize(
-    "operation",
-    [
-        pytest.param(
-            lambda: min_block_fee_loss(
-                MinBlockFeeOutput(
-                    action_logits=torch.zeros(2),
-                    minimum_fee_z=torch.zeros(2),
-                ),
-                label=torch.tensor([0, 1]),
-                target=torch.zeros(2),
-            ),
-            id="logit-shape",
-        ),
-        pytest.param(
-            lambda: min_block_fee_loss(
-                _valid_output(),
-                label=torch.tensor([[0, 1]]),
-                target=torch.zeros(2),
-            ),
-            id="label-shape",
-        ),
-        pytest.param(
-            lambda: min_block_fee_loss(
-                _valid_output(),
-                label=torch.tensor([0, 1]),
-                target=torch.zeros(1),
-            ),
-            id="target-shape",
-        ),
-    ],
-)
-def test_loss_shape_contracts_are_enforced(operation: Callable[[], object]) -> None:
+        fit_target_state(np.array([1, 0], dtype=np.int64))
     with pytest.raises(ValueError):
-        operation()
+        standardize_target(np.array([1, -1], dtype=np.int64), state)
+
+
+def test_target_state_requires_nonconstant_minima() -> None:
+    with pytest.raises(ValueError):
+        fit_target_state(np.array([2, 2], dtype=np.int64))
 
 
 def test_decode_uses_native_first_index_argmax_and_ignores_auxiliary_values() -> None:
@@ -189,3 +83,8 @@ def test_decode_uses_native_first_index_argmax_and_ignores_auxiliary_values() ->
     )
 
     assert torch.equal(decode_action(output), torch.tensor([0, 0], dtype=torch.int64))
+
+
+def test_decode_rejects_nonfinite_logits() -> None:
+    with pytest.raises(ValueError):
+        decode_action(MinBlockFeeOutput(torch.tensor([[math.nan, 0.0]]), torch.zeros(1)))

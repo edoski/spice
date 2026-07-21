@@ -46,9 +46,6 @@ def fit_feature_state(
         training_support.to_polars(),
         ordered_features=ordered_features,
     )
-    if not np.isfinite(raw).all():
-        raise ValueError("training_support must produce finite raw features")
-
     means = raw.mean(axis=0, dtype=np.float64)
     standard_deviations = raw.std(axis=0, ddof=0, dtype=np.float64)
     return FeatureState(
@@ -63,9 +60,6 @@ def transform_feature_rows(
     ordered_features: tuple[str, ...],
     state: FeatureState,
 ) -> NDArray[np.float32]:
-    if len(state.means) != len(ordered_features):
-        raise ValueError("state width must equal ordered_features width")
-
     raw = _raw_feature_rows(blocks.to_polars(), ordered_features=ordered_features)
     means = np.asarray(state.means, dtype=np.float64)
     standard_deviations = np.asarray(state.standard_deviations, dtype=np.float64)
@@ -84,14 +78,8 @@ def _raw_feature_rows(
     *,
     ordered_features: tuple[str, ...],
 ) -> NDArray[np.float64]:
-    _validate_feature_uniqueness(ordered_features)
     columns = [_feature_values(blocks, feature_name) for feature_name in ordered_features]
     return np.ascontiguousarray(np.column_stack(columns), dtype=np.float64)
-
-
-def _validate_feature_uniqueness(ordered_features: tuple[str, ...]) -> None:
-    if len(set(ordered_features)) != len(ordered_features):
-        raise ValueError("ordered_features must not contain duplicates")
 
 
 def _feature_values(blocks: pl.DataFrame, feature_name: str) -> NDArray[np.float64]:
@@ -150,8 +138,6 @@ def _forming_base_fee_log(
     gas_limit: int,
 ) -> float:
     child_base_fee = _forming_child_base_fee(base_fee_per_gas, gas_used, gas_limit)
-    if child_base_fee <= 0:
-        raise ValueError("forming base fee must be positive")
     return math.log(child_base_fee)
 
 
