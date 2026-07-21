@@ -30,9 +30,9 @@ uv sync --extra serve
 
 ## Quick start
 
-Prepare each Corpus with [Blockweaver](https://github.com/edoski/blockweaver), then place its
-immutable pair at `STORAGE_ROOT/corpora/<UUID>/corpus.json` and `blocks.parquet`. Create FABLE
-workflow requests from the [request reference](FABLE.md#requests-and-definitions).
+Place each completed canonical Corpus pair at
+`STORAGE_ROOT/corpora/<UUID>/corpus.json` and `blocks.parquet`. Corpus production is external to
+FABLE. Create workflow requests from the [request reference](FABLE.md#requests-and-definitions).
 
 Submit one or more training or evaluation requests:
 
@@ -59,7 +59,7 @@ The [CLI reference](FABLE.md#cli) defines the exact command contracts.
 Place cwd-local `SERVING.yaml` beside the serving process, then start the factory:
 
 ```bash
-uv run uvicorn fable.serving:create_app --factory
+STORAGE_ROOT=/absolute/storage uv run uvicorn fable.serving:create_app --factory
 ```
 
 The FABLE Inference API accepts `POST /inference`. The [serving reference](FABLE.md#serving-and-mobile) defines its request, response, and configuration.

@@ -20,7 +20,7 @@ FABLE is organized around strict request values, direct owner functions, native 
 ### System shape
 
 ```text
-Blockweaver-produced Corpus
+completed canonical Corpus pair
         |
         v
 strict workflow request --> CLI or direct Python call
@@ -63,10 +63,8 @@ Each owner has one system seam:
 
 #### Corpus
 
-`CorpusRequest` names an inclusive chain block range and its UUID. FABLE receives the completed
-`corpus.json` and `blocks.parquet` pair produced by
-[Blockweaver](https://github.com/edoski/blockweaver), then validates the durable association and
-canonical rows when loading the Corpus.
+`CorpusRequest` names an inclusive chain block range and its UUID. FABLE consumes and validates a
+completed canonical `corpus.json`/`blocks.parquet` pair. Corpus production is external.
 
 #### Study and artifact
 
@@ -76,7 +74,7 @@ A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-S
 
 #### Evaluation
 
-`EvaluateRequest` names an artifact, same-source Corpus, testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, and publishes `evaluation.json` with `observations.parquet`. Each ordered observation stores the origin, decoded and minimum actions, de-standardized natural-log minimum-fee prediction, and immediate, selected, and minimum raw base fees.
+`EvaluateRequest` names an artifact, same-source Corpus, testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, and publishes `evaluation.json` with `observations.parquet`. Each ordered observation stores `h_i`, `hat{k}_i`, `k_i*`, `hat{ell}_i`, `B_i(0)`, `B_i(hat{k}_i)`, and `m_i` under the exact field names in the [reference](#canonical-observations).
 
 `reduce_evaluation()` validates the self-contained observations and returns a transient one-row six-metric DataFrame without loading the artifact or Corpus. The reduction is never persisted.
 
@@ -86,7 +84,10 @@ Historical preparation produces lazy datasets over contiguous feature, fee, and 
 
 The model union is closed: LSTM, Transformer, or Transformer-LSTM. Every model consumes float32 `[B,C,F]` and returns action logits `[B,K]` plus a scalar standardized minimum-fee prediction `[B]`. The architecture is independent of target construction and evaluation accounting.
 
-Live serving loads cwd-local `SERVING.yaml` once, selects an exact artifact cell, freezes the latest closed head, reads its `C-1` predecessors, applies the checkpoint's ordered feature state, runs one CPU batch, and returns the decoded target coordinate.
+Live serving loads cwd-local `SERVING.yaml` once, resolves the artifact storage root from the
+`STORAGE_ROOT` environment variable, selects an exact artifact cell, freezes the latest closed
+head, reads its `C-1` predecessors, applies the checkpoint's ordered feature state, runs one CPU
+batch, and returns the decoded target coordinate and positive finite raw minimum-fee prediction.
 
 ### External boundaries
 
@@ -174,8 +175,8 @@ They are stored and compared as positive Int64 wei/gas:
 [25_500_000_000, 23_000_000_000, 21_000_000_000, 20_000_000_000, 22_000_000_000]
 ```
 
-NumPy first-index `argmin` gives label `k*=3` and raw minimum
-`O=20,000,000,000 wei/gas`. A tie would select the earliest equal minimum.
+Using the [canonical notation](#decision-and-target-notation), the raw outcomes are
+`B_i(0) … B_i(4)`, the label is `k_i*=3`, and `m_i=20,000,000,000 wei/gas`.
 
 The dataset item is:
 
@@ -190,13 +191,15 @@ The dataset item is:
 The raw minimum first enters Float64 natural-log coordinates:
 
 ```text
-ell = ln(20,000,000,000 / (1 wei/gas)) = 23.718998
+ell_i = ln(20,000,000,000 / (1 wei/gas)) = 23.718998
 ```
 
 For a purely illustrative fitted `TargetState(mean=23.5, standard_deviation=0.25)`:
 
 ```text
-z = (23.718998 - 23.5) / 0.25 = 0.875992
+mu_ell    = 23.5
+sigma_ell = 0.25
+z_i       = (23.718998 - 23.5) / 0.25 = 0.875992
 ```
 
 Real state is fitted once from all retained training-origin minima with Float64 `ddof=0`. Validation, testing, and live inference use the persisted state.
@@ -216,33 +219,35 @@ action_logits = [0.2, 1.1, -0.1, 1.7, 0.5]
 minimum_fee_z = 0.7
 ```
 
-With label `3`, cross-entropy is:
+The five `action_logits` values are `a_i0 … a_i4`. With `k_i*=3`, cross-entropy is:
 
 ```text
-CE = log(sum(exp(action_logits))) - action_logits[3]
+CE = log(sum_{k in 𝒦}(exp(a_ik))) - a_i,k_i*
    = log(exp(0.2)+exp(1.1)+exp(-0.1)+exp(1.7)+exp(0.5)) - 1.7
    ≈ 0.805777
 ```
 
-The z error is `e = 0.7 - 0.875992 = -0.175992`. Native Smooth L1 uses its default transition at one standardized-target unit, so `|e| < 1`:
+Here `hat{z}_i=0.7`, so `e_i=hat{z}_i-z_i=0.7-0.875992=-0.175992`. Native
+Smooth L1 uses its default transition at one standardized-target unit, so `|e_i| < 1`:
 
 ```text
-SmoothL1(e) = 0.5 * e^2 ≈ 0.015487
-total       = CE + SmoothL1(e) ≈ 0.821264
+SmoothL1(e_i) = 0.5 * e_i^2 ≈ 0.015487
+total         = CE + SmoothL1(e_i) ≈ 0.821264
 ```
 
 For this one-origin batch, `mean_total = total`. In a larger batch every origin contributes native unweighted cross-entropy plus native default Smooth L1 once, with sample count `B` as the denominator. No loss definition, mode, scale, threshold, or fitted classification state is request or artifact authority.
 
 ### 6. Decode and evaluate
 
-Native first-index `argmax` selects `k=3`; equal maximum logits would choose the first. The intended target is block `25,400,004`.
+Canonical decode gives `hat{k}_i=3`. The intended target is block `25,400,004`.
 
-For this outcome, let `B(k)` be the Corpus base fee at `h+1+k`:
+For this outcome:
 
 ```text
-B(0) = 25.5 gwei/gas
-B(3) = 20.0 gwei/gas
-k*   = earliest argmin_k B(k) = 3
+B_i(0)        = 25.5 gwei/gas
+B_i(hat{k}_i) = B_i(3) = 20.0 gwei/gas
+k_i*          = 3
+m_i           = B_i(k_i*) = 20.0 gwei/gas
 ```
 
 The durable observation stores:
@@ -266,8 +271,17 @@ The checkpoint fixes chain association, `C`, `K`, ordered features, feature stat
 Continuing the teaching values, the API response shape is:
 
 ```json
-{"head_block": 25400000, "selected_action_k": 3, "target_block": 25400004}
+{
+  "head_block": 25400000,
+  "selected_action_k": 3,
+  "target_block": 25400004,
+  "predicted_minimum_base_fee_per_gas": 19139115255.738445
+}
 ```
+
+The last value follows current serving arithmetic: the displayed float32 `0.7` is
+`0.699999988079071` as a Python float, then
+`u * exp(hat{ell}_i) = (1 wei/gas) * exp(23.5 + 0.25 * 0.699999988079071)`.
 
 ## Scientific contract
 
@@ -277,7 +291,9 @@ FABLE is a closed-parent, fixed-block-horizon temporal learning system. This doc
 
 The manuscript *SPICE: A Predictive Framework for Cost-Optimization in Multichain Environments* describes a broader spatial, temporal, and distributed-reputation system. Its temporal experiment motivates a future minimum-block decision, an associated scalar fee prediction, the LSTM/Transformer/Transformer-LSTM comparison, chronological roles, and a weighted cross-entropy plus Smooth-L1 lineage.
 
-FABLE specifies the current closed-parent origins, fixed block-count geometry, causal features, raw-integer target ties, training-fitted state, fixed training loss, exhaustive equal-origin evaluation, durable objects, and serving semantics.
+FABLE specifies the current closed-parent origins, fixed block-count geometry, causal features,
+raw-integer target selection, training-fitted state, fixed training loss, exhaustive equal-origin
+evaluation, durable objects, and serving semantics.
 
 ### Closed-parent causality
 
@@ -296,7 +312,31 @@ Block number owns geometry. Timestamp spacing may vary while the number of conte
 
 `C` and `K` are generic positive request values. Python owns no named study matrix, ordering, or staged stopping policy; external orchestration supplies actual runs, and persisted requests and artifacts record what ran.
 
-An origin is eligible only with all `C` context rows and all `K` outcome rows. At a boundary where the next role begins at parent `B`, an earlier origin must satisfy `h+K < B`. Therefore no training outcome reaches validation, and no validation outcome reaches testing.
+An origin is eligible only with all `C` context rows and all `K` outcome rows. At a boundary where the next role begins at parent `V`, an earlier origin must satisfy `h+K < V`. Therefore no training outcome reaches validation, and no validation outcome reaches testing.
+
+### Decision and target notation
+
+For origin `i` with closed parent `h_i`, the canonical decision and scalar-target notation is:
+
+```text
+𝒦          = {0, ..., K-1}
+B_i(k)     = raw base fee at h_i+1+k, for k in 𝒦
+k_i*       = argmin_{k in 𝒦} B_i(k), defined as the smallest minimizing k
+m_i        = B_i(k_i*) = min_{k in 𝒦} B_i(k)
+u          = 1 wei/gas
+ell_i      = ln(m_i / u)
+mu_ell     = mean_Float64(ell_i over retained training origins)
+sigma_ell  = std_Float64(ell_i over retained training origins, ddof=0)
+z_i        = Float32((ell_i - mu_ell) / sigma_ell)
+a_ik       = action logit for k in 𝒦
+hat{k}_i   = argmax_{k in 𝒦} a_ik
+hat{z}_i   = predicted standardized log minimum
+hat{ell}_i = mu_ell + sigma_ell * hat{z}_i
+```
+
+Raw Int64 fee comparison defines `k_i*` and `m_i` before any floating conversion. The fitted
+`sigma_ell` must be positive. Because `m_i/u` is a ratio of like units, `ell_i` and `hat{ell}_i`
+are dimensionless log coordinates.
 
 ### Role ownership and fitted populations
 
@@ -338,17 +378,17 @@ The exact forming-fee column implements the Ethereum parent-known recurrence. Po
 
 #### Ethereum forming-child recurrence
 
-For positive parent fee `f`, parent gas used `u`, and positive gas limit `L`, use Python integers throughout:
+For positive parent fee `f`, parent gas used `g`, and positive gas limit `L`, use Python integers throughout:
 
 ```text
 t = L // 2
 
-if u == t:
+if g == t:
     f_child = f
-elif u > t:
-    f_child = f + max(f * (u - t) // t // 8, 1)
+elif g > t:
+    f_child = f + max(f * (g - t) // t // 8, 1)
 else:
-    f_child = f - f * (t - u) // t // 8
+    f_child = f - f * (t - g) // t // 8
 ```
 
 `t` and the final child fee must be positive. Python integers carry the recurrence through the two ordered divisions; the one-wei floor applies only upward. The completed positive integer is then logged in Float64. This follows the integer ordering in [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559#specification).
@@ -359,33 +399,22 @@ One lazy historical item has:
 
 | Value | Shape | Dtype | Meaning |
 | --- | --- | --- | --- |
-| `inputs` | `[C,F]` | float32 | Standardized closed rows `h-C+1 … h`. |
-| `label` | scalar | int64 | Earliest horizon minimum action. |
-| `target` | scalar | float32 | Standardized log horizon minimum. |
-| `base_fees` | `[K]` | int64 | Positive fees at `h+1 … h+K`. |
-| `origin_block` | scalar | int64 | Closed parent `h`. |
+| `inputs` | `[C,F]` | float32 | Standardized closed rows `h_i-C+1 … h_i`. |
+| `label` | scalar | int64 | Canonical `k_i*`. |
+| `target` | scalar | float32 | Canonical `z_i`. |
+| `base_fees` | `[K]` | int64 | `[B_i(0), ..., B_i(K-1)]`. |
+| `origin_block` | scalar | int64 | Closed parent `h_i`. |
 
 Collation produces `[B,C,F]`, `[B]`, `[B]`, `[B,K]`, and `[B]`.
 
-Let the positive Int64 outcomes be `y_i0 … y_i,K-1`. Then:
+For origin `i`, the positive Int64 outcome vector is
+`[B_i(0), ..., B_i(K-1)]`. The [canonical notation](#decision-and-target-notation) defines its
+`k_i*`, `m_i`, `ell_i`, and `z_i`; NumPy [`argmin`](https://numpy.org/doc/stable/reference/generated/numpy.argmin.html)
+implements that raw-integer action selection.
 
-```text
-k_i* = first argmin_k y_ik
-o_i  = y_i,k_i*
-ell_i = ln(o_i / (1 wei/gas))
-```
-
-Raw integer comparison precedes floating conversion. Equal minima choose the first index, consistent with [NumPy `argmin`](https://numpy.org/doc/stable/reference/generated/numpy.argmin.html).
-
-Target state is fitted over retained training origins only:
-
-```text
-mu_o    = mean_Float64(ell_i)
-sigma_o = std_Float64(ell_i, ddof=0)
-z_i     = Float32((ell_i - mu_o) / sigma_o)
-```
-
-`sigma_o` must be positive, and standardization follows the equation above exactly.
+Target state is fitted over retained training origins only. Float64 mean and `ddof=0` population
+standard deviation produce canonical `mu_ell` and positive `sigma_ell`; transformation follows
+the canonical `z_i` equation exactly and returns float32.
 
 ### Targets, loss, and decode
 
@@ -396,25 +425,27 @@ action_logits: [B,K]
 minimum_fee_z: [B]
 ```
 
-The first head scores actions. The second predicts the standardized natural log of the same horizon minimum.
+The first head supplies canonical logits `a_ik`. The second predicts canonical `hat{z}_i`, the
+standardized dimensionless log of the same horizon minimum.
 
 #### Classification
 
-For origin `i`, letting `a_i` be its logits and `k_i*` its label:
+For origin `i`, using its logits `a_i0 … a_i,K-1` and label `k_i*`:
 
 ```text
-c_i = CE(a_i, k_i*)
+c_i = CE([a_i0, ..., a_i,K-1], k_i*)
 ```
 
 Classification is native unweighted cross-entropy. It has no weighting mode, scale, fitted support, or configuration field.
 
 #### Regression
 
-Regression is native Smooth L1 with its default transition at one standardized-target unit. For `e_i = predicted_z_i - target_z_i`:
+Regression is native Smooth L1 with its default transition at one standardized-target unit. Its
+error is `e_i=hat{z}_i-z_i`:
 
 ```text
-smooth_l1(e) = 0.5 e^2       if |e| < 1
-               |e| - 0.5     otherwise
+smooth_l1(e_i) = 0.5 e_i^2       if |e_i| < 1
+                 |e_i| - 0.5     otherwise
 
 r_i = smooth_l1(e_i)
 ```
@@ -428,7 +459,8 @@ mean_total = (sum_i t_i) / B
 
 The denominator is the number of origins in the batch. These are training and validation losses only. The operative functions match PyTorch's [`cross_entropy`](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.cross_entropy.html) and [`smooth_l1_loss`](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.smooth_l1_loss.html).
 
-Decode is native `argmax(action_logits, dim=-1)`. Equal maximum logits select the first index, and decode depends on the logits alone.
+Decode implements canonical `hat{k}_i` with native `argmax(action_logits, dim=-1)`. Equal maximum
+logits select the first index, and decode depends on the logits alone.
 
 ### Model concepts
 
@@ -442,32 +474,33 @@ All three attach the same two MLP heads. Architecture capacity belongs to `Model
 
 ### Evaluation estimands
 
-For testing origin `i`, the canonical observation stores:
+For testing origin `i`, the canonical observation stores these direct values:
 
 ```text
-p_i       = predicted action
-k_i*      = earliest minimum action
-I_i       = immediate base fee at action 0
-R_i       = selected base fee at p_i
-O_i       = minimum base fee at k_i*
-hat_ell_i = predicted natural-log minimum base fee
+hat{k}_i        predicted action
+k_i*            minimum action
+B_i(0)          immediate base fee
+B_i(hat{k}_i)   selected base fee
+m_i             minimum base fee
+hat{ell}_i      predicted dimensionless log minimum
 ```
 
-Tied minimum fees choose the smallest action. Evaluation de-standardizes the model prediction before publication. Reduction reads these stored facts directly, with `ln O_i` as the true natural-log fee.
+Evaluation de-standardizes `hat{z}_i` to `hat{ell}_i` before publication. Reduction reads the
+stored facts directly; `ell_i=ln(m_i/u)` is the true dimensionless log coordinate.
 
 Over the testing origins, reduction returns exactly six Float64 metrics:
 
 ```text
-accuracy                = mean_i[p_i = k_i*]
-log_fee_mae             = mean_i |hat_ell_i - ln O_i|
-log_fee_mse             = mean_i (hat_ell_i - ln O_i)^2
-base_fee_savings        = mean_i ((I_i - R_i) / I_i)
-base_fee_optimality_gap = mean_i ((R_i - O_i) / O_i)
+accuracy                = mean_i indicator[hat{k}_i = k_i*]
+log_fee_mae             = mean_i |hat{ell}_i - ell_i|
+log_fee_mse             = mean_i (hat{ell}_i - ell_i)^2
+base_fee_savings        = mean_i ((B_i(0) - B_i(hat{k}_i)) / B_i(0))
+base_fee_optimality_gap = mean_i ((B_i(hat{k}_i) - m_i) / m_i)
 ```
 
 `f1_macro` is standard unweighted macro-F1 over the union of action classes present in truth or predictions, with zero division equal to zero. Classes absent from both do not enter the mean.
 
-Both economic metrics are mean per-origin fractions, not ratios of fee sums. Positive stored fees make their denominators defined. Positive `base_fee_savings` is better; negative values mean the selected fee exceeded the immediate fee. `base_fee_optimality_gap` is nonnegative and lower is better. Natural-log errors are in log wei/gas and lower is better. Accuracy and macro-F1 are unitless and higher is better. Economic values remain fractions for later percentage formatting.
+Both economic metrics are mean per-origin fractions, not ratios of fee sums. Positive stored fees make their denominators defined. Positive `base_fee_savings` is better; negative values mean the selected fee exceeded the immediate fee. `base_fee_optimality_gap` is nonnegative and lower is better. Natural-log errors compare dimensionless coordinates relative to `u=1 wei/gas` and lower is better. Accuracy and macro-F1 are unitless and higher is better. Economic values remain fractions for later percentage formatting.
 
 ### HPO interpretation
 
@@ -479,8 +512,7 @@ The sections below place each direct owner interface beside the scientific and d
 
 ### Corpus input
 
-[Blockweaver](https://github.com/edoski/blockweaver) supplies FABLE with one completed immutable
-Corpus pair:
+FABLE consumes and validates one completed canonical Corpus pair. Corpus production is external.
 
 ```text
 corpora/<corpus_id>/
@@ -532,7 +564,10 @@ Preparation builds one contiguous CPU backing over the needed range:
 - raw base fees: int64 `[rows]`;
 - block numbers: int64 `[rows]`.
 
-It stores per-origin row positions and first-argmin labels as int64 vectors and standardized targets as a float32 vector. `HistoricalDataset.__getitem__()` slices one float32 `[C,F]` input and one int64 `[K]` raw fee outcome on demand, plus scalar int64 label and origin block and scalar float32 target.
+It stores per-origin row positions, canonical `k_i*` labels as int64 vectors, and standardized
+`z_i` targets as a float32 vector. `HistoricalDataset.__getitem__()` slices one float32 `[C,F]`
+input and one int64 `[K]` raw fee outcome on demand, plus scalar int64 label and origin block and
+scalar float32 target.
 
 #### Feature state
 
@@ -542,7 +577,8 @@ Exact formulas, units, causal availability, and the Ethereum forming-fee recurre
 
 #### Outcome preparation
 
-Historical outcomes remain positive int64 fees. For each origin, NumPy first-index `argmin` over `h+1 … h+K` produces the label; the selected raw minimum feeds the fitted target state.
+Historical outcomes remain positive int64 `B_i(k)` fees. For each origin, canonical `k_i*` is the
+label, and `m_i` feeds the fitted target state.
 
 Role boundaries are complete-outcome boundaries. The training last parent plus `K` must be strictly before the first validation parent; an authored testing window obeys the same rule after validation. Training alone fits feature state, target state, and model weights.
 
@@ -550,7 +586,10 @@ Role boundaries are complete-outcome boundaries. The training last parent plus `
 
 Serving freezes one latest closed head `h`, reads exactly `C-1` predecessors, decodes untrusted RPC quantities, constructs one live `BlockFrame`, transforms the ordered features with the artifact's `FeatureState`, and constructs float32 `[1,C,F]`. Historical preparation owns outcomes, labels, and target values.
 
-The artifact fixes `C`, `K`, feature order, and fitted states. Decoding returns `k`, and serving reports `h+1+k` as the target block coordinate.
+The artifact fixes `C`, `K`, feature order, and fitted states. Decoding returns `hat{k}_i`, so
+serving reports `h_i+1+hat{k}_i` as the target block coordinate. It de-standardizes `hat{z}_i` to
+`hat{ell}_i` with the artifact's `TargetState` and returns `u * exp(hat{ell}_i)` as the positive
+finite `predicted_minimum_base_fee_per_gas`.
 
 ### Minimum-block-fee task
 
@@ -558,7 +597,8 @@ Top-level `fable.min_block_fee` keeps the architecture-neutral target, loss, and
 
 #### Owned values
 
-`TargetState` contains the Float64 population mean and positive population standard deviation of `ln(raw horizon minimum)` over retained training origins.
+`TargetState` contains canonical `mu_ell` and positive `sigma_ell`, the Float64 population state of
+dimensionless `ell_i=ln(m_i/u)` over retained training origins.
 
 `MinBlockFeeOutput` has two tensors:
 
@@ -567,20 +607,24 @@ action_logits:  [B,K]
 minimum_fee_z:  [B]
 ```
 
-The scalar head predicts the standardized natural log of the horizon minimum. Its scientific interpretation is defined in the [theory](#targets-loss-and-decode).
+The scalar head predicts canonical `hat{z}_i`, the standardized dimensionless log of the horizon
+minimum. Its scientific interpretation is defined in the [theory](#targets-loss-and-decode).
 
 #### Direct functions
 
-- `fit_target_state(raw_minima)` requires a nonempty positive int64 vector, computes Float64 `ln`, mean, and `ddof=0` standard deviation, and rejects constant targets.
-- `standardize_target(raw_minima, state)` returns finite contiguous float32 z values.
+- `fit_target_state(raw_minima)` requires a nonempty positive int64 vector, computes Float64
+  `ell_i`, `mu_ell`, and `sigma_ell` with `ddof=0`, and rejects constant targets.
+- `standardize_target(raw_minima, state)` returns finite contiguous float32 `z_i` values.
 - `min_block_fee_loss(...)` validates both heads and targets, computes native unweighted cross-entropy and native default Smooth L1 once per origin, and returns their per-origin sum plus the sample-denominator mean.
-- `decode_action(output)` applies native first-index `argmax` along the action dimension.
+- `decode_action(output)` applies the canonical action decode.
 
 The exact equations are in the [theory](#targets-loss-and-decode).
 
 #### Boundaries
 
-Temporal preparation owns raw `[K]` outcomes, first-argmin labels, and standardized targets. Model code owns the sequence encoder and the two concrete heads. Evaluation owns observation publication and economic accounting.
+Temporal preparation owns raw `[K]` `B_i(k)` outcomes, `k_i*` labels, and standardized `z_i`
+targets. Model code owns the sequence encoder and the two concrete heads. Evaluation owns
+observation publication and economic accounting.
 
 ### Study
 
@@ -625,7 +669,9 @@ Evaluation separates canonical self-contained observations from transient metric
 
 `evaluate(request, storage_root, deployment)` loads the exact Corpus and native artifact, requires the artifact's source Corpus to equal the evaluation Corpus, prepares the testing origin window with persisted state, and performs CUDA inference.
 
-For every eligible origin it writes one ordered, nonnull observation containing the origin, decoded and minimum actions, de-standardized natural-log minimum-fee prediction, and immediate, selected, and minimum raw base fees. Work is written under `evaluations/.<evaluation_id>/` and renamed to:
+For every eligible origin it writes one ordered, nonnull observation containing `h_i`, `hat{k}_i`,
+`k_i*`, `hat{ell}_i`, `B_i(0)`, `B_i(hat{k}_i)`, and `m_i` under the canonical field names. Work is
+written under `evaluations/.<evaluation_id>/` and renamed to:
 
 ```text
 evaluations/<evaluation_id>/
@@ -908,10 +954,11 @@ Serving RPC endpoints arrive through cwd-local `SERVING.yaml` values.
 
 The serving factory is `fable.serving:create_app`; its display title is `FABLE Inference API`. It reads cwd-local `SERVING.yaml` once during application lifespan and uses its values literally.
 
-The strict serving root contains an absolute `storage_root` and exactly three records:
-`ethereum`, `polygon`, and `avalanche`. Each chain record contains a nonempty `rpc_url` and
-exactly four UUIDv4 fields: `k2_artifact_id`, `k3_artifact_id`, `k4_artifact_id`, and
-`k5_artifact_id`. All fields are required; extra fields are rejected at both levels.
+The strict `SERVING.yaml` root contains exactly three records: `ethereum`, `polygon`, and
+`avalanche`. Each chain record contains a nonempty `rpc_url` and exactly four UUIDv4 fields:
+`k2_artifact_id`, `k3_artifact_id`, `k4_artifact_id`, and `k5_artifact_id`. All fields are required;
+extra fields are rejected at both levels. Artifact storage comes from the absolute `STORAGE_ROOT`
+environment variable, not from `SERVING.yaml`.
 
 Serving expects Ethereum chain ID `1`, Polygon `137`, and Avalanche C-Chain `43114`; the Polygon and Avalanche clients install the PoA extra-data middleware.
 
@@ -922,12 +969,13 @@ chain: "ethereum" | "polygon" | "avalanche"
 K: 2 | 3 | 4 | 5
 ```
 
-`POST /inference` returns nonnegative integers:
+`POST /inference` returns three nonnegative integers and one positive finite float:
 
 ```text
-head_block
-selected_action_k
-target_block = head_block + 1 + selected_action_k
+head_block                                = h_i
+selected_action_k                         = hat{k}_i
+target_block                              = h_i + 1 + hat{k}_i
+predicted_minimum_base_fee_per_gas        = u * exp(hat{ell}_i)
 ```
 
 OpenAPI and interactive documentation routes are disabled. The server verifies provider chain ID, loads the exact selected-Study artifact, requires request `K` to equal artifact `K`, reads the latest head plus `C-1` predecessors, prepares float32 `[1,C,F]`, and runs CPU inference.
@@ -943,7 +991,8 @@ The private Expo app manifest is fixed at:
 | Android package | `dev.edoski.fable.demo` |
 | entry | `expo/AppEntry` |
 
-Its only backend variable is `EXPO_PUBLIC_FABLE_BACKEND_URL`. It posts the strict request to `/inference` and displays only the three response fields.
+Its only backend variable is `EXPO_PUBLIC_FABLE_BACKEND_URL`. It posts the strict request to
+`/inference` and displays all four response fields.
 
 ### Evaluation API
 
@@ -980,13 +1029,13 @@ Destination: `evaluations/<evaluation_id>/observations.parquet`. Status: canonic
 
 | # | Field | Type | Unit/meaning |
 | ---: | --- | --- | --- |
-| 1 | `origin_block` | Int64 | closed parent `h` |
-| 2 | `predicted_action_k` | Int64 | decoded action `k` |
-| 3 | `predicted_minimum_log_base_fee` | Float64 | predicted natural-log minimum base fee in wei/gas |
-| 4 | `minimum_action_k` | Int64 | earliest action attaining the minimum raw base fee |
-| 5 | `immediate_base_fee_per_gas` | Int64 | raw base fee at action `0`, wei/gas |
-| 6 | `selected_base_fee_per_gas` | Int64 | raw base fee at the predicted action, wei/gas |
-| 7 | `minimum_base_fee_per_gas` | Int64 | raw base fee at the minimum action, wei/gas |
+| 1 | `origin_block` | Int64 | closed parent `h_i` |
+| 2 | `predicted_action_k` | Int64 | decoded `hat{k}_i` |
+| 3 | `predicted_minimum_log_base_fee` | Float64 | dimensionless predicted log-minimum coordinate `hat{ell}_i` relative to `u` |
+| 4 | `minimum_action_k` | Int64 | canonical `k_i*` |
+| 5 | `immediate_base_fee_per_gas` | Int64 | `B_i(0)`, wei/gas |
+| 6 | `selected_base_fee_per_gas` | Int64 | `B_i(hat{k}_i)`, wei/gas |
+| 7 | `minimum_base_fee_per_gas` | Int64 | `m_i`, wei/gas |
 
 The file contains predictions and the observed truth needed for local reduction. Losses, timestamps, waits, horizons, standardized predictions, and derived metrics remain absent.
 
@@ -998,12 +1047,16 @@ Destination: none. `reduce_evaluation()` returns a one-row DataFrame. Status: de
 | ---: | --- | --- | --- |
 | 1 | `accuracy` | Float64 | unitless; higher is better |
 | 2 | `f1_macro` | Float64 | unitless; higher is better |
-| 3 | `log_fee_mae` | Float64 | natural-log wei/gas error; lower is better |
-| 4 | `log_fee_mse` | Float64 | squared natural-log wei/gas error; lower is better |
+| 3 | `log_fee_mae` | Float64 | dimensionless natural-log error relative to `u`; lower is better |
+| 4 | `log_fee_mse` | Float64 | squared dimensionless natural-log error; lower is better |
 | 5 | `base_fee_savings` | Float64 | mean per-origin fraction versus immediate; higher is better |
 | 6 | `base_fee_optimality_gap` | Float64 | mean per-origin fraction above optimum; lower is better |
 
-`accuracy` uses `minimum_action_k` as truth. `f1_macro` averages over the union of classes appearing in truth or predictions with zero division zero. Regression compares the stored predicted natural-log fee with the natural log of `minimum_base_fee_per_gas`. Economic fields are fractions, not percentages or ratios of sums.
+`accuracy` compares `predicted_action_k` (`hat{k}_i`) with `minimum_action_k` (`k_i*`). `f1_macro`
+averages over the union of classes appearing in truth or predictions with zero division zero.
+Regression compares `predicted_minimum_log_base_fee` (`hat{ell}_i`) with
+`ln(minimum_base_fee_per_gas / u)` (`ell_i`). Economic fields are fractions, not percentages or
+ratios of sums.
 
 ## Limitations and sources
 
