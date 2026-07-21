@@ -19,18 +19,14 @@ from fable.addresses import (
     artifact_fit_history_path,
 )
 from fable.config import (
-    AdamWMethod,
     BaselineSource,
     BlockWindow,
     CorpusDefinition,
     CorpusRequest,
     ExperimentSemantics,
     FitMethod,
-    LstmCapacity,
     LstmDefinition,
-    LstmMethod,
-    LstmMethodSpace,
-    StudyDefinition,
+    Method,
     TrainingDefinition,
     TrainRequest,
     TransformerDefinition,
@@ -75,22 +71,25 @@ def _experiment() -> ExperimentSemantics:
 def _request() -> TrainRequest:
     definition = TrainingDefinition(
         experiment=_experiment(),
-        model=LstmDefinition(
-            family="lstm",
-            hidden=5,
-            layers=1,
-            head_hidden=3,
-            dropout=0.1,
-        ),
-        optimizer=AdamWMethod(learning_rate=0.002, weight_decay=0.003),
-        fit=FitMethod(
-            accumulation=2,
-            gradient_clip_norm=0.4,
-            seed=19,
-            max_epochs=4,
-            validate_every_completed_epoch=1,
-            patience=1,
-            min_delta=0.02,
+        method=Method(
+            model=LstmDefinition(
+                family="lstm",
+                hidden=5,
+                layers=1,
+                head_hidden=3,
+                dropout=0.1,
+            ),
+            fit=FitMethod(
+                learning_rate=0.002,
+                weight_decay=0.003,
+                accumulation=2,
+                gradient_clip_norm=0.4,
+                seed=19,
+                max_epochs=4,
+                validate_every_completed_epoch=1,
+                patience=1,
+                min_delta=0.02,
+            ),
         ),
     )
     return TrainRequest(
@@ -148,15 +147,13 @@ def _deployment() -> FitDeployment:
     )
 
 
-def _candidate_request(method: LstmMethod) -> TuneRequest:
+def _candidate_request(method: Method) -> TuneRequest:
     return TuneRequest(
         workflow="tune",
         study_id=UUID("40000000-0000-4000-8000-000000000001"),
         corpus_id=CORPUS_ID,
-        study_definition=StudyDefinition(
-            experiment=_experiment(),
-            method_space=LstmMethodSpace(family="lstm", methods=(method,)),
-        ),
+        experiment=_experiment(),
+        methods=(method,),
     )
 
 
@@ -165,16 +162,19 @@ def _definition(
 ) -> TrainingDefinition:
     return TrainingDefinition(
         experiment=_experiment(),
-        model=model,
-        optimizer=AdamWMethod(learning_rate=0.002, weight_decay=0.003),
-        fit=FitMethod(
-            accumulation=1,
-            gradient_clip_norm=0.8,
-            seed=29,
-            max_epochs=1,
-            validate_every_completed_epoch=1,
-            patience=0,
-            min_delta=0.0,
+        method=Method(
+            model=model,
+            fit=FitMethod(
+                learning_rate=0.002,
+                weight_decay=0.003,
+                accumulation=1,
+                gradient_clip_norm=0.8,
+                seed=29,
+                max_epochs=1,
+                validate_every_completed_epoch=1,
+                patience=0,
+                min_delta=0.0,
+            ),
         ),
     )
 
@@ -219,12 +219,17 @@ def test_artifact_association_rejects_only_owned_mismatches() -> None:
         standard_deviations=(0.5, 0.25),
     )
     target_state = TargetState(mean=3.0, standard_deviation=0.75)
-    method = LstmMethod(
-        family="lstm",
-        capacity=LstmCapacity(hidden=5, layers=1, head_hidden=3),
-        dropout=0.1,
-        optimizer=AdamWMethod(learning_rate=0.002, weight_decay=0.003),
+    method = Method(
+        model=LstmDefinition(
+            family="lstm",
+            hidden=5,
+            layers=1,
+            head_hidden=3,
+            dropout=0.1,
+        ),
         fit=FitMethod(
+            learning_rate=0.002,
+            weight_decay=0.003,
             accumulation=2,
             gradient_clip_norm=0.4,
             seed=19,
@@ -431,12 +436,17 @@ def test_full_checkpoint_resume_restores_fit_history(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    method = LstmMethod(
-        family="lstm",
-        capacity=LstmCapacity(hidden=5, layers=1, head_hidden=3),
-        dropout=0.0,
-        optimizer=AdamWMethod(learning_rate=0.004, weight_decay=0.002),
+    method = Method(
+        model=LstmDefinition(
+            family="lstm",
+            hidden=5,
+            layers=1,
+            head_hidden=3,
+            dropout=0.0,
+        ),
         fit=FitMethod(
+            learning_rate=0.004,
+            weight_decay=0.002,
             accumulation=1,
             gradient_clip_norm=0.0,
             seed=37,
@@ -447,7 +457,7 @@ def test_full_checkpoint_resume_restores_fit_history(
         ),
     )
     request = _candidate_request(method)
-    prepared = prepare_fit_history(_corpus(), request.study_definition.experiment)
+    prepared = prepare_fit_history(_corpus(), request.experiment)
     real_trainer: Any = modeling.pl.Trainer
     fit_kwargs: list[dict[str, object]] = []
 

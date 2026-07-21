@@ -7,19 +7,16 @@ import pytest
 from pydantic import ValidationError
 
 from fable.config import (
-    METHOD_ADAPTER,
     WORKFLOW_REQUEST_ADAPTER,
-    AdamWMethod,
     BlockWindow,
     CorpusDefinition,
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
-    LstmCapacity,
-    LstmMethod,
-    LstmMethodSpace,
-    StudyDefinition,
-    TransformerCapacity,
+    LstmDefinition,
+    Method,
+    TransformerDefinition,
+    TuneRequest,
 )
 
 STUDY_ID = UUID("00000000-0000-4000-8000-000000000002")
@@ -45,13 +42,18 @@ def _experiment() -> ExperimentSemantics:
     )
 
 
-def _method() -> LstmMethod:
-    return LstmMethod(
-        family="lstm",
-        capacity=LstmCapacity(hidden=32, layers=1, head_hidden=16),
-        dropout=0.2,
-        optimizer=AdamWMethod(learning_rate=0.001, weight_decay=0.0),
+def _method() -> Method:
+    return Method(
+        model=LstmDefinition(
+            family="lstm",
+            hidden=32,
+            layers=1,
+            head_hidden=16,
+            dropout=0.2,
+        ),
         fit=FitMethod(
+            learning_rate=0.001,
+            weight_decay=0.0,
             accumulation=2,
             gradient_clip_norm=0.75,
             seed=17,
@@ -66,7 +68,6 @@ def _method() -> LstmMethod:
 def _invalid_cases() -> tuple[tuple[Callable[..., object], dict[str, object], str], ...]:
     experiment = _experiment()
     method = _method()
-    method_space = LstmMethodSpace(family="lstm", methods=(method,))
     return (
         (
             CorpusDefinition,
@@ -74,8 +75,11 @@ def _invalid_cases() -> tuple[tuple[Callable[..., object], dict[str, object], st
             "last_block must not precede first_block",
         ),
         (
-            lambda **payload: METHOD_ADAPTER.validate_python(payload),
-            {**method.model_dump(), "family": "cnn"},
+            Method,
+            {
+                **method.model_dump(),
+                "model": {**method.model.model_dump(), "family": "cnn"},
+            },
             "cnn",
         ),
         (
@@ -84,39 +88,72 @@ def _invalid_cases() -> tuple[tuple[Callable[..., object], dict[str, object], st
                 "workflow": "tune",
                 "study_id": STUDY_ID,
                 "corpus_id": CORPUS_ID,
-                "study_definition": StudyDefinition(
-                    experiment=experiment,
-                    method_space=method_space,
-                ).model_dump(),
+                "experiment": experiment.model_dump(),
+                "methods": (method.model_dump(),),
             },
             "tune",
         ),
         (
-            TransformerCapacity,
+            TransformerDefinition,
             {
+                "family": "transformer",
                 "model_width": 31,
                 "attention_heads": 1,
                 "transformer_layers": 1,
                 "feedforward_width": 32,
                 "head_hidden": 8,
+                "dropout": 0.2,
             },
             "model_width must be even",
         ),
         (
-            TransformerCapacity,
+            TransformerDefinition,
             {
+                "family": "transformer",
                 "model_width": 30,
                 "attention_heads": 4,
                 "transformer_layers": 1,
                 "feedforward_width": 32,
                 "head_hidden": 8,
+                "dropout": 0.2,
             },
             "model_width must be divisible by attention_heads",
         ),
         (
-            LstmMethodSpace,
-            {**method_space.model_dump(), "methods": (method, method)},
+            TuneRequest,
+            {
+                "workflow": "tune",
+                "study_id": STUDY_ID,
+                "corpus_id": CORPUS_ID,
+                "experiment": experiment,
+                "methods": (method, method),
+            },
             "methods must not contain duplicates",
+        ),
+        (
+            TuneRequest,
+            {
+                "workflow": "tune",
+                "study_id": STUDY_ID,
+                "corpus_id": CORPUS_ID,
+                "experiment": experiment,
+                "methods": (
+                    method,
+                    Method(
+                        model=TransformerDefinition(
+                            family="transformer",
+                            model_width=32,
+                            attention_heads=4,
+                            transformer_layers=1,
+                            feedforward_width=64,
+                            head_hidden=8,
+                            dropout=0.2,
+                        ),
+                        fit=method.fit,
+                    ),
+                ),
+            },
+            "methods must use one model family",
         ),
         (
             ExperimentSemantics,

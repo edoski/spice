@@ -22,7 +22,6 @@ from fable.addresses import (
     evaluation_observations_path,
 )
 from fable.config import (
-    AdamWMethod,
     BaselineSource,
     BlockWindow,
     CorpusDefinition,
@@ -30,9 +29,8 @@ from fable.config import (
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
-    LstmCapacity,
     LstmDefinition,
-    LstmMethod,
+    Method,
     SelectedStudySource,
     TrainingDefinition,
     TrainRequest,
@@ -116,13 +114,18 @@ def _experiment() -> ExperimentSemantics:
     )
 
 
-def _method() -> LstmMethod:
-    return LstmMethod(
-        family="lstm",
-        capacity=LstmCapacity(hidden=4, layers=1, head_hidden=3),
-        dropout=0.0,
-        optimizer=AdamWMethod(learning_rate=0.01, weight_decay=0.0),
+def _method() -> Method:
+    return Method(
+        model=LstmDefinition(
+            family="lstm",
+            hidden=4,
+            layers=1,
+            head_hidden=3,
+            dropout=0.0,
+        ),
         fit=FitMethod(
+            learning_rate=0.01,
+            weight_decay=0.0,
             accumulation=1,
             gradient_clip_norm=1.0,
             seed=17,
@@ -146,15 +149,7 @@ def _association(
             corpus_id=_CORPUS_ID,
             training_definition=TrainingDefinition(
                 experiment=experiment,
-                model=LstmDefinition(
-                    family="lstm",
-                    hidden=4,
-                    layers=1,
-                    head_hidden=3,
-                    dropout=0.0,
-                ),
-                optimizer=_method().optimizer,
-                fit=_method().fit,
+                method=_method(),
             ),
         )
         return ArtifactAssociation(

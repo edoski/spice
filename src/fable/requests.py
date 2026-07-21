@@ -7,7 +7,8 @@ from uuid import UUID, uuid4
 from .config import (
     BlockWindow,
     EvaluateRequest,
-    StudyDefinition,
+    ExperimentSemantics,
+    Method,
     TrainingSource,
     TrainRequest,
     TuneRequest,
@@ -18,12 +19,17 @@ def fresh_train_request(source: TrainingSource) -> TrainRequest:
     return TrainRequest(workflow="train", artifact_id=uuid4(), source=source)
 
 
-def fresh_tune_request(corpus_id: UUID, study_definition: StudyDefinition) -> TuneRequest:
+def fresh_tune_request(
+    corpus_id: UUID,
+    experiment: ExperimentSemantics,
+    methods: tuple[Method, ...],
+) -> TuneRequest:
     return TuneRequest(
         workflow="tune",
         study_id=uuid4(),
         corpus_id=corpus_id,
-        study_definition=study_definition,
+        experiment=experiment,
+        methods=methods,
     )
 
 

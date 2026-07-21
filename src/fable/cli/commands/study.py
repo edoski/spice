@@ -8,7 +8,7 @@ from uuid import UUID
 
 import typer
 
-from ...config import METHOD_ADAPTER, TuneRequest
+from ...config import Method, TuneRequest
 from ...environment import resolve_storage_root
 from ...execution import _submit_candidate
 from ...study import publish_study
@@ -22,7 +22,7 @@ def run_command(
     method_path: Annotated[Path, typer.Argument(metavar="METHOD.json")],
 ) -> None:
     request = TuneRequest.model_validate_json(request_path.read_bytes(), strict=True)
-    method = METHOD_ADAPTER.validate_json(method_path.read_bytes(), strict=True)
+    method = Method.model_validate_json(method_path.read_bytes(), strict=True)
     typer.echo(_submit_candidate(request, method))
 
 

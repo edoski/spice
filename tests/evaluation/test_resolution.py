@@ -18,7 +18,6 @@ from fable.addresses import (
     evaluation_directory,
 )
 from fable.config import (
-    AdamWMethod,
     BaselineSource,
     BlockWindow,
     CorpusDefinition,
@@ -27,6 +26,7 @@ from fable.config import (
     ExperimentSemantics,
     FitMethod,
     LstmDefinition,
+    Method,
     TrainingDefinition,
     TrainRequest,
 )
@@ -88,22 +88,25 @@ def _association(
                 corpus_id=corpus_id,
                 training_definition=TrainingDefinition(
                     experiment=experiment,
-                    model=LstmDefinition(
-                        family="lstm",
-                        hidden=4,
-                        layers=1,
-                        head_hidden=3,
-                        dropout=0.0,
-                    ),
-                    optimizer=AdamWMethod(learning_rate=0.01, weight_decay=0.0),
-                    fit=FitMethod(
-                        accumulation=1,
-                        gradient_clip_norm=1.0,
-                        seed=17,
-                        max_epochs=2,
-                        validate_every_completed_epoch=1,
-                        patience=1,
-                        min_delta=0.0,
+                    method=Method(
+                        model=LstmDefinition(
+                            family="lstm",
+                            hidden=4,
+                            layers=1,
+                            head_hidden=3,
+                            dropout=0.0,
+                        ),
+                        fit=FitMethod(
+                            learning_rate=0.01,
+                            weight_decay=0.0,
+                            accumulation=1,
+                            gradient_clip_norm=1.0,
+                            seed=17,
+                            max_epochs=2,
+                            validate_every_completed_epoch=1,
+                            patience=1,
+                            min_delta=0.0,
+                        ),
                     ),
                 ),
             ),

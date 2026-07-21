@@ -16,12 +16,12 @@ import torch
 
 from fable import serving
 from fable.config import (
-    AdamWMethod,
     BaselineSource,
     BlockWindow,
     ExperimentSemantics,
     FitMethod,
     LstmDefinition,
+    Method,
     SelectedStudySource,
     TrainingDefinition,
     TrainRequest,
@@ -121,22 +121,25 @@ def _association(
                 corpus_id=_uuid(100),
                 training_definition=TrainingDefinition(
                     experiment=experiment,
-                    model=LstmDefinition(
-                        family="lstm",
-                        hidden=2,
-                        layers=1,
-                        head_hidden=2,
-                        dropout=0.0,
-                    ),
-                    optimizer=AdamWMethod(learning_rate=0.001, weight_decay=0.0),
-                    fit=FitMethod(
-                        accumulation=1,
-                        gradient_clip_norm=1.0,
-                        seed=1,
-                        max_epochs=1,
-                        validate_every_completed_epoch=1,
-                        patience=0,
-                        min_delta=0.0,
+                    method=Method(
+                        model=LstmDefinition(
+                            family="lstm",
+                            hidden=2,
+                            layers=1,
+                            head_hidden=2,
+                            dropout=0.0,
+                        ),
+                        fit=FitMethod(
+                            learning_rate=0.001,
+                            weight_decay=0.0,
+                            accumulation=1,
+                            gradient_clip_norm=1.0,
+                            seed=1,
+                            max_epochs=1,
+                            validate_every_completed_epoch=1,
+                            patience=0,
+                            min_delta=0.0,
+                        ),
                     ),
                 ),
             ),

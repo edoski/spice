@@ -56,7 +56,7 @@ Each owner has one system seam:
 - `temporal` owns causal feature state, fixed-block context/outcome geometry, and lazy historical examples.
 - `min_block_fee` owns target state, the fixed training loss, two-head output, and decode.
 - `modeling` owns the three concrete neural definitions, Lightning fitting, and native checkpoint loading.
-- `study` owns bounded candidate membership, ordered retained results, publication, and selected-result materialization.
+- `study` owns bounded candidate membership, ordered retained results, publication, and selected-Method loading.
 - `evaluation` owns canonical prediction observations and transient Corpus-derived reduction.
 
 ### Durable object flow
@@ -70,9 +70,9 @@ canonical rows when loading the Corpus.
 
 #### Study and artifact
 
-`TuneRequest` contains one `ExperimentSemantics` and a finite, family-specific `MethodSpace`. `run_candidate()` prepares training state, fits one supplied Method, and appends one successful `RetainedResult` to Study scratch. `publish_study()` renames the ordered result set to its canonical JSON file.
+`TuneRequest` contains one `ExperimentSemantics` and a finite nonempty tuple of complete Methods from one model family. `run_candidate()` prepares training state, fits one supplied Method, and appends one successful `RetainedResult` to Study scratch. `publish_study()` renames the ordered result set to its canonical JSON file.
 
-A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-Study request instead names the exact Study UUID and result index while carrying the experiment. Training loads that exact row, reconstructs the definition from its Method, fits through Lightning, and renames the native weights-only best checkpoint to the artifact UUID address. The checkpoint embeds the request, feature and target state, and—only for selected-Study training—the exact result index and Method.
+A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-Study request instead names the exact Study UUID and result index while carrying the experiment. Training loads that exact row's Method, composes the definition from the source experiment and Method, fits through Lightning, and renames the native weights-only best checkpoint to the artifact UUID address. The checkpoint embeds the request, feature and target state, and—only for selected-Study training—the exact result index and Method.
 
 #### Evaluation
 
@@ -470,7 +470,7 @@ Both economic metrics are mean per-origin fractions, not ratios of fee sums. Pos
 
 ### HPO interpretation
 
-A `TuneRequest` freezes the experiment and one finite typed MethodSpace. An operator submits complete Methods from that set. Each successful fit contributes validation total loss, earliest best epoch, and completed epochs in retention order. Selected training names an exact result index.
+A `TuneRequest` freezes the experiment and one finite tuple of complete Methods. An operator submits complete Methods from that tuple. Each successful fit contributes validation total loss, earliest best epoch, and completed epochs in retention order. Selected training names an exact result index.
 
 ## Architecture and deep interfaces
 
@@ -583,13 +583,13 @@ Temporal preparation owns raw `[K]` outcomes, first-argmin labels, and standardi
 
 ### Study
 
-Tuning is a bounded question over a finite typed MethodSpace. A Study contains the exact `TuneRequest` and its ordered successful results.
+Tuning is a bounded question over a finite tuple of complete Methods. A Study contains the exact `TuneRequest` and its ordered successful results.
 
 #### Request and membership
 
-`TuneRequest` fixes a Study UUID, Corpus UUID, `ExperimentSemantics`, and one family-specific nonempty tuple of unique Methods. Each Method is complete: architecture capacity, dropout, AdamW values, training batch size, and fit policy.
+`TuneRequest` fixes a Study UUID, Corpus UUID, `ExperimentSemantics`, and a nonempty tuple of unique complete Methods. Every Method uses the same model family and owns one `ModelDefinition` plus its complete fit policy.
 
-`apply_method(request, method)` requires exact membership in the request's MethodSpace, then composes one `TrainingDefinition`. `training_definition_from_method(experiment, method)` performs the same family-specific composition for a Method supplied by an authoritative association.
+`apply_method(request, method)` requires exact whole-Method membership in `request.methods`, then returns `TrainingDefinition(experiment=request.experiment, method=method)`.
 
 #### Candidate run
 
@@ -612,7 +612,7 @@ Candidate success appends to `studies/.<study_id>/progress.json`. Existing progr
 
 #### Selected training
 
-A selected-Study `TrainRequest` supplies the exact Study UUID and zero-based `study_result_index`. `materialize_selected_training()` loads the canonical Study, verifies Study and Corpus associations, selects that ordered row, and reconstructs its `TrainingDefinition` from the embedded experiment and Method.
+A selected-Study `TrainRequest` supplies the exact Study UUID and zero-based `study_result_index`. `load_selected_method()` strictly loads the canonical Study, verifies Study and Corpus associations, and returns the Method from that ordered row. The artifact association composes its `TrainingDefinition` from the source experiment and returned Method.
 
 The resulting native artifact embeds the same result index and Method for later loading and evaluation.
 
@@ -692,44 +692,28 @@ The training last parent plus `K` must be strictly less than the validation firs
 
 Transformer widths must be even and divisible by `attention_heads`.
 
-#### Method and MethodSpace
+#### Method
 
 | Record | Ordered field | Type and rule |
 | --- | --- | --- |
-| `AdamWMethod` | `learning_rate` | finite float `>0` |
+| `FitMethod` | `learning_rate` | finite float `>0` |
 |  | `weight_decay` | finite float `≥0` |
-| `FitMethod` | `accumulation` | PositiveInt |
+|  | `accumulation` | PositiveInt |
 |  | `gradient_clip_norm` | finite float `≥0` |
-|  | `scheduler` | exactly `"none"` |
 |  | `seed` | NonNegativeInt |
 |  | `max_epochs` | PositiveInt |
 |  | `validate_every_completed_epoch` | PositiveInt |
 |  | `patience` | NonNegativeInt |
 |  | `min_delta` | finite float `≥0` |
-|  | `improvement` | exactly `"strict_lower"` |
-|  | `restore` | exactly `"earliest_best"` |
 
-Every serialized Method has ordered fields `dropout`, `optimizer`, `training_batch`, `fit`, `family`, and `capacity`. `dropout` is finite in `[0,1)`, `optimizer` is `AdamWMethod`, `training_batch` is PositiveInt, and `fit` is `FitMethod`.
-
-| Method family | Capacity fields |
-| --- | --- |
-| `lstm` | `hidden`, `layers`, `head_hidden`: PositiveInt |
-| `transformer` | `model_width`, `attention_heads`, `transformer_layers`, `feedforward_width`, `head_hidden`: PositiveInt |
-| `transformer_lstm` | `model_width`, `attention_heads`, `transformer_layers`, `feedforward_width`, `lstm_hidden`, `lstm_layers`, `head_hidden`: PositiveInt |
-
-Transformer capacity obeys the same even/divisible width constraints. A `MethodSpace` has `family` plus a nonempty tuple `methods` of unique Methods from exactly that family.
+Every serialized `Method` has ordered fields `model: ModelDefinition` and `fit: FitMethod`. A `TuneRequest` owns a nonempty tuple of unique complete Methods and requires every `method.model.family` to match.
 
 #### Study, training, and workflow requests
 
 | Record | Ordered field | Type and rule |
 | --- | --- | --- |
-| `StudyDefinition` | `experiment` | `ExperimentSemantics` |
-|  | `method_space` | family-discriminated `MethodSpace` |
 | `TrainingDefinition` | `experiment` | `ExperimentSemantics` |
-|  | `model` | `ModelDefinition` |
-|  | `optimizer` | `AdamWMethod` |
-|  | `training_batch` | PositiveInt |
-|  | `fit` | `FitMethod` |
+|  | `method` | complete `Method` |
 | `BaselineSource` | `kind` | exactly `"baseline"` |
 |  | `corpus_id` | UUIDv4 |
 |  | `training_definition` | `TrainingDefinition` |
@@ -744,7 +728,8 @@ Transformer capacity obeys the same even/divisible width constraints. A `MethodS
 | `TuneRequest` | `workflow` | exactly `"tune"` |
 |  | `study_id` | UUIDv4 |
 |  | `corpus_id` | UUIDv4 |
-|  | `study_definition` | `StudyDefinition` |
+|  | `experiment` | `ExperimentSemantics` |
+|  | `methods` | nonempty unique tuple of complete, same-family Methods |
 | `EvaluateRequest` | `workflow` | exactly `"evaluate"` |
 |  | `evaluation_id` | UUIDv4 |
 |  | `artifact_id` | UUIDv4 |
@@ -757,7 +742,11 @@ Fresh constructors:
 
 ```python
 fresh_train_request(source: TrainingSource) -> TrainRequest
-fresh_tune_request(corpus_id: UUID, study_definition: StudyDefinition) -> TuneRequest
+fresh_tune_request(
+    corpus_id: UUID,
+    experiment: ExperimentSemantics,
+    methods: tuple[Method, ...],
+) -> TuneRequest
 fresh_evaluate_request(
     artifact_id: UUID,
     corpus_id: UUID,
@@ -824,7 +813,7 @@ Each `RetainedResult` has exact ordered fields:
 
 | Field | Type/rule |
 | --- | --- |
-| `method` | exact Method contained in the request MethodSpace |
+| `method` | exact complete Method contained in `request.methods` |
 | `objective` | finite float validation total loss |
 | `selected_epoch` | integer `≥1` |
 | `completed_epochs` | integer `≥selected_epoch` and `≤method.fit.max_epochs` |

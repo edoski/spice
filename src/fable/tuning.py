@@ -20,7 +20,7 @@ def run_candidate(
     deployment: FitDeployment,
 ) -> None:
     corpus = load_corpus(storage_root, request.corpus_id)
-    prepared = prepare_fit_history(corpus, request.study_definition.experiment)
+    prepared = prepare_fit_history(corpus, request.experiment)
     study_scratch = storage_root / "studies" / f".{request.study_id}"
     study_scratch.mkdir(parents=True, exist_ok=True)
     result = _run_candidate(request, method, prepared, study_scratch, deployment)

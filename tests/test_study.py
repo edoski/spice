@@ -8,37 +8,24 @@ from pydantic import ValidationError
 
 from fable.addresses import study_json_path
 from fable.config import (
-    AdamWMethod,
     BlockWindow,
     ExperimentSemantics,
     FitMethod,
-    LstmCapacity,
     LstmDefinition,
-    LstmMethod,
-    LstmMethodSpace,
     Method,
-    MethodSpace,
     SelectedStudySource,
-    StudyDefinition,
     TrainingDefinition,
-    TransformerCapacity,
     TransformerDefinition,
-    TransformerLstmCapacity,
     TransformerLstmDefinition,
-    TransformerLstmMethod,
-    TransformerLstmMethodSpace,
-    TransformerMethod,
-    TransformerMethodSpace,
     TuneRequest,
 )
 from fable.study import (
     RetainedResult,
     Study,
     apply_method,
-    materialize_selected_training,
+    load_selected_method,
     publish_study,
     retain_result,
-    training_definition_from_method,
 )
 
 STUDY_ID = UUID("10000000-0000-4000-8000-000000000001")
@@ -46,6 +33,8 @@ CORPUS_ID = UUID("20000000-0000-4000-8000-000000000001")
 OTHER_CORPUS_ID = UUID("20000000-0000-4000-8000-000000000002")
 
 FIT = FitMethod(
+    learning_rate=3e-4,
+    weight_decay=1e-4,
     accumulation=3,
     gradient_clip_norm=0.75,
     seed=17,
@@ -55,57 +44,41 @@ FIT = FitMethod(
     min_delta=0.01,
 )
 
-LSTM_CAPACITY = LstmCapacity(hidden=256, layers=1, head_hidden=128)
-TRANSFORMER_CAPACITY = TransformerCapacity(
-    model_width=192,
-    attention_heads=4,
-    transformer_layers=3,
-    feedforward_width=384,
-    head_hidden=192,
-)
-TRANSFORMER_LSTM_CAPACITY = TransformerLstmCapacity(
-    model_width=192,
-    attention_heads=4,
-    transformer_layers=3,
-    feedforward_width=384,
-    lstm_hidden=192,
-    lstm_layers=1,
-    head_hidden=192,
-)
-
-LSTM_METHOD = LstmMethod(
-    family="lstm",
-    capacity=LSTM_CAPACITY,
-    dropout=0.2,
-    optimizer=AdamWMethod(learning_rate=3e-4, weight_decay=1e-4),
+LSTM_METHOD = Method(
+    model=LstmDefinition(
+        family="lstm",
+        hidden=256,
+        layers=1,
+        head_hidden=128,
+        dropout=0.2,
+    ),
     fit=FIT,
 )
-TRANSFORMER_METHOD = TransformerMethod(
-    family="transformer",
-    capacity=TRANSFORMER_CAPACITY,
-    dropout=0.2,
-    optimizer=AdamWMethod(learning_rate=1e-4, weight_decay=1e-4),
-    fit=FIT,
+TRANSFORMER_METHOD = Method(
+    model=TransformerDefinition(
+        family="transformer",
+        model_width=192,
+        attention_heads=4,
+        transformer_layers=3,
+        feedforward_width=384,
+        head_hidden=192,
+        dropout=0.2,
+    ),
+    fit=FIT.model_copy(update={"learning_rate": 1e-4}),
 )
-TRANSFORMER_LSTM_METHOD = TransformerLstmMethod(
-    family="transformer_lstm",
-    capacity=TRANSFORMER_LSTM_CAPACITY,
-    dropout=0.2,
-    optimizer=AdamWMethod(learning_rate=1e-4, weight_decay=1e-4),
-    fit=FIT,
-)
-
-LSTM_SPACE = LstmMethodSpace(
-    family="lstm",
-    methods=(LSTM_METHOD,),
-)
-TRANSFORMER_SPACE = TransformerMethodSpace(
-    family="transformer",
-    methods=(TRANSFORMER_METHOD,),
-)
-TRANSFORMER_LSTM_SPACE = TransformerLstmMethodSpace(
-    family="transformer_lstm",
-    methods=(TRANSFORMER_LSTM_METHOD,),
+TRANSFORMER_LSTM_METHOD = Method(
+    model=TransformerLstmDefinition(
+        family="transformer_lstm",
+        model_width=192,
+        attention_heads=4,
+        transformer_layers=3,
+        feedforward_width=384,
+        lstm_hidden=192,
+        lstm_layers=1,
+        head_hidden=192,
+        dropout=0.2,
+    ),
+    fit=FIT.model_copy(update={"learning_rate": 1e-4}),
 )
 RESULT = RetainedResult(
     method=LSTM_METHOD,
@@ -132,7 +105,7 @@ def _experiment(*, shift: int = 0) -> ExperimentSemantics:
 
 
 def _request(
-    space: MethodSpace = LSTM_SPACE,
+    methods: tuple[Method, ...] = (LSTM_METHOD,),
     *,
     corpus_id: UUID = CORPUS_ID,
 ) -> TuneRequest:
@@ -140,73 +113,29 @@ def _request(
         workflow="tune",
         study_id=STUDY_ID,
         corpus_id=corpus_id,
-        study_definition=StudyDefinition(experiment=_experiment(), method_space=space),
+        experiment=_experiment(),
+        methods=methods,
     )
 
 
 @pytest.mark.parametrize(
-    ("space", "method", "model"),
+    "method",
     [
-        (
-            LSTM_SPACE,
-            LSTM_METHOD,
-            LstmDefinition(
-                family="lstm",
-                hidden=256,
-                layers=1,
-                head_hidden=128,
-                dropout=0.2,
-            ),
-        ),
-        (
-            TRANSFORMER_SPACE,
-            TRANSFORMER_METHOD,
-            TransformerDefinition(
-                family="transformer",
-                model_width=192,
-                attention_heads=4,
-                transformer_layers=3,
-                feedforward_width=384,
-                head_hidden=192,
-                dropout=0.2,
-            ),
-        ),
-        (
-            TRANSFORMER_LSTM_SPACE,
-            TRANSFORMER_LSTM_METHOD,
-            TransformerLstmDefinition(
-                family="transformer_lstm",
-                model_width=192,
-                attention_heads=4,
-                transformer_layers=3,
-                feedforward_width=384,
-                lstm_hidden=192,
-                lstm_layers=1,
-                head_hidden=192,
-                dropout=0.2,
-            ),
-        ),
+        LSTM_METHOD,
+        TRANSFORMER_METHOD,
+        TRANSFORMER_LSTM_METHOD,
     ],
 )
-def test_composes_all_three_method_families(
-    space: MethodSpace,
-    method: Method,
-    model: LstmDefinition | TransformerDefinition | TransformerLstmDefinition,
-) -> None:
-    request = _request(space)
+def test_apply_method_composes_all_three_method_families(method: Method) -> None:
+    request = _request((method,))
 
-    pure = training_definition_from_method(request.study_definition.experiment, method)
-
-    assert pure == TrainingDefinition(
-        experiment=request.study_definition.experiment,
-        model=model,
-        optimizer=method.optimizer,
-        fit=method.fit,
+    assert apply_method(request, method) == TrainingDefinition(
+        experiment=request.experiment,
+        method=method,
     )
-    assert apply_method(request, method) == pure
 
 
-def test_retain_publish_and_materialize_selected_training(tmp_path: Path) -> None:
+def test_retain_publish_and_load_selected_method(tmp_path: Path) -> None:
     request = _request()
     first = RetainedResult(
         method=LSTM_METHOD,
@@ -238,15 +167,10 @@ def test_retain_publish_and_materialize_selected_training(tmp_path: Path) -> Non
         experiment=_experiment(shift=1_000),
     )
 
-    selected = materialize_selected_training(tmp_path, source)
+    selected = load_selected_method(tmp_path, source)
 
     assert not progress.exists()
-    assert selected.study_result_index == 1
-    assert selected.method == LSTM_METHOD
-    assert selected.training_definition == training_definition_from_method(
-        source.experiment,
-        LSTM_METHOD,
-    )
+    assert selected == LSTM_METHOD
 
 
 @pytest.mark.parametrize(
@@ -270,10 +194,12 @@ def test_retained_result_rejects_invalid_epoch_bounds(
         )
 
 
-def test_study_rejects_method_outside_space() -> None:
-    outside = LSTM_METHOD.model_copy(update={"dropout": 0.3})
+def test_study_rejects_method_outside_request() -> None:
+    outside = LSTM_METHOD.model_copy(
+        update={"model": LSTM_METHOD.model.model_copy(update={"dropout": 0.3})}
+    )
 
-    with pytest.raises(ValidationError, match="Method is outside the MethodSpace"):
+    with pytest.raises(ValidationError, match="Method is outside the TuneRequest"):
         Study(
             request=_request(),
             trials=(
@@ -294,7 +220,7 @@ def test_retain_result_rejects_conflicting_request(tmp_path: Path) -> None:
         retain_result(tmp_path, _request(corpus_id=OTHER_CORPUS_ID), RESULT)
 
 
-def test_materialize_selected_training_rejects_corpus_mismatch(tmp_path: Path) -> None:
+def test_load_selected_method_rejects_corpus_mismatch(tmp_path: Path) -> None:
     canonical = study_json_path(tmp_path, STUDY_ID)
     canonical.parent.mkdir(parents=True)
     canonical.write_text(
@@ -310,7 +236,7 @@ def test_materialize_selected_training_rejects_corpus_mismatch(tmp_path: Path) -
     )
 
     with pytest.raises(ValueError, match="Corpus ID does not match"):
-        materialize_selected_training(tmp_path, source)
+        load_selected_method(tmp_path, source)
 
 
 def test_publish_study_rejects_occupied_canonical(tmp_path: Path) -> None:

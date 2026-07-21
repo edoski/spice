@@ -7,14 +7,11 @@ from pytest import MonkeyPatch
 
 from fable import tuning
 from fable.config import (
-    AdamWMethod,
     BlockWindow,
     ExperimentSemantics,
     FitMethod,
-    LstmCapacity,
-    LstmMethod,
-    LstmMethodSpace,
-    StudyDefinition,
+    LstmDefinition,
+    Method,
     TuneRequest,
 )
 from fable.modeling import FitDeployment
@@ -24,6 +21,8 @@ STUDY_ID = UUID("10000000-0000-4000-8000-000000000001")
 CORPUS_ID = UUID("20000000-0000-4000-8000-000000000001")
 
 FIT = FitMethod(
+    learning_rate=3e-4,
+    weight_decay=1e-4,
     accumulation=1,
     gradient_clip_norm=0.75,
     seed=17,
@@ -32,11 +31,14 @@ FIT = FitMethod(
     patience=4,
     min_delta=0.01,
 )
-METHOD = LstmMethod(
-    family="lstm",
-    capacity=LstmCapacity(hidden=16, layers=1, head_hidden=8),
-    dropout=0.2,
-    optimizer=AdamWMethod(learning_rate=3e-4, weight_decay=1e-4),
+METHOD = Method(
+    model=LstmDefinition(
+        family="lstm",
+        hidden=16,
+        layers=1,
+        head_hidden=8,
+        dropout=0.2,
+    ),
     fit=FIT,
 )
 EXPERIMENT = ExperimentSemantics(
@@ -56,10 +58,8 @@ REQUEST = TuneRequest(
     workflow="tune",
     study_id=STUDY_ID,
     corpus_id=CORPUS_ID,
-    study_definition=StudyDefinition(
-        experiment=EXPERIMENT,
-        method_space=LstmMethodSpace(family="lstm", methods=(METHOD,)),
-    ),
+    experiment=EXPERIMENT,
+    methods=(METHOD,),
 )
 DEPLOYMENT = FitDeployment(
     deterministic=True,
@@ -101,7 +101,7 @@ def test_run_candidate_prepares_fits_and_retains_one_result(
 
     def run_fit(
         request: TuneRequest,
-        method: LstmMethod,
+        method: Method,
         preparation: object,
         scratch: Path,
         deployment: FitDeployment,

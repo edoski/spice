@@ -12,13 +12,13 @@ from typer.testing import CliRunner
 import fable.cli.commands.remote as remote
 from fable.cli.app import app
 from fable.config import (
-    AdamWMethod,
     BaselineSource,
     BlockWindow,
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
     LstmDefinition,
+    Method,
     SelectedStudySource,
     TrainingDefinition,
     TrainRequest,
@@ -86,22 +86,25 @@ def _request(kind: Literal["baseline", "selected", "evaluate"]) -> WorkflowReque
             corpus_id=CORPUS_ID,
             training_definition=TrainingDefinition(
                 experiment=_experiment(),
-                model=LstmDefinition(
-                    family="lstm",
-                    hidden=8,
-                    layers=1,
-                    head_hidden=4,
-                    dropout=0.1,
-                ),
-                optimizer=AdamWMethod(learning_rate=0.001, weight_decay=0.01),
-                fit=FitMethod(
-                    accumulation=1,
-                    gradient_clip_norm=1.0,
-                    seed=2026,
-                    max_epochs=3,
-                    validate_every_completed_epoch=1,
-                    patience=2,
-                    min_delta=0.0,
+                method=Method(
+                    model=LstmDefinition(
+                        family="lstm",
+                        hidden=8,
+                        layers=1,
+                        head_hidden=4,
+                        dropout=0.1,
+                    ),
+                    fit=FitMethod(
+                        learning_rate=0.001,
+                        weight_decay=0.01,
+                        accumulation=1,
+                        gradient_clip_norm=1.0,
+                        seed=2026,
+                        max_epochs=3,
+                        validate_every_completed_epoch=1,
+                        patience=2,
+                        min_delta=0.0,
+                    ),
                 ),
             ),
         )

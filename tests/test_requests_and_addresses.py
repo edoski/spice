@@ -16,16 +16,12 @@ from fable.addresses import (
     study_json_path,
 )
 from fable.config import (
-    AdamWMethod,
     BaselineSource,
     BlockWindow,
     ExperimentSemantics,
     FitMethod,
-    LstmCapacity,
     LstmDefinition,
-    LstmMethod,
-    LstmMethodSpace,
-    StudyDefinition,
+    Method,
     TrainingDefinition,
 )
 from fable.requests import (
@@ -42,6 +38,8 @@ EVALUATION_ID = UUID("00000000-0000-4000-8000-000000000004")
 
 def _fit() -> FitMethod:
     return FitMethod(
+        learning_rate=0.001,
+        weight_decay=0.0,
         accumulation=1,
         gradient_clip_norm=0.75,
         seed=17,
@@ -75,19 +73,20 @@ def test_request_constructors_mint_one_id_each(monkeypatch) -> None:
 
     experiment = _experiment()
     fit = _fit()
-    method = LstmMethod(
-        family="lstm",
-        capacity=LstmCapacity(hidden=32, layers=1, head_hidden=16),
-        dropout=0.2,
-        optimizer=AdamWMethod(learning_rate=0.001, weight_decay=0.0),
+    method = Method(
+        model=LstmDefinition(
+            family="lstm",
+            hidden=32,
+            layers=1,
+            head_hidden=16,
+            dropout=0.2,
+        ),
         fit=fit,
     )
     tune = fresh_tune_request(
         CORPUS_ID,
-        StudyDefinition(
-            experiment=experiment,
-            method_space=LstmMethodSpace(family="lstm", methods=(method,)),
-        ),
+        experiment,
+        (method,),
     )
     train = fresh_train_request(
         BaselineSource(
@@ -95,15 +94,7 @@ def test_request_constructors_mint_one_id_each(monkeypatch) -> None:
             corpus_id=CORPUS_ID,
             training_definition=TrainingDefinition(
                 experiment=experiment,
-                model=LstmDefinition(
-                    family="lstm",
-                    hidden=32,
-                    layers=1,
-                    head_hidden=16,
-                    dropout=0.2,
-                ),
-                optimizer=method.optimizer,
-                fit=fit,
+                method=method,
             ),
         )
     )

@@ -30,9 +30,7 @@ This glossary defines FABLE's active domain language.
 
 **Evaluation observation.** One canonical prediction row containing an origin, decoded action, and standardized natural-log minimum-fee prediction.
 
-**Method.** One complete model and training choice.
-
-**MethodSpace.** The finite typed set of Methods allowed by a TuneRequest.
+**Method.** One complete `ModelDefinition` and `FitMethod` choice.
 
 **Decision origin.** The decision point immediately after closed parent block `h`.
 

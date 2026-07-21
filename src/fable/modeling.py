@@ -42,8 +42,7 @@ from .min_block_fee import (
 from .study import (
     RetainedResult,
     apply_method,
-    materialize_selected_training,
-    training_definition_from_method,
+    load_selected_method,
 )
 from .temporal.features import FeatureState
 from .temporal.history import HistoricalPreparation
@@ -89,9 +88,9 @@ class ArtifactAssociation(_FrozenRecord):
         source = self.request.source
         if isinstance(source, BaselineSource):
             return source.training_definition
-        return training_definition_from_method(
-            source.experiment,
-            cast(Method, self.method),
+        return TrainingDefinition(
+            experiment=source.experiment,
+            method=cast(Method, self.method),
         )
 
     @model_validator(mode="after")
@@ -358,7 +357,7 @@ class _FitModule(pl.LightningModule):
         )
 
         experiment = self.definition.experiment
-        model = self.definition.model
+        model = self.definition.method.model
         common = {
             "context_blocks": experiment.context_blocks,
             "feature_count": len(experiment.ordered_features),
@@ -420,11 +419,11 @@ class _FitModule(pl.LightningModule):
         self._log_epoch_loss("validation", losses)
 
     def configure_optimizers(self) -> torch.optim.AdamW:
-        optimizer = self.definition.optimizer
+        fit = self.definition.method.fit
         return torch.optim.AdamW(
             self.parameters(),
-            lr=optimizer.learning_rate,
-            weight_decay=optimizer.weight_decay,
+            lr=fit.learning_rate,
+            weight_decay=fit.weight_decay,
         )
 
     def configure_gradient_clipping(
@@ -440,7 +439,7 @@ class _FitModule(pl.LightningModule):
             for parameter in group["params"]
             if parameter.grad is not None
         )
-        authored_norm = self.definition.fit.gradient_clip_norm
+        authored_norm = self.definition.method.fit.gradient_clip_norm
         torch.nn.utils.clip_grad_norm_(
             parameters,
             max_norm=math.inf if authored_norm == 0 else authored_norm,
@@ -538,12 +537,6 @@ def _configure_numerical_policy(deployment: FitDeployment) -> None:
     torch.backends.cudnn.allow_tf32 = deployment.cudnn_allow_tf32
 
 
-def fit_minibatches_per_epoch(training_examples: int) -> int:
-    """Return the minibatch count imposed by the fit implementation."""
-
-    return math.ceil(training_examples / _FIT_BATCH_SIZE)
-
-
 def _loaders(
     prepared: HistoricalPreparation,
     deployment: FitDeployment,
@@ -575,7 +568,7 @@ def _callbacks(
     scratch: Path,
     definition: TrainingDefinition,
 ) -> tuple[EarlyStopping, ModelCheckpoint, ModelCheckpoint, _FitHistory]:
-    fit = definition.fit
+    fit = definition.method.fit
     early_stopping = EarlyStopping(
         monitor="validation_total_loss",
         mode="min",
@@ -627,8 +620,9 @@ def _fit(
     definition = _training_definition(association)
     scratch.mkdir(parents=True, exist_ok=True)
     _configure_numerical_policy(deployment)
-    pl.seed_everything(definition.fit.seed, workers=True)
-    generator = torch.Generator(device="cpu").manual_seed(definition.fit.seed)
+    fit = definition.method.fit
+    pl.seed_everything(fit.seed, workers=True)
+    generator = torch.Generator(device="cpu").manual_seed(fit.seed)
 
     module = _FitModule(_json_association(association))
     training_loader, validation_loader = _loaders(
@@ -641,10 +635,10 @@ def _fit(
         accelerator="gpu",
         devices=1,
         precision="32-true",
-        max_epochs=definition.fit.max_epochs,
-        check_val_every_n_epoch=definition.fit.validate_every_completed_epoch,
-        accumulate_grad_batches=definition.fit.accumulation,
-        gradient_clip_val=definition.fit.gradient_clip_norm,
+        max_epochs=fit.max_epochs,
+        check_val_every_n_epoch=fit.validate_every_completed_epoch,
+        accumulate_grad_batches=fit.accumulation,
+        gradient_clip_val=fit.gradient_clip_norm,
         gradient_clip_algorithm="norm",
         deterministic=deployment.deterministic,
         benchmark=deployment.benchmark,
@@ -735,13 +729,13 @@ def train(
             target_state=prepared.target_state,
         )
     else:
-        selected = materialize_selected_training(storage_root, source)
+        method = load_selected_method(storage_root, source)
         association = ArtifactAssociation(
             request=request,
             feature_state=prepared.feature_state,
             target_state=prepared.target_state,
-            study_result_index=selected.study_result_index,
-            method=selected.method,
+            study_result_index=source.study_result_index,
+            method=method,
         )
 
     canonical = artifact_directory(storage_root, request.artifact_id)
@@ -796,7 +790,6 @@ def load_artifact(
 __all__ = [
     "ArtifactAssociation",
     "FitDeployment",
-    "fit_minibatches_per_epoch",
     "load_artifact",
     "train",
 ]

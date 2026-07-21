@@ -127,46 +127,9 @@ ModelDefinition: TypeAlias = Annotated[
 ]
 
 
-class LstmCapacity(_FrozenRecord):
-    hidden: _PositiveInt
-    layers: _PositiveInt
-    head_hidden: _PositiveInt
-
-
-class TransformerCapacity(_FrozenRecord):
-    model_width: _PositiveInt
-    attention_heads: _PositiveInt
-    transformer_layers: _PositiveInt
-    feedforward_width: _PositiveInt
-    head_hidden: _PositiveInt
-
-    @model_validator(mode="after")
-    def validate_dimensions(self) -> Self:
-        _validate_transformer_dimensions(self.model_width, self.attention_heads)
-        return self
-
-
-class TransformerLstmCapacity(_FrozenRecord):
-    model_width: _PositiveInt
-    attention_heads: _PositiveInt
-    transformer_layers: _PositiveInt
-    feedforward_width: _PositiveInt
-    lstm_hidden: _PositiveInt
-    lstm_layers: _PositiveInt
-    head_hidden: _PositiveInt
-
-    @model_validator(mode="after")
-    def validate_dimensions(self) -> Self:
-        _validate_transformer_dimensions(self.model_width, self.attention_heads)
-        return self
-
-
-class AdamWMethod(_FrozenRecord):
+class FitMethod(_FrozenRecord):
     learning_rate: _PositiveFloat
     weight_decay: _NonNegativeFloat
-
-
-class FitMethod(_FrozenRecord):
     accumulation: _PositiveInt
     gradient_clip_norm: _NonNegativeFloat
     seed: _NonNegativeInt
@@ -176,31 +139,9 @@ class FitMethod(_FrozenRecord):
     min_delta: _NonNegativeFloat
 
 
-class _MethodFields(_FrozenRecord):
-    dropout: _Dropout
-    optimizer: AdamWMethod
+class Method(_FrozenRecord):
+    model: ModelDefinition
     fit: FitMethod
-
-
-class LstmMethod(_MethodFields):
-    family: Literal["lstm"]
-    capacity: LstmCapacity
-
-
-class TransformerMethod(_MethodFields):
-    family: Literal["transformer"]
-    capacity: TransformerCapacity
-
-
-class TransformerLstmMethod(_MethodFields):
-    family: Literal["transformer_lstm"]
-    capacity: TransformerLstmCapacity
-
-
-Method: TypeAlias = Annotated[
-    LstmMethod | TransformerMethod | TransformerLstmMethod,
-    Field(discriminator="family"),
-]
 
 
 def _require_unique(label: str, values: tuple[object, ...]) -> None:
@@ -208,52 +149,9 @@ def _require_unique(label: str, values: tuple[object, ...]) -> None:
         raise ValueError(f"{label} must not contain duplicates")
 
 
-class LstmMethodSpace(_FrozenRecord):
-    family: Literal["lstm"]
-    methods: Annotated[tuple[LstmMethod, ...], Field(min_length=1)]
-
-    @model_validator(mode="after")
-    def validate_unique_methods(self) -> Self:
-        _require_unique("methods", self.methods)
-        return self
-
-
-class TransformerMethodSpace(_FrozenRecord):
-    family: Literal["transformer"]
-    methods: Annotated[tuple[TransformerMethod, ...], Field(min_length=1)]
-
-    @model_validator(mode="after")
-    def validate_unique_methods(self) -> Self:
-        _require_unique("methods", self.methods)
-        return self
-
-
-class TransformerLstmMethodSpace(_FrozenRecord):
-    family: Literal["transformer_lstm"]
-    methods: Annotated[tuple[TransformerLstmMethod, ...], Field(min_length=1)]
-
-    @model_validator(mode="after")
-    def validate_unique_methods(self) -> Self:
-        _require_unique("methods", self.methods)
-        return self
-
-
-MethodSpace: TypeAlias = Annotated[
-    LstmMethodSpace | TransformerMethodSpace | TransformerLstmMethodSpace,
-    Field(discriminator="family"),
-]
-
-
-class StudyDefinition(_FrozenRecord):
-    experiment: ExperimentSemantics
-    method_space: MethodSpace
-
-
 class TrainingDefinition(_FrozenRecord):
     experiment: ExperimentSemantics
-    model: ModelDefinition
-    optimizer: AdamWMethod
-    fit: FitMethod
+    method: Method
 
 
 class BaselineSource(_FrozenRecord):
@@ -286,7 +184,15 @@ class TuneRequest(_FrozenRecord):
     workflow: Literal["tune"]
     study_id: UUID4
     corpus_id: UUID4
-    study_definition: StudyDefinition
+    experiment: ExperimentSemantics
+    methods: Annotated[tuple[Method, ...], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def validate_methods(self) -> Self:
+        _require_unique("methods", self.methods)
+        if len({method.model.family for method in self.methods}) != 1:
+            raise ValueError("methods must use one model family")
+        return self
 
 
 class EvaluateRequest(_FrozenRecord):
@@ -303,10 +209,8 @@ WorkflowRequest: TypeAlias = Annotated[
 ]
 
 WORKFLOW_REQUEST_ADAPTER = TypeAdapter(WorkflowRequest)
-METHOD_ADAPTER = TypeAdapter(Method)
 
 __all__ = [
-    "AdamWMethod",
     "BaselineSource",
     "BlockWindow",
     "CorpusDefinition",
@@ -314,27 +218,15 @@ __all__ = [
     "EvaluateRequest",
     "ExperimentSemantics",
     "FitMethod",
-    "LstmCapacity",
     "LstmDefinition",
-    "LstmMethod",
-    "LstmMethodSpace",
-    "METHOD_ADAPTER",
     "Method",
-    "MethodSpace",
     "ModelDefinition",
     "SelectedStudySource",
-    "StudyDefinition",
     "TrainRequest",
     "TrainingDefinition",
     "TrainingSource",
-    "TransformerCapacity",
     "TransformerDefinition",
-    "TransformerLstmCapacity",
     "TransformerLstmDefinition",
-    "TransformerLstmMethod",
-    "TransformerLstmMethodSpace",
-    "TransformerMethod",
-    "TransformerMethodSpace",
     "TuneRequest",
     "WORKFLOW_REQUEST_ADAPTER",
     "WorkflowRequest",

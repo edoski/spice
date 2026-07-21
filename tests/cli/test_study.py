@@ -13,14 +13,11 @@ import fable.cli.commands.study as study
 import fable.execution as execution
 from fable.cli.app import app
 from fable.config import (
-    AdamWMethod,
     BlockWindow,
     ExperimentSemantics,
     FitMethod,
-    LstmCapacity,
-    LstmMethod,
-    LstmMethodSpace,
-    StudyDefinition,
+    LstmDefinition,
+    Method,
     TuneRequest,
 )
 from fable.modeling import FitDeployment
@@ -60,12 +57,17 @@ def _window(first: int) -> BlockWindow:
     )
 
 
-METHOD = LstmMethod(
-    family="lstm",
-    capacity=LstmCapacity(hidden=16, layers=1, head_hidden=8),
-    dropout=0.2,
-    optimizer=AdamWMethod(learning_rate=3e-4, weight_decay=1e-4),
+METHOD = Method(
+    model=LstmDefinition(
+        family="lstm",
+        hidden=16,
+        layers=1,
+        head_hidden=8,
+        dropout=0.2,
+    ),
     fit=FitMethod(
+        learning_rate=3e-4,
+        weight_decay=1e-4,
         accumulation=1,
         gradient_clip_norm=0.75,
         seed=17,
@@ -79,16 +81,14 @@ REQUEST = TuneRequest(
     workflow="tune",
     study_id=STUDY_ID,
     corpus_id=CORPUS_ID,
-    study_definition=StudyDefinition(
-        experiment=ExperimentSemantics(
-            training_window=_window(100),
-            validation_window=_window(210),
-            context_blocks=20,
-            horizon_blocks=10,
-            ordered_features=("base_fee",),
-        ),
-        method_space=LstmMethodSpace(family="lstm", methods=(METHOD,)),
+    experiment=ExperimentSemantics(
+        training_window=_window(100),
+        validation_window=_window(210),
+        context_blocks=20,
+        horizon_blocks=10,
+        ordered_features=("base_fee",),
     ),
+    methods=(METHOD,),
 )
 
 
@@ -198,13 +198,13 @@ def test_remote_candidate_forwards_input(
         separators=(",", ":"),
     ).encode()
     events: list[str] = []
-    calls: list[tuple[Path, TuneRequest, LstmMethod, FitDeployment]] = []
+    calls: list[tuple[Path, TuneRequest, Method, FitDeployment]] = []
     failure = RuntimeError("candidate failed")
 
     def fake_run_candidate(
         storage_root: Path,
         request: TuneRequest,
-        method: LstmMethod,
+        method: Method,
         deployment: FitDeployment,
     ) -> None:
         events.append("run_candidate")
