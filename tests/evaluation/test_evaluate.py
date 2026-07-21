@@ -45,6 +45,7 @@ evaluation_module = importlib.import_module("fable.evaluation.evaluate")
 _CORPUS_ID = UUID("10000000-0000-4000-8000-000000000001")
 _OTHER_CORPUS_ID = UUID("10000000-0000-4000-8000-000000000002")
 _ARTIFACT_ID = UUID("20000000-0000-4000-8000-000000000001")
+_OTHER_ARTIFACT_ID = UUID("20000000-0000-4000-8000-000000000002")
 _EVALUATION_ID = UUID("30000000-0000-4000-8000-000000000001")
 _STUDY_ID = UUID("40000000-0000-4000-8000-000000000001")
 
@@ -80,7 +81,7 @@ _TIMESTAMPS = np.array(
 )
 _LOGITS = torch.tensor(
     [
-        [2.0, 1.0, 0.0],
+        [2.0, 2.0, 0.0],
         [0.0, 1.0, 2.0],
         [0.0, 2.0, 1.0],
         [2.0, 0.0, 1.0],
@@ -93,7 +94,11 @@ _OBSERVATION_SCHEMA = pl.Schema(
     {
         "origin_block": pl.Int64,
         "predicted_action_k": pl.Int64,
-        "predicted_minimum_log_base_fee_z": pl.Float32,
+        "predicted_minimum_log_base_fee": pl.Float64,
+        "minimum_action_k": pl.Int64,
+        "immediate_base_fee_per_gas": pl.Int64,
+        "selected_base_fee_per_gas": pl.Int64,
+        "minimum_base_fee_per_gas": pl.Int64,
     }
 )
 
@@ -141,6 +146,7 @@ def _association(
     source_kind: str,
     *,
     experiment: ExperimentSemantics | None = None,
+    artifact_id: UUID = _ARTIFACT_ID,
 ) -> ArtifactAssociation:
     experiment = experiment or _experiment()
     if source_kind == "baseline":
@@ -155,18 +161,18 @@ def _association(
         return ArtifactAssociation(
             request=TrainRequest(
                 workflow="train",
-                artifact_id=_ARTIFACT_ID,
+                artifact_id=artifact_id,
                 source=source,
             ),
             feature_state=FeatureState(means=(0.0,), standard_deviations=(1.0,)),
-            target_state=TargetState(mean=0.0, standard_deviation=1.0),
+            target_state=TargetState(mean=10.0, standard_deviation=0.25),
         )
 
     method = _method()
     return ArtifactAssociation(
         request=TrainRequest(
             workflow="train",
-            artifact_id=_ARTIFACT_ID,
+            artifact_id=artifact_id,
             source=SelectedStudySource(
                 kind="selected_study",
                 corpus_id=_CORPUS_ID,
@@ -176,7 +182,7 @@ def _association(
             ),
         ),
         feature_state=FeatureState(means=(0.0,), standard_deviations=(1.0,)),
-        target_state=TargetState(mean=0.0, standard_deviation=1.0),
+        target_state=TargetState(mean=10.0, standard_deviation=0.25),
         study_result_index=2,
         method=method,
     )
@@ -312,11 +318,13 @@ def test_evaluate_publishes_exact_observations_through_one_full_and_tail_path(
     observations = pl.read_parquet(evaluation_observations_path(tmp_path, _EVALUATION_ID))
     assert observations.schema == _OBSERVATION_SCHEMA
     assert observations.null_count().row(0) == (0,) * len(_OBSERVATION_SCHEMA)
-    assert observations["origin_block"].to_list() == [20, 21, 22, 23, 24]
-    assert observations["predicted_action_k"].to_list() == [0, 2, 1, 0, 2]
-    assert observations["predicted_minimum_log_base_fee_z"].to_list() == pytest.approx(
-        [0.5, -0.5, 1.0, 0.0, 2.0]
-    )
+    assert observations.rows() == [
+        (20, 0, 10.125, 2, 60, 60, 50),
+        (21, 2, 9.875, 2, 70, 40, 40),
+        (22, 1, 10.25, 1, 50, 40, 40),
+        (23, 0, 10.0, 2, 40, 40, 30),
+        (24, 2, 10.5, 1, 55, 30, 30),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -339,6 +347,7 @@ def test_evaluation_deployment_rejects_invalid_batch_or_matmul_policy(
 @pytest.mark.parametrize(
     ("case", "error", "match"),
     [
+        ("artifact_id", ValueError, "artifact request ID"),
         ("source_corpus", ValueError, "artifact source Corpus"),
         ("previous_parent", ValueError, "previous closed parent"),
         ("occupied_canonical", FileExistsError, "evaluations"),
@@ -372,8 +381,10 @@ def test_evaluate_rejects_owned_association_and_publication_conflicts(
             experiment=experiment,
         )
     else:
-        experiment = _experiment()
-        association = _association("baseline")
+        association = _association(
+            "baseline",
+            artifact_id=_OTHER_ARTIFACT_ID if case == "artifact_id" else _ARTIFACT_ID,
+        )
     model = _Model()
     monkeypatch.setattr(
         evaluation_module,

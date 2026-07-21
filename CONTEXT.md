@@ -28,7 +28,7 @@ This glossary defines FABLE's active domain language.
 
 **EvaluateRequest.** The complete typed instruction for one explicit post-fit testing evaluation.
 
-**Evaluation observation.** One canonical prediction row containing an origin, decoded action, and standardized natural-log minimum-fee prediction.
+**Evaluation observation.** One canonical row containing an origin, prediction, minimum action, and the immediate, selected, and minimum base fees needed for local reduction.
 
 **Method.** One complete `ModelDefinition` and `FitMethod` choice.
 

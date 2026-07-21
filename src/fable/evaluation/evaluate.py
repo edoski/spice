@@ -15,10 +15,10 @@ from torch.utils.data import DataLoader
 from ..addresses import evaluation_directory
 from ..config import EvaluateRequest
 from ..corpus import load_corpus
-from ..min_block_fee import decode_action
+from ..min_block_fee import TargetState, decode_action
 from ..modeling import load_artifact
 from ..temporal.history import HistoricalDataset, prepare_historical_window
-from .contract import OBSERVATION_SCHEMA, validate_request_artifact
+from .contract import OBSERVATION_SCHEMA
 
 _PositiveInt = Annotated[int, Field(strict=True, gt=0)]
 _NonNegativeInt = Annotated[int, Field(strict=True, ge=0)]
@@ -60,7 +60,10 @@ def evaluate(
 
     corpus = load_corpus(storage_root, request.corpus_id)
     association, model = load_artifact(storage_root, request.artifact_id)
-    validate_request_artifact(request, association)
+    if association.request.artifact_id != request.artifact_id:
+        raise ValueError("artifact request ID must match the evaluation artifact")
+    if association.request.source.corpus_id != request.corpus_id:
+        raise ValueError("artifact source Corpus must match the evaluation Corpus")
     experiment = association.training_definition.experiment
     testing_window = request.testing_window
     if testing_window.first_parent_block <= corpus.request.definition.first_block:
@@ -78,11 +81,9 @@ def evaluate(
         dataset,
         model,
         deployment,
+        target_state=association.target_state,
     )
-    (scratch / "evaluation.json").write_text(
-        request.model_dump_json(),
-        encoding="utf-8",
-    )
+    (scratch / "evaluation.json").write_text(request.model_dump_json(), encoding="utf-8")
     observations.write_parquet(scratch / "observations.parquet")
 
     canonical = evaluation_directory(storage_root, request.evaluation_id)
@@ -107,11 +108,19 @@ def _collect_observations(
     dataset: HistoricalDataset,
     model: nn.Module,
     deployment: EvaluationDeployment,
+    *,
+    target_state: TargetState,
 ) -> pl.DataFrame:
     count = len(dataset)
-    origin_blocks = np.empty(count, dtype=np.int64)
-    predicted_actions = np.empty(count, dtype=np.int64)
-    predicted_z = np.empty(count, dtype=np.float32)
+    columns = {
+        "origin_block": np.empty(count, dtype=np.int64),
+        "predicted_action_k": np.empty(count, dtype=np.int64),
+        "predicted_minimum_log_base_fee": np.empty(count, dtype=np.float64),
+        "minimum_action_k": np.empty(count, dtype=np.int64),
+        "immediate_base_fee_per_gas": np.empty(count, dtype=np.int64),
+        "selected_base_fee_per_gas": np.empty(count, dtype=np.int64),
+        "minimum_base_fee_per_gas": np.empty(count, dtype=np.int64),
+    }
 
     loader = DataLoader(
         dataset,
@@ -127,34 +136,50 @@ def _collect_observations(
     cursor = 0
     with torch.inference_mode():
         for batch in loader:
-            inputs = batch["inputs"].to(_DEVICE)
-            output = model(inputs)
-            actions = decode_action(output).to(device="cpu", dtype=torch.int64)
+            output = model(batch["inputs"].to(_DEVICE))
+            actions = decode_action(output).to(device="cpu", dtype=torch.int64).numpy()
+            minimum_actions_batch = batch["label"].to(dtype=torch.int64).numpy()
+            base_fees = batch["base_fees"].to(dtype=torch.int64).numpy()
             minimum_fee_z = output.minimum_fee_z
+            if minimum_fee_z.shape != actions.shape or not minimum_fee_z.is_floating_point():
+                raise ValueError("evaluation batch outputs must have matching vector rows")
             if (
-                minimum_fee_z.ndim != 1
-                or minimum_fee_z.shape[0] != actions.shape[0]
-                or not minimum_fee_z.is_floating_point()
-                or not torch.isfinite(minimum_fee_z).all()
+                np.any(actions < 0)
+                or np.any(actions >= base_fees.shape[1])
+                or np.any(minimum_actions_batch < 0)
+                or np.any(minimum_actions_batch >= base_fees.shape[1])
             ):
-                raise ValueError("minimum_fee_z must be a finite floating vector matching actions")
-            minimum_fee_z = minimum_fee_z.to(device="cpu", dtype=torch.float32)
+                raise ValueError("evaluation actions must be within the batch horizon")
 
-            size = actions.shape[0]
+            rows = np.arange(actions.size, dtype=np.int64)
+            immediate_batch = base_fees[:, 0]
+            selected_batch = base_fees[rows, actions]
+            minimum_batch = base_fees[rows, minimum_actions_batch]
+            predicted_logs_batch = target_state.mean + target_state.standard_deviation * (
+                minimum_fee_z.to(device="cpu", dtype=torch.float32).numpy().astype(np.float64)
+            )
+            if not np.isfinite(predicted_logs_batch).all():
+                raise ValueError("predicted minimum-log fees must be finite")
+            if np.any(np.column_stack((immediate_batch, selected_batch, minimum_batch)) <= 0):
+                raise ValueError("evaluation fees must be positive")
+
+            size = actions.size
+            if cursor + size > count:
+                raise ValueError("evaluation batches must exactly cover the testing window")
             destination = slice(cursor, cursor + size)
-            origin_blocks[destination] = batch["origin_block"].numpy()
-            predicted_actions[destination] = actions.numpy()
-            predicted_z[destination] = minimum_fee_z.numpy()
+            columns["origin_block"][destination] = batch["origin_block"].numpy()
+            columns["predicted_action_k"][destination] = actions
+            columns["predicted_minimum_log_base_fee"][destination] = predicted_logs_batch
+            columns["minimum_action_k"][destination] = minimum_actions_batch
+            columns["immediate_base_fee_per_gas"][destination] = immediate_batch
+            columns["selected_base_fee_per_gas"][destination] = selected_batch
+            columns["minimum_base_fee_per_gas"][destination] = minimum_batch
             cursor += size
 
-    return pl.DataFrame(
-        {
-            "origin_block": origin_blocks,
-            "predicted_action_k": predicted_actions,
-            "predicted_minimum_log_base_fee_z": predicted_z,
-        },
-        schema=OBSERVATION_SCHEMA,
-    )
+    if cursor != count:
+        raise ValueError("evaluation batches must exactly cover the testing window")
+
+    return pl.DataFrame(columns, schema=OBSERVATION_SCHEMA)
 
 
 __all__ = ["EvaluationDeployment", "evaluate"]

@@ -30,7 +30,7 @@ strict workflow request --> CLI or direct Python call
         +--> evaluation -> observations.parquet
         |
         v
-transient Corpus-derived reductions
+transient observation-derived reductions
 ```
 
 `fable.config` owns frozen Pydantic values and small discriminated unions. `fable.requests` mints fresh UUIDv4 instances. A boundary receiving raw JSON or durable bytes hydrates the owning typed value once; downstream code trusts that value.
@@ -57,7 +57,7 @@ Each owner has one system seam:
 - `min_block_fee` owns target state, the fixed training loss, two-head output, and decode.
 - `modeling` owns the three concrete neural definitions, Lightning fitting, and native checkpoint loading.
 - `study` owns bounded candidate membership, ordered retained results, publication, and selected-Method loading.
-- `evaluation` owns canonical prediction observations and transient Corpus-derived reduction.
+- `evaluation` owns canonical self-contained observations and transient reduction.
 
 ### Durable object flow
 
@@ -76,9 +76,9 @@ A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-S
 
 #### Evaluation
 
-`EvaluateRequest` names an artifact, same-source Corpus, testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, and publishes `evaluation.json` with `observations.parquet`. Each ordered observation stores only the origin, decoded action, and standardized natural-log minimum-fee prediction.
+`EvaluateRequest` names an artifact, same-source Corpus, testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, and publishes `evaluation.json` with `observations.parquet`. Each ordered observation stores the origin, decoded and minimum actions, de-standardized natural-log minimum-fee prediction, and immediate, selected, and minimum raw base fees.
 
-`reduce_evaluation()` validates those predictions, loads the associated Corpus, derives all outcome truth, and returns a transient one-row six-metric DataFrame. The reduction is never persisted.
+`reduce_evaluation()` validates the self-contained observations and returns a transient one-row six-metric DataFrame without loading the artifact or Corpus. The reduction is never persisted.
 
 ### Training and inference
 
@@ -245,15 +245,19 @@ B(3) = 20.0 gwei/gas
 k*   = earliest argmin_k B(k) = 3
 ```
 
-The durable observation stores only:
+The durable observation stores:
 
 ```text
-origin_block                       = 25,400,000
-predicted_action_k                 = 3
-predicted_minimum_log_base_fee_z   = 0.7
+origin_block                         = 25,400,000
+predicted_action_k                   = 3
+predicted_minimum_log_base_fee       = 23.675
+minimum_action_k                     = 3
+immediate_base_fee_per_gas           = 25,500,000,000
+selected_base_fee_per_gas            = 20,000,000,000
+minimum_base_fee_per_gas             = 20,000,000,000
 ```
 
-Reduction reloads the Corpus. The selected-action savings fraction is `(25.5-20.0)/25.5 ≈ 0.215686`; the optimality gap is `(20.0-20.0)/20.0 = 0`. It reconstructs the predicted natural-log fee as `23.5 + 0.25×0.7 = 23.675`, so the absolute natural-log error is about `0.043998` and the squared error about `0.001936`. No labels, fees, losses, timestamps, waits, horizons, or derived economic facts are stored in the observation.
+Reduction uses this row directly. The selected-action savings fraction is `(25.5-20.0)/25.5 ≈ 0.215686`; the optimality gap is `(20.0-20.0)/20.0 = 0`. The absolute natural-log error is about `0.043998` and the squared error about `0.001936`. No losses, timestamps, waits, horizons, standardized predictions, or derived metrics are stored in the observation.
 
 ### 7. Carry the same contract into serving
 
@@ -438,35 +442,32 @@ All three attach the same two MLP heads. Architecture capacity belongs to `Model
 
 ### Evaluation estimands
 
-For testing origin `i` and action `k∈{0,…,K-1}`, the reducer loads the Corpus and defines:
+For testing origin `i`, the canonical observation stores:
 
 ```text
-B_i(k) = Corpus base fee at origin_block_i + 1 + k
-k_i*   = earliest argmin_k B_i(k)
+p_i       = predicted action
+k_i*      = earliest minimum action
+I_i       = immediate base fee at action 0
+R_i       = selected base fee at p_i
+O_i       = minimum base fee at k_i*
+hat_ell_i = predicted natural-log minimum base fee
 ```
 
-Tied minimum fees choose the smallest action. If `p_i` is the stored predicted action, then `B_i(p_i)` is the selected fee, `B_i(0)` is the immediate fee, and `B_i(k_i*)` is the optimum fee.
-
-The artifact's `TargetState` de-standardizes stored prediction `z_i` in natural-log fee space:
-
-```text
-predicted_log_fee_i = target_mean + target_standard_deviation * z_i
-true_log_fee_i      = ln B_i(k_i*)
-```
+Tied minimum fees choose the smallest action. Evaluation de-standardizes the model prediction before publication. Reduction reads these stored facts directly, with `ln O_i` as the true natural-log fee.
 
 Over the testing origins, reduction returns exactly six Float64 metrics:
 
 ```text
 accuracy                = mean_i[p_i = k_i*]
-log_fee_mae             = mean_i |predicted_log_fee_i - true_log_fee_i|
-log_fee_mse             = mean_i (predicted_log_fee_i - true_log_fee_i)^2
-base_fee_savings        = mean_i ((B_i(0) - B_i(p_i)) / B_i(0))
-base_fee_optimality_gap = mean_i ((B_i(p_i) - B_i(k_i*)) / B_i(k_i*))
+log_fee_mae             = mean_i |hat_ell_i - ln O_i|
+log_fee_mse             = mean_i (hat_ell_i - ln O_i)^2
+base_fee_savings        = mean_i ((I_i - R_i) / I_i)
+base_fee_optimality_gap = mean_i ((R_i - O_i) / O_i)
 ```
 
 `f1_macro` is standard unweighted macro-F1 over the union of action classes present in truth or predictions, with zero division equal to zero. Classes absent from both do not enter the mean.
 
-Both economic metrics are mean per-origin fractions, not ratios of fee sums. Positive required Corpus fees make their denominators defined. Positive `base_fee_savings` is better; negative values mean the selected fee exceeded the immediate fee. `base_fee_optimality_gap` is nonnegative and lower is better. Natural-log errors are in log wei/gas and lower is better. Accuracy and macro-F1 are unitless and higher is better. Economic values remain fractions for later percentage formatting.
+Both economic metrics are mean per-origin fractions, not ratios of fee sums. Positive stored fees make their denominators defined. Positive `base_fee_savings` is better; negative values mean the selected fee exceeded the immediate fee. `base_fee_optimality_gap` is nonnegative and lower is better. Natural-log errors are in log wei/gas and lower is better. Accuracy and macro-F1 are unitless and higher is better. Economic values remain fractions for later percentage formatting.
 
 ### HPO interpretation
 
@@ -618,13 +619,13 @@ The resulting native artifact embeds the same result index and Method for later 
 
 ### Evaluation
 
-Evaluation separates canonical prediction observations from transient Corpus-derived metrics. Explicit UUIDs connect the request, artifact, Corpus, and predictions.
+Evaluation separates canonical self-contained observations from transient metrics. Explicit UUIDs connect the request, artifact, Corpus, and observations.
 
 #### Canonical evaluation
 
 `evaluate(request, storage_root, deployment)` loads the exact Corpus and native artifact, requires the artifact's source Corpus to equal the evaluation Corpus, prepares the testing origin window with persisted state, and performs CUDA inference.
 
-For every eligible origin it writes one ordered, nonnull observation containing only the origin, decoded action, and standardized natural-log minimum-fee prediction. Work is written under `evaluations/.<evaluation_id>/` and renamed to:
+For every eligible origin it writes one ordered, nonnull observation containing the origin, decoded and minimum actions, de-standardized natural-log minimum-fee prediction, and immediate, selected, and minimum raw base fees. Work is written under `evaluations/.<evaluation_id>/` and renamed to:
 
 ```text
 evaluations/<evaluation_id>/
@@ -632,11 +633,11 @@ evaluations/<evaluation_id>/
   observations.parquet
 ```
 
-The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical three-column contract in the [reference](#canonical-observations).
+The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical seven-column contract in the [reference](#canonical-observations).
 
 #### Transient reduction
 
-`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` strictly hydrates the request, validates request/artifact/Corpus identity and testing-window separation, loads the Corpus, validates the exact observation schema and predictions, and derives truth from Corpus fees. It returns one row with exactly six nonnull Float64 metrics. The result has no evaluation ID, count, sums, supports, arrays, or auxiliary fields and is not persisted.
+`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` strictly hydrates the request, validates its evaluation identity and observation coverage of the testing window, then validates and reduces only `observations.parquet`. It does not reload the artifact or Corpus or externally authenticate the horizon or source. It returns one row with exactly six nonnull Float64 metrics. The result has no evaluation ID, count, sums, supports, arrays, or auxiliary fields and is not persisted.
 
 ## Exact reference
 
@@ -980,10 +981,14 @@ Destination: `evaluations/<evaluation_id>/observations.parquet`. Status: canonic
 | # | Field | Type | Unit/meaning |
 | ---: | --- | --- | --- |
 | 1 | `origin_block` | Int64 | closed parent `h` |
-| 2 | `predicted_action_k` | Int64 | decoded `k∈[0,K)` |
-| 3 | `predicted_minimum_log_base_fee_z` | Float32 | standardized natural-log minimum-fee prediction |
+| 2 | `predicted_action_k` | Int64 | decoded action `k` |
+| 3 | `predicted_minimum_log_base_fee` | Float64 | predicted natural-log minimum base fee in wei/gas |
+| 4 | `minimum_action_k` | Int64 | earliest action attaining the minimum raw base fee |
+| 5 | `immediate_base_fee_per_gas` | Int64 | raw base fee at action `0`, wei/gas |
+| 6 | `selected_base_fee_per_gas` | Int64 | raw base fee at the predicted action, wei/gas |
+| 7 | `minimum_base_fee_per_gas` | Int64 | raw base fee at the minimum action, wei/gas |
 
-The file contains predictions only. Labels, losses, fees, timestamps, waits, horizons, and derived truth or economic facts remain absent; reduction derives truth from the Corpus.
+The file contains predictions and the observed truth needed for local reduction. Losses, timestamps, waits, horizons, standardized predictions, and derived metrics remain absent.
 
 #### Transient reduction
 
@@ -998,7 +1003,7 @@ Destination: none. `reduce_evaluation()` returns a one-row DataFrame. Status: de
 | 5 | `base_fee_savings` | Float64 | mean per-origin fraction versus immediate; higher is better |
 | 6 | `base_fee_optimality_gap` | Float64 | mean per-origin fraction above optimum; lower is better |
 
-`accuracy` uses the earliest Corpus-fee minimum as truth. `f1_macro` averages over the union of classes appearing in truth or predictions with zero division zero. Regression first de-standardizes the prediction through the artifact `TargetState`. Economic fields are fractions, not percentages or ratios of sums.
+`accuracy` uses `minimum_action_k` as truth. `f1_macro` averages over the union of classes appearing in truth or predictions with zero division zero. Regression compares the stored predicted natural-log fee with the natural log of `minimum_base_fee_per_gas`. Economic fields are fractions, not percentages or ratios of sums.
 
 ## Limitations and sources
 

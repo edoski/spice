@@ -19,10 +19,10 @@ UUIDv4 values identify instances. Each completed object owns its exact typed req
 
 Typed requests, embedded associations, and the selected Study result index plus exact Method establish meaning. Completed objects are loaded directly and validated against the requested UUID and association.
 
-Selection and transient evaluation reductions are recomputed from canonical objects.
+A completed evaluation owns its exact `EvaluateRequest` plus sufficient canonical prediction and outcome observations. Loading it validates the request ID and window together with the observation schema and self-contained facts. Transient evaluation reduction is recomputed directly from that completed evaluation object; Artifact and Corpus availability is not required after evaluation publication. Selection remains recomputed from its canonical Study object.
 
 Owner-local hidden siblings support resumable work and publish canonical objects by direct rename.
 
 ## Consequences
 
-Callers supply the typed UUID they intend to use. Durable schemas stay small, while transient reductions require the canonical source objects to remain available.
+Callers supply the typed UUID they intend to use. Durable schemas stay focused, and each transient operation depends only on the completed object that owns its required authority.
