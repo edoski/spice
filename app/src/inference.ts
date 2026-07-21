@@ -12,11 +12,11 @@ export type Horizon = (typeof HORIZONS)[number];
 
 export const CHAIN_DETAILS: Record<
   Chain,
-  { label: string; mark: string; color: string }
+  { label: string }
 > = {
-  ethereum: { label: "Ethereum", mark: "E", color: "#627EEA" },
-  polygon: { label: "Polygon", mark: "P", color: "#8247E5" },
-  avalanche: { label: "Avalanche", mark: "A", color: "#E84142" },
+  ethereum: { label: "Ethereum" },
+  polygon: { label: "Polygon" },
+  avalanche: { label: "Avalanche" },
 };
 
 export type InferenceRequest = {

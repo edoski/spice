@@ -9,6 +9,7 @@ import {
 } from "react-native";
 
 import { formatGwei } from "../analytics";
+import { NetworkIcon } from "../components/NetworkIcon";
 import {
   CHAINS,
   CHAIN_DETAILS,
@@ -61,9 +62,7 @@ function NetworkChoices({
             {active && (
               <Ionicons color={colors.blue} name="checkmark-circle" size={19} style={styles.check} />
             )}
-            <View style={[styles.networkMark, { backgroundColor: details.color }]}>
-              <Text style={styles.networkMarkText}>{details.mark}</Text>
-            </View>
+            <NetworkIcon chain={choice} />
             <Text numberOfLines={1} style={styles.networkLabel}>
               {details.label}
             </Text>
@@ -108,7 +107,7 @@ function Setup({ chain, horizon, state, onChainChange, onHorizonChange, onRun }:
   const loading = state.status === "loading";
   return (
     <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
-      <Text style={styles.title}>Live inference</Text>
+      <Text style={styles.title}>Inference</Text>
       <Text style={styles.subtitle}>Choose a network and prediction horizon.</Text>
 
       <View style={styles.section}>
@@ -119,13 +118,6 @@ function Setup({ chain, horizon, state, onChainChange, onHorizonChange, onRun }:
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Prediction horizon</Text>
         <HorizonChoices horizon={horizon} disabled={loading} onChange={onHorizonChange} />
-      </View>
-
-      <View style={styles.note}>
-        <Ionicons color={colors.teal} name="information-circle-outline" size={24} />
-        <Text style={styles.noteText}>
-          Predicts the lowest base fee across the next {horizon} blocks.
-        </Text>
       </View>
 
       {state.status === "error" && (
@@ -144,7 +136,7 @@ function Setup({ chain, horizon, state, onChainChange, onHorizonChange, onRun }:
       >
         {loading && <ActivityIndicator color={colors.surface} />}
         <Text style={styles.primaryButtonText}>
-          {loading ? "Running inference" : "Run inference"}
+          {loading ? "Generating…" : "Get recommendation"}
         </Text>
       </Pressable>
     </ScrollView>
@@ -200,27 +192,6 @@ function Result({ chain, horizon, result, onRunAgain }: Props & { result: Infere
 
       <Timeline horizon={horizon} result={result} />
 
-      <View style={styles.metricsRow}>
-        <View style={styles.metricCard}>
-          <Text style={styles.metricLabel}>Target block</Text>
-          <Text adjustsFontSizeToFit numberOfLines={1} style={styles.metricValue}>
-            {result.target_block.toLocaleString()}
-          </Text>
-        </View>
-        <View style={styles.metricCard}>
-          <Text style={styles.metricLabel}>Predicted horizon minimum</Text>
-          <Text adjustsFontSizeToFit numberOfLines={1} style={styles.metricValue}>
-            {formatGwei(result.predicted_minimum_base_fee_per_gas)}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.explanation}>
-        <Text style={styles.explanationText}>
-          The auxiliary head estimates the minimum base fee anywhere within the selected horizon.
-        </Text>
-      </View>
-
       <View style={styles.detailsCard}>
         <Text style={styles.detailsTitle}>Technical details</Text>
         <View style={styles.detailRow}>
@@ -231,9 +202,19 @@ function Result({ chain, horizon, result, onRunAgain }: Props & { result: Infere
           <Text style={styles.detailLabel}>Horizon</Text>
           <Text style={styles.detailValue}>{horizon} blocks</Text>
         </View>
-        <View style={styles.detailRowLast}>
+        <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Action offset</Text>
           <Text style={styles.detailValue}>{result.selected_action_k}</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Target block</Text>
+          <Text style={styles.detailValue}>{result.target_block.toLocaleString()}</Text>
+        </View>
+        <View style={styles.detailRowLast}>
+          <Text style={styles.detailLabel}>Predicted horizon minimum</Text>
+          <Text style={styles.detailValue}>
+            {formatGwei(result.predicted_minimum_base_fee_per_gas)}
+          </Text>
         </View>
       </View>
 
@@ -275,14 +256,6 @@ const styles = StyleSheet.create({
   },
   networkCardActive: { backgroundColor: colors.blueSoft, borderColor: colors.blue },
   check: { position: "absolute", right: 7, top: 7 },
-  networkMark: {
-    alignItems: "center",
-    borderRadius: 21,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  networkMarkText: { color: colors.surface, fontSize: 17, fontWeight: "800" },
   networkLabel: { color: colors.ink, fontSize: 12, fontWeight: "700" },
   horizonRow: {
     backgroundColor: colors.surface,
@@ -303,17 +276,6 @@ const styles = StyleSheet.create({
   horizonChoiceActive: { backgroundColor: colors.blue },
   horizonText: { color: colors.ink, fontSize: 18, fontWeight: "700" },
   horizonTextActive: { color: colors.surface },
-  note: {
-    alignItems: "center",
-    backgroundColor: colors.tealSoft,
-    borderColor: "#A4E5DC",
-    borderRadius: radii.medium,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 11,
-    padding: 15,
-  },
-  noteText: { color: colors.ink, flex: 1, fontSize: 14, lineHeight: 20 },
   errorBox: {
     alignItems: "flex-start",
     backgroundColor: colors.redSoft,
@@ -383,27 +345,6 @@ const styles = StyleSheet.create({
   timelineOffsetActive: { color: colors.teal },
   targetLabel: { color: "transparent", fontSize: 7, fontWeight: "800" },
   targetLabelActive: { color: colors.teal },
-  metricsRow: { flexDirection: "row", gap: 10 },
-  metricCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radii.medium,
-    borderWidth: 1,
-    flex: 1,
-    gap: 8,
-    minHeight: 92,
-    padding: 14,
-  },
-  metricLabel: { color: colors.muted, fontSize: 12, fontWeight: "600" },
-  metricValue: { color: colors.ink, fontSize: 21, fontWeight: "800" },
-  explanation: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radii.medium,
-    borderWidth: 1,
-    padding: 13,
-  },
-  explanationText: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   detailsCard: {
     backgroundColor: colors.surface,
     borderColor: colors.border,

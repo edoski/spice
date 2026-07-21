@@ -93,9 +93,6 @@ function RunDetails({ run, onClose }: { run: InferenceRun | null; onClose: () =>
               value={formatGwei(run.predicted_minimum_base_fee_per_gas)}
             />
           </View>
-          <Text style={styles.disclaimer}>
-            Base fee per gas. The regression value estimates the minimum anywhere within the horizon.
-          </Text>
           <Pressable accessibilityRole="button" onPress={onClose} style={styles.closeButton}>
             <Text style={styles.closeButtonText}>Close</Text>
           </Pressable>
@@ -372,7 +369,6 @@ const styles = StyleSheet.create({
   detailRowLast: { borderBottomWidth: 0 },
   detailLabel: { color: colors.muted, fontSize: 12 },
   detailValue: { color: colors.ink, fontSize: 12, fontWeight: "600" },
-  disclaimer: { color: colors.muted, fontSize: 11, lineHeight: 16 },
   closeButton: {
     alignItems: "center",
     backgroundColor: colors.blue,
