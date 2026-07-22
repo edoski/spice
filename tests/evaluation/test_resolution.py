@@ -23,7 +23,9 @@ _OBSERVATION_SCHEMA = pl.Schema(
         "predicted_minimum_log_base_fee": pl.Float64,
         "minimum_action_k": pl.Int64,
         "immediate_base_fee_per_gas": pl.Int64,
+        "immediate_effective_priority_fee_per_gas_p50": pl.Int64,
         "selected_base_fee_per_gas": pl.Int64,
+        "selected_effective_priority_fee_per_gas_p50": pl.Int64,
         "minimum_base_fee_per_gas": pl.Int64,
     }
 )
@@ -34,6 +36,7 @@ _RESULT_SCHEMA = pl.Schema(
         "log_fee_mae": pl.Float64,
         "log_fee_mse": pl.Float64,
         "base_fee_savings": pl.Float64,
+        "p50_fee_inclusive_savings": pl.Float64,
         "base_fee_optimality_gap": pl.Float64,
     }
 )
@@ -59,7 +62,9 @@ def _row(
     predicted_log: float | None,
     minimum_action: int,
     immediate_fee: int,
+    immediate_priority_fee_p50: int,
     selected_fee: int,
+    selected_priority_fee_p50: int,
     minimum_fee: int,
 ) -> dict[str, int | float | None]:
     return {
@@ -68,20 +73,22 @@ def _row(
         "predicted_minimum_log_base_fee": predicted_log,
         "minimum_action_k": minimum_action,
         "immediate_base_fee_per_gas": immediate_fee,
+        "immediate_effective_priority_fee_per_gas_p50": immediate_priority_fee_p50,
         "selected_base_fee_per_gas": selected_fee,
+        "selected_effective_priority_fee_per_gas_p50": selected_priority_fee_p50,
         "minimum_base_fee_per_gas": minimum_fee,
     }
 
 
 def _rows() -> list[dict[str, int | float | None]]:
     return [
-        _row(20, 0, math.log(10) + 1.0, 0, 10, 10, 10),
-        _row(21, 1, math.log(10) - 1.0, 2, 20, 15, 10),
-        _row(22, 2, math.log(12) + 2.0, 2, 30, 12, 12),
-        _row(23, 3, math.log(10) - 2.0, 1, 40, 20, 10),
-        _row(24, 1, math.log(25), 1, 50, 25, 25),
-        _row(25, 0, math.log(15) + 0.5, 3, 60, 60, 15),
-        _row(26, 2, math.log(14) - 0.5, 0, 14, 20, 14),
+        _row(20, 0, math.log(10) + 1.0, 0, 10, 0, 10, 0, 10),
+        _row(21, 1, math.log(10) - 1.0, 2, 20, 0, 15, 5, 10),
+        _row(22, 2, math.log(12) + 2.0, 2, 30, 10, 12, 8, 12),
+        _row(23, 3, math.log(10) - 2.0, 1, 40, 0, 20, 20, 10),
+        _row(24, 1, math.log(25), 1, 50, 0, 25, 25, 25),
+        _row(25, 0, math.log(15) + 0.5, 3, 60, 10, 60, 10, 15),
+        _row(26, 2, math.log(14) - 0.5, 0, 14, 6, 20, 0, 14),
     ]
 
 
@@ -116,6 +123,7 @@ def test_reduce_evaluation_derives_exact_metrics_from_self_contained_observation
             1.0,
             1.5,
             199.0 / 980.0,
+            1.0 / 14.0,
             69.0 / 98.0,
         )
     )

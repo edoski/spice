@@ -93,8 +93,10 @@ def prepare_fit_history(
     _require_complete_support(corpus, experiment, training_window)
     _require_complete_support(corpus, experiment, validation_window)
 
+    training_first_block = training_window.first_parent_block - experiment.context_blocks + 1
+    predecessor_blocks = _feature_predecessor_blocks(experiment.ordered_features)
     training_support = corpus.blocks.select_range(
-        training_window.first_parent_block - experiment.context_blocks + 1,
+        training_first_block - predecessor_blocks,
         training_window.last_parent_block,
     )
     feature_state = fit_feature_state(
@@ -167,7 +169,12 @@ def _require_complete_support(
     experiment: ExperimentSemantics,
     window: BlockWindow,
 ) -> None:
-    required_first = window.first_parent_block - experiment.context_blocks + 1
+    required_first = (
+        window.first_parent_block
+        - experiment.context_blocks
+        + 1
+        - _feature_predecessor_blocks(experiment.ordered_features)
+    )
     required_last = window.last_parent_block + experiment.horizon_blocks
     available = corpus.request.definition
     if required_first < available.first_block or required_last > available.last_block:
@@ -182,13 +189,14 @@ def _build_backing(
     ordered_features: tuple[str, ...],
     feature_state: FeatureState,
 ) -> _HistoricalBacking:
-    blocks = corpus.blocks.select_range(first_block, last_block)
+    predecessor_blocks = _feature_predecessor_blocks(ordered_features)
+    blocks = corpus.blocks.select_range(first_block - predecessor_blocks, last_block)
     inputs = transform_feature_rows(
         blocks,
         ordered_features=ordered_features,
         state=feature_state,
     )
-    frame = blocks.to_polars()
+    frame = blocks.to_polars().slice(predecessor_blocks)
     base_fees = np.array(
         frame["base_fee_per_gas"].to_numpy(),
         dtype=np.int64,
@@ -207,6 +215,10 @@ def _build_backing(
         base_fees=torch.from_numpy(base_fees),
         block_numbers=torch.from_numpy(block_numbers),
     )
+
+
+def _feature_predecessor_blocks(ordered_features: tuple[str, ...]) -> int:
+    return 1 if "block_interval_seconds" in ordered_features else 0
 
 
 def _origin_rows(backing: _HistoricalBacking, window: BlockWindow) -> _IntVector:

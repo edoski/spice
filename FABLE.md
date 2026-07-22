@@ -74,9 +74,9 @@ A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-S
 
 #### Evaluation
 
-`EvaluateRequest` names an artifact, same-source Corpus, testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, and publishes `evaluation.json` with `observations.parquet`. Each ordered observation stores `h_i`, `hat{k}_i`, `k_i*`, `hat{ell}_i`, `B_i(0)`, `B_i(hat{k}_i)`, and `m_i` under the exact field names in the [reference](#canonical-observations).
+`EvaluateRequest` names an artifact, same-source Corpus, testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, and publishes `evaluation.json` with `observations.parquet`. Each ordered observation stores `h_i`, `hat{k}_i`, `k_i*`, `hat{ell}_i`, `B_i(0)`, `P_i(0)`, `B_i(hat{k}_i)`, `P_i(hat{k}_i)`, and `m_i` under the exact field names in the [reference](#canonical-observations).
 
-`reduce_evaluation()` validates the strict request and UUID, exact schema, nonnull row count, and ordered testing window, then trusts the published row values and returns a transient one-row six-metric DataFrame. All six metrics must be finite. The reduction does not load the artifact or Corpus and is never persisted.
+`reduce_evaluation()` validates the strict request and UUID, exact schema, nonnull row count, and ordered testing window, then trusts the published row values and returns a transient one-row seven-metric DataFrame. All seven metrics must be finite. The reduction does not load the artifact or Corpus and is never persisted.
 
 ### Training and inference
 
@@ -246,6 +246,8 @@ For this outcome:
 ```text
 B_i(0)        = 25.5 gwei/gas
 B_i(hat{k}_i) = B_i(3) = 20.0 gwei/gas
+P_i(0)        = 2.0 gwei/gas
+P_i(hat{k}_i) = P_i(3) = 4.0 gwei/gas
 k_i*          = 3
 m_i           = B_i(k_i*) = 20.0 gwei/gas
 ```
@@ -258,11 +260,13 @@ predicted_action_k                   = 3
 predicted_minimum_log_base_fee       = 23.675
 minimum_action_k                     = 3
 immediate_base_fee_per_gas           = 25,500,000,000
+immediate_effective_priority_fee_per_gas_p50 = 2,000,000,000
 selected_base_fee_per_gas            = 20,000,000,000
+selected_effective_priority_fee_per_gas_p50  = 4,000,000,000
 minimum_base_fee_per_gas             = 20,000,000,000
 ```
 
-Reduction uses this row directly. The selected-action savings fraction is `(25.5-20.0)/25.5 ≈ 0.215686`; the optimality gap is `(20.0-20.0)/20.0 = 0`. The absolute natural-log error is about `0.043998` and the squared error about `0.001936`. No losses, timestamps, waits, horizons, standardized predictions, or derived metrics are stored in the observation.
+Reduction uses this row directly. Base-fee savings is `(25.5-20.0)/25.5 ≈ 0.215686`; P50 fee-inclusive savings is `1-((20.0+4.0)/(25.5+2.0)) ≈ 0.127273`; and the optimality gap is `(20.0-20.0)/20.0 = 0`. The absolute natural-log error is about `0.043998` and the squared error about `0.001936`. No losses, timestamps, waits, horizons, standardized predictions, or derived metrics are stored in the observation.
 
 ### 7. Carry the same contract into serving
 
@@ -371,6 +375,8 @@ The request supplies a nonempty unique ordered tuple drawn from the supported na
 | `log_exact_forming_base_fee_per_gas` | `ln(exact_child_base_fee / (1 wei/gas))` | Positive; Ethereum-only parent-state recurrence. |
 | `log_gas_limit` | `ln(gas_limit / (1 gas))` | Gas limit positive; closed-row header fact. |
 | `log1p_tx_count` | `ln(1 + tx_count / (1 transaction))` | Transaction count nonnegative; known after row close. |
+| `log1p_effective_priority_fee_per_gas_p50` | `ln(1 + effective_priority_fee_per_gas_p50 / (1 wei/gas))` | P50 nonnegative; included-transaction closed-row fact. |
+| `block_interval_seconds` | `timestamp_b - timestamp_{b-1}` seconds | Positive; requires the real predecessor row. |
 | `hour_sin` | `sin(2π hour_UTC/24)` | `hour_UTC = (timestamp//3600) mod 24`; closed timestamp. |
 | `hour_cos` | `cos(2π hour_UTC/24)` | Same angle and availability. |
 
@@ -481,6 +487,8 @@ hat{k}_i        predicted action
 k_i*            minimum action
 B_i(0)          immediate base fee
 B_i(hat{k}_i)   selected base fee
+P_i(0)          included-transaction effective-priority-fee P50 in block h_i+1
+P_i(hat{k}_i)   included-transaction effective-priority-fee P50 in block h_i+1+hat{k}_i
 m_i             minimum base fee
 hat{ell}_i      predicted dimensionless log minimum
 ```
@@ -488,23 +496,28 @@ hat{ell}_i      predicted dimensionless log minimum
 Evaluation de-standardizes `hat{z}_i` to `hat{ell}_i` before publication. Reduction reads the
 stored facts directly; `ell_i=ln(m_i/u)` is the true dimensionless log coordinate.
 
-Over the testing origins, reduction returns exactly six Float64 metrics:
+Over the testing origins, reduction returns exactly seven Float64 metrics:
 
 ```text
 accuracy                = mean_i indicator[hat{k}_i = k_i*]
 log_fee_mae             = mean_i |hat{ell}_i - ell_i|
 log_fee_mse             = mean_i (hat{ell}_i - ell_i)^2
 base_fee_savings        = mean_i ((B_i(0) - B_i(hat{k}_i)) / B_i(0))
+p50_fee_inclusive_savings
+                        = mean_i (1 - (B_i(hat{k}_i) + P_i(hat{k}_i))
+                                          / (B_i(0) + P_i(0)))
 base_fee_optimality_gap = mean_i ((B_i(hat{k}_i) - m_i) / m_i)
 ```
 
 `f1_macro` is standard unweighted macro-F1 over the union of action classes present in truth or predictions, with zero division equal to zero. Classes absent from both do not enter the mean.
 
-Both economic metrics are mean per-origin fractions, not ratios of fee sums. Positive stored fees make their denominators defined. Positive `base_fee_savings` is better; negative values mean the selected fee exceeded the immediate fee. `base_fee_optimality_gap` is nonnegative and lower is better. Natural-log errors compare dimensionless coordinates relative to `u=1 wei/gas` and lower is better. Accuracy and macro-F1 are unitless and higher is better. Economic values remain fractions for later percentage formatting.
+All three economic metrics are mean per-origin fractions, not ratios of fee sums. Positive base fees make their denominators defined. Both savings metrics are higher-is-better; `base_fee_savings` remains base-fee-only, while `p50_fee_inclusive_savings` is a retrospective representative-cost proxy using each outcome block's included-transaction P50, not an inclusion guarantee. `base_fee_optimality_gap` is nonnegative and lower is better. Natural-log errors compare dimensionless coordinates relative to `u=1 wei/gas` and lower is better. Accuracy and macro-F1 are unitless and higher is better. Economic values remain fractions for later percentage formatting.
 
 ### HPO interpretation
 
 A `TuneRequest` freezes the experiment and one finite tuple of complete Methods. An operator submits complete Methods from that tuple. Each successful fit contributes validation total loss, earliest best epoch, and completed epochs in retention order. Selected training names an exact result index.
+
+The planned thesis protocol is staged: leave one feature group out on validation, run the `C` study, run HPO on the winning feature/context route, then run `K` sensitivity and final testing. Fit methods use seed `2026`. This is not a full factorial design. No experiments have been run.
 
 ## Architecture and deep interfaces
 
@@ -521,7 +534,7 @@ corpora/<corpus_id>/
 ```
 
 `corpus.json` stores the exact `CorpusRequest` and one finalized anchor. `blocks.parquet` stores the
-requested contiguous rows in block-number order with the exact seven-column canonical schema
+requested contiguous rows in block-number order with the exact eight-column canonical schema
 documented in the [reference](#corpus-object). `load_corpus()` strictly hydrates the request and
 anchor, checks the requested UUID, constructs the canonical `BlockFrame`, and requires the anchor
 to cover the completed range.
@@ -584,7 +597,7 @@ Role boundaries are complete-outcome boundaries. The training last parent plus `
 
 #### Live interface
 
-Serving freezes one latest closed head `h`, reads exactly `C-1` predecessors, decodes untrusted RPC quantities, constructs one live `BlockFrame`, transforms the ordered features with the artifact's `FeatureState`, and constructs float32 `[1,C,F]`. Historical preparation owns outcomes, labels, and target values.
+Serving freezes one latest closed head `h`, materializes the same exact eight-column `BlockFrame` used by historical preparation, transforms the ordered features with the artifact's `FeatureState`, and constructs float32 `[1,C,F]`. Historical preparation owns outcomes, labels, and target values. The exact live RPC and app boundary is in [Serving and mobile](#serving-and-mobile).
 
 The artifact fixes `C`, `K`, feature order, and fitted states. Decoding returns `hat{k}_i`, so
 serving reports `h_i+1+hat{k}_i` as the target block coordinate. It de-standardizes `hat{z}_i` to
@@ -670,7 +683,7 @@ Evaluation separates canonical self-contained observations from transient metric
 `evaluate(request, storage_root, deployment)` loads the exact Corpus and native artifact, requires the artifact's source Corpus to equal the evaluation Corpus, prepares the testing origin window with persisted state, and performs CUDA inference.
 
 For every eligible origin the evaluation publisher owns construction of one ordered, nonnull observation containing `h_i`, `hat{k}_i`,
-`k_i*`, `hat{ell}_i`, `B_i(0)`, `B_i(hat{k}_i)`, and `m_i` under the canonical field names. Work is
+`k_i*`, `hat{ell}_i`, `B_i(0)`, `P_i(0)`, `B_i(hat{k}_i)`, `P_i(hat{k}_i)`, and `m_i` under the canonical field names. Work is
 written under `evaluations/.<evaluation_id>/` and renamed to:
 
 ```text
@@ -679,11 +692,11 @@ evaluations/<evaluation_id>/
   observations.parquet
 ```
 
-The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical seven-column contract in the [reference](#canonical-observations).
+The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical nine-column contract in the [reference](#canonical-observations).
 
 #### Transient reduction
 
-`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` strictly hydrates the request, validates its evaluation UUID, exact Parquet schema, expected nonnull row count, and ordered testing origins, then trusts the publisher-owned row values and reduces only `observations.parquet`. It requires all six computed metrics to be finite. It does not reload the artifact or Corpus or externally authenticate the horizon or source. The result has no evaluation ID, count, sums, supports, arrays, or auxiliary fields and is not persisted.
+`reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` strictly hydrates the request, validates its evaluation UUID, exact Parquet schema, expected nonnull row count, and ordered testing origins, then trusts the publisher-owned row values and reduces only `observations.parquet`. It requires all seven computed metrics to be finite. It does not reload the artifact or Corpus or externally authenticate the horizon or source. The result has no evaluation ID, count, sums, supports, arrays, or auxiliary fields and is not persisted.
 
 ## Exact reference
 
@@ -808,6 +821,7 @@ Given an explicit `storage_root`:
 ```text
 corpora/<corpus_id>/corpus.json
 corpora/<corpus_id>/blocks.parquet
+experiments/{feature_ablation,c_study,hpo,k_study}/<UUID>.json
 studies/<study_id>.json
 artifacts/<artifact_id>.ckpt
 evaluations/<evaluation_id>/evaluation.json
@@ -838,6 +852,7 @@ finalized_anchor:
 | 5 | `gas_used` | Int64 | gas, `0≤used≤limit` |
 | 6 | `gas_limit` | Int64 | positive gas |
 | 7 | `tx_count` | Int64 | nonnegative transaction count |
+| 8 | `effective_priority_fee_per_gas_p50` | Int64 | nonnegative gas-used-weighted P50 among included transactions, wei/gas |
 
 Direct loader:
 
@@ -846,6 +861,10 @@ load_corpus(storage_root: Path, corpus_id: UUID4) -> Corpus
 ```
 
 `Corpus.blocks` is a `BlockFrame` whose definition equals the request definition. The finalized anchor covers its last block. These in-memory ownership facts do not change the durable JSON or Parquet formats above.
+
+#### Experiment manifest
+
+Each `experiments/{feature_ablation,c_study,hpo,k_study}/<UUID>.json` contains the matching UUIDv4 `experiment_id` and a nonempty ordered `entries` tuple. Each entry has a nonempty `cell` label and at least one canonical `artifact_id`, `study_id`, or `evaluation_id` UUIDv4. Manifests group canonical references only; they do not duplicate metrics, results, or scientific definitions.
 
 #### Study object
 
@@ -978,7 +997,7 @@ target_block                              = h_i + 1 + hat{k}_i
 predicted_minimum_base_fee_per_gas        = u * exp(hat{ell}_i)
 ```
 
-OpenAPI and interactive documentation routes are disabled. The server verifies provider chain ID, loads the exact selected-Study artifact, requires request `K` to equal artifact `K`, reads the latest head plus `C-1` predecessors, prepares float32 `[1,C,F]`, and runs CPU inference.
+OpenAPI and interactive documentation routes are disabled. The server verifies provider chain ID, loads the exact selected-Study artifact, requires request `K` to equal artifact `K`, reads the latest head plus `C-1` predecessors, and makes one `eth_feeHistory(C, h, [50])` request. It builds the canonical eight-column `BlockFrame`, prepares float32 `[1,C,F]`, and runs CPU inference. P50 is carried for schema completeness; the current selected features, response, and app do not use it. App use is deferred.
 
 The private Expo app manifest is fixed at:
 
@@ -1034,14 +1053,16 @@ Destination: `evaluations/<evaluation_id>/observations.parquet`. Status: canonic
 | 3 | `predicted_minimum_log_base_fee` | Float64 | dimensionless predicted log-minimum coordinate `hat{ell}_i` relative to `u` |
 | 4 | `minimum_action_k` | Int64 | canonical `k_i*` |
 | 5 | `immediate_base_fee_per_gas` | Int64 | `B_i(0)`, wei/gas |
-| 6 | `selected_base_fee_per_gas` | Int64 | `B_i(hat{k}_i)`, wei/gas |
-| 7 | `minimum_base_fee_per_gas` | Int64 | `m_i`, wei/gas |
+| 6 | `immediate_effective_priority_fee_per_gas_p50` | Int64 | `P_i(0)`, wei/gas |
+| 7 | `selected_base_fee_per_gas` | Int64 | `B_i(hat{k}_i)`, wei/gas |
+| 8 | `selected_effective_priority_fee_per_gas_p50` | Int64 | `P_i(hat{k}_i)`, wei/gas |
+| 9 | `minimum_base_fee_per_gas` | Int64 | `m_i`, wei/gas |
 
 The file contains predictions and the observed truth needed for local reduction. Losses, timestamps, waits, horizons, standardized predictions, and derived metrics remain absent.
 
 #### Transient reduction
 
-Destination: none. `reduce_evaluation()` structurally validates the completed evaluation, trusts its publisher-owned observation values, and returns a one-row DataFrame whose six metrics must be finite. Status: derived, transient, noncanonical, nonnull. The row does not store `evaluation_id`, `n`, counts, sums, supports, arrays, or auxiliary fields.
+Destination: none. `reduce_evaluation()` structurally validates the completed evaluation, trusts its publisher-owned observation values, and returns a one-row DataFrame whose seven metrics must be finite. Status: derived, transient, noncanonical, nonnull. The row does not store `evaluation_id`, `n`, counts, sums, supports, arrays, or auxiliary fields.
 
 | # | Field | Type | Unit/direction |
 | ---: | --- | --- | --- |
@@ -1050,13 +1071,14 @@ Destination: none. `reduce_evaluation()` structurally validates the completed ev
 | 3 | `log_fee_mae` | Float64 | dimensionless natural-log error relative to `u`; lower is better |
 | 4 | `log_fee_mse` | Float64 | squared dimensionless natural-log error; lower is better |
 | 5 | `base_fee_savings` | Float64 | mean per-origin fraction versus immediate; higher is better |
-| 6 | `base_fee_optimality_gap` | Float64 | mean per-origin fraction above optimum; lower is better |
+| 6 | `p50_fee_inclusive_savings` | Float64 | mean per-origin representative-cost fraction versus immediate; higher is better |
+| 7 | `base_fee_optimality_gap` | Float64 | mean per-origin fraction above optimum; lower is better |
 
 `accuracy` compares `predicted_action_k` (`hat{k}_i`) with `minimum_action_k` (`k_i*`). `f1_macro`
 averages over the union of classes appearing in truth or predictions with zero division zero.
 Regression compares `predicted_minimum_log_base_fee` (`hat{ell}_i`) with
 `ln(minimum_base_fee_per_gas / u)` (`ell_i`). Economic fields are fractions, not percentages or
-ratios of sums.
+ratios of sums. `p50_fee_inclusive_savings` is retrospective and does not claim inclusion.
 
 ## Limitations and sources
 
@@ -1064,7 +1086,7 @@ ratios of sums.
 
 Evaluation describes target block base fee per gas over every eligible origin in one declared historical window. Its claims are bounded as follows:
 
-- Base fee per gas omits priority fee and transaction gas use.
+- The target and `base_fee_savings` omit priority fee and transaction gas use; `p50_fee_inclusive_savings` adds an included-transaction P50 proxy, not an actual transaction quote.
 - Target-block intent does not guarantee inclusion at that block.
 - The auxiliary head is not calibrated uncertainty or a quote.
 - One seed or one time range does not establish seed, regime, or future robustness.

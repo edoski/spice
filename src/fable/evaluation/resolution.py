@@ -19,13 +19,14 @@ _RESULT_SCHEMA = pl.Schema(
         "log_fee_mae": pl.Float64,
         "log_fee_mse": pl.Float64,
         "base_fee_savings": pl.Float64,
+        "p50_fee_inclusive_savings": pl.Float64,
         "base_fee_optimality_gap": pl.Float64,
     }
 )
 
 
 def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
-    """Derive one testing evaluation's six metrics from its observations."""
+    """Derive one testing evaluation's seven metrics from its observations."""
 
     request = EvaluateRequest.model_validate_json(
         evaluation_json_path(storage_root, evaluation_id).read_text(encoding="utf-8"),
@@ -61,7 +62,13 @@ def _reduce(observations: pl.DataFrame) -> pl.DataFrame:
     minimum_actions = observations["minimum_action_k"].to_numpy()
     predicted_logs = observations["predicted_minimum_log_base_fee"].to_numpy()
     immediate_fees = observations["immediate_base_fee_per_gas"].to_numpy().astype(np.float64)
+    immediate_priority_fees_p50 = (
+        observations["immediate_effective_priority_fee_per_gas_p50"].to_numpy().astype(np.float64)
+    )
     selected_fees = observations["selected_base_fee_per_gas"].to_numpy().astype(np.float64)
+    selected_priority_fees_p50 = (
+        observations["selected_effective_priority_fee_per_gas_p50"].to_numpy().astype(np.float64)
+    )
     minimum_fees = observations["minimum_base_fee_per_gas"].to_numpy().astype(np.float64)
 
     log_errors = predicted_logs - np.log(minimum_fees)
@@ -81,6 +88,13 @@ def _reduce(observations: pl.DataFrame) -> pl.DataFrame:
         "log_fee_mae": float(np.mean(np.abs(log_errors))),
         "log_fee_mse": float(np.mean(np.square(log_errors))),
         "base_fee_savings": float(np.mean((immediate_fees - selected_fees) / immediate_fees)),
+        "p50_fee_inclusive_savings": float(
+            np.mean(
+                1.0
+                - (selected_fees + selected_priority_fees_p50)
+                / (immediate_fees + immediate_priority_fees_p50)
+            )
+        ),
         "base_fee_optimality_gap": float(np.mean((selected_fees - minimum_fees) / minimum_fees)),
     }
     if not np.isfinite(tuple(metrics.values())).all():

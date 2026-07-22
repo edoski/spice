@@ -17,11 +17,11 @@ def _definition(first_block: int = 100, last_block: int = 104) -> CorpusDefiniti
 def _valid_frame() -> pl.DataFrame:
     return pl.DataFrame(
         [
-            (100, 1_000, 1, 100, 50, 100, 10),
-            (101, 1_012, 1, 101, 51, 100, 11),
-            (102, 1_012, 1, 102, 52, 100, 12),
-            (103, 1_024, 1, 103, 53, 100, 13),
-            (104, 1_036, 1, 104, 54, 100, 14),
+            (100, 1_000, 1, 100, 50, 100, 10, 0),
+            (101, 1_012, 1, 101, 51, 100, 11, 1),
+            (102, 1_012, 1, 102, 52, 100, 12, 2),
+            (103, 1_024, 1, 103, 53, 100, 13, 3),
+            (104, 1_036, 1, 104, 54, 100, 14, 4),
         ],
         schema={
             "block_number": pl.Int64,
@@ -31,6 +31,7 @@ def _valid_frame() -> pl.DataFrame:
             "gas_used": pl.Int64,
             "gas_limit": pl.Int64,
             "tx_count": pl.Int64,
+            "effective_priority_fee_per_gas_p50": pl.Int64,
         },
         orient="row",
     )
@@ -83,6 +84,11 @@ def _reorder(frame: pl.DataFrame) -> pl.DataFrame:
         pytest.param(_replace("gas_used", 1, -1), "gas_used", id="used-gas-negative"),
         pytest.param(_replace("gas_used", 1, 101), "gas_used", id="used-gas-above-limit"),
         pytest.param(_replace("tx_count", 1, -1), "tx_count", id="transactions"),
+        pytest.param(
+            _replace("effective_priority_fee_per_gas_p50", 1, -1),
+            "effective_priority_fee_per_gas_p50",
+            id="priority-fee",
+        ),
     ],
 )
 def test_block_frame_rejects_invalid_owned_facts(

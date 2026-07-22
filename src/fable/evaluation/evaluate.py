@@ -71,6 +71,15 @@ def evaluate(
         feature_state=association.feature_state,
         target_state=association.target_state,
     )
+    first_outcome_block = testing_window.first_parent_block + 1
+    outcome_priority_fees_p50 = (
+        corpus.blocks.select_range(
+            first_outcome_block,
+            testing_window.last_parent_block + experiment.horizon_blocks,
+        )
+        .to_polars()["effective_priority_fee_per_gas_p50"]
+        .to_numpy()
+    )
 
     _configure_execution(deployment)
     observations = _collect_observations(
@@ -78,6 +87,8 @@ def evaluate(
         model,
         deployment,
         target_state=association.target_state,
+        outcome_priority_fees_p50=outcome_priority_fees_p50,
+        first_outcome_block=first_outcome_block,
     )
     (scratch / "evaluation.json").write_text(request.model_dump_json(), encoding="utf-8")
     observations.write_parquet(scratch / "observations.parquet")
@@ -106,6 +117,8 @@ def _collect_observations(
     deployment: EvaluationDeployment,
     *,
     target_state: TargetState,
+    outcome_priority_fees_p50: np.ndarray,
+    first_outcome_block: int,
 ) -> pl.DataFrame:
     count = len(dataset)
     columns = {
@@ -114,7 +127,9 @@ def _collect_observations(
         "predicted_minimum_log_base_fee": np.empty(count, dtype=np.float64),
         "minimum_action_k": np.empty(count, dtype=np.int64),
         "immediate_base_fee_per_gas": np.empty(count, dtype=np.int64),
+        "immediate_effective_priority_fee_per_gas_p50": np.empty(count, dtype=np.int64),
         "selected_base_fee_per_gas": np.empty(count, dtype=np.int64),
+        "selected_effective_priority_fee_per_gas_p50": np.empty(count, dtype=np.int64),
         "minimum_base_fee_per_gas": np.empty(count, dtype=np.int64),
     }
 
@@ -142,6 +157,11 @@ def _collect_observations(
             immediate_batch = base_fees[:, 0]
             selected_batch = base_fees[rows, actions]
             minimum_batch = base_fees[rows, minimum_actions_batch]
+            immediate_outcome_rows = batch["origin_block"].numpy() + 1 - first_outcome_block
+            immediate_priority_fees_p50_batch = outcome_priority_fees_p50[immediate_outcome_rows]
+            selected_priority_fees_p50_batch = outcome_priority_fees_p50[
+                immediate_outcome_rows + actions
+            ]
             predicted_logs_batch = target_state.mean + target_state.standard_deviation * (
                 minimum_fee_z.to(device="cpu", dtype=torch.float32).numpy().astype(np.float64)
             )
@@ -155,7 +175,13 @@ def _collect_observations(
             columns["predicted_minimum_log_base_fee"][destination] = predicted_logs_batch
             columns["minimum_action_k"][destination] = minimum_actions_batch
             columns["immediate_base_fee_per_gas"][destination] = immediate_batch
+            columns["immediate_effective_priority_fee_per_gas_p50"][destination] = (
+                immediate_priority_fees_p50_batch
+            )
             columns["selected_base_fee_per_gas"][destination] = selected_batch
+            columns["selected_effective_priority_fee_per_gas_p50"][destination] = (
+                selected_priority_fees_p50_batch
+            )
             columns["minimum_base_fee_per_gas"][destination] = minimum_batch
             cursor += size
 

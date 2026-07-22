@@ -12,7 +12,7 @@ This glossary defines FABLE's active domain language.
 
 **CorpusRequest.** The exact request for one corpus UUID and its `CorpusDefinition`.
 
-**BlockFrame.** One isolated, validated seven-column value covering an exact contiguous single-chain `CorpusDefinition`; it establishes canonical row facts and range selection, not finality or provenance.
+**BlockFrame.** One isolated, validated eight-column value covering an exact contiguous single-chain `CorpusDefinition`, including the gas-used-weighted effective priority-fee P50; it establishes canonical row facts and range selection, not finality or provenance.
 
 **Corpus.** The completed request, finalized anchor, and canonical `BlockFrame` at the corpus UUID's direct address.
 
@@ -28,7 +28,9 @@ This glossary defines FABLE's active domain language.
 
 **EvaluateRequest.** The complete typed instruction for one explicit post-fit testing evaluation.
 
-**Evaluation observation.** One canonical row containing an origin, prediction, minimum action, and the immediate, selected, and minimum base fees needed for local reduction.
+**Evaluation observation.** One canonical row containing an origin, prediction, minimum action, the immediate, selected, and minimum base fees, and the immediate and selected outcome-block effective-priority-fee P50 values needed for local reduction.
+
+**P50 fee-inclusive savings.** The arithmetic mean of per-origin savings between the next block and the base-fee-selected block after adding each outcome block's included-transaction effective-priority-fee P50. It is a retrospective representative-cost proxy, not an inclusion guarantee.
 
 **Method.** One complete `ModelDefinition` and `FitMethod` choice.
 

@@ -15,12 +15,13 @@ _SCHEMA = pl.Schema(
         "gas_used": pl.Int64,
         "gas_limit": pl.Int64,
         "tx_count": pl.Int64,
+        "effective_priority_fee_per_gas_p50": pl.Int64,
     }
 )
 
 
 class BlockFrame:
-    """One isolated, validated frame of contiguous canonical block rows."""
+    """One isolated, validated frame of contiguous canonical block facts."""
 
     __slots__ = ("_definition", "_frame")
 
@@ -60,6 +61,8 @@ class BlockFrame:
             raise ValueError("Block gas_used values must be between zero and gas_limit")
         if not (frame["tx_count"] >= 0).all():
             raise ValueError("Block tx_count values must be nonnegative")
+        if not (frame["effective_priority_fee_per_gas_p50"] >= 0).all():
+            raise ValueError("Block effective_priority_fee_per_gas_p50 values must be nonnegative")
 
         self._frame = frame.clone()
         self._definition = definition

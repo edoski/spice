@@ -22,22 +22,25 @@ def _blocks(
     gas_limits: list[int],
     tx_counts: list[int],
     timestamps: list[int],
+    priority_fees: list[int],
+    chain_id: int = 1,
 ) -> BlockFrame:
     count = len(base_fees)
     frame = pl.DataFrame(
         {
             "block_number": range(count),
             "timestamp": timestamps,
-            "chain_id": [1] * count,
+            "chain_id": [chain_id] * count,
             "base_fee_per_gas": base_fees,
             "gas_used": gas_used,
             "gas_limit": gas_limits,
             "tx_count": tx_counts,
+            "effective_priority_fee_per_gas_p50": priority_fees,
         }
     )
     return BlockFrame(
         frame,
-        CorpusDefinition(chain_id=1, first_block=0, last_block=count - 1),
+        CorpusDefinition(chain_id=chain_id, first_block=0, last_block=count - 1),
     )
 
 
@@ -48,6 +51,7 @@ def test_requested_feature_formulas_fit_in_order_and_transform_held_out_rows() -
         gas_limits=[1_000, 2_000, 3_000, 4],
         tx_counts=[0, 1, 2, 3],
         timestamps=[0, 6 * 3_600, 12 * 3_600, 18 * 3_600],
+        priority_fees=[0, 1, 2, 3],
     )
     activity_support = _blocks(
         base_fees=[10, 20, 80],
@@ -55,6 +59,7 @@ def test_requested_feature_formulas_fit_in_order_and_transform_held_out_rows() -
         gas_limits=[2, 6, 10],
         tx_counts=[0, 3, 8],
         timestamps=[0, 1, 2],
+        priority_fees=[0, 3, 8],
     )
     hour_support = _blocks(
         base_fees=[10, 30, 90, 270],
@@ -62,6 +67,7 @@ def test_requested_feature_formulas_fit_in_order_and_transform_held_out_rows() -
         gas_limits=[2, 8, 10, 20],
         tx_counts=[0, 0, 0, 0],
         timestamps=[0, 6 * 3_600, 12 * 3_600, 18 * 3_600],
+        priority_fees=[0, 1, 2, 3],
     )
 
     forming_order = (
@@ -148,6 +154,7 @@ def test_requested_feature_formulas_fit_in_order_and_transform_held_out_rows() -
         gas_limits=[200],
         tx_counts=[4],
         timestamps=[3_600],
+        priority_fees=[4],
     )
     held_out_raw = np.array(
         [
@@ -181,6 +188,36 @@ def test_requested_feature_formulas_fit_in_order_and_transform_held_out_rows() -
     )
 
 
+def test_fee_and_interval_features_use_their_exact_block_facts() -> None:
+    blocks = _blocks(
+        base_fees=[10, 20, 30, 40],
+        gas_used=[1, 2, 3, 4],
+        gas_limits=[10, 10, 10, 10],
+        tx_counts=[1, 2, 3, 4],
+        timestamps=[100, 112, 130, 145],
+        priority_fees=[0, 9, 99, 999],
+    )
+    ordered_features = (
+        "log1p_effective_priority_fee_per_gas_p50",
+        "block_interval_seconds",
+    )
+    raw = np.column_stack((np.log1p([9, 99, 999]), [12, 18, 15])).astype(np.float64)
+
+    state = fit_feature_state(blocks, ordered_features=ordered_features)
+    transformed = transform_feature_rows(
+        blocks,
+        ordered_features=ordered_features,
+        state=state,
+    )
+
+    np.testing.assert_allclose(state.means, raw.mean(axis=0))
+    np.testing.assert_allclose(state.standard_deviations, raw.std(axis=0, ddof=0))
+    np.testing.assert_allclose(
+        transformed,
+        ((raw - raw.mean(axis=0)) / raw.std(axis=0, ddof=0)).astype(np.float32),
+    )
+
+
 def _valid_blocks() -> BlockFrame:
     return _blocks(
         base_fees=[10, 20],
@@ -188,6 +225,7 @@ def _valid_blocks() -> BlockFrame:
         gas_limits=[2, 4],
         tx_counts=[0, 1],
         timestamps=[0, 3_600],
+        priority_fees=[0, 1],
     )
 
 
@@ -215,11 +253,43 @@ def _fit(
                     gas_limits=[1, 1],
                     tx_counts=[0, 1],
                     timestamps=[0, 1],
+                    priority_fees=[0, 1],
                 ),
                 ordered_features=("log_exact_forming_base_fee_per_gas",),
             ),
             "gas_target must be positive",
             id="forming-fee-domain",
+        ),
+        pytest.param(
+            lambda: _fit(
+                _blocks(
+                    base_fees=[10, 20],
+                    gas_used=[1, 2],
+                    gas_limits=[2, 4],
+                    tx_counts=[1, 2],
+                    timestamps=[0, 1],
+                    priority_fees=[1, 2],
+                    chain_id=137,
+                ),
+                ordered_features=("log_exact_forming_base_fee_per_gas",),
+            ),
+            "Ethereum-only",
+            id="forming-fee-chain",
+        ),
+        pytest.param(
+            lambda: _fit(
+                _blocks(
+                    base_fees=[10, 20],
+                    gas_used=[1, 2],
+                    gas_limits=[2, 4],
+                    tx_counts=[1, 2],
+                    timestamps=[1, 1],
+                    priority_fees=[1, 2],
+                ),
+                ordered_features=("block_interval_seconds",),
+            ),
+            "must be positive",
+            id="block-interval",
         ),
         pytest.param(
             lambda: FeatureState(means=(0.0,), standard_deviations=(1.0, 2.0)),
@@ -255,6 +325,7 @@ def test_fit_feature_state_rejects_constant_feature() -> None:
         gas_limits=[2, 2],
         tx_counts=[0, 0],
         timestamps=[0, 0],
+        priority_fees=[0, 0],
     )
 
     with pytest.raises(ValueError):

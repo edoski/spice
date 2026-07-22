@@ -19,6 +19,7 @@ from uuid import UUID as _UUID
 import polars as _pl
 import torch as _torch
 import yaml as _yaml
+from eth_typing import BlockNumber as _BlockNumber
 from fastapi import FastAPI as _FastAPI
 from fastapi import Request as _Request
 from pydantic import (
@@ -226,6 +227,15 @@ async def _infer(request: _InferenceRequest, state: _ServingState) -> _Inference
         raise ValueError("provider returned the wrong predecessor count")
     rows = [_live_row(block, chain_id) for block in predecessors]
     rows.append(latest)
+    fee_history = await client.eth.fee_history(
+        context_blocks,
+        _cast(_BlockNumber, head_block),
+        [50.0],
+    )
+    if _quantity(fee_history["oldestBlock"]) != first_block:
+        raise ValueError("provider returned the wrong fee history range")
+    for row, reward in zip(rows, fee_history["reward"], strict=True):
+        row["effective_priority_fee_per_gas_p50"] = _quantity(reward[0])
     blocks = _BlockFrame(
         _pl.DataFrame(rows),
         _CorpusDefinition(

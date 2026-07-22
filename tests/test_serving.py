@@ -190,6 +190,7 @@ class _FakeEth:
         self.endpoint_uri = endpoint_uri
         self.chain_id_calls = 0
         self.block_calls: list[int | str] = []
+        self.fee_history_calls: list[tuple[int, int, list[float]]] = []
 
     @property
     def chain_id(self) -> Any:
@@ -207,6 +208,21 @@ class _FakeEth:
             return _block(12)
         assert isinstance(number, int)
         return _block(number)
+
+    async def fee_history(
+        self,
+        block_count: int,
+        newest_block: int,
+        reward_percentiles: list[float],
+    ) -> dict[str, object]:
+        self.fee_history_calls.append((block_count, newest_block, reward_percentiles))
+        first_block = newest_block - block_count + 1
+        return {
+            "oldestBlock": first_block,
+            "reward": [
+                [block_number * 100] for block_number in range(first_block, newest_block + 1)
+            ],
+        }
 
 
 class _FakeBatch:
@@ -388,6 +404,7 @@ async def test_serves_one_selected_artifact_context_and_closes_clients(
             "https://avalanche.example",
         ]
         assert [web3.eth.block_calls for web3 in _FakeWeb3.instances] == [[], [], []]
+        assert [web3.eth.fee_history_calls for web3 in _FakeWeb3.instances] == [[], [], []]
         assert [web3.eth.chain_id_calls for web3 in _FakeWeb3.instances] == [0, 0, 0]
         assert [web3.middleware_onion.injections for web3 in _FakeWeb3.instances] == [
             [],
@@ -409,6 +426,7 @@ async def test_serves_one_selected_artifact_context_and_closes_clients(
         avalanche = _FakeWeb3.instances[2]
         assert avalanche.eth.chain_id_calls == 1
         assert avalanche.eth.block_calls == ["latest", 10, 11]
+        assert avalanche.eth.fee_history_calls == [(3, 12, [50.0])]
         assert len(transform_calls) == 1
         blocks, ordered_features, feature_state = transform_calls[0]
         assert blocks.to_polars().to_dict(as_series=False) == {
@@ -419,6 +437,7 @@ async def test_serves_one_selected_artifact_context_and_closes_clients(
             "gas_used": [50, 50, 50],
             "gas_limit": [100, 100, 100],
             "tx_count": [1, 1, 1],
+            "effective_priority_fee_per_gas_p50": [1000, 1100, 1200],
         }
         assert ordered_features == ("log_base_fee_per_gas", "gas_utilization")
         assert feature_state is association.feature_state

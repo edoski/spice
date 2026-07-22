@@ -34,6 +34,7 @@ def _corpus(first_block: int = 10, last_block: int = 29) -> Corpus:
             "gas_used": 35 + np.arange(blocks.size, dtype=np.int64),
             "gas_limit": np.full(blocks.size, 100, dtype=np.int64),
             "tx_count": 20 + np.arange(blocks.size, dtype=np.int64),
+            "effective_priority_fee_per_gas_p50": 2 + np.arange(blocks.size, dtype=np.int64),
         },
     ).filter(pl.col("block_number").is_between(first_block, last_block))
     request = CorpusRequest(
@@ -145,6 +146,56 @@ def test_fit_history_preserves_geometry_statistics_and_collation() -> None:
     assert [batch["origin_block"].tolist() for batch in batches] == [[12, 13, 14], [15]]
     assert batches[0]["inputs"].shape == (3, 3, 2)
     assert batches[0]["base_fees"].shape == (3, 3)
+
+
+def test_interval_feature_uses_a_real_predecessor_outside_the_context() -> None:
+    blocks = np.arange(9, 30, dtype=np.int64)
+    timestamps = np.cumsum(np.arange(10, 31, dtype=np.int64))
+    frame = pl.DataFrame(
+        {
+            "block_number": blocks,
+            "timestamp": timestamps,
+            "chain_id": np.ones(blocks.size, dtype=np.int64),
+            "base_fee_per_gas": np.concatenate((np.array([13]), _BASE_FEES)),
+            "gas_used": 34 + np.arange(blocks.size, dtype=np.int64),
+            "gas_limit": np.full(blocks.size, 100, dtype=np.int64),
+            "tx_count": 19 + np.arange(blocks.size, dtype=np.int64),
+            "effective_priority_fee_per_gas_p50": np.arange(blocks.size, dtype=np.int64),
+        }
+    )
+    request = CorpusRequest(
+        corpus_id=_CORPUS_ID,
+        definition=CorpusDefinition(chain_id=1, first_block=9, last_block=29),
+    )
+    corpus = Corpus(
+        request=request,
+        finalized_anchor=FinalizedAnchor(block_number=29, block_hash="a" * 64),
+        blocks=BlockFrame(frame, request.definition),
+    )
+    experiment = _experiment().model_copy(
+        update={
+            "ordered_features": (
+                "log1p_effective_priority_fee_per_gas_p50",
+                "block_interval_seconds",
+            )
+        }
+    )
+    preparation = prepare_fit_history(corpus, experiment)
+    raw = np.column_stack((np.log1p(np.arange(1, 7)), np.arange(11, 17))).astype(np.float64)
+    expected = ((raw - raw.mean(axis=0)) / raw.std(axis=0, ddof=0)).astype(np.float32)
+
+    torch.testing.assert_close(preparation.training[0]["inputs"], torch.from_numpy(expected[:3]))
+
+    without_predecessor = corpus.model_copy(
+        update={
+            "request": request.model_copy(
+                update={"definition": CorpusDefinition(chain_id=1, first_block=10, last_block=29)}
+            ),
+            "blocks": corpus.blocks.select_range(10, 29),
+        }
+    )
+    with pytest.raises(ValueError, match="complete context and outcome support"):
+        prepare_fit_history(without_predecessor, experiment)
 
 
 @pytest.mark.parametrize("corpus", (_corpus(first_block=11), _corpus(last_block=23)))

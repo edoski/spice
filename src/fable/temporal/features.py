@@ -78,7 +78,15 @@ def _raw_feature_rows(
     *,
     ordered_features: tuple[str, ...],
 ) -> NDArray[np.float64]:
-    columns = [_feature_values(blocks, feature_name) for feature_name in ordered_features]
+    needs_predecessor = "block_interval_seconds" in ordered_features
+    if needs_predecessor and blocks.height < 2:
+        raise ValueError("block_interval_seconds requires a predecessor block")
+    columns = []
+    for feature_name in ordered_features:
+        values = _feature_values(blocks, feature_name)
+        if needs_predecessor and feature_name != "block_interval_seconds":
+            values = values[1:]
+        columns.append(values)
     return np.ascontiguousarray(np.column_stack(columns), dtype=np.float64)
 
 
@@ -91,6 +99,8 @@ def _feature_values(blocks: pl.DataFrame, feature_name: str) -> NDArray[np.float
         gas_limits = _float_column(blocks, "gas_limit")
         return _float_column(blocks, "gas_used") / gas_limits
     if feature_name == "log_exact_forming_base_fee_per_gas":
+        if not (blocks["chain_id"] == 1).all():
+            raise ValueError("log_exact_forming_base_fee_per_gas is Ethereum-only")
         return _forming_base_fee_logs(blocks)
     if feature_name == "log_gas_limit":
         gas_limits = _float_column(blocks, "gas_limit")
@@ -100,6 +110,16 @@ def _feature_values(blocks: pl.DataFrame, feature_name: str) -> NDArray[np.float
         tx_counts = _float_column(blocks, "tx_count")
         with np.errstate(divide="ignore", invalid="ignore"):
             return np.log1p(tx_counts)
+    if feature_name == "log1p_effective_priority_fee_per_gas_p50":
+        priority_fees = _float_column(blocks, "effective_priority_fee_per_gas_p50")
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.log1p(priority_fees)
+    if feature_name == "block_interval_seconds":
+        timestamps = blocks["timestamp"].to_numpy().astype(np.int64, copy=False)
+        intervals = np.diff(timestamps)
+        if not (intervals > 0).all():
+            raise ValueError("block_interval_seconds values must be positive")
+        return intervals.astype(np.float64, copy=False)
     if feature_name == "hour_sin":
         return np.sin(_hour_angles(blocks))
     if feature_name == "hour_cos":

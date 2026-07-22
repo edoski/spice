@@ -119,6 +119,7 @@ def _corpus() -> Corpus:
                     "gas_used": 30 + np.arange(blocks.size, dtype=np.int64),
                     "gas_limit": np.full(blocks.size, 100, dtype=np.int64),
                     "tx_count": 4 + np.arange(blocks.size, dtype=np.int64),
+                    "effective_priority_fee_per_gas_p50": np.arange(blocks.size, dtype=np.int64),
                 }
             ),
             request.definition,
