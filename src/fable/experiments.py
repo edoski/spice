@@ -14,7 +14,6 @@ class _FrozenRecord(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
-        revalidate_instances="always",
         strict=True,
     )
 

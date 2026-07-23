@@ -345,8 +345,8 @@ async def _get(app: Any, path: str, query: bytes = b"") -> tuple[int, dict[str, 
 def _install_web3(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeProvider.instances.clear()
     _FakeWeb3.instances.clear()
-    monkeypatch.setattr(serving, "_AsyncHTTPProvider", _FakeProvider)
-    monkeypatch.setattr(serving, "_AsyncWeb3", _FakeWeb3)
+    monkeypatch.setattr(serving, "AsyncHTTPProvider", _FakeProvider)
+    monkeypatch.setattr(serving, "AsyncWeb3", _FakeWeb3)
 
 
 @_run_async
@@ -391,9 +391,9 @@ async def test_serves_one_selected_artifact_context_and_closes_clients(
         return torch.tensor([1])
 
     monkeypatch.setattr(serving, "_load_serving_config", load_config)
-    monkeypatch.setattr(serving, "_load_artifact", load_artifact)
-    monkeypatch.setattr(serving, "_transform_feature_rows", transform)
-    monkeypatch.setattr(serving, "_decode_action", decode)
+    monkeypatch.setattr(serving, "load_artifact", load_artifact)
+    monkeypatch.setattr(serving, "transform_feature_rows", transform)
+    monkeypatch.setattr(serving, "decode_action", decode)
 
     app = serving.create_app()
     async with app.router.lifespan_context(app):
@@ -408,8 +408,8 @@ async def test_serves_one_selected_artifact_context_and_closes_clients(
         assert [web3.eth.chain_id_calls for web3 in _FakeWeb3.instances] == [0, 0, 0]
         assert [web3.middleware_onion.injections for web3 in _FakeWeb3.instances] == [
             [],
-            [(serving._ExtraDataToPOAMiddleware, 0)],
-            [(serving._ExtraDataToPOAMiddleware, 0)],
+            [(serving.ExtraDataToPOAMiddleware, 0)],
+            [(serving.ExtraDataToPOAMiddleware, 0)],
         ]
 
         status, body = await _post(app, {"chain": "avalanche", "K": 5})
@@ -459,7 +459,7 @@ async def test_health_reports_selected_live_chain_without_loading_an_artifact(
     _install_web3(monkeypatch)
     monkeypatch.setattr(
         serving,
-        "_load_artifact",
+        "load_artifact",
         lambda *_: pytest.fail("health must not load artifacts"),
     )
     app = serving.create_app()
@@ -484,7 +484,7 @@ async def test_snapshot_reports_current_chain_state_without_loading_an_artifact(
     _install_web3(monkeypatch)
     monkeypatch.setattr(
         serving,
-        "_load_artifact",
+        "load_artifact",
         lambda *_: pytest.fail("snapshot must not load artifacts"),
     )
     app = serving.create_app()
@@ -513,7 +513,7 @@ async def test_outcome_reports_realized_base_fee_savings_inputs_without_loading_
     _install_web3(monkeypatch)
     monkeypatch.setattr(
         serving,
-        "_load_artifact",
+        "load_artifact",
         lambda *_: pytest.fail("outcome must not load artifacts"),
     )
     app = serving.create_app()
@@ -548,7 +548,7 @@ async def test_request_is_strict_and_forbids_extra_fields(
     _install_web3(monkeypatch)
     monkeypatch.setattr(
         serving,
-        "_load_artifact",
+        "load_artifact",
         lambda *_: pytest.fail("invalid requests must not load artifacts"),
     )
     app = serving.create_app()
@@ -588,7 +588,7 @@ async def test_rejects_artifact_and_chain_mismatches(
         horizon_blocks=3 if failure == "horizon" else 2,
         selected=failure != "source",
     )
-    monkeypatch.setattr(serving, "_load_artifact", lambda *_: (association, _FakeModel()))
+    monkeypatch.setattr(serving, "load_artifact", lambda *_: (association, _FakeModel()))
     if failure == "chain":
         monkeypatch.setitem(_CHAIN_IDS, "https://ethereum.example", 2)
     if failure == "live":
@@ -627,7 +627,7 @@ async def test_artifact_load_failure_propagates(
     def fail(*_: object) -> None:
         raise failure
 
-    monkeypatch.setattr(serving, "_load_artifact", fail)
+    monkeypatch.setattr(serving, "load_artifact", fail)
     app = serving.create_app()
 
     with pytest.raises(RuntimeError) as caught:

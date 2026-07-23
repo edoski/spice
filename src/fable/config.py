@@ -24,7 +24,22 @@ _FeatureName: TypeAlias = Annotated[str, Field(strict=True, min_length=1)]
 
 
 class _FrozenRecord(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class Deployment(_FrozenRecord):
+    model_config = ConfigDict(strict=True)
+
+    evaluation_batch_size: _PositiveInt
+    num_workers: _NonNegativeInt
+    pin_memory: bool
+    prefetch_factor: _PositiveInt | None
+    persistent_workers: bool
+    deterministic: bool | Literal["warn"]
+    benchmark: bool
+    float32_matmul_precision: Literal["highest", "high"]
+    cuda_matmul_allow_tf32: bool
+    cudnn_allow_tf32: bool
 
 
 def _validate_transformer_dimensions(model_width: int, attention_heads: int) -> None:
@@ -214,6 +229,7 @@ __all__ = [
     "BlockWindow",
     "CorpusDefinition",
     "CorpusRequest",
+    "Deployment",
     "EvaluateRequest",
     "ExperimentSemantics",
     "FitMethod",

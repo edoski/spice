@@ -16,13 +16,13 @@ import fable.modeling as modeling
 from fable.addresses import (
     artifact_checkpoint_path,
     artifact_directory,
-    artifact_fit_history_path,
 )
 from fable.config import (
     BaselineSource,
     BlockWindow,
     CorpusDefinition,
     CorpusRequest,
+    Deployment,
     ExperimentSemantics,
     FitMethod,
     LstmDefinition,
@@ -37,7 +37,6 @@ from fable.corpus import BlockFrame, Corpus, FinalizedAnchor
 from fable.min_block_fee import TargetState, min_block_fee_loss
 from fable.modeling import (
     ArtifactAssociation,
-    FitDeployment,
     load_artifact,
     train,
 )
@@ -134,14 +133,15 @@ def _corpus_request() -> CorpusRequest:
     )
 
 
-def _deployment() -> FitDeployment:
-    return FitDeployment(
-        deterministic=True,
-        benchmark=False,
+def _deployment() -> Deployment:
+    return Deployment(
+        evaluation_batch_size=3,
         num_workers=0,
         pin_memory=False,
         prefetch_factor=None,
         persistent_workers=False,
+        deterministic=True,
+        benchmark=False,
         float32_matmul_precision="highest",
         cuda_matmul_allow_tf32=False,
         cudnn_allow_tf32=False,
@@ -341,6 +341,32 @@ def test_epoch_logs_weight_short_batches_in_float64(
         assert unweighted != pytest.approx(expected)
 
 
+def test_gradient_clipping_uses_trainer_value_and_rejects_nonfinite() -> None:
+    association = ArtifactAssociation(
+        request=_request(),
+        feature_state=FeatureState(
+            means=(1.0, 2.0),
+            standard_deviations=(0.5, 0.25),
+        ),
+        target_state=TargetState(mean=3.0, standard_deviation=0.75),
+    )
+    module = modeling._FitModule(modeling._json_association(association))
+    parameter = torch.nn.Parameter(torch.tensor([3.0, 4.0]))
+    optimizer = torch.optim.SGD([parameter], lr=0.1)
+
+    parameter.grad = torch.tensor([3.0, 4.0])
+    module.configure_gradient_clipping(optimizer, 2.0, "norm")
+    torch.testing.assert_close(parameter.grad.norm(), torch.tensor(2.0))
+
+    parameter.grad = torch.tensor([3.0, 4.0])
+    module.configure_gradient_clipping(optimizer, 0.0, "norm")
+    torch.testing.assert_close(parameter.grad, torch.tensor([3.0, 4.0]))
+
+    parameter.grad = torch.tensor([math.inf, 0.0])
+    with pytest.raises(RuntimeError, match="non-finite"):
+        module.configure_gradient_clipping(optimizer, 0.0, "norm")
+
+
 @pytest.mark.parametrize(
     ("artifact_id", "model"),
     [
@@ -403,19 +429,8 @@ def test_all_three_models_train_load_and_apply_direct_loss(
 
     assert association.request == request
     directory = artifact_directory(tmp_path, artifact_id)
-    assert sorted(path.name for path in directory.iterdir()) == ["fit.csv", "model.ckpt"]
+    assert [path.name for path in directory.iterdir()] == ["model.ckpt"]
     assert artifact_checkpoint_path(tmp_path, artifact_id).is_file()
-    fit_history = pl.read_csv(artifact_fit_history_path(tmp_path, artifact_id))
-    assert fit_history.schema == {
-        "epoch": pl.Int64,
-        "training_total_loss": pl.Float64,
-        "validation_total_loss": pl.Float64,
-    }
-    assert fit_history["epoch"].to_list() == [1]
-    assert fit_history.select(
-        pl.col("training_total_loss").is_finite().all(),
-        pl.col("validation_total_loss").is_finite().all(),
-    ).row(0) == (True, True)
     batches = list(DataLoader(prepared.training, batch_size=3, shuffle=False))
     for batch in batches:
         output = loaded_model(batch["inputs"])
@@ -439,9 +454,10 @@ def test_all_three_models_train_load_and_apply_direct_loss(
             load_artifact(tmp_path, mismatched_id)
 
 
-def test_full_checkpoint_resume_restores_fit_history(
+def test_full_checkpoint_resume_preserves_selection_and_progress(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     method = Method(
         model=LstmDefinition(
@@ -491,33 +507,33 @@ def test_full_checkpoint_resume_restores_fit_history(
         target_state=prepared.target_state,
     )
 
-    first = modeling._fit(association, prepared, scratch, _deployment())
-    second = modeling._fit(association, prepared, scratch, _deployment())
+    def progress() -> list[tuple[int, float]]:
+        lines = [line for line in capsys.readouterr().out.splitlines() if line.startswith("epoch=")]
+        return [
+            (
+                int(epoch.removeprefix("epoch=")),
+                float(loss.removeprefix("validation_total_loss=")),
+            )
+            for epoch, loss in (line.split() for line in lines)
+        ]
 
-    first_validation = first.fit_history[1].validation_total_loss
-    assert first_validation is not None
-    assert first.objective == first_validation
+    first = modeling._fit(association, prepared, scratch, _deployment())
+    first_progress = progress()
+    second = modeling._fit(association, prepared, scratch, _deployment())
+    second_progress = progress()
+
+    assert [epoch for epoch, _ in first_progress] == [2]
+    assert [epoch for epoch, _ in second_progress] == [4]
+    validation_progress = first_progress + second_progress
+    assert all(math.isfinite(loss) for _, loss in validation_progress)
+    assert first.objective == first_progress[0][1]
     assert first.selected_epoch == 2
     assert first.completed_epochs == 2
     assert second.completed_epochs == method.fit.max_epochs
-    assert [row.epoch for row in first.fit_history] == [1, 2]
-    assert [row.epoch for row in second.fit_history] == [1, 2, 3, 4]
-    assert [row.validation_total_loss is None for row in second.fit_history] == [
-        True,
-        False,
-        True,
-        False,
-    ]
-    validation_history = [
-        (row.epoch, row.validation_total_loss)
-        for row in second.fit_history
-        if row.validation_total_loss is not None
-    ]
-    assert second.objective == min(loss for _, loss in validation_history)
+    assert second.objective == min(loss for _, loss in validation_progress)
     assert second.selected_epoch == next(
-        epoch for epoch, loss in validation_history if loss == second.objective
+        epoch for epoch, loss in validation_progress if loss == second.objective
     )
-    assert all(math.isfinite(row.training_total_loss) for row in second.fit_history)
     assert fit_kwargs[0]["ckpt_path"] is None
     assert fit_kwargs[1]["ckpt_path"] == scratch / "last.ckpt"
     assert "weights_only" not in fit_kwargs[1]

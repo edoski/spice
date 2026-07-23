@@ -15,7 +15,6 @@ class FinalizedAnchor(BaseModel):
         extra="forbid",
         frozen=True,
         strict=True,
-        revalidate_instances="always",
     )
 
     block_number: int = Field(ge=0)
@@ -28,7 +27,6 @@ class Corpus(BaseModel):
         extra="forbid",
         frozen=True,
         strict=True,
-        revalidate_instances="always",
     )
 
     request: CorpusRequest

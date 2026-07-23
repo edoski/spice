@@ -18,7 +18,6 @@ class _CorpusDocument(BaseModel):
         extra="forbid",
         frozen=True,
         strict=True,
-        revalidate_instances="always",
     )
 
     request: CorpusRequest

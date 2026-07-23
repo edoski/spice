@@ -50,7 +50,7 @@ function backendUrl(): string {
   return value;
 }
 
-async function requestJson(path: string, init: RequestInit): Promise<unknown> {
+async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(backendUrl() + path, init);
@@ -66,93 +66,35 @@ async function requestJson(path: string, init: RequestInit): Promise<unknown> {
     throw new Error(`HTTP ${response.status}: ${body.trim()}`);
   }
   try {
-    return JSON.parse(body) as unknown;
+    return JSON.parse(body) as T;
   } catch {
     throw new Error("Server returned invalid JSON");
   }
-}
-
-function requireObject(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Server response must be an object");
-  }
-  return value as Record<string, unknown>;
-}
-
-function requireInteger(value: unknown, name: string): number {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw new Error(`${name} must be a nonnegative integer`);
-  }
-  return value;
 }
 
 export async function requestInference(
   request: InferenceRequest,
   signal?: AbortSignal,
 ): Promise<InferenceResponse> {
-  const value = requireObject(
-    await requestJson("/inference", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-      signal,
-    }),
-  );
-  const headBlock = requireInteger(value.head_block, "head_block");
-  const selectedAction = requireInteger(
-    value.selected_action_k,
-    "selected_action_k",
-  );
-  const targetBlock = requireInteger(value.target_block, "target_block");
-  const predictedMinimum = value.predicted_minimum_base_fee_per_gas;
-  if (
-    typeof predictedMinimum !== "number" ||
-    !Number.isFinite(predictedMinimum) ||
-    predictedMinimum <= 0
-  ) {
-    throw new Error(
-      "predicted_minimum_base_fee_per_gas must be positive and finite",
-    );
-  }
-  if (
-    selectedAction >= request.K ||
-    targetBlock !== headBlock + 1 + selectedAction
-  ) {
-    throw new Error("Server returned invalid inference geometry");
-  }
-  return {
-    head_block: headBlock,
-    selected_action_k: selectedAction,
-    target_block: targetBlock,
-    predicted_minimum_base_fee_per_gas: predictedMinimum,
-  };
+  return requestJson<InferenceResponse>("/inference", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+    signal,
+  });
 }
 
 export async function requestChainSnapshot(
   chain: Chain,
   signal?: AbortSignal,
 ): Promise<ChainSnapshot> {
-  const value = requireObject(
-    await requestJson(`/snapshot?chain=${encodeURIComponent(chain)}`, {
+  return requestJson<ChainSnapshot>(
+    `/snapshot?chain=${encodeURIComponent(chain)}`,
+    {
       method: "GET",
       signal,
-    }),
+    },
   );
-  if (value.chain !== chain) {
-    throw new Error("Snapshot chain does not match the request");
-  }
-  const currentBaseFee = requireInteger(
-    value.current_base_fee_per_gas,
-    "current_base_fee_per_gas",
-  );
-  if (currentBaseFee === 0) {
-    throw new Error("current_base_fee_per_gas must be positive");
-  }
-  return {
-    chain,
-    head_block: requireInteger(value.head_block, "head_block"),
-    current_base_fee_per_gas: currentBaseFee,
-  };
 }
 
 export async function requestInferenceOutcome(
@@ -166,40 +108,8 @@ export async function requestInferenceOutcome(
     immediate_block: String(immediateBlock),
     selected_block: String(selectedBlock),
   });
-  const value = requireObject(
-    await requestJson(`/outcome?${query}`, { method: "GET", signal }),
-  );
-  const returnedImmediateBlock = requireInteger(
-    value.immediate_block,
-    "immediate_block",
-  );
-  const returnedSelectedBlock = requireInteger(
-    value.selected_block,
-    "selected_block",
-  );
-  const immediateBaseFee = requireInteger(
-    value.immediate_base_fee_per_gas,
-    "immediate_base_fee_per_gas",
-  );
-  const selectedBaseFee = requireInteger(
-    value.selected_base_fee_per_gas,
-    "selected_base_fee_per_gas",
-  );
-  if (
-    value.chain !== chain ||
-    returnedImmediateBlock !== immediateBlock ||
-    returnedSelectedBlock !== selectedBlock
-  ) {
-    throw new Error("Outcome does not match the requested run");
-  }
-  if (immediateBaseFee === 0 || selectedBaseFee === 0) {
-    throw new Error("Outcome base fees must be positive");
-  }
-  return {
-    chain,
-    immediate_block: returnedImmediateBlock,
-    selected_block: returnedSelectedBlock,
-    immediate_base_fee_per_gas: immediateBaseFee,
-    selected_base_fee_per_gas: selectedBaseFee,
-  };
+  return requestJson<InferenceOutcome>(`/outcome?${query}`, {
+    method: "GET",
+    signal,
+  });
 }

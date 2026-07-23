@@ -12,9 +12,8 @@ from typing import Annotated, Any, Literal, Self, cast
 from uuid import UUID
 
 import lightning.pytorch as pl
-import polars as polars
 import torch
-from lightning.pytorch.callbacks import Callback, EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from torch import nn
 from torch.utils.data import DataLoader
@@ -25,6 +24,7 @@ from .addresses import (
 )
 from .config import (
     BaselineSource,
+    Deployment,
     LstmDefinition,
     Method,
     TrainingDefinition,
@@ -55,23 +55,8 @@ class _FrozenRecord(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         frozen=True,
-        revalidate_instances="always",
         strict=True,
     )
-
-
-class FitDeployment(_FrozenRecord):
-    """External host facts consumed by one fit invocation."""
-
-    deterministic: bool | Literal["warn"]
-    benchmark: bool
-    num_workers: int
-    pin_memory: bool
-    prefetch_factor: int | None
-    persistent_workers: bool
-    float32_matmul_precision: Literal["highest", "high"]
-    cuda_matmul_allow_tf32: bool
-    cudnn_allow_tf32: bool
 
 
 class ArtifactAssociation(_FrozenRecord):
@@ -400,6 +385,16 @@ class _FitModule(pl.LightningModule):
         losses = self._loss(batch)
         self._log_epoch_loss("validation", losses)
 
+    def on_validation_epoch_end(self) -> None:
+        metric = self.trainer.callback_metrics["validation_total_loss"]
+        value = float(metric.detach().cpu().item())
+        if not math.isfinite(value):
+            raise FloatingPointError("complete validation_total_loss must be finite")
+        print(
+            f"epoch={self.trainer.current_epoch + 1} validation_total_loss={value}",
+            flush=True,
+        )
+
     def configure_optimizers(self) -> torch.optim.AdamW:
         fit = self.definition.method.fit
         return torch.optim.AdamW(
@@ -414,17 +409,16 @@ class _FitModule(pl.LightningModule):
         gradient_clip_val: int | float | None = None,
         gradient_clip_algorithm: str | None = None,
     ) -> None:
-        del gradient_clip_val, gradient_clip_algorithm
+        del gradient_clip_algorithm
         parameters = (
             parameter
             for group in optimizer.param_groups
             for parameter in group["params"]
             if parameter.grad is not None
         )
-        authored_norm = self.definition.method.fit.gradient_clip_norm
         torch.nn.utils.clip_grad_norm_(
             parameters,
-            max_norm=math.inf if authored_norm == 0 else authored_norm,
+            max_norm=gradient_clip_val or math.inf,
             error_if_nonfinite=True,
         )
 
@@ -436,79 +430,14 @@ class _FitModule(pl.LightningModule):
 
 
 @dataclass(frozen=True, slots=True)
-class _FitEpoch:
-    epoch: int
-    training_total_loss: float
-    validation_total_loss: float | None
-
-
-class _FitHistory(Callback):
-    def __init__(self) -> None:
-        self.epochs: list[_FitEpoch] = []
-        self._validated_epoch: int | None = None
-
-    @staticmethod
-    def _metric(trainer: pl.Trainer, name: str) -> float:
-        metric = trainer.callback_metrics[name]
-        value = float(metric.detach().cpu().item())
-        if not math.isfinite(value):
-            raise FloatingPointError(f"complete {name} must be finite")
-        return value
-
-    def on_validation_epoch_end(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-    ) -> None:
-        del pl_module
-        self._validated_epoch = trainer.current_epoch
-
-    def on_train_epoch_end(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-    ) -> None:
-        del pl_module
-        validation = (
-            self._metric(trainer, "validation_total_loss")
-            if self._validated_epoch == trainer.current_epoch
-            else None
-        )
-        self.epochs.append(
-            _FitEpoch(
-                epoch=trainer.current_epoch + 1,
-                training_total_loss=self._metric(trainer, "training_total_loss"),
-                validation_total_loss=validation,
-            )
-        )
-        self._validated_epoch = None
-
-    def state_dict(self) -> dict[str, Any]:
-        return {
-            "epochs": [
-                {
-                    "epoch": row.epoch,
-                    "training_total_loss": row.training_total_loss,
-                    "validation_total_loss": row.validation_total_loss,
-                }
-                for row in self.epochs
-            ]
-        }
-
-    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
-        self.epochs = [_FitEpoch(**row) for row in state_dict["epochs"]]
-
-
-@dataclass(frozen=True, slots=True)
 class _FitOutcome:
     best_checkpoint: Path
     objective: float
     selected_epoch: int
     completed_epochs: int
-    fit_history: tuple[_FitEpoch, ...]
 
 
-def _configure_numerical_policy(deployment: FitDeployment) -> None:
+def _configure_numerical_policy(deployment: Deployment) -> None:
     torch.set_float32_matmul_precision(deployment.float32_matmul_precision)
     torch.backends.cuda.matmul.allow_tf32 = deployment.cuda_matmul_allow_tf32
     torch.backends.cudnn.allow_tf32 = deployment.cudnn_allow_tf32
@@ -516,7 +445,7 @@ def _configure_numerical_policy(deployment: FitDeployment) -> None:
 
 def _loaders(
     prepared: HistoricalPreparation,
-    deployment: FitDeployment,
+    deployment: Deployment,
     generator: torch.Generator,
 ) -> tuple[DataLoader[dict[str, torch.Tensor]], DataLoader[dict[str, torch.Tensor]]]:
     common = {
@@ -544,7 +473,7 @@ def _loaders(
 def _callbacks(
     scratch: Path,
     definition: TrainingDefinition,
-) -> tuple[EarlyStopping, ModelCheckpoint, ModelCheckpoint, _FitHistory]:
+) -> tuple[EarlyStopping, ModelCheckpoint, ModelCheckpoint]:
     fit = definition.method.fit
     early_stopping = EarlyStopping(
         monitor="validation_total_loss",
@@ -577,7 +506,7 @@ def _callbacks(
         auto_insert_metric_name=False,
         enable_version_counter=False,
     )
-    return early_stopping, best, last, _FitHistory()
+    return early_stopping, best, last
 
 
 def _selected_epoch(best_checkpoint: Path) -> int:
@@ -588,7 +517,7 @@ def _fit(
     association: _Association,
     prepared: HistoricalPreparation,
     scratch: Path,
-    deployment: FitDeployment,
+    deployment: Deployment,
 ) -> _FitOutcome:
     definition = _training_definition(association)
     scratch.mkdir(parents=True, exist_ok=True)
@@ -603,7 +532,7 @@ def _fit(
         deployment,
         generator,
     )
-    early_stopping, best, last, history = _callbacks(scratch, definition)
+    early_stopping, best, last = _callbacks(scratch, definition)
     trainer = pl.Trainer(
         accelerator="gpu",
         devices=1,
@@ -619,7 +548,7 @@ def _fit(
         logger=False,
         enable_progress_bar=False,
         enable_model_summary=False,
-        callbacks=[history, early_stopping, best, last],
+        callbacks=[early_stopping, best, last],
     )
     last_checkpoint = scratch / "last.ckpt"
     trainer.fit(
@@ -637,25 +566,8 @@ def _fit(
         best_checkpoint=best_checkpoint,
         objective=float(score),
         selected_epoch=_selected_epoch(best_checkpoint),
-        completed_epochs=len(history.epochs),
-        fit_history=tuple(history.epochs),
+        completed_epochs=trainer.current_epoch,
     )
-
-
-_FIT_HISTORY_SCHEMA = {
-    "epoch": polars.Int64,
-    "training_total_loss": polars.Float64,
-    "validation_total_loss": polars.Float64,
-}
-
-
-def _write_fit_history(path: Path, history: tuple[_FitEpoch, ...]) -> None:
-    frame = polars.DataFrame(
-        [(row.epoch, row.training_total_loss, row.validation_total_loss) for row in history],
-        schema=_FIT_HISTORY_SCHEMA,
-        orient="row",
-    )
-    frame.write_csv(path)
 
 
 def _publish_artifact(
@@ -670,10 +582,8 @@ def _publish_artifact(
 
     checkpoint = scratch / "model.ckpt"
     shutil.copyfile(outcome.best_checkpoint, checkpoint)
-    fit_history = scratch / "fit.csv"
-    _write_fit_history(fit_history, outcome.fit_history)
 
-    retained = {checkpoint, fit_history}
+    retained = {checkpoint}
     for temporary in scratch.iterdir():
         if temporary in retained:
             continue
@@ -682,7 +592,7 @@ def _publish_artifact(
         temporary.unlink()
 
     if set(scratch.iterdir()) != retained:
-        raise RuntimeError("completed artifact must contain model.ckpt and fit.csv")
+        raise RuntimeError("completed artifact must contain only model.ckpt")
     scratch.rename(canonical)
 
 
@@ -690,7 +600,7 @@ def train(
     request: TrainRequest,
     prepared: HistoricalPreparation,
     storage_root: Path,
-    deployment: FitDeployment,
+    deployment: Deployment,
 ) -> None:
     source = request.source
     if isinstance(source, BaselineSource):
@@ -722,7 +632,7 @@ def _run_candidate(
     method: Method,
     prepared: HistoricalPreparation,
     candidate_scratch: Path,
-    deployment: FitDeployment,
+    deployment: Deployment,
 ) -> RetainedResult:
     association = _CandidateAssociation(
         request=request,
@@ -760,7 +670,6 @@ def load_artifact(
 
 __all__ = [
     "ArtifactAssociation",
-    "FitDeployment",
     "load_artifact",
     "train",
 ]

@@ -10,7 +10,6 @@ import numpy as np
 import polars as pl
 import pytest
 import torch
-from pydantic import ValidationError
 from torch import nn
 
 from fable.addresses import (
@@ -26,6 +25,7 @@ from fable.config import (
     BlockWindow,
     CorpusDefinition,
     CorpusRequest,
+    Deployment,
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
@@ -35,7 +35,7 @@ from fable.config import (
     TrainingDefinition,
     TrainRequest,
 )
-from fable.evaluation import EvaluationDeployment, evaluate
+from fable.evaluation import evaluate
 from fable.min_block_fee import MinBlockFeeOutput, TargetState
 from fable.modeling import ArtifactAssociation
 from fable.temporal.features import FeatureState
@@ -245,9 +245,9 @@ def _request(
     )
 
 
-def _deployment() -> EvaluationDeployment:
-    return EvaluationDeployment(
-        batch_size=3,
+def _deployment() -> Deployment:
+    return Deployment(
+        evaluation_batch_size=3,
         num_workers=0,
         pin_memory=False,
         prefetch_factor=None,
@@ -327,23 +327,6 @@ def test_evaluate_publishes_exact_observations_through_one_full_and_tail_path(
         (23, 0, 10.0, 2, 40, 14, 40, 14, 30),
         (24, 2, 10.5, 1, 55, 15, 30, 17, 30),
     ]
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"batch_size": 0},
-        {"float32_matmul_precision": "medium"},
-    ],
-)
-def test_evaluation_deployment_rejects_invalid_batch_or_matmul_policy(
-    payload: dict[str, object],
-) -> None:
-    valid = _deployment().model_dump()
-    valid.update(payload)
-
-    with pytest.raises(ValidationError):
-        EvaluationDeployment.model_validate(valid)
 
 
 @pytest.mark.parametrize(

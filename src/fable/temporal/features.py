@@ -21,7 +21,6 @@ class FeatureState(BaseModel):
         extra="forbid",
         frozen=True,
         strict=True,
-        revalidate_instances="always",
     )
 
     means: Annotated[tuple[_FiniteFloat, ...], Field(min_length=1)]

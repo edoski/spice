@@ -3,54 +3,28 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Literal
 
 import numpy as np
 import polars as pl
 import torch
-from pydantic import BaseModel, ConfigDict, Field
 from torch import nn
 from torch.utils.data import DataLoader
 
 from ..addresses import evaluation_directory
-from ..config import EvaluateRequest
+from ..config import Deployment, EvaluateRequest
 from ..corpus import load_corpus
 from ..min_block_fee import TargetState, decode_action
 from ..modeling import load_artifact
 from ..temporal.history import HistoricalDataset, prepare_historical_window
 from .contract import OBSERVATION_SCHEMA
 
-_PositiveInt = Annotated[int, Field(strict=True, gt=0)]
-_NonNegativeInt = Annotated[int, Field(strict=True, ge=0)]
 _DEVICE = torch.device("cuda:0")
-
-
-class EvaluationDeployment(BaseModel):
-    """Non-scientific execution facts for one evaluation invocation."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-        revalidate_instances="always",
-        strict=True,
-    )
-
-    batch_size: _PositiveInt
-    num_workers: _NonNegativeInt
-    pin_memory: bool
-    prefetch_factor: _PositiveInt | None
-    persistent_workers: bool
-    deterministic: bool | Literal["warn"]
-    benchmark: bool
-    float32_matmul_precision: Literal["highest", "high"]
-    cuda_matmul_allow_tf32: bool
-    cudnn_allow_tf32: bool
 
 
 def evaluate(
     request: EvaluateRequest,
     storage_root: Path,
-    deployment: EvaluationDeployment,
+    deployment: Deployment,
 ) -> None:
     """Publish canonical observations for one exact artifact/window request."""
 
@@ -99,7 +73,7 @@ def evaluate(
     scratch.rename(canonical)
 
 
-def _configure_execution(deployment: EvaluationDeployment) -> None:
+def _configure_execution(deployment: Deployment) -> None:
     torch.use_deterministic_algorithms(
         deployment.deterministic is not False,
         warn_only=deployment.deterministic == "warn",
@@ -114,7 +88,7 @@ def _configure_execution(deployment: EvaluationDeployment) -> None:
 def _collect_observations(
     dataset: HistoricalDataset,
     model: nn.Module,
-    deployment: EvaluationDeployment,
+    deployment: Deployment,
     *,
     target_state: TargetState,
     outcome_priority_fees_p50: np.ndarray,
@@ -135,7 +109,7 @@ def _collect_observations(
 
     loader = DataLoader(
         dataset,
-        batch_size=deployment.batch_size,
+        batch_size=deployment.evaluation_batch_size,
         shuffle=False,
         drop_last=False,
         num_workers=deployment.num_workers,
@@ -188,4 +162,4 @@ def _collect_observations(
     return pl.DataFrame(columns, schema=OBSERVATION_SCHEMA)
 
 
-__all__ = ["EvaluationDeployment", "evaluate"]
+__all__ = ["evaluate"]

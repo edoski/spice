@@ -14,13 +14,13 @@ import fable.execution as execution
 from fable.cli.app import app
 from fable.config import (
     BlockWindow,
+    Deployment,
     ExperimentSemantics,
     FitMethod,
     LstmDefinition,
     Method,
     TuneRequest,
 )
-from fable.modeling import FitDeployment
 
 STUDY_ID = UUID("10000000-0000-4000-8000-000000000001")
 CORPUS_ID = UUID("20000000-0000-4000-8000-000000000001")
@@ -37,17 +37,7 @@ DEPLOYMENT = {
     "cuda_matmul_allow_tf32": True,
     "cudnn_allow_tf32": True,
 }
-FIT_DEPLOYMENT = FitDeployment(
-    num_workers=4,
-    pin_memory=True,
-    prefetch_factor=2,
-    persistent_workers=True,
-    deterministic=True,
-    benchmark=False,
-    float32_matmul_precision="high",
-    cuda_matmul_allow_tf32=True,
-    cudnn_allow_tf32=True,
-)
+DEPLOYMENT_RECORD = Deployment.model_validate(DEPLOYMENT)
 
 
 def _window(first: int) -> BlockWindow:
@@ -198,14 +188,15 @@ def test_remote_candidate_forwards_input(
         separators=(",", ":"),
     ).encode()
     events: list[str] = []
-    calls: list[tuple[Path, TuneRequest, Method, FitDeployment]] = []
+    calls: list[tuple[Path, TuneRequest, Method, Deployment]] = []
     failure = RuntimeError("candidate failed")
+    candidate = remote._CandidateProcessInput.model_validate_json(payload, strict=True)
 
     def fake_run_candidate(
         storage_root: Path,
         request: TuneRequest,
         method: Method,
-        deployment: FitDeployment,
+        deployment: Deployment,
     ) -> None:
         events.append("run_candidate")
         calls.append((storage_root, request, method, deployment))
@@ -216,6 +207,11 @@ def test_remote_candidate_forwards_input(
         remote,
         "sys",
         SimpleNamespace(stdin=SimpleNamespace(buffer=_InputBuffer(payload, events))),
+    )
+    monkeypatch.setattr(
+        remote._CandidateProcessInput,
+        "model_validate_json",
+        staticmethod(lambda *_args, **_kwargs: candidate),
     )
     monkeypatch.setenv("STORAGE_ROOT", str(STORAGE_ROOT))
     monkeypatch.setattr(remote, "run_candidate", fake_run_candidate)
@@ -230,7 +226,8 @@ def test_remote_candidate_forwards_input(
         "stdin",
         "run_candidate",
     ]
-    assert calls == [(STORAGE_ROOT, REQUEST, METHOD, FIT_DEPLOYMENT)]
+    assert calls == [(STORAGE_ROOT, REQUEST, METHOD, DEPLOYMENT_RECORD)]
+    assert calls[0][-1] is candidate.deployment
 
 
 @pytest.mark.parametrize(

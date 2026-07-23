@@ -30,10 +30,6 @@ def artifact_checkpoint_path(storage_root: Path, artifact_id: UUID) -> Path:
     return artifact_directory(storage_root, artifact_id) / "model.ckpt"
 
 
-def artifact_fit_history_path(storage_root: Path, artifact_id: UUID) -> Path:
-    return artifact_directory(storage_root, artifact_id) / "fit.csv"
-
-
 def evaluation_directory(storage_root: Path, evaluation_id: UUID) -> Path:
     return storage_root / "evaluations" / str(evaluation_id)
 

@@ -36,7 +36,6 @@ class _State(BaseModel):
         extra="forbid",
         frozen=True,
         strict=True,
-        revalidate_instances="always",
     )
 
 
@@ -54,8 +53,6 @@ class MinBlockFeeOutput(NamedTuple):
 class MinBlockFeeLoss:
     mean_total: torch.Tensor
     total_by_origin: torch.Tensor
-    classification_by_origin: torch.Tensor
-    regression_by_origin: torch.Tensor
 
 
 def _natural_log(values: NDArray[np.int64]) -> NDArray[np.float64]:
@@ -102,8 +99,6 @@ def min_block_fee_loss(
     return MinBlockFeeLoss(
         mean_total=total.sum() / output.action_logits.shape[0],
         total_by_origin=total.detach(),
-        classification_by_origin=classification.detach(),
-        regression_by_origin=regression.detach(),
     )
 
 

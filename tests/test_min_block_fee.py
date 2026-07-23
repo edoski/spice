@@ -45,22 +45,18 @@ def test_target_and_native_loss_match_hand_derived_fixture() -> None:
         target=targets,
     )
     log_three = math.log(3.0)
-    expected_classification = torch.full((4,), log_three)
-    expected_regression = torch.tensor([0.0, 0.125, 0.5, 1.5])
-    expected_total = expected_classification + expected_regression
+    expected_total = torch.tensor([log_three, log_three + 0.125, log_three + 0.5, log_three + 1.5])
 
-    torch.testing.assert_close(loss.classification_by_origin, expected_classification)
-    torch.testing.assert_close(loss.regression_by_origin, expected_regression)
     torch.testing.assert_close(loss.total_by_origin, expected_total)
     torch.testing.assert_close(loss.mean_total, expected_total.sum() / 4.0)
     assert loss.mean_total.requires_grad
     assert not loss.total_by_origin.requires_grad
-    assert not loss.classification_by_origin.requires_grad
-    assert not loss.regression_by_origin.requires_grad
 
     loss.mean_total.backward()
-    assert logits.grad is not None
-    assert predictions.grad is not None
+    expected_logits_grad = torch.full_like(logits, 1.0 / 12.0)
+    expected_logits_grad[torch.arange(labels.shape[0]), labels] = -1.0 / 6.0
+    torch.testing.assert_close(logits.grad, expected_logits_grad)
+    torch.testing.assert_close(predictions.grad, torch.tensor([0.0, 0.125, 0.25, 0.25]))
 
 
 def test_target_minima_must_be_positive() -> None:

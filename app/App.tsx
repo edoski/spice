@@ -6,6 +6,7 @@ import { AppHeader, type ServiceStatus } from "./src/components/AppHeader";
 import { BottomTabs, type AppTab } from "./src/components/BottomTabs";
 import { createDemoRuns } from "./src/demo";
 import {
+  MAX_RUNS,
   createRun,
   loadRuns,
   recordOutcome,
@@ -28,7 +29,6 @@ import {
 import { colors } from "./src/theme";
 
 const SNAPSHOT_INTERVAL_MS = 1_000;
-const MAX_RUNS = 100;
 
 export default function App() {
   const [tab, setTab] = useState<AppTab>("inference");
@@ -179,20 +179,20 @@ export default function App() {
     [],
   );
 
-  const selectChain = useCallback((nextChain: Chain) => {
+  function selectChain(nextChain: Chain) {
     inferenceController.current?.abort();
     setChain(nextChain);
     setSnapshot(null);
     setInference({ status: "idle" });
-  }, []);
+  }
 
-  const selectHorizon = useCallback((nextHorizon: Horizon) => {
+  function selectHorizon(nextHorizon: Horizon) {
     inferenceController.current?.abort();
     setHorizon(nextHorizon);
     setInference({ status: "idle" });
-  }, []);
+  }
 
-  const runInference = useCallback(async () => {
+  async function runInference() {
     inferenceController.current?.abort();
     const controller = new AbortController();
     inferenceController.current = controller;
@@ -222,7 +222,7 @@ export default function App() {
         inferenceController.current = null;
       }
     }
-  }, [chain, horizon, publishRuns]);
+  }
 
   return (
     <SafeAreaProvider>

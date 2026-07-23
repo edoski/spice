@@ -4,7 +4,6 @@
   "private": true,
   "main": "expo/AppEntry",
   "scripts": {
-    "dev": "./start-all.sh",
     "start": "expo start",
     "typecheck": "tsc --noEmit"
   },

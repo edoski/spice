@@ -14,6 +14,7 @@ from fable.cli.app import app
 from fable.config import (
     BaselineSource,
     BlockWindow,
+    Deployment,
     EvaluateRequest,
     ExperimentSemantics,
     FitMethod,
@@ -24,8 +25,6 @@ from fable.config import (
     TrainRequest,
     WorkflowRequest,
 )
-from fable.evaluation import EvaluationDeployment
-from fable.modeling import FitDeployment
 
 CORPUS_ID = UUID("10000000-0000-4000-8000-000000000001")
 ARTIFACT_ID = UUID("20000000-0000-4000-8000-000000000001")
@@ -150,6 +149,7 @@ def test_remote_workflow_executes_one_envelope(
     calls: list[tuple[str, tuple[object, ...]]] = []
     corpus = object()
     prepared = object()
+    envelope = remote._WorkflowEnvelope.model_validate_json(payload, strict=True)
 
     def fake_load_corpus(storage_root: Path, corpus_id: UUID) -> object:
         events.append("load_corpus")
@@ -168,7 +168,7 @@ def test_remote_workflow_executes_one_envelope(
         active_request: TrainRequest,
         active_prepared: object,
         storage_root: Path,
-        deployment: FitDeployment,
+        deployment: Deployment,
     ) -> None:
         events.append("train")
         calls.append(("train", (active_request, active_prepared, storage_root, deployment)))
@@ -176,7 +176,7 @@ def test_remote_workflow_executes_one_envelope(
     def fake_evaluate(
         active_request: EvaluateRequest,
         storage_root: Path,
-        deployment: EvaluationDeployment,
+        deployment: Deployment,
     ) -> None:
         events.append("evaluate")
         calls.append(("evaluate", (active_request, storage_root, deployment)))
@@ -185,6 +185,11 @@ def test_remote_workflow_executes_one_envelope(
         remote,
         "sys",
         SimpleNamespace(stdin=SimpleNamespace(buffer=_InputBuffer(payload, events))),
+    )
+    monkeypatch.setattr(
+        remote._WorkflowEnvelope,
+        "model_validate_json",
+        staticmethod(lambda *_args, **_kwargs: envelope),
     )
     monkeypatch.setenv("STORAGE_ROOT", str(STORAGE_ROOT))
     monkeypatch.setattr(remote, "load_corpus", fake_load_corpus)
@@ -196,6 +201,7 @@ def test_remote_workflow_executes_one_envelope(
 
     assert result.exit_code == 0
     assert result.output == ""
+    assert calls[-1][1][-1] is envelope.deployment
     if expected_experiment is None:
         assert events == [
             "stdin",
@@ -207,34 +213,13 @@ def test_remote_workflow_executes_one_envelope(
                 (
                     request,
                     STORAGE_ROOT,
-                    EvaluationDeployment(
-                        batch_size=17,
-                        num_workers=3,
-                        pin_memory=True,
-                        prefetch_factor=2,
-                        persistent_workers=True,
-                        deterministic="warn",
-                        benchmark=False,
-                        float32_matmul_precision="high",
-                        cuda_matmul_allow_tf32=True,
-                        cudnn_allow_tf32=False,
-                    ),
+                    Deployment.model_validate(DEPLOYMENT),
                 ),
             )
         ]
         return
 
-    expected_deployment = FitDeployment(
-        deterministic="warn",
-        benchmark=False,
-        num_workers=3,
-        pin_memory=True,
-        prefetch_factor=2,
-        persistent_workers=True,
-        float32_matmul_precision="high",
-        cuda_matmul_allow_tf32=True,
-        cudnn_allow_tf32=False,
-    )
+    expected_deployment = Deployment.model_validate(DEPLOYMENT)
     assert events == [
         "stdin",
         "load_corpus",

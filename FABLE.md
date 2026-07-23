@@ -636,7 +636,7 @@ minimum. Its scientific interpretation is defined in the [theory](#targets-loss-
 - `fit_target_state(raw_minima)` requires a nonempty positive int64 vector, computes Float64
   `ell_i`, `mu_ell`, and `sigma_ell` with `ddof=0`, and rejects constant targets.
 - `standardize_target(raw_minima, state)` returns finite contiguous float32 `z_i` values.
-- `min_block_fee_loss(...)` trusts tensors owned by model and historical-preparation internals. It directly computes native unweighted cross-entropy and native default Smooth L1 per origin, returning both per-origin components, their sum, and the sample-denominator mean.
+- `min_block_fee_loss(...)` trusts tensors owned by model and historical-preparation internals. It directly computes native unweighted cross-entropy and native default Smooth L1 per origin, returning detached per-origin totals and the gradient-carrying sample-denominator mean.
 - `decode_action(output)` applies the canonical action decode.
 
 The exact equations are in the [theory](#targets-loss-and-decode).
@@ -1025,11 +1025,11 @@ Its only backend variable is `EXPO_PUBLIC_FABLE_BACKEND_URL`. It posts the stric
 
 ### Evaluation API
 
-Public exports from `fable.evaluation`:
+`Deployment` is the shared strict process-input record exported from `fable.config`:
 
 ```python
-class EvaluationDeployment:
-    batch_size: PositiveInt
+class Deployment:
+    evaluation_batch_size: PositiveInt
     num_workers: NonNegativeInt
     pin_memory: bool
     prefetch_factor: PositiveInt | None
@@ -1039,11 +1039,15 @@ class EvaluationDeployment:
     float32_matmul_precision: Literal["highest", "high"]
     cuda_matmul_allow_tf32: bool
     cudnn_allow_tf32: bool
+```
 
+Public exports from `fable.evaluation`:
+
+```python
 evaluate(
     request: EvaluateRequest,
     storage_root: Path,
-    deployment: EvaluationDeployment,
+    deployment: Deployment,
 ) -> None
 
 reduce_evaluation(

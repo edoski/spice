@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -474,15 +474,9 @@ export function AnalyticsScreen({
   const [selectedRun, setSelectedRun] = useState<InferenceRun | null>(null);
   const carousel = useRef<ScrollView>(null);
   const chartStep = carouselWidth + 12;
-  const networkRuns = useMemo(
-    () => runs.filter((run) => run.chain === chain),
-    [runs, chain],
-  );
-  const graphRuns = useMemo(
-    () => networkRuns.filter((run) => run.K === graphHorizon),
-    [networkRuns, graphHorizon],
-  );
-  const summary = useMemo(() => summarizeRuns(networkRuns), [networkRuns]);
+  const networkRuns = runs.filter((run) => run.chain === chain);
+  const graphRuns = networkRuns.filter((run) => run.K === graphHorizon);
+  const summary = summarizeRuns(networkRuns);
   const graphs = GRAPH_OPTIONS;
   const visibleRuns = graphRuns.slice(0, 10);
 
