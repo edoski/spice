@@ -1,0 +1,234 @@
+from __future__ import annotations
+
+import csv
+import json
+import subprocess
+import sys
+from pathlib import Path
+from uuid import UUID
+
+from fable.config import (
+    BlockWindow,
+    EvaluateRequest,
+    ExperimentSemantics,
+    FitMethod,
+    LstmDefinition,
+    Method,
+    SelectedStudySource,
+    TrainRequest,
+    TuneRequest,
+)
+from fable.experiments import (
+    ExperimentEntry,
+    ExperimentKind,
+    ExperimentManifest,
+    write_experiment_manifest,
+)
+from fable.study import RetainedResult, Study
+
+_ROOT = Path(__file__).parents[2]
+_SCRIPT = _ROOT / "experiments" / "k_study.py"
+_HELD_OUT_SCRIPT = _ROOT / "experiments" / "held_out.py"
+_HPO_EXPERIMENT_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+_K_EXPERIMENT_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+_HELD_OUT_EXPERIMENT_ID = UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+_CORPUS_ID = UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+_METHOD = Method(
+    model=LstmDefinition(
+        family="lstm",
+        hidden=256,
+        layers=2,
+        head_hidden=256,
+        dropout=0.2,
+    ),
+    fit=FitMethod(
+        learning_rate=3e-4,
+        weight_decay=1e-4,
+        accumulation=1,
+        gradient_clip_norm=1.0,
+        seed=2026,
+        max_epochs=36,
+        validate_every_completed_epoch=1,
+        patience=8,
+        min_delta=0.0,
+    ),
+)
+
+
+def _run(script: Path, *arguments: object) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(script), *(str(argument) for argument in arguments)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as source:
+        return list(csv.DictReader(source, delimiter="\t"))
+
+
+def _publish_hpo(storage_root: Path) -> None:
+    entries: list[ExperimentEntry] = []
+    for index, cell in enumerate(
+        f"{chain}.{family}"
+        for chain in ("ethereum", "polygon", "avalanche")
+        for family in ("lstm", "transformer", "transformer_lstm")
+    ):
+        study_id = UUID(f"10000000-0000-4000-8000-{index:012d}")
+        method = _METHOD.model_copy(
+            update={"fit": _METHOD.fit.model_copy(update={"seed": 3_000 + index})}
+        )
+        request = TuneRequest(
+            workflow="tune",
+            study_id=study_id,
+            corpus_id=_CORPUS_ID,
+            experiment=ExperimentSemantics(
+                training_window=BlockWindow(first_parent_block=100, last_parent_block=200),
+                validation_window=BlockWindow(first_parent_block=401, last_parent_block=500),
+                context_blocks=100,
+                horizon_blocks=5,
+                ordered_features=("log_base_fee_per_gas",),
+            ),
+            methods=(method, _METHOD),
+        )
+        study = Study(
+            request=request,
+            trials=(
+                RetainedResult(
+                    method=method,
+                    objective=2.0,
+                    selected_epoch=1,
+                    completed_epochs=1,
+                ),
+                RetainedResult(
+                    method=_METHOD,
+                    objective=1.0,
+                    selected_epoch=1,
+                    completed_epochs=1,
+                ),
+            ),
+        )
+        path = storage_root / "studies" / f"{study_id}.json"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(study.model_dump_json(), encoding="utf-8")
+        entries.append(ExperimentEntry(cell=cell, study_id=study_id))
+    write_experiment_manifest(
+        storage_root,
+        ExperimentKind.HPO,
+        ExperimentManifest(
+            experiment_id=_HPO_EXPERIMENT_ID,
+            entries=tuple(entries),
+        ),
+    )
+
+
+def test_k_study_authors_and_closes_eighty_one_selected_study_artifacts(
+    tmp_path: Path,
+) -> None:
+    _publish_hpo(tmp_path)
+
+    result = _run(
+        _SCRIPT,
+        "prepare",
+        tmp_path,
+        _HPO_EXPERIMENT_ID,
+        "--experiment-id",
+        _K_EXPERIMENT_ID,
+    )
+    bundle = tmp_path / "experiments" / "k_study" / f".{_K_EXPERIMENT_ID}"
+    rows = _rows(bundle / "cells.tsv")
+    requests = [
+        TrainRequest.model_validate_json(Path(row["request"]).read_bytes(), strict=True)
+        for row in rows
+    ]
+    sources = [
+        request.source for request in requests if isinstance(request.source, SelectedStudySource)
+    ]
+
+    assert result.stdout.strip() == str(_K_EXPERIMENT_ID)
+    assert len(rows) == 81
+    assert [row["cell"] for row in rows[:9]] == [
+        "ethereum.lstm.K2",
+        "ethereum.lstm.K3",
+        "ethereum.lstm.K4",
+        "ethereum.lstm.K5",
+        "ethereum.lstm.K10",
+        "ethereum.lstm.K25",
+        "ethereum.lstm.K50",
+        "ethereum.lstm.K100",
+        "ethereum.lstm.K200",
+    ]
+    assert rows[-1]["cell"] == "avalanche.transformer_lstm.K200"
+    assert len(sources) == 81
+    assert [source.experiment.horizon_blocks for source in sources[:9]] == [
+        2,
+        3,
+        4,
+        5,
+        10,
+        25,
+        50,
+        100,
+        200,
+    ]
+    assert {source.study_result_index for source in sources} == {1}
+    assert len({request.artifact_id for request in requests}) == 81
+
+    for row in rows:
+        directory = tmp_path / "artifacts" / row["artifact_id"]
+        directory.mkdir(parents=True)
+        (directory / "model.ckpt").touch()
+    _run(_SCRIPT, "close", tmp_path, _K_EXPERIMENT_ID)
+
+    manifest = ExperimentManifest.model_validate_json(
+        (tmp_path / "experiments" / "k_study" / f"{_K_EXPERIMENT_ID}.json").read_bytes(),
+        strict=True,
+    )
+    assert len(manifest.entries) == 81
+    assert not bundle.exists()
+
+    corpus = {
+        "request": {
+            "corpus_id": str(_CORPUS_ID),
+            "definition": {
+                "chain_id": 1,
+                "first_block": 0,
+                "last_block": 1_000,
+            },
+        },
+        "finalized_anchor": {
+            "block_number": 1_000,
+            "block_hash": "0" * 64,
+        },
+    }
+    corpus_path = tmp_path / "corpora" / str(_CORPUS_ID) / "corpus.json"
+    corpus_path.parent.mkdir(parents=True)
+    corpus_path.write_text(json.dumps(corpus), encoding="utf-8")
+    _run(
+        _HELD_OUT_SCRIPT,
+        "prepare",
+        tmp_path,
+        _HPO_EXPERIMENT_ID,
+        _K_EXPERIMENT_ID,
+        "--experiment-id",
+        _HELD_OUT_EXPERIMENT_ID,
+    )
+
+    held_out = tmp_path / "experiments" / "held_out" / f".{_HELD_OUT_EXPERIMENT_ID}"
+    evaluation_rows = _rows(held_out / "cells.tsv")
+    evaluation_requests = [
+        EvaluateRequest.model_validate_json(Path(row["request"]).read_bytes(), strict=True)
+        for row in evaluation_rows
+    ]
+    assert len(evaluation_rows) == 81
+    assert len(_rows(held_out / "rolling.tsv")) == 36
+    assert evaluation_requests[0].testing_window == BlockWindow(
+        first_parent_block=704,
+        last_parent_block=803,
+    )
+    assert evaluation_requests[3].testing_window == BlockWindow(
+        first_parent_block=701,
+        last_parent_block=800,
+    )

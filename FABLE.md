@@ -882,6 +882,21 @@ its cells. After all canonical Studies exist, `select STORAGE_ROOT EXPERIMENT_ID
 validation-selected feature set per chain, publishes the canonical manifest, and removes the
 temporary bundle. The script does not submit jobs or persist copied metrics.
 
+`experiments/c_study.py` derives the selected feature set, authors the 45
+architecture-chain-context Studies for `C={25,50,100,200,400}`, and selects one context per
+chain by mean validation loss across the three architectures. `experiments/hpo.py` then authors
+the exact nine architecture-chain Studies and their ordered nine-Method L9 rosters. Its selector
+requires one retained result for every frozen Method and chooses the earliest minimum validation
+loss.
+
+`experiments/k_study.py` derives each architecture-chain HPO result and authors 81 fresh
+selected-Study Train requests for `K={2,3,4,5,10,25,50,100,200}`. It publishes the K-study
+manifest only after every artifact exists. `experiments/held_out.py` authors the corresponding
+held-out Evaluate requests. All horizons use the common complete-`K=200` testing range; the
+`K=2…4` ranges extend by three, two, or one shifted origins so the fixed-deadline rolling
+comparison can reuse the same evaluations. Its report commands print, but do not persist, the
+ordinary and rolling reductions.
+
 #### Study object
 
 `studies/<study_id>.json` is a strict `Study`:
