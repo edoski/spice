@@ -76,7 +76,7 @@ A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-S
 
 `EvaluateRequest` names an artifact, same-source Corpus, testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, and publishes `evaluation.json` with `observations.parquet`. Each ordered observation stores `h_i`, `hat{k}_i`, `k_i*`, `hat{ell}_i`, `B_i(0)`, `P_i(0)`, `B_i(hat{k}_i)`, `P_i(hat{k}_i)`, and `m_i` under the exact field names in the [reference](#canonical-observations).
 
-`reduce_evaluation()` validates the strict request and UUID, exact schema, nonnull row count, and ordered testing window, then trusts the published row values and returns a transient one-row seven-metric DataFrame. All seven metrics must be finite. The reduction does not load the artifact or Corpus and is never persisted.
+`reduce_evaluation()` validates the strict request and UUID, exact schema, nonnull row count, and ordered testing window, then trusts the published row values and returns a transient one-row seven-metric DataFrame. `compare_rolling()` uses the same completed-object loader to align explicit `K=2…5` Evaluation IDs and returns one transient row of six economic metrics per architecture-chain cell. Neither reduction loads an artifact or Corpus or persists its result.
 
 ### Training and inference
 
@@ -513,6 +513,14 @@ base_fee_optimality_gap = mean_i ((B_i(hat{k}_i) - m_i) / m_i)
 
 All three economic metrics are mean per-origin fractions, not ratios of fee sums. Positive base fees make their denominators defined. Both savings metrics are higher-is-better; `base_fee_savings` remains base-fee-only, while `p50_fee_inclusive_savings` is a retrospective representative-cost proxy using each outcome block's included-transaction P50, not an inclusion guarantee. `base_fee_optimality_gap` is nonnegative and lower is better. Natural-log errors compare dimensionless coordinates relative to `u=1 wei/gas` and lower is better. Accuracy and macro-F1 are unitless and higher is better. Economic values remain fractions for later percentage formatting.
 
+#### Fixed-deadline rolling comparison
+
+The rolling comparison fixes each `K=5` origin `h` and deadline `D=h+5`. It aligns the completed predictions at `h` for `K=5`, `h+1` for `K=4`, `h+2` for `K=3`, and `h+3` for `K=2`. At each stage, `k=0` selects the next block and stops; otherwise the next shorter-horizon prediction is consulted. If the `K=2` prediction also waits, it must be `k=1` and selects `D`. The deadline never moves.
+
+Precomputed predictions preserve historical causality because a later row affects the result only when every earlier stage waited. The comparison performs no model inference or Corpus hydration.
+
+For every architecture-chain cell, `compare_rolling()` uses every `K=5` testing origin at stride one and returns one-shot and rolling values for base-fee savings, P50 fee-inclusive savings, and base-fee optimality gap. Savings use the immediate action as their baseline; optimality gap uses the earliest minimum within the original five-block window. These are exact descriptive means for the sealed held-out period. There is no bootstrap, confidence interval, significance test, resampling, stride thinning, or persisted pairwise delta.
+
 ### HPO interpretation
 
 A `TuneRequest` freezes the experiment and one finite tuple of complete Methods. An operator submits complete Methods from that tuple. Each successful fit contributes validation total loss, earliest best epoch, and completed epochs in retention order. Selected training names an exact result index.
@@ -697,6 +705,8 @@ The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical n
 #### Transient reduction
 
 `reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` strictly hydrates the request, validates its evaluation UUID, exact Parquet schema, expected nonnull row count, and ordered testing origins, then trusts the publisher-owned row values and reduces only `observations.parquet`. It requires all seven computed metrics to be finite. It does not reload the artifact or Corpus or externally authenticate the horizon or source. The result has no evaluation ID, count, sums, supports, arrays, or auxiliary fields and is not persisted.
+
+`compare_rolling(storage_root, roster) -> polars.DataFrame` uses the same completed Evaluation loader. The explicit roster maps exactly nine human-readable architecture-chain cell names to mappings from horizons `2`, `3`, `4`, and `5` to their Evaluation UUIDs. The operator owns that scientific association; the comparison verifies the shared Corpus, action ranges, and required shifted origin coverage without loading artifacts. Its nine-row, six-metric result is transient and is not persisted.
 
 ## Exact reference
 
@@ -911,17 +921,19 @@ load_artifact(
 
 ### CLI
 
-Three public command leaves:
+Four public command leaves:
 
 ```text
 fable submit REQUEST.json [REQUEST.json ...]
 fable study run TUNE_REQUEST.json METHOD.json
 fable study finalize STUDY_ID
+fable rolling ROLLING.json
 ```
 
 - `submit` accepts one or more WorkflowRequest files and prints one positive Slurm job ID per request.
 - `study run` validates one strict TuneRequest and one strict Method, then prints the candidate Slurm job ID.
 - `study finalize` requires UUIDv4, reads absolute `STORAGE_ROOT`, and publishes existing progress.
+- `rolling` reads absolute `STORAGE_ROOT` and one JSON object containing exactly nine named cells. Each cell maps string keys `"2"`, `"3"`, `"4"`, and `"5"` to completed Evaluation UUIDs. It prints the transient comparison as CSV.
 
 Two help-hidden generated-job leaves:
 
@@ -1040,6 +1052,11 @@ reduce_evaluation(
     storage_root: Path,
     evaluation_id: UUID,
 ) -> polars.DataFrame
+
+compare_rolling(
+    storage_root: Path,
+    roster: Mapping[str, Mapping[int, UUID]],
+) -> polars.DataFrame
 ```
 
 #### Canonical observations
@@ -1079,6 +1096,20 @@ averages over the union of classes appearing in truth or predictions with zero d
 Regression compares `predicted_minimum_log_base_fee` (`hat{ell}_i`) with
 `ln(minimum_base_fee_per_gas / u)` (`ell_i`). Economic fields are fractions, not percentages or
 ratios of sums. `p50_fee_inclusive_savings` is retrospective and does not claim inclusion.
+
+#### Rolling comparison result
+
+Destination: none. `compare_rolling()` returns one row per explicit architecture-chain cell and requires exactly nine rows. Status: derived, transient, noncanonical, nonnull.
+
+| # | Field | Type | Unit/direction |
+| ---: | --- | --- | --- |
+| 1 | `cell` | String | operator-authored architecture-chain label |
+| 2 | `one_shot_base_fee_savings` | Float64 | mean per-origin fraction versus immediate; higher is better |
+| 3 | `rolling_base_fee_savings` | Float64 | mean per-origin fraction versus immediate; higher is better |
+| 4 | `one_shot_p50_fee_inclusive_savings` | Float64 | mean per-origin representative-cost fraction versus immediate; higher is better |
+| 5 | `rolling_p50_fee_inclusive_savings` | Float64 | mean per-origin representative-cost fraction versus immediate; higher is better |
+| 6 | `one_shot_base_fee_optimality_gap` | Float64 | mean per-origin fraction above the five-block optimum; lower is better |
+| 7 | `rolling_base_fee_optimality_gap` | Float64 | mean per-origin fraction above the five-block optimum; lower is better |
 
 ## Limitations and sources
 

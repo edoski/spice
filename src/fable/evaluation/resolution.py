@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from uuid import UUID
 
@@ -23,18 +24,54 @@ _RESULT_SCHEMA = pl.Schema(
         "base_fee_optimality_gap": pl.Float64,
     }
 )
+_ROLLING_HORIZONS = (2, 3, 4, 5)
+_ROLLING_RESULT_SCHEMA = pl.Schema(
+    {
+        "cell": pl.String,
+        "one_shot_base_fee_savings": pl.Float64,
+        "rolling_base_fee_savings": pl.Float64,
+        "one_shot_p50_fee_inclusive_savings": pl.Float64,
+        "rolling_p50_fee_inclusive_savings": pl.Float64,
+        "one_shot_base_fee_optimality_gap": pl.Float64,
+        "rolling_base_fee_optimality_gap": pl.Float64,
+    }
+)
 
 
 def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
     """Derive one testing evaluation's seven metrics from its observations."""
 
+    _, observations = _load_evaluation(storage_root, evaluation_id)
+    return _reduce(observations)
+
+
+def compare_rolling(
+    storage_root: Path,
+    roster: Mapping[str, Mapping[int, UUID]],
+) -> pl.DataFrame:
+    """Compare one-shot and rolling economics for nine explicit K-study cells."""
+
+    if len(roster) != 9 or any(not cell for cell in roster):
+        raise ValueError("rolling roster must contain exactly nine named cells")
+
+    rows = [
+        _compare_rolling_cell(storage_root, cell, evaluation_ids)
+        for cell, evaluation_ids in roster.items()
+    ]
+    return pl.DataFrame(rows, schema=_ROLLING_RESULT_SCHEMA)
+
+
+def _load_evaluation(
+    storage_root: Path,
+    evaluation_id: UUID,
+) -> tuple[EvaluateRequest, pl.DataFrame]:
     request = EvaluateRequest.model_validate_json(
         evaluation_json_path(storage_root, evaluation_id).read_text(encoding="utf-8"),
         strict=True,
     )
     if request.evaluation_id != evaluation_id:
         raise ValueError("evaluation request ID must match the requested evaluation")
-    return _reduce(_load_observations(storage_root, request))
+    return request, _load_observations(storage_root, request)
 
 
 def _load_observations(storage_root: Path, request: EvaluateRequest) -> pl.DataFrame:
@@ -82,21 +119,21 @@ def _reduce(observations: pl.DataFrame) -> pl.DataFrame:
         )
         for action in classes
     ]
-    metrics = {
+    metrics: dict[str, float] = {
         "accuracy": float(np.mean(predicted_actions == minimum_actions)),
         "f1_macro": float(np.mean(f1_by_class)),
         "log_fee_mae": float(np.mean(np.abs(log_errors))),
         "log_fee_mse": float(np.mean(np.square(log_errors))),
-        "base_fee_savings": float(np.mean((immediate_fees - selected_fees) / immediate_fees)),
-        "p50_fee_inclusive_savings": float(
-            np.mean(
-                1.0
-                - (selected_fees + selected_priority_fees_p50)
-                / (immediate_fees + immediate_priority_fees_p50)
-            )
-        ),
-        "base_fee_optimality_gap": float(np.mean((selected_fees - minimum_fees) / minimum_fees)),
     }
+    metrics.update(
+        _economic_metrics(
+            immediate_fees,
+            immediate_priority_fees_p50,
+            selected_fees,
+            selected_priority_fees_p50,
+            minimum_fees,
+        )
+    )
     if not np.isfinite(tuple(metrics.values())).all():
         raise ValueError("evaluation reduction must contain only finite metrics")
     return pl.DataFrame(
@@ -105,4 +142,145 @@ def _reduce(observations: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-__all__ = ["reduce_evaluation"]
+def _compare_rolling_cell(
+    storage_root: Path,
+    cell: str,
+    evaluation_ids: Mapping[int, UUID],
+) -> dict[str, str | float]:
+    if tuple(sorted(evaluation_ids)) != _ROLLING_HORIZONS:
+        raise ValueError(f"{cell} must name exactly the K=2, K=3, K=4, and K=5 evaluations")
+
+    evaluations = {
+        horizon: _load_evaluation(storage_root, evaluation_ids[horizon])
+        for horizon in _ROLLING_HORIZONS
+    }
+    corpus_ids = {request.corpus_id for request, _ in evaluations.values()}
+    if len(corpus_ids) != 1:
+        raise ValueError(f"{cell} evaluations must use one Corpus")
+
+    for horizon, (_, observations) in evaluations.items():
+        for column in ("predicted_action_k", "minimum_action_k"):
+            if horizon == 2 and column == "predicted_action_k":
+                continue
+            actions = observations[column].to_numpy()
+            if np.any((actions < 0) | (actions >= horizon)):
+                raise ValueError(f"{cell} K={horizon} {column} values must be valid actions")
+
+    initial = evaluations[5][1]
+    initial_origins = initial["origin_block"].to_numpy()
+    aligned = {
+        horizon: _align_observations(
+            evaluations[horizon][1],
+            initial_origins + (5 - horizon),
+            cell=cell,
+            horizon=horizon,
+        )
+        for horizon in _ROLLING_HORIZONS
+    }
+
+    rolling_base_fees = aligned[5]["selected_base_fee_per_gas"].copy()
+    rolling_priority_fees = aligned[5]["selected_effective_priority_fee_per_gas_p50"].copy()
+    waiting = aligned[5]["predicted_action_k"] != 0
+    for horizon in (4, 3, 2):
+        selected = waiting & (aligned[horizon]["predicted_action_k"] == 0)
+        rolling_base_fees[selected] = aligned[horizon]["selected_base_fee_per_gas"][selected]
+        rolling_priority_fees[selected] = aligned[horizon][
+            "selected_effective_priority_fee_per_gas_p50"
+        ][selected]
+        waiting &= aligned[horizon]["predicted_action_k"] != 0
+
+    if np.any(aligned[2]["predicted_action_k"][waiting] != 1):
+        raise ValueError(f"{cell} forced K=2 branches must select k=1")
+    k2_actions = evaluations[2][1]["predicted_action_k"].to_numpy()
+    if np.any((k2_actions < 0) | (k2_actions >= 2)):
+        raise ValueError(f"{cell} K=2 predicted_action_k values must be valid actions")
+    rolling_base_fees[waiting] = aligned[2]["selected_base_fee_per_gas"][waiting]
+    rolling_priority_fees[waiting] = aligned[2]["selected_effective_priority_fee_per_gas_p50"][
+        waiting
+    ]
+
+    immediate_base_fees = aligned[5]["immediate_base_fee_per_gas"]
+    immediate_priority_fees = aligned[5]["immediate_effective_priority_fee_per_gas_p50"]
+    minimum_base_fees = aligned[5]["minimum_base_fee_per_gas"]
+    one_shot = _economic_metrics(
+        immediate_base_fees,
+        immediate_priority_fees,
+        aligned[5]["selected_base_fee_per_gas"],
+        aligned[5]["selected_effective_priority_fee_per_gas_p50"],
+        minimum_base_fees,
+    )
+    rolling = _economic_metrics(
+        immediate_base_fees,
+        immediate_priority_fees,
+        rolling_base_fees,
+        rolling_priority_fees,
+        minimum_base_fees,
+    )
+    metrics = {
+        "cell": cell,
+        **{f"one_shot_{name}": value for name, value in one_shot.items()},
+        **{f"rolling_{name}": value for name, value in rolling.items()},
+    }
+    metric_values = tuple(value for value in metrics.values() if isinstance(value, float))
+    if not np.isfinite(metric_values).all():
+        raise ValueError(f"{cell} rolling comparison must contain only finite metrics")
+    return metrics
+
+
+def _align_observations(
+    observations: pl.DataFrame,
+    required_origins: np.ndarray,
+    *,
+    cell: str,
+    horizon: int,
+) -> dict[str, np.ndarray]:
+    origins = observations["origin_block"].to_numpy()
+    positions = np.searchsorted(origins, required_origins)
+    if np.any(positions == origins.size) or not np.array_equal(
+        origins[positions],
+        required_origins,
+    ):
+        raise ValueError(f"{cell} K={horizon} evaluation lacks required shifted origins")
+    return {
+        name: observations[name].to_numpy()[positions]
+        for name in (
+            "predicted_action_k",
+            "immediate_base_fee_per_gas",
+            "immediate_effective_priority_fee_per_gas_p50",
+            "selected_base_fee_per_gas",
+            "selected_effective_priority_fee_per_gas_p50",
+            "minimum_base_fee_per_gas",
+        )
+    }
+
+
+def _economic_metrics(
+    immediate_base_fees: np.ndarray,
+    immediate_priority_fees_p50: np.ndarray,
+    selected_base_fees: np.ndarray,
+    selected_priority_fees_p50: np.ndarray,
+    minimum_base_fees: np.ndarray,
+) -> dict[str, float]:
+    immediate_base_fees = immediate_base_fees.astype(np.float64)
+    immediate_priority_fees_p50 = immediate_priority_fees_p50.astype(np.float64)
+    selected_base_fees = selected_base_fees.astype(np.float64)
+    selected_priority_fees_p50 = selected_priority_fees_p50.astype(np.float64)
+    minimum_base_fees = minimum_base_fees.astype(np.float64)
+    return {
+        "base_fee_savings": float(
+            np.mean((immediate_base_fees - selected_base_fees) / immediate_base_fees)
+        ),
+        "p50_fee_inclusive_savings": float(
+            np.mean(
+                1.0
+                - (selected_base_fees + selected_priority_fees_p50)
+                / (immediate_base_fees + immediate_priority_fees_p50)
+            )
+        ),
+        "base_fee_optimality_gap": float(
+            np.mean((selected_base_fees - minimum_base_fees) / minimum_base_fees)
+        ),
+    }
+
+
+__all__ = ["compare_rolling", "reduce_evaluation"]
