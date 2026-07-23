@@ -52,12 +52,6 @@ Publish the collected tuning results:
 STORAGE_ROOT=/absolute/storage fable study finalize STUDY_ID
 ```
 
-Compare the completed `K=2…5` evaluations under the fixed-deadline rolling policy:
-
-```bash
-STORAGE_ROOT=/absolute/storage fable rolling ROLLING.json
-```
-
 The [CLI reference](FABLE.md#cli) defines the exact command contracts.
 
 ## Serving and mobile demo

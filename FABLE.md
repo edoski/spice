@@ -76,7 +76,7 @@ A baseline `TrainRequest` embeds its complete `TrainingDefinition`. A selected-S
 
 `EvaluateRequest` names an artifact, same-source Corpus, testing origin window, and evaluation UUID. Evaluation rebuilds historical examples with persisted state, runs the artifact on CUDA, and publishes `evaluation.json` with `observations.parquet`. Each ordered observation stores `h_i`, `hat{k}_i`, `k_i*`, `hat{ell}_i`, `B_i(0)`, `P_i(0)`, `B_i(hat{k}_i)`, `P_i(hat{k}_i)`, and `m_i` under the exact field names in the [reference](#canonical-observations).
 
-`reduce_evaluation()` validates the strict request and UUID, exact schema, nonnull row count, and ordered testing window, then trusts the published row values and returns a transient one-row seven-metric DataFrame. `compare_rolling()` uses the same completed-object loader to align explicit `K=2…5` Evaluation IDs and returns one transient row of six economic metrics per architecture-chain cell. Neither reduction loads an artifact or Corpus or persists its result.
+`reduce_evaluation()` validates the strict request and UUID, exact schema, nonnull row count, and ordered testing window, then trusts the published row values and returns a transient one-row seven-metric DataFrame. The rolling reduction reads explicit `K=2…5` observation files and returns one transient row of six economic metrics per architecture-chain cell. Neither path loads an artifact or Corpus or persists its result.
 
 ### Training and inference
 
@@ -519,7 +519,7 @@ The rolling comparison fixes each `K=5` origin `h` and deadline `D=h+5`. It alig
 
 Precomputed predictions preserve historical causality because a later row affects the result only when every earlier stage waited. The comparison performs no model inference or Corpus hydration.
 
-For every architecture-chain cell, `compare_rolling()` uses every `K=5` testing origin at stride one and returns one-shot and rolling values for base-fee savings, P50 fee-inclusive savings, and base-fee optimality gap. Savings use the immediate action as their baseline; optimality gap uses the earliest minimum within the original five-block window. These are exact descriptive means for the sealed held-out period. There is no bootstrap, confidence interval, significance test, resampling, stride thinning, or persisted pairwise delta.
+For every architecture-chain cell, the rolling reduction uses every `K=5` testing origin at stride one and returns one-shot and rolling values for base-fee savings, P50 fee-inclusive savings, and base-fee optimality gap. Savings use the immediate action as their baseline; optimality gap uses the earliest minimum within the original five-block window. These are exact descriptive means for the sealed held-out period. There is no bootstrap, confidence interval, significance test, resampling, stride thinning, or persisted pairwise delta.
 
 ### HPO interpretation
 
@@ -706,7 +706,7 @@ The JSON is exactly the `EvaluateRequest`. The parquet schema is the canonical n
 
 `reduce_evaluation(storage_root, evaluation_id) -> polars.DataFrame` strictly hydrates the request, validates its evaluation UUID, exact Parquet schema, expected nonnull row count, and ordered testing origins, then trusts the publisher-owned row values and reduces only `observations.parquet`. It requires all seven computed metrics to be finite. It does not reload the artifact or Corpus or externally authenticate the horizon or source. The result has no evaluation ID, count, sums, supports, arrays, or auxiliary fields and is not persisted.
 
-`compare_rolling(storage_root, roster) -> polars.DataFrame` uses the same completed Evaluation loader. The explicit roster maps exactly nine human-readable architecture-chain cell names to mappings from horizons `2`, `3`, `4`, and `5` to their Evaluation UUIDs. The operator owns that scientific association; the comparison verifies the shared Corpus, action ranges, and required shifted origin coverage without loading artifacts. Its nine-row, six-metric result is transient and is not persisted.
+The rolling reduction reads only each named Evaluation's `observations.parquet`. Its in-memory roster maps exactly nine human-readable architecture-chain cell names to mappings from horizons `2`, `3`, `4`, and `5` to their Evaluation UUIDs. The final experiment runner owns that scientific association. Reduction verifies exact schemas, nonnull consecutive origins, action ranges, and required shifted coverage. Its nine-row, six-metric DataFrame is transient and is not persisted.
 
 ## Exact reference
 
@@ -921,19 +921,17 @@ load_artifact(
 
 ### CLI
 
-Four public command leaves:
+Three public command leaves:
 
 ```text
 fable submit REQUEST.json [REQUEST.json ...]
 fable study run TUNE_REQUEST.json METHOD.json
 fable study finalize STUDY_ID
-fable rolling ROLLING.json
 ```
 
 - `submit` accepts one or more WorkflowRequest files and prints one positive Slurm job ID per request.
 - `study run` validates one strict TuneRequest and one strict Method, then prints the candidate Slurm job ID.
 - `study finalize` requires UUIDv4, reads absolute `STORAGE_ROOT`, and publishes existing progress.
-- `rolling` reads absolute `STORAGE_ROOT` and one JSON object containing exactly nine named cells. Each cell maps string keys `"2"`, `"3"`, `"4"`, and `"5"` to completed Evaluation UUIDs. It prints the transient comparison as CSV.
 
 Two help-hidden generated-job leaves:
 
@@ -1052,11 +1050,6 @@ reduce_evaluation(
     storage_root: Path,
     evaluation_id: UUID,
 ) -> polars.DataFrame
-
-compare_rolling(
-    storage_root: Path,
-    roster: Mapping[str, Mapping[int, UUID]],
-) -> polars.DataFrame
 ```
 
 #### Canonical observations
@@ -1099,7 +1092,7 @@ ratios of sums. `p50_fee_inclusive_savings` is retrospective and does not claim 
 
 #### Rolling comparison result
 
-Destination: none. `compare_rolling()` returns one row per explicit architecture-chain cell and requires exactly nine rows. Status: derived, transient, noncanonical, nonnull.
+Destination: none. The rolling reduction returns one row per explicit architecture-chain cell and requires exactly nine rows. Status: derived, transient, noncanonical, nonnull.
 
 | # | Field | Type | Unit/direction |
 | ---: | --- | --- | --- |

@@ -45,7 +45,7 @@ def reduce_evaluation(storage_root: Path, evaluation_id: UUID) -> pl.DataFrame:
     return _reduce(observations)
 
 
-def compare_rolling(
+def reduce_rolling(
     storage_root: Path,
     roster: Mapping[str, Mapping[int, UUID]],
 ) -> pl.DataFrame:
@@ -55,7 +55,7 @@ def compare_rolling(
         raise ValueError("rolling roster must contain exactly nine named cells")
 
     rows = [
-        _compare_rolling_cell(storage_root, cell, evaluation_ids)
+        _reduce_rolling_cell(storage_root, cell, evaluation_ids)
         for cell, evaluation_ids in roster.items()
     ]
     return pl.DataFrame(rows, schema=_ROLLING_RESULT_SCHEMA)
@@ -76,21 +76,28 @@ def _load_evaluation(
 
 def _load_observations(storage_root: Path, request: EvaluateRequest) -> pl.DataFrame:
     path = evaluation_observations_path(storage_root, request.evaluation_id)
-    if pl.read_parquet_schema(path) != OBSERVATION_SCHEMA:
-        raise ValueError("observations must have the canonical ordered schema")
-    observations = pl.read_parquet(path)
+    observations = _read_observations(path)
     window = request.testing_window
     expected_origins = np.arange(
         window.first_parent_block,
         window.last_parent_block + 1,
         dtype=np.int64,
     )
-    if observations.height != expected_origins.size or any(observations.null_count().row(0)):
-        raise ValueError("observations must cover every testing origin with non-null values")
+    if observations.height != expected_origins.size:
+        raise ValueError("observations must cover every testing origin")
 
     origins = observations["origin_block"].to_numpy()
     if not np.array_equal(origins, expected_origins):
         raise ValueError("observation origins must exactly match the ordered testing window")
+    return observations
+
+
+def _read_observations(path: Path) -> pl.DataFrame:
+    if pl.read_parquet_schema(path) != OBSERVATION_SCHEMA:
+        raise ValueError("observations must have the canonical ordered schema")
+    observations = pl.read_parquet(path)
+    if any(observations.null_count().row(0)):
+        raise ValueError("observations must contain no null values")
     return observations
 
 
@@ -142,7 +149,7 @@ def _reduce(observations: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _compare_rolling_cell(
+def _reduce_rolling_cell(
     storage_root: Path,
     cell: str,
     evaluation_ids: Mapping[int, UUID],
@@ -151,26 +158,21 @@ def _compare_rolling_cell(
         raise ValueError(f"{cell} must name exactly the K=2, K=3, K=4, and K=5 evaluations")
 
     evaluations = {
-        horizon: _load_evaluation(storage_root, evaluation_ids[horizon])
+        horizon: _load_rolling_observations(storage_root, evaluation_ids[horizon])
         for horizon in _ROLLING_HORIZONS
     }
-    corpus_ids = {request.corpus_id for request, _ in evaluations.values()}
-    if len(corpus_ids) != 1:
-        raise ValueError(f"{cell} evaluations must use one Corpus")
 
-    for horizon, (_, observations) in evaluations.items():
+    for horizon, observations in evaluations.items():
         for column in ("predicted_action_k", "minimum_action_k"):
-            if horizon == 2 and column == "predicted_action_k":
-                continue
             actions = observations[column].to_numpy()
             if np.any((actions < 0) | (actions >= horizon)):
                 raise ValueError(f"{cell} K={horizon} {column} values must be valid actions")
 
-    initial = evaluations[5][1]
+    initial = evaluations[5]
     initial_origins = initial["origin_block"].to_numpy()
     aligned = {
         horizon: _align_observations(
-            evaluations[horizon][1],
+            evaluations[horizon],
             initial_origins + (5 - horizon),
             cell=cell,
             horizon=horizon,
@@ -189,11 +191,6 @@ def _compare_rolling_cell(
         ][selected]
         waiting &= aligned[horizon]["predicted_action_k"] != 0
 
-    if np.any(aligned[2]["predicted_action_k"][waiting] != 1):
-        raise ValueError(f"{cell} forced K=2 branches must select k=1")
-    k2_actions = evaluations[2][1]["predicted_action_k"].to_numpy()
-    if np.any((k2_actions < 0) | (k2_actions >= 2)):
-        raise ValueError(f"{cell} K=2 predicted_action_k values must be valid actions")
     rolling_base_fees[waiting] = aligned[2]["selected_base_fee_per_gas"][waiting]
     rolling_priority_fees[waiting] = aligned[2]["selected_effective_priority_fee_per_gas_p50"][
         waiting
@@ -225,6 +222,17 @@ def _compare_rolling_cell(
     if not np.isfinite(metric_values).all():
         raise ValueError(f"{cell} rolling comparison must contain only finite metrics")
     return metrics
+
+
+def _load_rolling_observations(
+    storage_root: Path,
+    evaluation_id: UUID,
+) -> pl.DataFrame:
+    observations = _read_observations(evaluation_observations_path(storage_root, evaluation_id))
+    origins = observations["origin_block"].to_numpy()
+    if origins.size == 0 or np.any(np.diff(origins) != 1):
+        raise ValueError("rolling observations must contain consecutive unique origins")
+    return observations
 
 
 def _align_observations(
@@ -283,4 +291,4 @@ def _economic_metrics(
     }
 
 
-__all__ = ["compare_rolling", "reduce_evaluation"]
+__all__ = ["reduce_evaluation"]

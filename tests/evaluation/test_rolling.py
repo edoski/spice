@@ -1,27 +1,18 @@
 from __future__ import annotations
 
-import io
-import json
 import math
 from pathlib import Path
 from uuid import UUID
 
 import polars as pl
 import pytest
-from typer.testing import CliRunner
 
 from fable.addresses import evaluation_directory
-from fable.cli.app import app
-from fable.config import BlockWindow, EvaluateRequest
-from fable.evaluation import compare_rolling
 from fable.evaluation.contract import OBSERVATION_SCHEMA
+from fable.evaluation.resolution import reduce_rolling
 
-_CORPUS_ID = UUID("10000000-0000-4000-8000-000000000001")
 _EVALUATION_IDS = {
     horizon: UUID(f"20000000-0000-4000-8000-{horizon:012d}") for horizon in range(2, 6)
-}
-_ARTIFACT_IDS = {
-    horizon: UUID(f"30000000-0000-4000-8000-{horizon:012d}") for horizon in range(2, 6)
 }
 _RESULT_SCHEMA = pl.Schema(
     {
@@ -46,16 +37,6 @@ def _publish_evaluation(
     selected_priority_fees: list[int],
 ) -> None:
     evaluation_id = _EVALUATION_IDS[horizon]
-    request = EvaluateRequest(
-        workflow="evaluate",
-        evaluation_id=evaluation_id,
-        artifact_id=_ARTIFACT_IDS[horizon],
-        corpus_id=_CORPUS_ID,
-        testing_window=BlockWindow(
-            first_parent_block=first_origin,
-            last_parent_block=first_origin + len(actions) - 1,
-        ),
-    )
     rows = [
         {
             "origin_block": origin,
@@ -78,7 +59,6 @@ def _publish_evaluation(
     ]
     directory = evaluation_directory(storage_root, evaluation_id)
     directory.mkdir(parents=True)
-    (directory / "evaluation.json").write_text(request.model_dump_json(), encoding="utf-8")
     pl.DataFrame(rows, schema=OBSERVATION_SCHEMA).write_parquet(directory / "observations.parquet")
 
 
@@ -121,50 +101,22 @@ def _roster() -> dict[str, dict[int, UUID]]:
     return {f"cell-{index}": dict(_EVALUATION_IDS) for index in range(9)}
 
 
-def _evaluation_files(storage_root: Path, horizon: int) -> tuple[Path, Path]:
-    directory = evaluation_directory(storage_root, _EVALUATION_IDS[horizon])
-    return directory / "evaluation.json", directory / "observations.parquet"
+def _observations_path(storage_root: Path, horizon: int) -> Path:
+    return evaluation_directory(storage_root, _EVALUATION_IDS[horizon]) / "observations.parquet"
 
 
-def test_compare_rolling_reconstructs_every_stage_from_completed_evaluations(
-    tmp_path: Path,
-) -> None:
+def test_reduce_rolling_reconstructs_every_stage_and_six_metrics(tmp_path: Path) -> None:
     _publish_rolling_evaluations(tmp_path)
 
-    result = compare_rolling(tmp_path, _roster())
+    result = reduce_rolling(tmp_path, _roster())
 
     assert result.schema == _RESULT_SCHEMA
+    assert result.shape == (9, 7)
     assert result["cell"].to_list() == [f"cell-{index}" for index in range(9)]
     for row in result.iter_rows(named=True):
         assert tuple(value for name, value in row.items() if name != "cell") == pytest.approx(
             (0.3, 0.48, 0.3, 0.48, 2.5, 1.6)
         )
-
-
-def test_rolling_command_reads_one_explicit_roster_and_prints_csv(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _publish_rolling_evaluations(tmp_path)
-    roster_path = tmp_path / "ROLLING.json"
-    roster_path.write_text(
-        json.dumps(
-            {
-                cell: {str(horizon): str(evaluation_id) for horizon, evaluation_id in ids.items()}
-                for cell, ids in _roster().items()
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path))
-
-    result = CliRunner().invoke(app, ["rolling", str(roster_path)])
-
-    assert result.exit_code == 0
-    output = pl.read_csv(io.StringIO(result.output))
-    assert output.schema == _RESULT_SCHEMA
-    assert output.shape == (9, 7)
-    assert output.row(0) == pytest.approx(("cell-0", 0.3, 0.48, 0.3, 0.48, 2.5, 1.6))
 
 
 @pytest.mark.parametrize(
@@ -173,13 +125,13 @@ def test_rolling_command_reads_one_explicit_roster_and_prints_csv(
         ("cells", "exactly nine named cells"),
         ("horizons", "must name exactly the K=2"),
         ("schema", "canonical ordered schema"),
-        ("origins", "exactly match the ordered testing window"),
+        ("origins", "consecutive unique origins"),
         ("shift", "lacks required shifted origins"),
         ("action", "K=3 predicted_action_k values must be valid actions"),
-        ("forced", "forced K=2 branches must select k=1"),
+        ("forced", "K=2 predicted_action_k values must be valid actions"),
     ],
 )
-def test_compare_rolling_rejects_invalid_rosters_and_observations(
+def test_reduce_rolling_rejects_invalid_rosters_and_observations(
     tmp_path: Path,
     case: str,
     message: str,
@@ -192,7 +144,7 @@ def test_compare_rolling_rejects_invalid_rosters_and_observations(
         roster["cell-0"].pop(2)
     else:
         horizon = 2 if case in {"shift", "forced"} else 3
-        request_path, observations_path = _evaluation_files(tmp_path, horizon)
+        observations_path = _observations_path(tmp_path, horizon)
         observations = pl.read_parquet(observations_path)
         if case == "schema":
             observations = observations.select(
@@ -207,16 +159,6 @@ def test_compare_rolling_rejects_invalid_rosters_and_observations(
                 .alias("origin_block")
             )
         elif case == "shift":
-            request = EvaluateRequest.model_validate_json(request_path.read_bytes(), strict=True)
-            request = request.model_copy(
-                update={
-                    "testing_window": BlockWindow(
-                        first_parent_block=104,
-                        last_parent_block=107,
-                    )
-                }
-            )
-            request_path.write_text(request.model_dump_json(), encoding="utf-8")
             observations = observations.filter(pl.col("origin_block") >= 104)
         elif case == "action":
             observations = observations.with_columns(
@@ -235,4 +177,4 @@ def test_compare_rolling_rejects_invalid_rosters_and_observations(
         observations.write_parquet(observations_path)
 
     with pytest.raises(ValueError, match=message):
-        compare_rolling(tmp_path, roster)
+        reduce_rolling(tmp_path, roster)
