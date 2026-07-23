@@ -831,7 +831,7 @@ Given an explicit `storage_root`:
 ```text
 corpora/<corpus_id>/corpus.json
 corpora/<corpus_id>/blocks.parquet
-experiments/{feature_ablation,c_study,hpo,k_study}/<UUID>.json
+experiments/{feature_ablation,c_study,hpo,k_study,held_out}/<UUID>.json
 studies/<study_id>.json
 artifacts/<artifact_id>.ckpt
 evaluations/<evaluation_id>/evaluation.json
@@ -874,7 +874,7 @@ load_corpus(storage_root: Path, corpus_id: UUID4) -> Corpus
 
 #### Experiment manifest
 
-Each `experiments/{feature_ablation,c_study,hpo,k_study}/<UUID>.json` contains the matching UUIDv4 `experiment_id` and a nonempty ordered `entries` tuple. Each entry has a nonempty `cell` label and at least one canonical `artifact_id`, `study_id`, or `evaluation_id` UUIDv4. Manifests group canonical references only; they do not duplicate metrics, results, or scientific definitions.
+Each `experiments/{feature_ablation,c_study,hpo,k_study,held_out}/<UUID>.json` contains the matching UUIDv4 `experiment_id` and a nonempty ordered `entries` tuple. Each entry has a nonempty `cell` label and at least one canonical `artifact_id`, `study_id`, or `evaluation_id` UUIDv4. Manifests group canonical references only; they do not duplicate metrics, results, or scientific definitions.
 
 `experiments/feature_ablation.py prepare STORAGE_ROOT` authors the frozen 45-cell request
 bundle under `experiments/feature_ablation/.<experiment_id>/`. The ordinary Study CLI submits
@@ -895,7 +895,8 @@ manifest only after every artifact exists. `experiments/held_out.py` authors the
 held-out Evaluate requests. All horizons use the common complete-`K=200` testing range; the
 `K=2…4` ranges extend by three, two, or one shifted origins so the fixed-deadline rolling
 comparison can reuse the same evaluations. Its report commands print, but do not persist, the
-ordinary and rolling reductions.
+ordinary and rolling reductions. Closure publishes the exact 81 evaluation references and removes
+the temporary bundle.
 
 #### Study object
 

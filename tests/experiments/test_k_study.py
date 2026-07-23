@@ -223,7 +223,6 @@ def test_k_study_authors_and_closes_eighty_one_selected_study_artifacts(
         for row in evaluation_rows
     ]
     assert len(evaluation_rows) == 81
-    assert len(_rows(held_out / "rolling.tsv")) == 36
     assert evaluation_requests[0].testing_window == BlockWindow(
         first_parent_block=704,
         last_parent_block=803,
@@ -232,3 +231,12 @@ def test_k_study_authors_and_closes_eighty_one_selected_study_artifacts(
         first_parent_block=701,
         last_parent_block=800,
     )
+    for row in evaluation_rows:
+        (tmp_path / "evaluations" / row["evaluation_id"]).mkdir(parents=True)
+    _run(_HELD_OUT_SCRIPT, "close", tmp_path, _HELD_OUT_EXPERIMENT_ID)
+    held_out_manifest = ExperimentManifest.model_validate_json(
+        (tmp_path / "experiments" / "held_out" / f"{_HELD_OUT_EXPERIMENT_ID}.json").read_bytes(),
+        strict=True,
+    )
+    assert len(held_out_manifest.entries) == 81
+    assert not held_out.exists()

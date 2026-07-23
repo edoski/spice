@@ -5,23 +5,31 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import shutil
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import polars as pl
 
-from fable.addresses import corpus_json_path, study_json_path
+from fable.addresses import corpus_json_path, evaluation_directory, study_json_path
 from fable.config import BlockWindow, CorpusRequest
 from fable.evaluation.resolution import reduce_evaluation, reduce_rolling
-from fable.experiments import ExperimentKind, load_experiment_manifest
+from fable.experiments import (
+    ExperimentEntry,
+    ExperimentKind,
+    ExperimentManifest,
+    load_experiment_manifest,
+    write_experiment_manifest,
+)
 from fable.requests import fresh_evaluate_request
 from fable.study import Study
 
 _MAX_HORIZON = 200
+_KIND = ExperimentKind.HELD_OUT
 
 
 def _bundle_path(storage_root: Path, experiment_id: UUID) -> Path:
-    return storage_root / "experiments" / "held_out" / f".{experiment_id}"
+    return storage_root / "experiments" / _KIND / f".{experiment_id}"
 
 
 def _load_study(storage_root: Path, study_id: UUID) -> Study:
@@ -58,7 +66,6 @@ def prepare(
     requests.mkdir(parents=True)
 
     rows: list[tuple[str, Path, UUID]] = []
-    rolling: list[tuple[str, int, UUID]] = []
     for index, entry in enumerate(k_study.entries):
         if entry.artifact_id is None:
             raise ValueError("K-study entry must reference an artifact")
@@ -83,44 +90,62 @@ def prepare(
         request_path = requests / f"{index:02d}.json"
         request_path.write_text(request.model_dump_json(), encoding="utf-8")
         rows.append((entry.cell, request_path, request.evaluation_id))
-        if horizon in (2, 3, 4, 5):
-            rolling.append((f"{chain}.{family}", horizon, request.evaluation_id))
 
     with (bundle / "cells.tsv").open("x", newline="", encoding="utf-8") as destination:
         writer = csv.writer(destination, delimiter="\t", lineterminator="\n")
         writer.writerow(("cell", "request", "evaluation_id"))
         writer.writerows(rows)
-    with (bundle / "rolling.tsv").open("x", newline="", encoding="utf-8") as destination:
-        writer = csv.writer(destination, delimiter="\t", lineterminator="\n")
-        writer.writerow(("cell", "horizon", "evaluation_id"))
-        writer.writerows(rolling)
 
     print(experiment_id)
 
 
-def report(storage_root: Path, experiment_id: UUID) -> None:
+def close(storage_root: Path, experiment_id: UUID) -> None:
     storage_root = storage_root.resolve()
     bundle = _bundle_path(storage_root, experiment_id)
     with (bundle / "cells.tsv").open(newline="", encoding="utf-8") as source:
         rows = list(csv.DictReader(source, delimiter="\t"))
 
-    results = [
-        pl.DataFrame({"cell": [row["cell"]]}).hstack(
-            reduce_evaluation(storage_root, UUID(row["evaluation_id"]))
-        )
+    entries = tuple(
+        ExperimentEntry(cell=row["cell"], evaluation_id=evaluation_id)
         for row in rows
+        if evaluation_directory(
+            storage_root,
+            evaluation_id := UUID(row["evaluation_id"]),
+        ).is_dir()
+    )
+    if len(entries) != len(rows):
+        raise FileNotFoundError("every held-out evaluation must exist before closure")
+    write_experiment_manifest(
+        storage_root,
+        _KIND,
+        ExperimentManifest(experiment_id=experiment_id, entries=entries),
+    )
+    shutil.rmtree(bundle)
+    print(experiment_id)
+
+
+def report(storage_root: Path, experiment_id: UUID) -> None:
+    storage_root = storage_root.resolve()
+    manifest = load_experiment_manifest(storage_root, _KIND, experiment_id)
+    results = [
+        pl.DataFrame({"cell": [entry.cell]}).hstack(
+            reduce_evaluation(storage_root, entry.evaluation_id)
+        )
+        for entry in manifest.entries
+        if entry.evaluation_id is not None
     ]
     print(pl.concat(results).write_csv(None, separator="\t"), end="")
 
 
 def rolling(storage_root: Path, experiment_id: UUID) -> None:
     storage_root = storage_root.resolve()
-    bundle = _bundle_path(storage_root, experiment_id)
-    with (bundle / "rolling.tsv").open(newline="", encoding="utf-8") as source:
-        rows = list(csv.DictReader(source, delimiter="\t"))
+    manifest = load_experiment_manifest(storage_root, _KIND, experiment_id)
     roster: dict[str, dict[int, UUID]] = {}
-    for row in rows:
-        roster.setdefault(row["cell"], {})[int(row["horizon"])] = UUID(row["evaluation_id"])
+    for entry in manifest.entries:
+        cell, horizon_label = entry.cell.rsplit(".", maxsplit=1)
+        horizon = int(horizon_label.removeprefix("K"))
+        if horizon in (2, 3, 4, 5) and entry.evaluation_id is not None:
+            roster.setdefault(cell, {})[horizon] = entry.evaluation_id
     print(reduce_rolling(storage_root, roster).write_csv(None, separator="\t"), end="")
 
 
@@ -132,6 +157,9 @@ def main() -> None:
     prepare_parser.add_argument("hpo_experiment_id", type=UUID)
     prepare_parser.add_argument("k_experiment_id", type=UUID)
     prepare_parser.add_argument("--experiment-id", type=UUID, default=None)
+    close_parser = commands.add_parser("close")
+    close_parser.add_argument("storage_root", type=Path)
+    close_parser.add_argument("experiment_id", type=UUID)
     report_parser = commands.add_parser("report")
     report_parser.add_argument("storage_root", type=Path)
     report_parser.add_argument("experiment_id", type=UUID)
@@ -147,6 +175,8 @@ def main() -> None:
             arguments.k_experiment_id,
             arguments.experiment_id or uuid4(),
         )
+    elif arguments.command == "close":
+        close(arguments.storage_root, arguments.experiment_id)
     elif arguments.command == "report":
         report(arguments.storage_root, arguments.experiment_id)
     else:

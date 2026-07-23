@@ -23,6 +23,7 @@ class ExperimentKind(StrEnum):
     C_STUDY = "c_study"
     HPO = "hpo"
     K_STUDY = "k_study"
+    HELD_OUT = "held_out"
 
 
 class ExperimentEntry(_FrozenRecord):

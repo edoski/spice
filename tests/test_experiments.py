@@ -26,6 +26,7 @@ def test_experiment_kinds_map_to_their_manifest_namespaces() -> None:
         ExperimentKind.C_STUDY: "c_study",
         ExperimentKind.HPO: "hpo",
         ExperimentKind.K_STUDY: "k_study",
+        ExperimentKind.HELD_OUT: "held_out",
     }
 
     assert {
